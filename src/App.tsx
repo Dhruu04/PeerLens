@@ -1,15 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { Database, ShieldCheck } from 'lucide-react';
+import { Database, ShieldCheck, UserPlus } from 'lucide-react';
 import { ClassProvider, useClass } from './context/ClassContext';
 import AdminDashboard from './views/AdminDashboard';
 import StudentPortal from './views/StudentPortal';
+import StudentEnrollmentPortal from './views/StudentEnrollmentPortal';
+import ProjectorView from './views/ProjectorView';
 import ToastContainer from './components/Toast';
 
 const AppContent: React.FC = () => {
-  const { isCloudSynced, activeClass, activeAdminProfile } = useClass();
-  const [routeParams, setRouteParams] = useState<{ classId: string | null; studentId: string | null }>({
+  const { isCloudSynced, activeClass, activeAdminProfile, classes } = useClass();
+  const [routeParams, setRouteParams] = useState<{ 
+    classId: string | null; 
+    studentId: string | null;
+    enrollClassId: string | null;
+    isProjector: boolean;
+  }>({
     classId: null,
-    studentId: null
+    studentId: null,
+    enrollClassId: null,
+    isProjector: false
   });
 
   // Client-side query-based routing (highly optimized for 100% static hosting compatibility)
@@ -18,7 +27,9 @@ const AppContent: React.FC = () => {
       const params = new URLSearchParams(window.location.search);
       const classId = params.get('classId');
       const studentId = params.get('studentId');
-      setRouteParams({ classId, studentId });
+      const enrollClassId = params.get('enrollClassId') || params.get('join');
+      const isProjector = params.get('projector') === 'true' || params.get('present') === 'true';
+      setRouteParams({ classId, studentId, enrollClassId, isProjector });
     };
 
     handleUrlChange();
@@ -28,7 +39,14 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handleUrlChange);
   }, []);
 
+  if (routeParams.isProjector) {
+    const matchedClass = routeParams.classId ? classes.find(c => c.id === routeParams.classId) : activeClass;
+    return <ProjectorView classData={matchedClass || activeClass || classes[0]} isStandalone={true} />;
+  }
+
   const isStudentPortal = routeParams.classId && routeParams.studentId;
+  const isEnrollmentPortal = !!routeParams.enrollClassId;
+  const enrollmentClass = isEnrollmentPortal ? classes.find(c => c.id === routeParams.enrollClassId) : null;
 
   return (
     <div className="app-container">
@@ -40,7 +58,11 @@ const AppContent: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          {isStudentPortal ? (
+          {isEnrollmentPortal ? (
+            <span className="badge badge-primary" style={{ gap: '0.25rem' }}>
+              <UserPlus size={12} /> Student Self-Enrollment
+            </span>
+          ) : isStudentPortal ? (
             <span className="badge badge-teal" style={{ gap: '0.25rem' }}>
               <ShieldCheck size={12} /> Verified Session
             </span>
@@ -62,7 +84,9 @@ const AppContent: React.FC = () => {
 
       {/* Main View Router */}
       <main style={{ flex: 1 }}>
-        {isStudentPortal ? (
+        {isEnrollmentPortal ? (
+          <StudentEnrollmentPortal classId={routeParams.enrollClassId!} />
+        ) : isStudentPortal ? (
           <StudentPortal 
             classId={routeParams.classId!} 
             studentId={routeParams.studentId!} 
@@ -85,7 +109,13 @@ const AppContent: React.FC = () => {
 
         {/* Centre: dynamic context */}
         <div className="app-footer-center">
-          {isStudentPortal ? (
+          {isEnrollmentPortal ? (
+            <span className="app-footer-context">
+              <span className="app-footer-context-label">Enrolling into</span>
+              <span className="app-footer-context-divider" />
+              <span className="app-footer-context-value">{enrollmentClass?.name ?? routeParams.enrollClassId}</span>
+            </span>
+          ) : isStudentPortal ? (
             <span className="app-footer-context">
               <span className="app-footer-context-label">Viewing Class</span>
               <span className="app-footer-context-divider" />

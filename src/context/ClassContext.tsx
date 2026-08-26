@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ClassData, Student, GradingScaleField, Review, Milestone } from '../utils/math';
+import { normalizeNationality } from '../utils/math';
+import { hashCode } from '../utils/csv';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, doc, onSnapshot, collection, deleteDoc, runTransaction } from 'firebase/firestore';
 import { 
@@ -56,6 +58,7 @@ import {
     updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null) => void;
     importRoster: (classId: string, students: Student[], clearExisting?: boolean) => void;
     addStudent: (classId: string, student: Omit<Student, 'submitted'>) => void;
+    enrollStudent: (classId: string, student: Omit<Student, 'submitted' | 'id'> & { id?: string }) => Promise<{ success: boolean; studentId: string; message?: string }>;
     updateStudent: (classId: string, studentId: string, updatedFields: Partial<Student>) => void;
     deleteStudent: (classId: string, studentId: string) => void;
     submitPeerReviews: (classId: string, reviewerId: string, reviews: Omit<Review, 'reviewerId'>[]) => Promise<void>;
@@ -82,12 +85,12 @@ import {
         { id: 'f_reliability', name: 'Reliability & Commitment', min: 1, max: 10, weight: 1 }
       ],
       students: [
-        { id: 's_1', name: 'Alice Smith', email: 'alice@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', submitted: false },
-        { id: 's_2', name: 'Bob Jones', email: 'bob@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Erasmus', submitted: false },
-        { id: 's_3', name: 'Charlie Brown', email: 'charlie@example.com', groupName: 'Alpha Team', university: 'University of Toronto', degree: 'Software Engineering', studentType: 'Normal', submitted: false },
-        { id: 's_4', name: 'David Miller', email: 'david@example.com', groupName: 'Beta Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', submitted: false },
-        { id: 's_5', name: 'Eva Green', email: 'eva@example.com', groupName: 'Beta Team', university: 'Sorbonne University', degree: 'Data Science', studentType: 'Erasmus', submitted: false },
-        { id: 's_6', name: 'Frank Wright', email: 'frank@example.com', groupName: 'Beta Team', university: 'University of Oxford', degree: 'Information Systems', studentType: 'Normal', submitted: false }
+        { id: 's_1', name: 'Alice Smith', email: 'alice@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', gender: 'Female', nationality: 'United States', englishProficiency: 'Native / Bilingual', submitted: false },
+        { id: 's_2', name: 'Bob Jones', email: 'bob@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Erasmus', gender: 'Male', nationality: 'United Kingdom', englishProficiency: 'Native / Bilingual', submitted: false },
+        { id: 's_3', name: 'Charlie Brown', email: 'charlie@example.com', groupName: 'Alpha Team', university: 'University of Toronto', degree: 'Software Engineering', studentType: 'Normal', gender: 'Male', nationality: 'Canada', englishProficiency: 'Fluent (C1/C2)', submitted: false },
+        { id: 's_4', name: 'David Miller', email: 'david@example.com', groupName: 'Beta Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', gender: 'Male', nationality: 'Germany', englishProficiency: 'Advanced (B2)', submitted: false },
+        { id: 's_5', name: 'Eva Green', email: 'eva@example.com', groupName: 'Beta Team', university: 'Sorbonne University', degree: 'Data Science', studentType: 'Erasmus', gender: 'Female', nationality: 'France', englishProficiency: 'Fluent (C1/C2)', submitted: false },
+        { id: 's_6', name: 'Frank Wright', email: 'frank@example.com', groupName: 'Beta Team', university: 'University of Oxford', degree: 'Information Systems', studentType: 'Normal', gender: 'Male', nationality: 'Australia', englishProficiency: 'Native / Bilingual', submitted: false }
       ],
       reviews: []
     };
@@ -492,6 +495,9 @@ import {
           university: s.university || '',
           degree: s.degree || '',
           studentType: s.studentType || 'Normal',
+          gender: s.gender || 'Prefer not to say',
+          nationality: s.nationality || '',
+          englishProficiency: s.englishProficiency || '',
           submitted: !!s.submitted
         })) : [],
         reviews: Array.isArray(c.reviews) ? c.reviews.map(r => ({
@@ -740,18 +746,125 @@ import {
     const addStudent = (classId: string, studentData: Omit<Student, 'submitted'>) => {
       const updatedClasses = classes.map((c) => {
         if (c.id === classId) {
-          // Check for duplicate Email
+          // Check for duplicate Email (case-insensitive)
           if (c.students.some(s => s.email.toLowerCase() === studentData.email.toLowerCase())) {
             addToast(`Student with email ${studentData.email} already exists in this class!`, 'error');
             return c;
           }
-          const newStudent: Student = { ...studentData, submitted: false };
+          const newStudent: Student = { 
+            ...studentData, 
+            nationality: normalizeNationality(studentData.nationality),
+            submitted: false 
+          };
           addToast(`Student "${studentData.name}" added successfully!`, 'success');
           return { ...c, students: [...c.students, newStudent] };
         }
         return c;
       });
       persistClasses(updatedClasses);
+    };
+
+    const enrollStudent = async (
+      classId: string,
+      studentData: Omit<Student, 'submitted' | 'id'> & { id?: string }
+    ): Promise<{ success: boolean; studentId: string; message?: string }> => {
+      const normEmail = studentData.email.trim().toLowerCase();
+      const normalizedNation = normalizeNationality(studentData.nationality);
+      const newStudentId = studentData.id?.trim() || 'std_' + Math.abs(hashCode(normEmail || studentData.name));
+      
+      const studentToEnroll: Student = {
+        ...studentData,
+        id: newStudentId,
+        name: studentData.name.trim(),
+        email: normEmail,
+        groupName: studentData.groupName?.trim() || 'General Team',
+        nationality: normalizedNation,
+        gender: studentData.gender?.trim() || 'Prefer not to say',
+        englishProficiency: studentData.englishProficiency?.trim() || 'Fluent (C1/C2)',
+        university: studentData.university?.trim() || '',
+        degree: studentData.degree?.trim() || '',
+        studentType: studentData.studentType?.trim() || 'Normal',
+        submitted: false
+      };
+
+      // 1. If Cloud Synced with Firebase, do transactional write to Firestore
+      if (isCloudSynced && firebaseConfig) {
+        const ownerUid = user ? user.uid : studentOwnerUid;
+        if (ownerUid) {
+          try {
+            const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+            const db = getFirestore(app);
+            const classDocRef = doc(db, 'admins', ownerUid, 'classes', classId);
+            
+            await runTransaction(db, async (transaction) => {
+              const sfDoc = await transaction.get(classDocRef);
+              if (!sfDoc.exists()) {
+                throw new Error('Classroom not found in cloud database.');
+              }
+              const cloudData = sfDoc.data() as ClassData;
+              const currentStudents = cloudData.students || [];
+              
+              // Check if already registered by email or ID (case-insensitive)
+              const existingIndex = currentStudents.findIndex(
+                s => s.email.toLowerCase() === normEmail || s.id === newStudentId
+              );
+              
+              let updatedStudents: Student[];
+              if (existingIndex >= 0) {
+                // Update profile with new info while preserving submitted status
+                const existing = currentStudents[existingIndex];
+                updatedStudents = [...currentStudents];
+                updatedStudents[existingIndex] = {
+                  ...existing,
+                  ...studentToEnroll,
+                  submitted: existing.submitted
+                };
+              } else {
+                updatedStudents = [...currentStudents, studentToEnroll];
+              }
+              
+              const updatedClass = {
+                ...cloudData,
+                students: updatedStudents
+              };
+              
+              transaction.set(classDocRef, sanitizeClassForFirestore(updatedClass));
+            });
+          } catch (err: any) {
+            console.error('Failed to enroll student via Firestore transaction:', err);
+            return { success: false, studentId: newStudentId, message: err.message || 'Failed to sync with cloud.' };
+          }
+        }
+      }
+
+      // 2. Update local state and localStorage
+      setClasses(prevClasses => {
+        const updated = prevClasses.map(c => {
+          if (c.id === classId) {
+            const existingIdx = c.students.findIndex(
+              s => s.email.toLowerCase() === normEmail || s.id === newStudentId
+            );
+            let updatedStudents: Student[];
+            if (existingIdx >= 0) {
+              const existing = c.students[existingIdx];
+              updatedStudents = [...c.students];
+              updatedStudents[existingIdx] = {
+                ...existing,
+                ...studentToEnroll,
+                submitted: existing.submitted
+              };
+            } else {
+              updatedStudents = [...c.students, studentToEnroll];
+            }
+            return { ...c, students: updatedStudents };
+          }
+          return c;
+        });
+        localStorage.setItem(`peer_grading_classes_${activeAdminProfile}`, JSON.stringify(updated));
+        return updated;
+      });
+
+      return { success: true, studentId: newStudentId };
     };
  
     const updateStudent = (classId: string, studentId: string, updatedFields: Partial<Student>) => {
@@ -927,6 +1040,7 @@ import {
           updateGradingConfig,
           importRoster,
           addStudent,
+          enrollStudent,
           updateStudent,
           deleteStudent,
           submitPeerReviews,

@@ -43,7 +43,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     <div
       ref={containerRef}
       className={`custom-select-container ${className}`}
-      style={{ position: 'relative', display: 'inline-block', ...style }}
+      style={{ position: 'relative', display: 'block', width: '100%', ...style }}
     >
       <button
         type="button"
@@ -53,23 +53,27 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: '0.6rem',
           textAlign: 'left',
           width: '100%',
-          paddingRight: '2.5rem',
+          padding: '0.45rem 0.85rem',
           height: 'auto',
           backgroundImage: 'none',
+          cursor: 'pointer',
+          boxSizing: 'border-box',
           ...triggerStyle
         }}
       >
-        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', paddingRight: '0.5rem' }}>
           {selectedOption?.label}
         </span>
         <ChevronDown
-          size={14}
+          size={13}
           className="custom-select-chevron"
           style={{
-            position: 'absolute',
-            right: '1rem',
+            flexShrink: 0,
+            marginLeft: 'auto',
+            color: 'var(--text-muted)',
             transition: 'transform 200ms ease',
             transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
             pointerEvents: 'none'

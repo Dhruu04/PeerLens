@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Users, Plus, Trash2, Download, Upload, Sliders, Mail, 
   Database, RefreshCw, CheckCircle, Clock, BookOpen, 
   Award, TrendingUp, AlertCircle, FileText, 
   Search, Eye, Sparkles, Edit2, User, Info,
   Lightbulb, Heart, MessageSquare, Target, Minus,
-  ThumbsUp, ShieldCheck, Rocket, Trophy, BarChart2
+  ThumbsUp, ShieldCheck, Rocket, Trophy, BarChart2,
+  QrCode, Copy, Check, Globe, AlertTriangle, Lock, Unlock,
+  Send, Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { useClass } from '../context/ClassContext';
 import type { FirebaseConfig } from '../context/ClassContext';
-import { calculateClassStats, calculateStudentMetrics, calculateStudentWebPAScore, detectClassAnomalies, getTargetScale } from '../utils/math';
+import { calculateClassStats, calculateStudentMetrics, calculateStudentWebPAScore, detectClassAnomalies, getTargetScale, normalizeNationality } from '../utils/math';
 import type { GradingScaleField, Student } from '../utils/math';
 import { 
   parseCSV as _parseCSV, 
@@ -22,6 +25,17 @@ import {
 } from '../utils/csv';
 import Modal from '../components/Modal';
 import CustomSelect from '../components/CustomSelect';
+import SearchableSelect from '../components/SearchableSelect';
+import { NATIONALITY_OPTIONS } from '../utils/nationalities';
+import ClassQRCodeModal from '../components/ClassQRCodeModal';
+import AutoGroupModal from '../components/AutoGroupModal';
+import AutoGroupStudio from '../components/AutoGroupStudio';
+import { StudentReportModal } from '../components/StudentReportModal';
+import { RadarChart } from '../components/RadarChart';
+import ProjectorView from './ProjectorView';
+import { LinkDispatcherModal } from '../components/LinkDispatcherModal';
+import { calculateJohariWindowMetric, extractClassFeedbackInsights } from '../utils/feedbackAnalytics';
+import { DIVERSE_100_STUDENTS, getSampleStudentsCSV, downloadSampleStudentsFile } from '../data/sampleStudents';
 
 
 const getPraiseTagInfo = (tagText: string) => {
@@ -155,6 +169,10 @@ export const AdminDashboard: React.FC = () => {
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [isNewProfileModalOpen, setIsNewProfileModalOpen] = useState(false);
   const [newProfileName, setNewProfileName] = useState('');
+  const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
+  const [isAutoGroupModalOpen, setIsAutoGroupModalOpen] = useState(false);
+  const [copiedEnrollLink, setCopiedEnrollLink] = useState(false);
+  const [isMobileProfileModalOpen, setIsMobileProfileModalOpen] = useState(false);
 
   // Roster Onboarding Wizard states
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -169,7 +187,10 @@ export const AdminDashboard: React.FC = () => {
     groupName: -1,
     university: -1,
     degree: -1,
-    studentType: -1
+    studentType: -1,
+    gender: -1,
+    nationality: -1,
+    englishProficiency: -1
   });
   const [wizardStudents, setWizardStudents] = useState<any[]>([]);
   const [wizardErrors, setWizardErrors] = useState<Record<number, string[]>>({});
@@ -179,11 +200,11 @@ export const AdminDashboard: React.FC = () => {
 
   // Download a pre-built CSV template for the admin
   const handleDownloadTemplate = () => {
-    const header = 'Student ID,Full Name,Email,Group / Team,University,Degree,Student Type';
+    const header = 'Student ID,Full Name,Email,Group / Team,University,Degree,Student Type,Gender,Nationality,English Proficiency';
     const rows = [
-      '101,Alice Johnson,alice.johnson@university.edu,Team Alpha,MIT,Computer Science,Erasmus',
-      '102,Bob Martinez,bob.martinez@university.edu,Team Beta,Stanford,Software Engineering,Normal',
-      '103,Carol Lee,carol.lee@university.edu,Team Alpha,Oxford,Physics,Normal',
+      '101,Alice Johnson,alice.johnson@university.edu,Team Alpha,MIT,Computer Science,Erasmus,Female,United States,Native / Bilingual',
+      '102,Bob Martinez,bob.martinez@university.edu,Team Beta,Stanford,Software Engineering,Normal,Male,Spain,Fluent (C1/C2)',
+      '103,Carol Lee,carol.lee@university.edu,Team Alpha,Oxford,Physics,Normal,Female,United Kingdom,Native / Bilingual',
     ];
     const csvContent = [header, ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -204,7 +225,10 @@ export const AdminDashboard: React.FC = () => {
     groupName: '',
     university: '',
     degree: '',
-    studentType: 'Normal'
+    studentType: 'Normal',
+    gender: 'Prefer not to say',
+    nationality: '',
+    englishProficiency: 'Fluent (C1/C2)'
   });
 
   // UI Filtering and Searching
@@ -228,7 +252,10 @@ export const AdminDashboard: React.FC = () => {
     groupName: '',
     university: '',
     degree: '',
-    studentType: 'Normal'
+    studentType: 'Normal',
+    gender: 'Prefer not to say',
+    nationality: '',
+    englishProficiency: 'Fluent (C1/C2)'
   });
 
   // Advanced settings and controls states
@@ -240,9 +267,22 @@ export const AdminDashboard: React.FC = () => {
     const val = localStorage.getItem('peer_base_grade');
     return val ? Number(val) : 100;
   });
-  const [autoGroupSize, setAutoGroupSize] = useState<number>(3);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [newMilestoneName, setNewMilestoneName] = useState('');
+
+  // Student PDF Report Card modal state
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [selectedReportStudentId, setSelectedReportStudentId] = useState<string>('');
+
+  // Live Projector & Link Dispatcher modals
+  const [isProjectorModalOpen, setIsProjectorModalOpen] = useState(false);
+  const [isLinkDispatcherOpen, setIsLinkDispatcherOpen] = useState(false);
+  const [radarTeamFilter, setRadarTeamFilter] = useState<string>('All');
+
+  const openReportModal = (studentId?: string) => {
+    if (studentId) setSelectedReportStudentId(studentId);
+    setIsReportModalOpen(true);
+  };
 
   // Custom Glassmorphic Confirmation Modal state manager
   const [confirmModal, setConfirmModal] = useState<{
@@ -582,7 +622,7 @@ export const AdminDashboard: React.FC = () => {
     setWizardHeaders(headersList);
     setWizardRawData(matrix);
     
-    // Fuzzy guess mapping for common field titles
+    // Fuzzy guess mapping for all 10 standard fields
     const newMapping = {
       name: -1,
       email: -1,
@@ -590,25 +630,54 @@ export const AdminDashboard: React.FC = () => {
       groupName: -1,
       university: -1,
       degree: -1,
-      studentType: -1
+      studentType: -1,
+      gender: -1,
+      nationality: -1,
+      englishProficiency: -1
     };
     
     headersList.forEach((header, idx) => {
-      const norm = header.toLowerCase().replace(/[\s_-]+/g, '');
-      if (['name', 'studentname', 'fullname', 'member'].some(s => norm.includes(s))) {
-        newMapping.name = idx;
-      } else if (['email', 'emailid', 'mail', 'address'].some(s => norm.includes(s))) {
-        newMapping.email = idx;
-      } else if (['id', 'uniqueid', 'rollno', 'studentid', 'number'].some(s => norm.includes(s))) {
-        newMapping.id = idx;
-      } else if (['group', 'team', 'groupname', 'teamname', 'classgroup'].some(s => norm.includes(s))) {
-        newMapping.groupName = idx;
-      } else if (['university', 'uni', 'college', 'institution', 'school'].some(s => norm.includes(s))) {
-        newMapping.university = idx;
-      } else if (['degree', 'major', 'program', 'course', 'degreefield'].some(s => norm.includes(s))) {
-        newMapping.degree = idx;
-      } else if (['studenttype', 'type', 'status', 'erasmus'].some(s => norm.includes(s))) {
-        newMapping.studentType = idx;
+      const norm = header.toLowerCase().replace(/[^a-z0-9]/g, '');
+      
+      // Email
+      if (['email', 'emailid', 'mail', 'emailaddress', 'useremail', 'studentemail', 'address'].some(s => norm.includes(s))) {
+        if (newMapping.email === -1) newMapping.email = idx;
+      } 
+      // Student ID
+      else if (['studentid', 'uniqueid', 'rollno', 'roll', 'matric', 'regno', 'id', 'studentnumber', 'studid'].some(s => norm === s || norm.startsWith('id') || norm.endsWith('id') || norm.includes('studentid'))) {
+        if (newMapping.id === -1) newMapping.id = idx;
+      }
+      // Full Name
+      else if (['fullname', 'studentname', 'name', 'member', 'student', 'participant', 'firstlast'].some(s => norm.includes(s))) {
+        if (newMapping.name === -1) newMapping.name = idx;
+      }
+      // Group / Team
+      else if (['group', 'team', 'groupname', 'teamname', 'classgroup', 'squad', 'cohort', 'projectgroup'].some(s => norm.includes(s))) {
+        if (newMapping.groupName === -1) newMapping.groupName = idx;
+      }
+      // Gender
+      else if (['gender', 'sex', 'pronoun'].some(s => norm.includes(s))) {
+        if (newMapping.gender === -1) newMapping.gender = idx;
+      }
+      // Nationality
+      else if (['nationality', 'country', 'citizenship', 'nation', 'origin'].some(s => norm.includes(s))) {
+        if (newMapping.nationality === -1) newMapping.nationality = idx;
+      }
+      // English Proficiency
+      else if (['english', 'englishproficiency', 'englishlevel', 'languagelevel', 'proficiency', 'cefr', 'englishskill'].some(s => norm.includes(s))) {
+        if (newMapping.englishProficiency === -1) newMapping.englishProficiency = idx;
+      }
+      // University
+      else if (['university', 'uni', 'college', 'institution', 'school', 'campus', 'institute'].some(s => norm.includes(s))) {
+        if (newMapping.university === -1) newMapping.university = idx;
+      }
+      // Degree
+      else if (['degree', 'major', 'program', 'course', 'degreefield', 'field', 'branch', 'specialization'].some(s => norm.includes(s))) {
+        if (newMapping.degree === -1) newMapping.degree = idx;
+      }
+      // Student Type
+      else if (['studenttype', 'type', 'status', 'erasmus', 'enrollmenttype', 'category'].some(s => norm.includes(s))) {
+        if (newMapping.studentType === -1) newMapping.studentType = idx;
       }
     });
     
@@ -631,6 +700,9 @@ export const AdminDashboard: React.FC = () => {
       const uniVal = wizardMapping.university !== -1 ? (row[wizardMapping.university] || '').trim() : '';
       const degreeVal = wizardMapping.degree !== -1 ? (row[wizardMapping.degree] || '').trim() : '';
       const studentTypeVal = wizardMapping.studentType !== -1 ? (row[wizardMapping.studentType] || '').trim() : 'Normal';
+      const genderVal = wizardMapping.gender !== -1 ? (row[wizardMapping.gender] || '').trim() : 'Prefer not to say';
+      const nationalityVal = wizardMapping.nationality !== -1 ? (row[wizardMapping.nationality] || '').trim() : '';
+      const englishVal = wizardMapping.englishProficiency !== -1 ? (row[wizardMapping.englishProficiency] || '').trim() : 'Fluent (C1/C2)';
       
       const rawId = idVal || 'std_' + Math.abs(hashCode(emailVal || nameVal || String(Math.random())));
       
@@ -642,6 +714,9 @@ export const AdminDashboard: React.FC = () => {
         university: uniVal || undefined,
         degree: degreeVal || undefined,
         studentType: studentTypeVal || 'Normal',
+        gender: genderVal || 'Prefer not to say',
+        nationality: normalizeNationality(nationalityVal) || undefined,
+        englishProficiency: englishVal || 'Fluent (C1/C2)',
         submitted: false
       };
     });
@@ -692,7 +767,7 @@ export const AdminDashboard: React.FC = () => {
     const updated = [...wizardStudents];
     updated[index] = {
       ...updated[index],
-      [key]: value
+      [key]: key === 'nationality' ? normalizeNationality(value) : value
     };
     setWizardStudents(updated);
     validateWizardRoster(updated);
@@ -710,6 +785,9 @@ export const AdminDashboard: React.FC = () => {
         university: '',
         degree: '',
         studentType: 'Normal',
+        gender: 'Prefer not to say',
+        nationality: '',
+        englishProficiency: 'Fluent (C1/C2)',
         submitted: false
       }
     ];
@@ -750,7 +828,10 @@ export const AdminDashboard: React.FC = () => {
       groupName: -1,
       university: -1,
       degree: -1,
-      studentType: -1
+      studentType: -1,
+      gender: -1,
+      nationality: -1,
+      englishProficiency: -1
     });
     setWizardStudents([]);
     setWizardErrors({});
@@ -760,8 +841,8 @@ export const AdminDashboard: React.FC = () => {
   // Add individual student manually
   const handleAddStudentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudent.name || !newStudent.email) {
-      addToast('Please fill out all required fields.', 'warning');
+    if (!newStudent.name.trim() || !newStudent.email.trim() || !newStudent.nationality.trim() || !newStudent.gender.trim() || !newStudent.englishProficiency.trim()) {
+      addToast('Please fill out all mandatory fields (Name, Email, Nationality, Gender, English Level).', 'warning');
       return;
     }
     
@@ -772,19 +853,33 @@ export const AdminDashboard: React.FC = () => {
       groupName: newStudent.groupName.trim() || 'Unassigned',
       university: newStudent.university.trim() || undefined,
       degree: newStudent.degree.trim() || undefined,
-      studentType: newStudent.studentType.trim() || 'Normal'
+      studentType: newStudent.studentType.trim() || 'Normal',
+      gender: newStudent.gender.trim() || 'Prefer not to say',
+      nationality: normalizeNationality(newStudent.nationality) || undefined,
+      englishProficiency: newStudent.englishProficiency.trim() || 'Fluent (C1/C2)'
     });
 
     // Reset inputs
-    setNewStudent({ id: '', name: '', email: '', groupName: '', university: '', degree: '', studentType: 'Normal' });
+    setNewStudent({ 
+      id: '', 
+      name: '', 
+      email: '', 
+      groupName: '', 
+      university: '', 
+      degree: '', 
+      studentType: 'Normal',
+      gender: 'Female',
+      nationality: '',
+      englishProficiency: 'Fluent (C1/C2)'
+    });
     setIsAddStudentModalOpen(false);
   };
 
   // Submit student edits
   const handleEditStudentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editStudentData.name || !editStudentData.email) {
-      addToast('Please fill out all required fields.', 'warning');
+    if (!editStudentData.name.trim() || !editStudentData.email.trim() || !editStudentData.nationality.trim() || !editStudentData.gender.trim() || !editStudentData.englishProficiency.trim()) {
+      addToast('Please fill out all mandatory fields (Name, Email, Nationality, Gender, English Level).', 'warning');
       return;
     }
     
@@ -794,10 +889,30 @@ export const AdminDashboard: React.FC = () => {
       groupName: editStudentData.groupName.trim() || 'Unassigned',
       university: editStudentData.university.trim() || undefined,
       degree: editStudentData.degree.trim() || undefined,
-      studentType: editStudentData.studentType.trim() || 'Normal'
+      studentType: editStudentData.studentType.trim() || 'Normal',
+      gender: editStudentData.gender.trim() || 'Prefer not to say',
+      nationality: normalizeNationality(editStudentData.nationality) || undefined,
+      englishProficiency: editStudentData.englishProficiency.trim() || 'Fluent (C1/C2)'
     });
 
     setIsEditStudentModalOpen(false);
+  };
+
+  // Helper to generate cloud-synced enrollment link for students
+  const getClassEnrollmentUrl = (classId: string) => {
+    let url = `${window.location.origin}${window.location.pathname}?enrollClassId=${classId}`;
+    if (isCloudSynced && firebaseConfig && user) {
+      const payload = {
+        a: firebaseConfig.apiKey,
+        p: firebaseConfig.projectId,
+        d: firebaseConfig.authDomain,
+        i: firebaseConfig.appId,
+        o: user.uid
+      };
+      const encoded = btoa(JSON.stringify(payload));
+      url += `&fb=${encoded}`;
+    }
+    return url;
   };
 
   // Export Results to XLSX Excel Workbook
@@ -1014,49 +1129,35 @@ export const AdminDashboard: React.FC = () => {
     saveFirebaseConfig(config);
   };
 
-  // Auto-group builder partitioning
-  const handleAutoGrouping = () => {
-    if (activeClass.students.length === 0) {
-      addToast('Roster is empty. Add students before running grouping.', 'warning');
-      return;
-    }
-
-    if (autoGroupSize < 2) {
-      addToast('Target group size must be at least 2.', 'warning');
-      return;
-    }
-
-    const studentsCopy = [...activeClass.students];
-    // Shuffle students to distribute dynamically
-    for (let i = studentsCopy.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [studentsCopy[i], studentsCopy[j]] = [studentsCopy[j], studentsCopy[i]];
-    }
-
-    const totalStudents = studentsCopy.length;
-    const numGroups = Math.ceil(totalStudents / autoGroupSize);
-    const updatedStudents = studentsCopy.map((s, index) => {
-      const groupNum = (index % numGroups) + 1;
-      return {
-        ...s,
-        groupName: `Team ${groupNum}`
-      };
-    });
-
-    importRoster(activeClass.id, updatedStudents, true);
-    addToast(`Successfully partitioned ${totalStudents} students into ${numGroups} balanced teams!`, 'success');
-  };
-
-  // Filter roster list
+  // Filter and sort roster list by groups (Group 1, Group 2, ..., Unassigned)
   const filteredStudents = activeClass.students.filter(student => {
-    const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          student.email.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          student.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          (student.university && student.university.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                          (student.degree && student.degree.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                          (student.studentType && student.studentType.toLowerCase().includes(searchTerm.toLowerCase()));
+    const term = searchTerm.toLowerCase();
+    const matchesSearch = student.name.toLowerCase().includes(term) || 
+                          student.email.toLowerCase().includes(term) || 
+                          student.id.toLowerCase().includes(term) ||
+                          (student.nationality && student.nationality.toLowerCase().includes(term)) ||
+                          (student.gender && student.gender.toLowerCase().includes(term)) ||
+                          (student.englishProficiency && student.englishProficiency.toLowerCase().includes(term)) ||
+                          (student.university && student.university.toLowerCase().includes(term)) ||
+                          (student.degree && student.degree.toLowerCase().includes(term)) ||
+                          (student.studentType && student.studentType.toLowerCase().includes(term));
     const matchesGroup = groupFilter === 'All Groups' || student.groupName === groupFilter;
     return matchesSearch && matchesGroup;
+  }).sort((a, b) => {
+    const gA = (a.groupName && a.groupName.trim()) ? a.groupName.trim() : 'Unassigned';
+    const gB = (b.groupName && b.groupName.trim()) ? b.groupName.trim() : 'Unassigned';
+
+    const isUnassignedA = gA.toLowerCase() === 'unassigned';
+    const isUnassignedB = gB.toLowerCase() === 'unassigned';
+
+    if (isUnassignedA && !isUnassignedB) return 1;
+    if (!isUnassignedA && isUnassignedB) return -1;
+
+    // Natural alphanumeric comparison e.g. "Team 1", "Team 2", ..., "Team 9", "Team 10"
+    const comp = gA.localeCompare(gB, undefined, { numeric: true, sensitivity: 'base' });
+    if (comp !== 0) return comp;
+
+    return a.name.localeCompare(b.name);
   });
 
   const profileOptions = [
@@ -1079,39 +1180,87 @@ export const AdminDashboard: React.FC = () => {
 
   return (
     <div className="main-content tab-pane">
-      {/* Top Controls Grid */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <BookOpen className="text-indigo" />
-            {activeClass.name}
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Classroom ID: <code style={{ backgroundColor: 'var(--bg-app)', padding: '0.15rem 0.35rem', borderRadius: '4px' }}>{activeClass.id}</code>
-          </p>
+      {/* Sleek Minimal Dashboard Header (Smartphone-First & Desktop) */}
+      <div className="dashboard-top-header">
+        {/* Left: Classroom Identity & Selector */}
+        <div className="dashboard-class-identity">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: 1, minWidth: 0 }}>
+            <div className="class-picker-box">
+              <BookOpen size={16} className="text-indigo" style={{ flexShrink: 0 }} />
+              <CustomSelect
+                options={classOptions}
+                value={activeClass.id}
+                onChange={(val) => selectClass(val)}
+                style={{ flex: 1, minWidth: '120px' }}
+                triggerStyle={{ border: 'none', backgroundColor: 'transparent', boxShadow: 'none', padding: '0.25rem 0.5rem', fontSize: '0.92rem', fontWeight: 800, height: '28px' }}
+              />
+              {classes.length > 1 && (
+                <button 
+                  type="button"
+                  className="btn btn-sm text-rose" 
+                  onClick={() => {
+                    triggerConfirm(
+                      'Delete Classroom Group',
+                      `Are you sure you want to permanently delete the classroom "${activeClass.name}" and all of its student rosters, evaluations, and metrics? This action cannot be undone.`,
+                      () => deleteClass(activeClass.id),
+                      'Delete Classroom',
+                      'Cancel'
+                    );
+                  }}
+                  title="Delete Current Class"
+                  style={{ padding: '0.15rem 0.35rem', backgroundColor: 'transparent', border: 'none', color: 'var(--accent-rose)', height: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </div>
+
+            <button 
+              type="button"
+              className="badge badge-secondary class-id-pill" 
+              onClick={() => {
+                navigator.clipboard.writeText(activeClass.id);
+                addToast(`Class ID ${activeClass.id} copied to clipboard!`, 'info');
+              }}
+              title="Click to copy Classroom ID"
+            >
+              ID: <b>{activeClass.id}</b>
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* User Sign Out controls if cloud sync and logged in */}
-          {isCloudSynced && user && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', backgroundColor: 'var(--bg-surface)', padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-              <ShieldCheck size={15} className="text-teal" />
-              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                {user.email}
-              </span>
-              <button 
-                className="btn btn-secondary btn-sm"
-                style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', minWidth: 'auto' }}
-                onClick={logoutAdmin}
-              >
-                Sign Out
-              </button>
-            </div>
-          )}
+        {/* Action Dock (Desktop Inline, Mobile 4-Column Bar) */}
+        <div className="dashboard-action-dock">
+          <button 
+            type="button"
+            className="btn btn-secondary btn-sm dock-btn" 
+            onClick={() => setIsNewClassModalOpen(true)}
+            title="Create new classroom roster"
+          >
+            <Plus size={14} className="text-primary" /> <span>New Class</span>
+          </button>
 
-          {/* Admin Workspace Profile Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: 'var(--bg-surface)', padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-            <User size={15} className="text-indigo" />
+          <button 
+            type="button" 
+            className="btn btn-secondary btn-sm dock-btn" 
+            onClick={() => setIsProjectorModalOpen(true)}
+            title="Open Fullscreen Privacy-Safe Live Classroom Projector Mode"
+          >
+            <Maximize2 size={14} className="text-teal" /> <span>Projector</span>
+          </button>
+          
+          <button 
+            type="button" 
+            className="btn btn-secondary btn-sm dock-btn" 
+            onClick={() => setIsLinkDispatcherOpen(true)}
+            title="Fast Link Dispatcher & Bulk Copy Sheet"
+          >
+            <Send size={14} className="text-primary" /> <span>Dispatch</span>
+          </button>
+
+          {/* Desktop Profile Pill */}
+          <div className="desktop-profile-pill">
+            <User size={13} className="text-indigo" />
             <CustomSelect
               options={profileOptions}
               value={activeAdminProfile}
@@ -1122,21 +1271,21 @@ export const AdminDashboard: React.FC = () => {
                   switchAdminProfile(val);
                 }
               }}
-              style={{ width: 'auto', minWidth: '145px' }}
+              style={{ width: 'auto', minWidth: '130px' }}
               triggerStyle={{
                 border: 'none',
-                backgroundColor: 'var(--bg-app)',
-                padding: '0.35rem 2.2rem 0.35rem 0.75rem',
-                borderRadius: 'var(--radius-md)',
-                fontSize: '0.82rem',
+                backgroundColor: 'transparent',
+                padding: '0.25rem 0.5rem',
+                fontSize: '0.8rem',
                 fontWeight: 700,
                 color: 'var(--primary)',
                 boxShadow: 'none',
-                height: 'auto'
+                height: '28px'
               }}
             />
             {activeAdminProfile !== 'default' && (
-              <button
+              <button 
+                type="button"
                 style={{ padding: '0.15rem', minWidth: 'auto', background: 'transparent', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                 onClick={() => {
                   triggerConfirm(
@@ -1149,37 +1298,109 @@ export const AdminDashboard: React.FC = () => {
                 }}
                 title="Delete Admin Profile"
               >
-                <Trash2 size={13} />
+                <Trash2 size={12} />
+              </button>
+            )}
+            {isCloudSynced && user && (
+              <button 
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '0.15rem 0.45rem', fontSize: '0.68rem', height: '22px', minHeight: '22px', borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', minWidth: 'auto', lineHeight: 1 }}
+                onClick={logoutAdmin}
+                title={`Signed in as ${user.email}. Click to Sign Out`}
+              >
+                Sign Out
               </button>
             )}
           </div>
 
-          <CustomSelect
-            options={classOptions}
-            value={activeClass.id}
-            onChange={(val) => selectClass(val)}
-            style={{ width: 'auto', minWidth: '220px' }}
-          />
-          <button className="btn btn-secondary" onClick={() => setIsNewClassModalOpen(true)}>
-            <Plus size={16} /> New Class
-          </button>
+          {/* Mobile Profile Button */}
           <button 
-            className="btn btn-rose" 
-            onClick={() => {
-              triggerConfirm(
-                'Delete Classroom Group',
-                `Are you sure you want to permanently delete the classroom "${activeClass.name}" and all of its student rosters, evaluations, and metrics? This action cannot be undone.`,
-                () => deleteClass(activeClass.id),
-                'Delete Classroom',
-                'Cancel'
-              );
-            }}
-            title="Delete Current Class"
+            type="button" 
+            className="btn btn-secondary btn-sm dock-btn mobile-profile-btn" 
+            onClick={() => setIsMobileProfileModalOpen(true)}
+            title="Admin Workspace Profile & Account Settings"
           >
-            <Trash2 size={16} />
+            <User size={14} className="text-indigo" /> <span>Profile</span>
           </button>
         </div>
       </div>
+
+      {/* Mobile Profile & Workspace Modal */}
+      {isMobileProfileModalOpen && createPortal(
+        <div className="modal-overlay" onClick={() => setIsMobileProfileModalOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '380px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                <User size={17} className="text-primary" /> Admin Workspace & Account
+              </h3>
+              <button className="btn-close" onClick={() => setIsMobileProfileModalOpen(false)} title="Close">×</button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Workspace Profile</label>
+                <CustomSelect
+                  options={profileOptions}
+                  value={activeAdminProfile}
+                  onChange={(val) => {
+                    if (val === '__new__') {
+                      setIsMobileProfileModalOpen(false);
+                      setIsNewProfileModalOpen(true);
+                    } else {
+                      switchAdminProfile(val);
+                    }
+                  }}
+                  triggerStyle={{ height: '42px', fontSize: '0.88rem', fontWeight: 700 }}
+                />
+              </div>
+
+              {isCloudSynced && user && (
+                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600 }}>SIGNED IN USER</div>
+                  <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-all' }}>{user.email}</div>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary btn-sm"
+                    style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', width: '100%', justifyContent: 'center', height: '36px', marginTop: '0.4rem', fontWeight: 700 }}
+                    onClick={() => {
+                      setIsMobileProfileModalOpen(false);
+                      logoutAdmin();
+                    }}
+                  >
+                    Sign Out of Account
+                  </button>
+                </div>
+              )}
+
+              {activeAdminProfile !== 'default' && (
+                <button
+                  type="button"
+                  className="btn btn-rose btn-sm"
+                  style={{ width: '100%', justifyContent: 'center', height: '36px' }}
+                  onClick={() => {
+                    setIsMobileProfileModalOpen(false);
+                    triggerConfirm(
+                      'Delete Admin Workspace Profile',
+                      `Are you sure you want to permanently delete the admin workspace profile "${activeAdminProfile}" and ALL of its associated classroom groups? This action cannot be undone.`,
+                      () => deleteAdminProfile(activeAdminProfile),
+                      'Delete Workspace',
+                      'Cancel'
+                    );
+                  }}
+                >
+                  <Trash2 size={13} /> Delete Current Workspace
+                </button>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" style={{ width: '100%' }} onClick={() => setIsMobileProfileModalOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Stats Cards Section */}
       <div className="stats-grid">
@@ -1261,183 +1482,247 @@ export const AdminDashboard: React.FC = () => {
       {/* TAB CONTENT: ROSTER MANAGER */}
       {activeTab === 'roster' && (
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-            {/* Import Card */}
-            <div className="card">
-              <div className="card-header">
-                <h3 className="card-title"><Upload size={18} className="text-teal" /> Import Enrollment Wizard</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
+            {/* 1. Import Wizard Card */}
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem' }}>
+              <div>
+                <div className="card-header" style={{ marginBottom: '0.6rem' }}>
+                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                    <Upload size={18} className="text-teal" /> Import Wizard
+                  </h3>
+                  <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                    Smart Mapper
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
+                  Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema header mapping.
+                </p>
               </div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                Onboard your student roster using our interactive, multi-format wizard. Supports files or copy-paste data with dynamic headers.
-              </p>
               
-              <button 
-                className="btn btn-primary"
-                onClick={() => setIsWizardOpen(true)}
-                style={{ width: '100%', justifyContent: 'center', padding: '1rem', gap: '0.75rem', borderRadius: 'var(--radius-md)' }}
-              >
-                <Sparkles size={20} /> Import Student Roster
-              </button>
-              
-              <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', textAlign: 'center' }}>
-                <div style={{ padding: '0.5rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)' }} title="Microsoft Excel (.xlsx)">
-                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-teal)' }}>XLSX</span>
-                </div>
-                <div style={{ padding: '0.5rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)' }} title="Portable Document Format (.pdf)">
-                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-rose)' }}>PDF</span>
-                </div>
-                <div style={{ padding: '0.5rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)' }} title="Comma Separated Values (.csv)">
-                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)' }}>CSV</span>
-                </div>
-                <div style={{ padding: '0.5rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)' }} title="Excel Clipboard Direct Paste">
-                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-amber)' }}>PASTE</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setWizardStep(1);
+                    setIsWizardOpen(true);
+                  }}
+                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', gap: '0.5rem', fontWeight: 700, fontSize: '0.88rem' }}
+                >
+                  <Sparkles size={16} /> Open Onboarding Wizard
+                </button>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem', textAlign: 'center' }}>
+                  <div style={{ padding: '0.4rem 0.2rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }} title="Microsoft Excel (.xlsx, .xls)">
+                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-teal)' }}>XLSX</span>
+                  </div>
+                  <div style={{ padding: '0.4rem 0.2rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }} title="Portable Document Format (.pdf)">
+                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-rose)' }}>PDF</span>
+                  </div>
+                  <div style={{ padding: '0.4rem 0.2rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }} title="Comma Separated Values (.csv)">
+                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--primary)' }}>CSV</span>
+                  </div>
+                  <div style={{ padding: '0.4rem 0.2rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }} title="Clipboard Spreadsheet Paste">
+                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-amber)' }}>PASTE</span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Quick Actions Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            {/* 2. Quick Actions Card */}
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem' }}>
               <div>
-                <div className="card-header">
-                  <h3 className="card-title"><Sliders size={18} className="text-indigo" /> Quick Actions</h3>
+                <div className="card-header" style={{ marginBottom: '0.6rem' }}>
+                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                    <Sliders size={18} className="text-indigo" /> Quick Actions
+                  </h3>
+                  <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
+                    Tools
+                  </span>
                 </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-                  Quickly populate testing data or clear existing entries to start fresh.
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
+                  Add individual members manually, load the 100-student demo dataset, or download sample files.
                 </p>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
                 <button 
                   className="btn btn-primary" 
                   onClick={() => setIsAddStudentModalOpen(true)}
-                  style={{ width: '100%' }}
+                  style={{ width: '100%', justifyContent: 'center', gap: '0.45rem', padding: '0.55rem', fontSize: '0.84rem' }}
                 >
-                  <Plus size={16} /> Add Member Manually
+                  <Plus size={15} /> Add Member Manually
                 </button>
                 <button 
-                  className="btn btn-secondary text-rose" 
-                  style={{ width: '100%', borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)' }}
+                  type="button"
+                  className="btn btn-teal" 
                   onClick={() => {
-                    triggerConfirm(
-                      'Clear Class Roster',
-                      'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
-                      () => {
-                        importRoster(activeClass.id, [], true);
-                        resetClassReviews(activeClass.id);
-                      },
-                      'Clear Roster',
-                      'Cancel'
-                    );
+                    importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+                    addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
                   }}
+                  style={{ width: '100%', fontSize: '0.82rem', gap: '0.4rem', justifyContent: 'center', padding: '0.55rem' }}
+                  title="Populate classroom with a diverse dataset of 100 students to test app features"
                 >
-                  <Trash2 size={16} /> Clear Class Roster
+                  <Sparkles size={14} /> Load 100 Diverse Students (Sample)
                 </button>
-              </div>
-            </div>
-
-            {/* Evaluation Window & Deadline */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <div className="card-header">
-                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <Clock size={18} className="text-rose" /> Submission Window
-                  </h3>
-                </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                  Enforce strict deadlines. The student portal displays a live countdown timer and automatically blocks incoming reviews once locked.
-                </p>
-              </div>
-
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontWeight: 600 }}>Closing Date & Time</label>
-                <input 
-                  type="datetime-local" 
-                  className="form-input" 
-                  value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset()*60000).toISOString().slice(0, 16) : ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val) {
-                      saveClassDeadline(activeClass.id, new Date(val).toISOString());
-                    } else {
-                      saveClassDeadline(activeClass.id, null);
-                    }
-                  }}
-                />
-              </div>
-
-              {activeClass.deadline && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
-                  <span style={{ fontSize: '0.78rem', color: new Date(activeClass.deadline) > new Date() ? 'var(--accent-teal)' : 'var(--accent-rose)', fontWeight: 700 }}>
-                    {new Date(activeClass.deadline) > new Date() ? 'Submission Clock Running' : 'Window Closed (Locked)'}
-                  </span>
-                  <button 
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.35rem' }}>
+                  <button
+                    type="button"
                     className="btn btn-secondary btn-sm"
-                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.72rem' }}
-                    onClick={() => saveClassDeadline(activeClass.id, null)}
+                    onClick={() => downloadSampleStudentsFile('csv')}
+                    style={{ fontSize: '0.72rem', padding: '0.35rem 0.25rem', justifyContent: 'center', gap: '0.25rem' }}
+                    title="Download sample dataset as CSV"
                   >
-                    Clear Limit
+                    <Download size={11} /> CSV
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => downloadSampleStudentsFile('xlsx')}
+                    style={{ fontSize: '0.72rem', padding: '0.35rem 0.25rem', justifyContent: 'center', gap: '0.25rem' }}
+                    title="Download sample dataset as Excel"
+                  >
+                    <Download size={11} /> XLSX
+                  </button>
+                  <button 
+                    type="button"
+                    className="btn btn-secondary text-rose btn-sm" 
+                    style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', fontSize: '0.72rem', padding: '0.35rem 0.25rem', justifyContent: 'center', gap: '0.25rem' }}
+                    onClick={() => {
+                      triggerConfirm(
+                        'Clear Class Roster',
+                        'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
+                        () => {
+                          importRoster(activeClass.id, [], true);
+                          resetClassReviews(activeClass.id);
+                        },
+                        'Clear Roster',
+                        'Cancel'
+                      );
+                    }}
+                    title="Clear all students from this classroom"
+                  >
+                    <Trash2 size={11} /> Clear
                   </button>
                 </div>
-              )}
-            </div>
-
-          </div>
-
-          {/* Dynamic Auto-Grouping Card */}
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Users size={18} className="text-teal" /> Intelligent Auto-Group Builder
-              </h3>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
-                Partition your classroom roster automatically. Shuffles the student body and distributes participants using balanced round-robin clustering, ensuring teammate counts are mathematically aligned.
-              </p>
-              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Target Team Size:</span>
-                  <input 
-                    type="number" 
-                    className="form-input" 
-                    style={{ width: '80px', textAlign: 'center' }} 
-                    min={2} 
-                    max={20}
-                    value={autoGroupSize}
-                    onChange={(e) => setAutoGroupSize(Math.max(2, Number(e.target.value)))}
-                  />
-                </div>
-                <button 
-                  className="btn btn-primary"
-                  onClick={handleAutoGrouping}
-                >
-                  <Sparkles size={16} /> Auto-Generate Balanced Teams
-                </button>
               </div>
             </div>
-          </div>
 
-          {/* Roster Filter & List Table */}
-          <div className="card">
-            <div className="card-header" style={{ flexWrap: 'wrap', gap: '1rem' }}>
-              <h3 className="card-title"><Users size={18} className="text-indigo" /> Classroom Roster ({filteredStudents.length} members)</h3>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: '100%', maxWidth: '500px' }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            {/* 3. Student Self-Enrollment QR & Link Card */}
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem' }}>
+              <div>
+                <div className="card-header" style={{ marginBottom: '0.6rem' }}>
+                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                    <QrCode size={18} className="text-primary" /> Self-Enrollment
+                  </h3>
+                  <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
+                    QR &amp; Link
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.85rem', lineHeight: 1.45 }}>
+                  Share a class-specific QR code or join link with students for mobile self-registration.
+                </p>
+
+                <div style={{ display: 'flex', gap: '0.35rem' }}>
                   <input 
                     type="text" 
-                    placeholder="Search by ID, Name or Email..." 
+                    readOnly 
                     className="form-input" 
-                    style={{ paddingLeft: '2.25rem' }}
+                    value={getClassEnrollmentUrl(activeClass.id)} 
+                    style={{ fontSize: '0.74rem', fontFamily: 'monospace', background: 'var(--bg-app)', color: 'var(--text-main)', padding: '0.4rem 0.6rem', height: '36px' }}
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <button 
+                    type="button" 
+                    className={`btn ${copiedEnrollLink ? 'btn-teal' : 'btn-secondary'} btn-sm`} 
+                    style={{ flexShrink: 0, padding: '0.35rem 0.65rem', height: '36px' }}
+                    onClick={() => {
+                      navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
+                      setCopiedEnrollLink(true);
+                      addToast('Classroom enrollment link copied to clipboard!', 'success');
+                      setTimeout(() => setCopiedEnrollLink(false), 2500);
+                    }}
+                    title="Copy enrollment link to clipboard"
+                  >
+                    {copiedEnrollLink ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.85rem' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-primary"
+                  style={{ width: '100%', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem', fontSize: '0.84rem' }}
+                  onClick={() => setIsQRCodeModalOpen(true)}
+                >
+                  <QrCode size={15} /> Open QR Presentation Mode
+                </button>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <ShieldCheck size={12} className="text-teal" /> Cloud Sync Active
+                  </span>
+                  <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
+                    {activeClass.students.length} Enrolled Members
+                  </span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Intelligent Auto-Group & Diversity Studio */}
+          <AutoGroupStudio
+            students={activeClass.students}
+            onApplyGroups={(updatedStudents) => {
+              importRoster(activeClass.id, updatedStudents, true);
+              const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
+              addToast(`Successfully partitioned ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
+            }}
+            onLoadSampleStudents={() => {
+              importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+              addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+            }}
+          />
+
+          {/* Roster Filter & List Table */}
+          <div className="card" style={{ padding: '1.25rem' }}>
+            <div className="card-header" style={{ flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1.05rem', fontWeight: 800 }}>
+                  <Users size={19} className="text-indigo" /> Classroom Roster
+                </h3>
+                <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                  {filteredStudents.length} of {activeClass.students.length} members
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: '100%', maxWidth: '520px' }}>
+                <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+                  <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input 
+                    type="text" 
+                    placeholder="Search by ID, Name, Country, Email..." 
+                    className="form-input" 
+                    style={{ paddingLeft: '2.25rem', paddingRight: searchTerm ? '2rem' : '0.75rem', height: '38px', fontSize: '0.82rem' }}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.2rem' }}
+                      title="Clear search"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
                 </div>
                 <CustomSelect
                   options={groupOptions}
                   value={groupFilter}
                   onChange={(val) => setGroupFilter(val)}
-                  style={{ width: 'auto', minWidth: '150px' }}
+                  style={{ width: 'auto', minWidth: '160px' }}
                 />
               </div>
             </div>
@@ -1448,22 +1733,62 @@ export const AdminDashboard: React.FC = () => {
                   <Users size={28} style={{ color: 'var(--primary)' }} />
                 </div>
                 <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: 0 }}>No participants yet</p>
-                <p style={{ fontSize: '0.82rem', margin: 0, maxWidth: '300px', lineHeight: 1.5 }}>Use the <strong>Roster Onboarding Wizard</strong> to upload a spreadsheet, or click <strong>Add Member Manually</strong> to add students one by one.</p>
+                <p style={{ fontSize: '0.82rem', margin: 0, maxWidth: '380px', lineHeight: 1.5 }}>
+                  Use the <strong>Roster Onboarding Wizard</strong> to upload a spreadsheet, or load our diverse dataset of 100 students to explore all app features.
+                </p>
+                <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => {
+                      setWizardStep(1);
+                      setIsWizardOpen(true);
+                    }}
+                  >
+                    <Upload size={14} /> Open Onboarding Wizard
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-teal btn-sm"
+                    onClick={() => {
+                      importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+                      addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+                    }}
+                  >
+                    <Sparkles size={14} /> Load 100 Sample Students
+                  </button>
+                </div>
+              </div>
+            ) : filteredStudents.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary)' }}>
+                <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: '0 0 0.5rem 0' }}>No students found matching your filters</p>
+                <p style={{ fontSize: '0.82rem', margin: '0 0 1rem 0' }}>Try a different search keyword or reset the group filter.</p>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setGroupFilter('All Groups');
+                  }}
+                >
+                  Reset Filters
+                </button>
               </div>
             ) : (
               <div className="table-container">
                 <table className="custom-table">
                   <thead>
                     <tr>
-                      <th>Unique ID</th>
-                      <th>Name</th>
-                      <th>Email ID</th>
-                      <th>University</th>
-                      <th>Degree</th>
-                      <th>Student Type</th>
-                      <th>Roster Group</th>
-                      <th>Evaluation Link</th>
-                      <th>Actions</th>
+                      <th style={{ whiteSpace: 'nowrap', width: '110px' }}>Unique ID</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Name</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Email ID</th>
+                      <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>Demographics</th>
+                      <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>English Level</th>
+                      <th style={{ whiteSpace: 'nowrap', minWidth: '150px' }}>University / Degree</th>
+                      <th style={{ whiteSpace: 'nowrap', width: '90px' }}>Student Type</th>
+                      <th style={{ whiteSpace: 'nowrap', width: '110px' }}>Roster Group</th>
+                      <th style={{ whiteSpace: 'nowrap', width: '130px' }}>Evaluation Link</th>
+                      <th style={{ whiteSpace: 'nowrap', width: '90px', textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1482,79 +1807,125 @@ export const AdminDashboard: React.FC = () => {
                       }
                       return (
                         <tr key={s.id}>
-                          <td style={{ fontWeight: 600, fontSize: '0.85rem' }}><code>{s.id}</code></td>
-                          <td style={{ fontWeight: 500 }}>{s.name}</td>
-                          <td style={{ color: 'var(--text-secondary)' }}>{s.email}</td>
-                          <td>
-                            {s.university ? (
-                              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{s.university}</span>
+                          <td style={{ whiteSpace: 'nowrap', fontWeight: 600, fontSize: '0.82rem' }}>
+                            <code>{s.id}</code>
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{s.name}</td>
+                          <td style={{ whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>{s.email}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.8rem' }}>
+                              {s.nationality ? (
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                  <Globe size={11} className="text-teal" /> {s.nationality}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>—</span>
+                              )}
+                              {s.gender && s.gender !== 'Prefer not to say' && (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{s.gender}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            {s.englishProficiency ? (
+                              <span className="badge badge-primary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', whiteSpace: 'nowrap', display: 'inline-flex' }}>
+                                {s.englishProficiency}
+                              </span>
                             ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
                             )}
                           </td>
-                          <td>
-                            {s.degree ? (
-                              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{s.degree}</span>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
-                            )}
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                              {s.university ? (
+                                <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>{s.university}</span>
+                              ) : null}
+                              {s.degree ? (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{s.degree}</span>
+                              ) : null}
+                              {!s.university && !s.degree && (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
+                              )}
+                            </div>
                           </td>
-                          <td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
                             {s.studentType === 'Erasmus' ? (
-                              <span className="badge badge-secondary" style={{ background: 'linear-gradient(135deg, #FF007F, #7F00FF)', color: '#fff', border: 'none', fontWeight: 'bold' }}>Erasmus</span>
+                              <span className="badge badge-secondary" style={{ background: 'linear-gradient(135deg, #FF007F, #7F00FF)', color: '#fff', border: 'none', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'inline-flex' }}>Erasmus</span>
                             ) : (
-                              <span className="badge badge-secondary" style={{ opacity: 0.85 }}>Normal</span>
+                              <span className="badge badge-secondary" style={{ opacity: 0.85, whiteSpace: 'nowrap', display: 'inline-flex' }}>{s.studentType || 'Normal'}</span>
                             )}
                           </td>
-                          <td>
-                            <span className="badge badge-primary">{s.groupName}</span>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            {s.groupName && s.groupName !== 'Unassigned' ? (
+                              <span className="badge badge-teal" style={{ fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex' }}>
+                                {s.groupName}
+                              </span>
+                            ) : (
+                              <span className="badge" style={{ backgroundColor: 'var(--accent-amber-light)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex' }}>
+                                Unassigned
+                              </span>
+                            )}
                           </td>
-                          <td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
                             <a 
                                href={gradingUrl} 
                                target="_blank" 
                                rel="noreferrer"
-                               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}
+                               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}
                             >
-                              <Eye size={12} /> Open Portal
+                              <Eye size={13} /> Open Portal
                             </a>
                           </td>
-                          <td style={{ display: 'flex', gap: '0.35rem' }}>
-                            <button 
-                              className="btn btn-secondary btn-sm"
-                              style={{ padding: '0.25rem 0.5rem' }}
-                              onClick={() => {
-                                setEditStudentData({
-                                  id: s.id,
-                                  name: s.name,
-                                  email: s.email,
-                                  groupName: s.groupName,
-                                  university: s.university || '',
-                                  degree: s.degree || '',
-                                  studentType: s.studentType || 'Normal'
-                                });
-                                setIsEditStudentModalOpen(true);
-                              }}
-                              title="Edit student details"
-                            >
-                              <Edit2 size={13} />
-                            </button>
-                            <button 
-                              className="btn btn-rose btn-sm"
-                              style={{ padding: '0.25rem 0.5rem' }}
-                              onClick={() => {
-                                triggerConfirm(
-                                  'Remove Student Record',
-                                  `Are you sure you want to remove "${s.name}"? This will permanently delete their student record and ALL peer reviews they have either submitted or received.`,
-                                  () => deleteStudent(activeClass.id, s.id),
-                                  'Remove Student',
-                                  'Cancel'
-                                );
-                              }}
-                              title="Delete student record"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                          <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'flex-end' }}>
+                              <button 
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                style={{ padding: '0.35rem 0.55rem', borderRadius: '6px', color: 'var(--accent-teal)', borderColor: 'var(--accent-teal)' }}
+                                onClick={() => openReportModal(s.id)}
+                                title="View & Download Individual Student PDF Report Card"
+                              >
+                                <FileText size={13} />
+                              </button>
+                              <button 
+                                className="btn btn-secondary btn-sm"
+                                style={{ padding: '0.35rem 0.55rem', borderRadius: '6px' }}
+                                onClick={() => {
+                                  setEditStudentData({
+                                    id: s.id,
+                                    name: s.name,
+                                    email: s.email,
+                                    groupName: s.groupName,
+                                    university: s.university || '',
+                                    degree: s.degree || '',
+                                    studentType: s.studentType || 'Normal',
+                                    gender: s.gender || 'Prefer not to say',
+                                    nationality: s.nationality || '',
+                                    englishProficiency: s.englishProficiency || 'Fluent (C1/C2)'
+                                  });
+                                  setIsEditStudentModalOpen(true);
+                                }}
+                                title="Edit student details"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button 
+                                className="btn btn-rose btn-sm"
+                                style={{ padding: '0.35rem 0.55rem', borderRadius: '6px' }}
+                                onClick={() => {
+                                  triggerConfirm(
+                                    'Remove Student Record',
+                                    `Are you sure you want to remove "${s.name}"? This will permanently delete their student record and ALL peer reviews they have either submitted or received.`,
+                                    () => deleteStudent(activeClass.id, s.id),
+                                    'Remove Student',
+                                    'Cancel'
+                                  );
+                                }}
+                                title="Delete student record"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1571,12 +1942,16 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'grading' && (
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="card">
-            <div className="card-header">
-              <div>
-                <h3 className="card-title"><Sliders size={18} className="text-indigo" /> Configure Grading Scales</h3>
-                <p className="card-subtitle">Define multi-field rubrics. Dynamic sliding parameters scale instantly inside both administrative reports and student submission cards.</p>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.85rem' }}>
+              <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1.05rem', fontWeight: 800 }}>
+                  <Sliders size={18} className="text-indigo" /> Configure Grading Scales
+                </h3>
+                <p className="card-subtitle" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.45 }}>
+                  Define multi-field rubrics. Dynamic sliding parameters scale instantly inside both administrative reports and student submission cards.
+                </p>
               </div>
-              <button className="btn btn-primary" onClick={handleAddField}>
+              <button className="btn btn-primary" onClick={handleAddField} style={{ height: '38px', flexShrink: 0 }}>
                 <Plus size={16} /> Add Custom Metric
               </button>
             </div>
@@ -1822,6 +2197,16 @@ export const AdminDashboard: React.FC = () => {
             
             <div className="responsive-btn-group">
               <button 
+                type="button"
+                className="btn btn-teal"
+                onClick={() => openReportModal()}
+                title="View & Download Individual Student PDF Report Cards with Live Preview"
+                style={{ gap: '0.4rem' }}
+              >
+                <FileText size={16} /> Student PDF Reports
+              </button>
+
+              <button 
                 className="btn btn-secondary text-amber"
                 style={{ borderColor: 'var(--accent-amber)' }}
                 onClick={() => {
@@ -1847,149 +2232,342 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Advanced Analytics Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+          {/* Advanced Analytics & Grading Engine Grid */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             
-            {/* Fudge Factor Calibration Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <div className="card-header">
-                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <Sliders size={18} className="text-teal" /> WebPA Grade Calibration
-                  </h3>
-                </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.4 }}>
-                  Compare peer averages against team averages to yield multipliers. Use base marks and calibrate the scaling factor weight.
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.8rem' }}>Project Base Mark (Base Grade)</label>
-                  <input 
-                    type="number" 
-                    className="form-input" 
-                    min={0}
-                    max={1000}
-                    value={baseGroupGrade}
-                    onChange={(e) => setBaseGroupGrade(Number(e.target.value))}
-                  />
-                </div>
-                
-                <div className="form-group" style={{ margin: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                    <label className="form-label" style={{ fontWeight: 600, margin: 0, fontSize: '0.8rem' }}>Calibrator Fudge Weight</label>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--primary)' }}>{Math.round(fudgeWeight * 100)}%</span>
-                  </div>
-                  <input 
-                    type="range" 
-                    className="custom-slider" 
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={fudgeWeight}
-                    onChange={(e) => setFudgeWeight(Number(e.target.value))}
-                    style={{
-                      background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${fudgeWeight * 100}%, var(--border-color) ${fudgeWeight * 100}%, var(--border-color) 100%)`
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Anomaly Conflict Audit Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <div className="card-header">
-                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <ShieldCheck size={18} className="text-rose" /> Anomaly & Collusion Audit
-                  </h3>
-                </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.4 }}>
-                  Our statistical auditing engine flags positive collusion, extreme outlier ratings, or non-differentiated uniform grades.
-                </p>
-              </div>
-
-              <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {detectClassAnomalies(activeClass).length === 0 ? (
-                  <div style={{ backgroundColor: 'var(--accent-teal-light)', border: '1px solid hsl(173, 80%, 90%)', color: 'var(--accent-teal)', fontSize: '0.78rem', padding: '0.5rem 0.75rem', borderRadius: '4px', display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-                    <CheckCircle size={12} /> No scoring conflicts detected.
-                  </div>
-                ) : (
-                  detectClassAnomalies(activeClass).map((anomaly) => (
-                    <div 
-                      key={anomaly.id} 
-                      style={{ 
-                        backgroundColor: anomaly.severity === 'high' ? 'var(--accent-rose-light)' : 'var(--accent-amber-light)', 
-                        border: `1px solid ${anomaly.severity === 'high' ? 'hsl(346, 84%, 90%)' : 'hsl(45, 90%, 90%)'}`, 
-                        padding: '0.4rem 0.6rem', 
-                        borderRadius: '4px',
-                        fontSize: '0.75rem'
-                      }}
-                    >
-                      <span style={{ fontWeight: 700, display: 'block', color: 'var(--text-primary)' }}>
-                        ⚠️ {anomaly.studentName} ({anomaly.type.toUpperCase()})
-                      </span>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>{anomaly.description}</span>
+            {/* Tier 1: Competency Radar, Johari Matrix & Qualitative Themes */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
+              
+              {/* Card 1: Multi-Axis Competency Spider Radar */}
+              {activeClass.fields.length >= 3 && (
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div>
+                      <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.98rem', fontWeight: 800 }}>
+                        <Activity size={17} className="text-primary" /> Competency Spider Radar
+                      </h3>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                        Class rubric benchmarks vs individual team averages.
+                      </p>
                     </div>
-                  ))
-                )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Overlay:</span>
+                      <select
+                        className="form-select"
+                        value={radarTeamFilter}
+                        onChange={(e) => setRadarTeamFilter(e.target.value)}
+                        style={{ fontSize: '0.78rem', padding: '0.2rem 1.75rem 0.2rem 0.5rem', height: '30px', minWidth: '120px' }}
+                      >
+                        <option value="All">Class Average</option>
+                        {uniqueGroups.filter(g => g && g !== 'Unassigned').map(g => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, padding: '0.5rem 0' }}>
+                    <RadarChart
+                      metrics={activeClass.fields.map(f => ({ id: f.id, name: f.name, max: f.max }))}
+                      series={[
+                        {
+                          id: 'class_avg',
+                          name: 'Class Average',
+                          color: '#6366f1',
+                          values: (() => {
+                            const res: Record<string, number | null> = {};
+                            activeClass.fields.forEach(f => {
+                              let sum = 0, count = 0;
+                              activeClass.students.forEach(s => {
+                                const m = calculateStudentMetrics(s, activeClass);
+                                const val = m.fieldAverages[f.id];
+                                if (val !== null) { sum += val; count++; }
+                              });
+                              res[f.id] = count > 0 ? sum / count : null;
+                            });
+                            return res;
+                          })()
+                        },
+                        ...(radarTeamFilter !== 'All' ? [{
+                          id: 'team_avg',
+                          name: `${radarTeamFilter} Average`,
+                          color: '#14b8a6',
+                          values: (() => {
+                            const res: Record<string, number | null> = {};
+                            const teamStudents = activeClass.students.filter(s => s.groupName === radarTeamFilter);
+                            activeClass.fields.forEach(f => {
+                              let sum = 0, count = 0;
+                              teamStudents.forEach(s => {
+                                const m = calculateStudentMetrics(s, activeClass);
+                                const val = m.fieldAverages[f.id];
+                                if (val !== null) { sum += val; count++; }
+                              });
+                              res[f.id] = count > 0 ? sum / count : null;
+                            });
+                            return res;
+                          })()
+                        }] : [])
+                      ]}
+                      size={270}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Column 2: Johari Alignment & Qualitative Feedback Insights */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                
+                {/* Card 2: Johari Alignment */}
+                {(() => {
+                  const johariList = activeClass.students.map(s => calculateJohariWindowMetric(s.id, activeClass));
+                  const calibrated = johariList.filter(j => j.category === 'calibrated').length;
+                  const overestimating = johariList.filter(j => j.category === 'overestimating').length;
+                  const underestimating = johariList.filter(j => j.category === 'underestimating').length;
+                  const totalActive = calibrated + overestimating + underestimating;
+
+                  return (
+                    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
+                      <div>
+                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                          <UserCheck size={17} className="text-teal" /> Self-Awareness &amp; Johari Alignment
+                        </h3>
+                        <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                          Self-evaluation alignment vs anonymous peer consensus (±7.5% threshold).
+                        </p>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
+                            <span style={{ color: 'var(--accent-teal)', fontWeight: 700 }}>Accurately Calibrated</span>
+                            <b>{calibrated} ({totalActive > 0 ? Math.round((calibrated / totalActive) * 100) : 0}%)</b>
+                          </div>
+                          <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{ width: `${totalActive > 0 ? (calibrated / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-teal)', height: '100%', borderRadius: '3px' }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
+                            <span style={{ color: 'var(--accent-amber)', fontWeight: 700 }}>Blind Spot (Overestimating)</span>
+                            <b>{overestimating} ({totalActive > 0 ? Math.round((overestimating / totalActive) * 100) : 0}%)</b>
+                          </div>
+                          <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{ width: `${totalActive > 0 ? (overestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-amber)', height: '100%', borderRadius: '3px' }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
+                            <span style={{ color: 'var(--primary)', fontWeight: 700 }}>Imposter (Underestimating)</span>
+                            <b>{underestimating} ({totalActive > 0 ? Math.round((underestimating / totalActive) * 100) : 0}%)</b>
+                          </div>
+                          <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{ width: `${totalActive > 0 ? (underestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--primary)', height: '100%', borderRadius: '3px' }} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Card 3: Qualitative Feedback Themes */}
+                {(() => {
+                  const insights = extractClassFeedbackInsights(activeClass);
+                  return (
+                    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
+                      <div>
+                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                          <MessageSquare size={17} className="text-primary" /> Qualitative Feedback Themes
+                        </h3>
+                        <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                          Automated keyword extraction across all written teammate comments.
+                        </p>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Top Strengths:
+                          </span>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
+                            {insights.topStrengthsThemes.length === 0 ? (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No strengths feedback yet</span>
+                            ) : (
+                              insights.topStrengthsThemes.slice(0, 4).map(t => (
+                                <span key={t.word} className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
+                                  {t.word} ({t.count})
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-amber)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Growth Areas:
+                          </span>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
+                            {insights.topGrowthThemes.length === 0 ? (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No constructive feedback yet</span>
+                            ) : (
+                              insights.topGrowthThemes.slice(0, 4).map(t => (
+                                <span key={t.word} className="badge badge-amber" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
+                                  {t.word} ({t.count})
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
               </div>
             </div>
 
-            {/* Milestone Archive Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <div className="card-header">
-                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <RefreshCw size={18} className="text-indigo" /> Milestone & Sprints History
+            {/* Tier 2: WebPA Calibration, Anomaly Audit & Milestones (3 Equal Columns) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
+              
+              {/* Card 4: WebPA Grade Calibration */}
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                    <Sliders size={17} className="text-teal" /> WebPA Grade Calibration
                   </h3>
+                  <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
+                    Compare peer vs team averages to calculate individual multipliers.
+                  </p>
                 </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.4 }}>
-                  Archive evaluations into permanent records (e.g. <i>Sprint 1</i>) to reset active reviewer markers and begin fresh sprints.
-                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontWeight: 700, fontSize: '0.78rem' }}>Project Base Mark (Base Grade)</label>
+                    <input 
+                      type="number" 
+                      className="form-input" 
+                      min={0}
+                      max={1000}
+                      value={baseGroupGrade}
+                      onChange={(e) => setBaseGroupGrade(Number(e.target.value))}
+                      style={{ height: '36px', fontSize: '0.85rem', fontWeight: 700 }}
+                    />
+                  </div>
+                  
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+                      <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem' }}>Calibrator Fudge Weight</label>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>{Math.round(fudgeWeight * 100)}%</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      className="custom-slider" 
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={fudgeWeight}
+                      onChange={(e) => setFudgeWeight(Number(e.target.value))}
+                      style={{
+                        background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${fudgeWeight * 100}%, var(--border-color) ${fudgeWeight * 100}%, var(--border-color) 100%)`
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <button 
-                  className="btn btn-secondary btn-sm" 
-                  style={{ width: '100%', borderColor: 'var(--primary)', color: 'var(--primary)' }}
-                  onClick={() => setIsArchiveModalOpen(true)}
-                >
-                  Archive Active Session
-                </button>
-                <div style={{ maxHeight: '80px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.4rem' }}>
-                  {(activeClass.milestones || []).length === 0 ? (
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No archived sprint records.</span>
+              {/* Card 5: Anomaly Conflict Audit */}
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                    <ShieldCheck size={17} className="text-rose" /> Anomaly &amp; Collusion Audit
+                  </h3>
+                  <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
+                    Statistical auditing flags collusion, outlier ratings, and uniform grades.
+                  </p>
+                </div>
+
+                <div style={{ maxHeight: '130px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {detectClassAnomalies(activeClass).length === 0 ? (
+                    <div style={{ backgroundColor: 'var(--accent-teal-light)', border: '1px solid hsl(173, 80%, 90%)', color: 'var(--accent-teal)', fontSize: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', display: 'flex', gap: '0.35rem', alignItems: 'center', fontWeight: 600 }}>
+                      <CheckCircle size={13} /> No scoring conflicts detected.
+                    </div>
                   ) : (
-                    (activeClass.milestones || []).map((m) => (
+                    detectClassAnomalies(activeClass).map((anomaly) => (
                       <div 
-                        key={m.id} 
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}
+                        key={anomaly.id} 
+                        style={{ 
+                          backgroundColor: anomaly.severity === 'high' ? 'var(--accent-rose-light)' : 'var(--accent-amber-light)', 
+                          border: `1px solid ${anomaly.severity === 'high' ? 'hsl(346, 84%, 90%)' : 'hsl(45, 90%, 90%)'}`, 
+                          padding: '0.4rem 0.6rem', 
+                          borderRadius: '6px',
+                          fontSize: '0.72rem'
+                        }}
                       >
-                        <span style={{ fontWeight: 600 }}>{m.name}</span>
-                        <button 
-                          className="btn btn-sm text-rose" 
-                          style={{ padding: '2px', border: 'none', background: 'transparent' }}
-                          onClick={() => {
-                            triggerConfirm(
-                              'Delete Historical Milestone',
-                              `Are you sure you want to permanently delete the archived milestone "${m.name}"? This will delete all of its scoring history. This action cannot be undone.`,
-                              () => deleteMilestone(activeClass.id, m.id),
-                              'Delete Milestone',
-                              'Cancel'
-                            );
-                          }}
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        <span style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-primary)' }}>
+                          <AlertTriangle size={12} style={{ color: anomaly.severity === 'high' ? 'var(--accent-rose)' : 'var(--accent-amber)', flexShrink: 0 }} />
+                          {anomaly.studentName} ({anomaly.type.toUpperCase()})
+                        </span>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.68rem' }}>{anomaly.description}</span>
                       </div>
                     ))
                   )}
                 </div>
               </div>
-            </div>
 
+              {/* Card 6: Milestone Archive Card */}
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                    <RefreshCw size={17} className="text-indigo" /> Milestone &amp; Sprints History
+                  </h3>
+                  <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
+                    Archive evaluations into permanent records to freeze sprint marks.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button 
+                    className="btn btn-secondary btn-sm" 
+                    style={{ width: '100%', borderColor: 'var(--primary)', color: 'var(--primary)', height: '34px', fontSize: '0.78rem' }}
+                    onClick={() => setIsArchiveModalOpen(true)}
+                  >
+                    Archive Active Session
+                  </button>
+                  <div style={{ maxHeight: '80px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.4rem' }}>
+                    {(activeClass.milestones || []).length === 0 ? (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No archived sprint records.</span>
+                    ) : (
+                      (activeClass.milestones || []).map((m) => (
+                        <div 
+                          key={m.id} 
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.72rem' }}
+                        >
+                          <span style={{ fontWeight: 600 }}>{m.name}</span>
+                          <button 
+                            className="btn btn-sm text-rose" 
+                            style={{ padding: '2px', border: 'none', background: 'transparent' }}
+                            onClick={() => {
+                              triggerConfirm(
+                                'Delete Historical Milestone',
+                                `Are you sure you want to permanently delete the archived milestone "${m.name}"? This will delete all of its scoring history. This action cannot be undone.`,
+                                () => deleteMilestone(activeClass.id, m.id),
+                                'Delete Milestone',
+                                'Cancel'
+                              );
+                            }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
           </div>
 
           {/* Grades Matrix Sheet */}
@@ -2036,6 +2614,7 @@ export const AdminDashboard: React.FC = () => {
                       <th>Calibrated Mark</th>
                       <th>Overall Weighted Avg %</th>
                       <th>Subjective Scaled Score</th>
+                      <th>Self-Awareness (Johari)</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -2164,7 +2743,42 @@ export const AdminDashboard: React.FC = () => {
                             {metrics.overallPercentage !== null ? `${((metrics.overallPercentage / 100) * activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)).toFixed(1)} / ${activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)}` : 'N/A'}
                           </td>
                           <td>
+                            {(() => {
+                              const johari = calculateJohariWindowMetric(s.id, activeClass);
+                              return (
+                                <span 
+                                  className={`badge ${johari.badgeClass}`}
+                                  style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', whiteSpace: 'nowrap', display: 'inline-flex' }}
+                                  title={johari.description}
+                                >
+                                  {johari.label} {johari.gapPct !== null && `(${johari.gapPct > 0 ? '+' : ''}${johari.gapPct}%)`}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td>
                             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <button 
+                                type="button"
+                                className="btn btn-secondary" 
+                                style={{ 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  gap: '0.3rem', 
+                                  padding: '0.35rem 0.6rem', 
+                                  fontSize: '0.8rem',
+                                  border: '1px solid var(--accent-teal)',
+                                  color: 'var(--accent-teal)',
+                                  cursor: 'pointer',
+                                  background: 'transparent',
+                                  borderRadius: 'var(--radius-sm)'
+                                }}
+                                onClick={() => openReportModal(s.id)}
+                                title="View & Download Individual Student PDF Report Card with Live Preview"
+                              >
+                                <FileText size={13} />
+                                <span>PDF Report</span>
+                              </button>
                               <button 
                                 className="btn btn-secondary" 
                                 style={{ 
@@ -2183,7 +2797,7 @@ export const AdminDashboard: React.FC = () => {
                                 title="View individual student self vs peer evaluation report"
                               >
                                 <Eye size={13} />
-                                <span>View Student</span>
+                                <span>Details</span>
                               </button>
                               <button 
                                 className="btn btn-secondary" 
@@ -2193,8 +2807,8 @@ export const AdminDashboard: React.FC = () => {
                                   gap: '0.3rem', 
                                   padding: '0.35rem 0.6rem', 
                                   fontSize: '0.8rem',
-                                  border: '1px solid var(--accent-teal)',
-                                  color: 'var(--accent-teal)',
+                                  border: '1px solid var(--border-color)',
+                                  color: 'var(--text-secondary)',
                                   cursor: 'pointer',
                                   background: 'transparent',
                                   borderRadius: 'var(--radius-sm)'
@@ -2206,7 +2820,7 @@ export const AdminDashboard: React.FC = () => {
                                 title="View in-depth team evaluation metrics, audit matrix, and all reviews logs"
                               >
                                 <Users size={13} />
-                                <span>View Team</span>
+                                <span>Team</span>
                               </button>
                             </div>
                           </td>
@@ -2222,179 +2836,395 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* TAB CONTENT: AUTOMATION & LINKS */}
-      {activeTab === 'automation' && (
-        <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
+      {activeTab === 'automation' && (() => {
+        const submittedStudentsCount = activeClass.students.filter(s => s.submitted).length;
+        const totalStudentsCount = activeClass.students.length;
+        const submissionRate = totalStudentsCount > 0 ? Math.round((submittedStudentsCount / totalStudentsCount) * 100) : 0;
+        const isDeadlineOpen = activeClass.deadline ? new Date(activeClass.deadline) > new Date() : true;
+
+        return (
+          <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             
-            {/* Automation Setup */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <div className="card-header">
-                  <h3 className="card-title"><Mail size={18} className="text-teal" /> Email Dispatcher</h3>
+            {/* Top Status & Overview Ribbon */}
+            <div 
+              style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                gap: '1rem',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '1rem 1.25rem',
+                boxShadow: 'var(--shadow-sm)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Users size={20} />
                 </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                  Launch automated peer evaluation requests. The engine constructs a unique, secure URL for each student which enables secure anonymous submissions.
-                </p>
-
-                <div className="form-group">
-                  <label className="form-label">Active Mailing Mode</label>
-                  <CustomSelect
-                    options={emailServiceOptions}
-                    value={emailService}
-                    onChange={(val) => setEmailService(val as any)}
-                  />
+                <div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>{totalStudentsCount}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Classroom Members</div>
                 </div>
-
-                {emailService === 'emailjs' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <input 
-                      type="text" 
-                      placeholder="EmailJS Service ID" 
-                      className="form-input" 
-                      value={emailjsServiceId}
-                      onChange={(e) => setEmailjsServiceId(e.target.value)}
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="EmailJS Template ID" 
-                      className="form-input" 
-                      value={emailjsTemplateId}
-                      onChange={(e) => setEmailjsTemplateId(e.target.value)}
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="EmailJS User ID (Public Key)" 
-                      className="form-input" 
-                      value={emailjsUserId}
-                      onChange={(e) => setEmailjsUserId(e.target.value)}
-                    />
-                    <a 
-                      href="https://www.emailjs.com" 
-                      target="_blank" 
-                      rel="noreferrer" 
-                      style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
-                    >
-                      How do I get these free keys?
-                    </a>
-                  </div>
-                )}
-
-                {emailService === 'brevo' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <input 
-                      type="password" 
-                      placeholder="Brevo SMTP API Key" 
-                      className="form-input" 
-                      value={brevoApiKey}
-                      onChange={(e) => setBrevoApiKey(e.target.value)}
-                    />
-                    <input 
-                      type="email" 
-                      placeholder="Verified Sender Email (e.g., prof@uni.edu)" 
-                      className="form-input" 
-                      value={brevoSenderEmail}
-                      onChange={(e) => setBrevoSenderEmail(e.target.value)}
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Sender Name (Optional, e.g. Instructor)" 
-                      className="form-input" 
-                      value={brevoSenderName}
-                      onChange={(e) => setBrevoSenderName(e.target.value)}
-                    />
-                    <a 
-                      href="https://www.brevo.com" 
-                      target="_blank" 
-                      rel="noreferrer" 
-                      style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
-                    >
-                      How do I get my free Brevo API Key?
-                    </a>
-                  </div>
-                )}
               </div>
 
-              <div className="responsive-btn-group" style={{ marginTop: '1.5rem' }}>
-                <button 
-                  className={`btn btn-primary ${isSendingEmails ? 'btn-disabled' : ''}`}
-                  onClick={() => triggerEmailAutomation(false)}
-                  disabled={isSendingEmails}
-                  style={{ flex: 1 }}
-                >
-                  <Mail size={16} /> Send Links to All
-                </button>
-                <button 
-                  className={`btn btn-secondary ${isSendingEmails ? 'btn-disabled' : ''}`}
-                  style={{ borderColor: 'var(--accent-amber)', color: 'var(--accent-amber)', flex: 1 }}
-                  onClick={() => triggerEmailAutomation(true)}
-                  disabled={isSendingEmails}
-                >
-                  <Clock size={16} /> Send Reminders
-                </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckSquare size={20} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent-teal)' }}>
+                    {submittedStudentsCount} / {totalStudentsCount} ({submissionRate}%)
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Submissions Completed</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: activeClass.deadline ? (isDeadlineOpen ? 'rgba(20, 184, 166, 0.12)' : 'rgba(244, 63, 94, 0.12)') : 'var(--bg-app)', color: activeClass.deadline ? (isDeadlineOpen ? 'var(--accent-teal)' : 'var(--accent-rose)') : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {activeClass.deadline ? (isDeadlineOpen ? <Clock size={20} /> : <Lock size={20} />) : <Unlock size={20} />}
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: activeClass.deadline ? (isDeadlineOpen ? 'var(--accent-teal)' : 'var(--accent-rose)') : 'var(--text-primary)' }}>
+                    {activeClass.deadline ? (isDeadlineOpen ? 'Window Open' : 'Submissions Locked') : 'Always Open'}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {activeClass.deadline ? new Date(activeClass.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No Cutoff Date'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Mail size={20} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--primary)' }}>
+                    {emailService === 'simulator' ? 'Demo Sandbox' : emailService === 'emailjs' ? 'EmailJS Live' : 'Brevo SMTP'}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Active Mailing Adapter</div>
+                </div>
               </div>
             </div>
 
-            {/* Email Preview Card */}
-            <div className="card">
-              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 className="card-title"><FileText size={18} className="text-indigo" /> Invitation Mail Mockup</h3>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                  onClick={() => setIsEditTemplateModalOpen(true)}
-                >
-                  <Edit2 size={12} /> Edit Template
-                </button>
-              </div>
+            {/* Main Command Center Deck */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
               
-              <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '1rem', fontFamily: 'inherit', fontSize: '0.85rem' }}>
-                <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <div><b>To:</b> student.name@university.edu</div>
-                  <div><b>Subject:</b> {substitutePlaceholders(customEmailSubject, 'Student Name', activeClass.name)}</div>
+              {/* Card 1: Submission Window & Deadlines */}
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div className="card-header" style={{ marginBottom: '0.5rem' }}>
+                    <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <Clock size={18} className="text-rose" /> Submission Window &amp; Cutoff
+                    </h3>
+                    <span className={`badge ${activeClass.deadline ? (isDeadlineOpen ? 'badge-teal' : 'badge-rose') : 'badge-secondary'}`} style={{ fontSize: '0.72rem' }}>
+                      {activeClass.deadline ? (isDeadlineOpen ? 'Active Countdown' : 'Locked') : 'Open (No Limit)'}
+                    </span>
+                  </div>
+                  
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
+                    Configure a strict closing date. Once passed, the student grading portal automatically displays a locked status and blocks new responses.
+                  </p>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Calendar size={14} className="text-indigo" /> Closing Date &amp; Time
+                    </label>
+                    <input 
+                      type="datetime-local" 
+                      className="form-input" 
+                      value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset()*60000).toISOString().slice(0, 16) : ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) {
+                          saveClassDeadline(activeClass.id, new Date(val).toISOString());
+                        } else {
+                          saveClassDeadline(activeClass.id, null);
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div style={{ marginTop: '0.85rem' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>
+                      Quick Deadline Presets:
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
+                        onClick={() => {
+                          const in24h = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+                          saveClassDeadline(activeClass.id, in24h);
+                        }}
+                      >
+                        +24 Hours
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
+                        onClick={() => {
+                          const in48h = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+                          saveClassDeadline(activeClass.id, in48h);
+                        }}
+                      >
+                        +48 Hours
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
+                        onClick={() => {
+                          const in7d = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+                          saveClassDeadline(activeClass.id, in7d);
+                        }}
+                      >
+                        +1 Week
+                      </button>
+                      {activeClass.deadline && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm text-rose"
+                          style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
+                          onClick={() => saveClassDeadline(activeClass.id, null)}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                
-                <div style={{ color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.5, wordBreak: 'break-word' }}>
-                  {substitutePlaceholders(customEmailBody, 'Student Name', activeClass.name)}
+
+                <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+                  {activeClass.deadline ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.78rem', color: isDeadlineOpen ? 'var(--accent-teal)' : 'var(--accent-rose)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        {isDeadlineOpen ? <Clock size={14} /> : <Lock size={14} />}
+                        {isDeadlineOpen ? 'Submission Clock Running' : 'Window Closed (Locked)'}
+                      </span>
+                      <button 
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                        onClick={() => {
+                          if (isDeadlineOpen) {
+                            saveClassDeadline(activeClass.id, new Date(Date.now() - 1000).toISOString());
+                          } else {
+                            saveClassDeadline(activeClass.id, null);
+                          }
+                        }}
+                      >
+                        {isDeadlineOpen ? 'Lock Submissions Now' : 'Re-open Submissions'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <Unlock size={14} className="text-teal" /> Submissions always accepted
+                      </span>
+                    </div>
+                  )}
                 </div>
-                
-                <div style={{ textAlign: 'center', margin: '1.25rem 0' }}>
-                  <span 
-                    style={{ backgroundColor: 'var(--primary)', color: 'var(--text-inverse)', padding: '0.5rem 1rem', borderRadius: '4px', fontWeight: 600, cursor: 'default', display: 'inline-block', fontSize: '0.8rem' }}
+              </div>
+
+              {/* Card 2: Email Dispatcher Engine */}
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div className="card-header" style={{ marginBottom: '0.5rem' }}>
+                    <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <Send size={18} className="text-teal" /> Email Dispatcher
+                    </h3>
+                    <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
+                      Direct Links
+                    </span>
+                  </div>
+                  
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
+                    Dispatch individualized evaluation links to students with unique tokens for anonymous submissions.
+                  </p>
+
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>Active Mailing Provider</label>
+                    <CustomSelect
+                      options={emailServiceOptions}
+                      value={emailService}
+                      onChange={(val) => setEmailService(val as any)}
+                    />
+                  </div>
+
+                  {emailService === 'emailjs' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <input 
+                        type="text" 
+                        placeholder="EmailJS Service ID (e.g. service_xyz)" 
+                        className="form-input" 
+                        value={emailjsServiceId}
+                        onChange={(e) => setEmailjsServiceId(e.target.value)}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="EmailJS Template ID (e.g. template_abc)" 
+                        className="form-input" 
+                        value={emailjsTemplateId}
+                        onChange={(e) => setEmailjsTemplateId(e.target.value)}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="EmailJS Public Key / User ID" 
+                        className="form-input" 
+                        value={emailjsUserId}
+                        onChange={(e) => setEmailjsUserId(e.target.value)}
+                      />
+                      <a 
+                        href="https://www.emailjs.com" 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
+                      >
+                        How do I get these free keys?
+                      </a>
+                    </div>
+                  )}
+
+                  {emailService === 'brevo' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <input 
+                        type="password" 
+                        placeholder="Brevo SMTP API Key" 
+                        className="form-input" 
+                        value={brevoApiKey}
+                        onChange={(e) => setBrevoApiKey(e.target.value)}
+                      />
+                      <input 
+                        type="email" 
+                        placeholder="Verified Sender Email (e.g. prof@uni.edu)" 
+                        className="form-input" 
+                        value={brevoSenderEmail}
+                        onChange={(e) => setBrevoSenderEmail(e.target.value)}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Sender Name (Optional, e.g. Course Instructor)" 
+                        className="form-input" 
+                        value={brevoSenderName}
+                        onChange={(e) => setBrevoSenderName(e.target.value)}
+                      />
+                      <a 
+                        href="https://www.brevo.com" 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
+                      >
+                        How do I get my free Brevo API Key?
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+                  <button 
+                    className={`btn btn-primary ${isSendingEmails ? 'btn-disabled' : ''}`}
+                    onClick={() => triggerEmailAutomation(false)}
+                    disabled={isSendingEmails}
+                    style={{ width: '100%', justifyContent: 'center', gap: '0.5rem' }}
                   >
-                    Open Grading Portal
-                  </span>
+                    <Mail size={16} /> Send Links to All ({totalStudentsCount})
+                  </button>
+                  <button 
+                    className={`btn btn-secondary ${isSendingEmails ? 'btn-disabled' : ''}`}
+                    style={{ borderColor: 'var(--accent-amber)', color: 'var(--accent-amber)', width: '100%', justifyContent: 'center', gap: '0.5rem' }}
+                    onClick={() => triggerEmailAutomation(true)}
+                    disabled={isSendingEmails}
+                  >
+                    <Bell size={15} /> Send Reminders to Incomplete ({totalStudentsCount - submittedStudentsCount})
+                  </button>
                 </div>
+              </div>
+
+              {/* Card 3: Email Invitation Mockup */}
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <FileText size={18} className="text-indigo" /> Email Invitation Mockup
+                    </h3>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                      onClick={() => setIsEditTemplateModalOpen(true)}
+                    >
+                      <Edit2 size={12} /> Edit Template
+                    </button>
+                  </div>
+                  
+                  {/* Email Client Mockup Frame */}
+                  <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem', fontFamily: 'inherit', fontSize: '0.85rem' }}>
+                    <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <div style={{ fontSize: '0.78rem' }}><b>To:</b> <span style={{ color: 'var(--text-secondary)' }}>student.name@university.edu</span></div>
+                      <div style={{ fontSize: '0.78rem' }}><b>Subject:</b> <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{substitutePlaceholders(customEmailSubject, 'Student Name', activeClass.name)}</span></div>
+                    </div>
+                    
+                    <div style={{ color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.5, wordBreak: 'break-word', fontSize: '0.82rem', maxHeight: '160px', overflowY: 'auto' }}>
+                      {substitutePlaceholders(customEmailBody, 'Student Name', activeClass.name)}
+                    </div>
+                    
+                    <div style={{ textAlign: 'center', margin: '1rem 0' }}>
+                      <span 
+                        style={{ backgroundColor: 'var(--primary)', color: 'var(--text-inverse)', padding: '0.45rem 1rem', borderRadius: '6px', fontWeight: 600, cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', boxShadow: 'var(--shadow-sm)' }}
+                      >
+                        <Zap size={14} /> Open Grading Portal
+                      </span>
+                    </div>
+                    
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', margin: '0.75rem 0 0', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem', lineHeight: 1.4 }}>
+                      <Lock size={10} style={{ display: 'inline', marginRight: '3px' }} /> Anonymous feedback guaranteed. Team members only view aggregated scores.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ width: '100%', justifyContent: 'center', gap: '0.4rem' }}
+                    onClick={() => {
+                      const text = `Subject: ${substitutePlaceholders(customEmailSubject, '[Student Name]', activeClass.name)}\n\n${substitutePlaceholders(customEmailBody, '[Student Name]', activeClass.name)}`;
+                      navigator.clipboard.writeText(text);
+                      addToast('Email template text copied to clipboard! (Ready to paste in LMS/Canvas)', 'success');
+                    }}
+                  >
+                    <Copy size={13} /> Copy Template Text for Canvas / LMS
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Progress Logs */}
+            {(isSendingEmails || emailLogs.length > 0) && (
+              <div className="card" style={{ animation: 'fadeIn 200ms ease' }}>
+                <h4 style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <RefreshCw size={16} className={isSendingEmails ? 'spin' : ''} /> Dispatching Pipeline Status
+                </h4>
                 
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem' }}>
-                  Important: This feedback is completely anonymous. Your team members will only see aggregated scores.
-                </p>
+                <div style={{ height: '8px', width: '100%', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden', marginBottom: '1rem' }}>
+                  <div style={{ height: '100%', width: `${emailProgress}%`, backgroundColor: 'var(--accent-teal)', transition: 'width 200ms ease' }} />
+                </div>
+
+                <div 
+                  style={{ backgroundColor: '#0f172a', color: '#38bdf8', padding: '1rem', borderRadius: 'var(--radius-sm)', fontFamily: 'monospace', fontSize: '0.8rem', height: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column-reverse', gap: '0.25rem' }}
+                >
+                  {[...emailLogs].reverse().map((log, i) => (
+                    <div key={i}>{log}</div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
-
-          {/* Progress Logs */}
-          {(isSendingEmails || emailLogs.length > 0) && (
-            <div className="card">
-              <h4 style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                <RefreshCw size={16} className={isSendingEmails ? 'spin' : ''} /> Dispatching Pipeline Status
-              </h4>
-              
-              <div style={{ height: '8px', width: '100%', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden', marginBottom: '1rem' }}>
-                <div style={{ height: '100%', width: `${emailProgress}%`, backgroundColor: 'var(--accent-teal)', transition: 'width 200ms ease' }} />
-              </div>
-
-              <div 
-                style={{ backgroundColor: '#0f172a', color: '#38bdf8', padding: '1rem', borderRadius: 'var(--radius-sm)', fontFamily: 'monospace', fontSize: '0.8rem', height: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column-reverse', gap: '0.25rem' }}
-              >
-                {[...emailLogs].reverse().map((log, i) => (
-                  <div key={i}>{log}</div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* TAB CONTENT: CLOUD CONFIG */}
       {activeTab === 'cloud' && (
@@ -2657,7 +3487,50 @@ export const AdminDashboard: React.FC = () => {
               style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
             >
               <option value="Normal">Normal Student</option>
-              <option value="Erasmus">Erasmus Student</option>
+              <option value="Erasmus">Erasmus / Exchange</option>
+              <option value="Part-time">Part-time Student</option>
+            </select>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Gender *</label>
+              <select 
+                className="form-input"
+                value={newStudent.gender}
+                onChange={(e) => setNewStudent(prev => ({ ...prev, gender: e.target.value }))}
+                style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
+              >
+                <option value="Female">Female</option>
+                <option value="Male">Male</option>
+                <option value="Non-binary">Non-binary</option>
+                <option value="Prefer not to say">Prefer not to say</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Nationality *</label>
+              <SearchableSelect
+                value={newStudent.nationality}
+                onChange={(val) => setNewStudent(prev => ({ ...prev, nationality: val }))}
+                options={NATIONALITY_OPTIONS}
+                placeholder="Select nationality..."
+                searchPlaceholder="Search 195+ countries..."
+              />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">English Proficiency Level *</label>
+            <select 
+              className="form-input"
+              value={newStudent.englishProficiency}
+              onChange={(e) => setNewStudent(prev => ({ ...prev, englishProficiency: e.target.value }))}
+              style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
+            >
+              <option value="Native / Bilingual">Native / Bilingual</option>
+              <option value="Fluent (C1/C2)">Fluent / Advanced Professional (C1/C2)</option>
+              <option value="Advanced (B2)">Upper Intermediate / Advanced (B2)</option>
+              <option value="Intermediate (B1)">Intermediate Working (B1)</option>
+              <option value="Basic (A1/A2)">Elementary / Basic (A1/A2)</option>
             </select>
           </div>
         </form>
@@ -2737,7 +3610,50 @@ export const AdminDashboard: React.FC = () => {
               style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
             >
               <option value="Normal">Normal Student</option>
-              <option value="Erasmus">Erasmus Student</option>
+              <option value="Erasmus">Erasmus / Exchange</option>
+              <option value="Part-time">Part-time Student</option>
+            </select>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Gender *</label>
+              <select 
+                className="form-input"
+                value={editStudentData.gender || 'Female'}
+                onChange={(e) => setEditStudentData(prev => ({ ...prev, gender: e.target.value }))}
+                style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
+              >
+                <option value="Female">Female</option>
+                <option value="Male">Male</option>
+                <option value="Non-binary">Non-binary</option>
+                <option value="Prefer not to say">Prefer not to say</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Nationality *</label>
+              <SearchableSelect
+                value={editStudentData.nationality || ''}
+                onChange={(val) => setEditStudentData(prev => ({ ...prev, nationality: val }))}
+                options={NATIONALITY_OPTIONS}
+                placeholder="Select nationality..."
+                searchPlaceholder="Search 195+ countries..."
+              />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">English Proficiency Level *</label>
+            <select 
+              className="form-input"
+              value={editStudentData.englishProficiency || 'Fluent (C1/C2)'}
+              onChange={(e) => setEditStudentData(prev => ({ ...prev, englishProficiency: e.target.value }))}
+              style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
+            >
+              <option value="Native / Bilingual">Native / Bilingual</option>
+              <option value="Fluent (C1/C2)">Fluent / Advanced Professional (C1/C2)</option>
+              <option value="Advanced (B2)">Upper Intermediate / Advanced (B2)</option>
+              <option value="Intermediate (B1)">Intermediate Working (B1)</option>
+              <option value="Basic (A1/A2)">Elementary / Basic (A1/A2)</option>
             </select>
           </div>
           <div className="form-group">
@@ -3033,9 +3949,9 @@ export const AdminDashboard: React.FC = () => {
 102,Bob Martinez,bob.martinez@uni.edu,Team Beta,Stanford,Software Engineering,Normal
 103,Carol Lee,carol.lee@uni.edu,Team Alpha,Oxford,Physics,Normal`}</pre>
                       <div className="fgp-tips">
-                        <span>✔ Header row is mandatory</span>
-                        <span>✔ Column order doesn't matter — you'll map them in the next step</span>
-                        <span>✔ Emails must be unique per student</span>
+                        <span><Check size={12} style={{ display: 'inline', color: 'var(--accent-teal)', marginRight: '4px' }} /> Header row is mandatory</span>
+                        <span><Check size={12} style={{ display: 'inline', color: 'var(--accent-teal)', marginRight: '4px' }} /> Column order doesn't matter — you'll map them in the next step</span>
+                        <span><Check size={12} style={{ display: 'inline', color: 'var(--accent-teal)', marginRight: '4px' }} /> Emails must be unique per student</span>
                       </div>
                     </div>
                   )}
@@ -3052,8 +3968,8 @@ export const AdminDashboard: React.FC = () => {
                         <div className="fgp-step"><span className="fgp-step-num">5</span><span>Only the <strong>first sheet/tab</strong> is read — move your data there if needed.</span></div>
                       </div>
                       <div className="fgp-tips">
-                        <span>✔ Merged cells are not supported — unmerge before uploading</span>
-                        <span>✔ Remove any empty rows at the top of the sheet</span>
+                        <span><Check size={12} style={{ display: 'inline', color: 'var(--accent-teal)', marginRight: '4px' }} /> Merged cells are not supported — unmerge before uploading</span>
+                        <span><Check size={12} style={{ display: 'inline', color: 'var(--accent-teal)', marginRight: '4px' }} /> Remove any empty rows at the top of the sheet</span>
                       </div>
                     </div>
                   )}
@@ -3069,9 +3985,9 @@ export const AdminDashboard: React.FC = () => {
                         <div className="fgp-step"><span className="fgp-step-num">4</span><span>Do NOT upload scanned images — text must be selectable in the PDF viewer.</span></div>
                       </div>
                       <div className="fgp-tips">
-                        <span>⚠ Scanned / image PDFs are not supported</span>
-                        <span>⚠ Password-protected PDFs cannot be read</span>
-                        <span>✔ Best results: export directly from Excel or Google Sheets</span>
+                        <span><AlertTriangle size={12} style={{ display: 'inline', color: 'var(--accent-amber)', marginRight: '4px' }} /> Scanned / image PDFs are not supported</span>
+                        <span><AlertTriangle size={12} style={{ display: 'inline', color: 'var(--accent-amber)', marginRight: '4px' }} /> Password-protected PDFs cannot be read</span>
+                        <span><Check size={12} style={{ display: 'inline', color: 'var(--accent-teal)', marginRight: '4px' }} /> Best results: export directly from Excel or Google Sheets</span>
                       </div>
                     </div>
                   )}
@@ -3084,9 +4000,9 @@ export const AdminDashboard: React.FC = () => {
 102\tBob Martinez\tbob@uni.edu\tTeam Beta
 103\tCarol Lee\tcarol@uni.edu\tTeam Alpha`}</pre>
                       <div className="fgp-tips">
-                        <span>✔ You can include or exclude a header row — you'll map columns in Step 2</span>
-                        <span>✔ Works with both Excel and Google Sheets copy-paste</span>
-                        <span>✔ Each row = one student; columns separated by Tab</span>
+                        <span><Check size={12} style={{ display: 'inline', color: 'var(--accent-teal)', marginRight: '4px' }} /> You can include or exclude a header row — you'll map columns in Step 2</span>
+                        <span><Check size={12} style={{ display: 'inline', color: 'var(--accent-teal)', marginRight: '4px' }} /> Works with both Excel and Google Sheets copy-paste</span>
+                        <span><Check size={12} style={{ display: 'inline', color: 'var(--accent-teal)', marginRight: '4px' }} /> Each row = one student; columns separated by Tab</span>
                       </div>
                     </div>
                   )}
@@ -3096,8 +4012,8 @@ export const AdminDashboard: React.FC = () => {
             </div>
             {/* ── End Format Guide ────────────────────────────────────────── */}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginTop: '0.25rem' }}>
-              {/* Left Column: File Selector */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '1.25rem', marginTop: '0.25rem' }}>
+              {/* Option A: File Selector */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>Option A: Upload Roster File</span>
                 <label className="csv-dropzone" style={{ minHeight: '170px', padding: '1.5rem' }}>
@@ -3113,7 +4029,7 @@ export const AdminDashboard: React.FC = () => {
                 </label>
               </div>
 
-              {/* Right Column: Direct Paste Area */}
+              {/* Option B: Direct Paste Area */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>Option B: Paste Spreadsheet Cells</span>
                 <textarea
@@ -3121,16 +4037,68 @@ export const AdminDashboard: React.FC = () => {
                   placeholder={`Paste columns from Excel or Google Sheets here...\ne.g.\n101\tAlice\talice@univ.edu\tTeam A\n102\tBob\tbob@univ.edu\tTeam B`}
                   value={wizardPasteText}
                   onChange={(e) => setWizardPasteText(e.target.value)}
-                  style={{ minHeight: '135px', padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}
+                  style={{ minHeight: '115px', padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}
                 />
                 <button
                   type="button"
                   className="btn btn-teal"
                   onClick={handleWizardPasteSubmit}
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
                 >
                   Parse Clipboard Data
                 </button>
+              </div>
+
+              {/* Option C: Pre-built Diverse Sample Dataset */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>Option C: Demo Sample Dataset</span>
+                <div style={{ minHeight: '170px', padding: '1.25rem', border: '1px dashed var(--accent-teal)', borderRadius: 'var(--radius-md)', backgroundColor: 'rgba(20, 184, 166, 0.04)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-teal)', fontWeight: 800, fontSize: '0.88rem' }}>
+                      <Sparkles size={16} /> 100 Diverse Students
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0.35rem 0 0 0', lineHeight: 1.4 }}>
+                      Pre-generated diverse dataset with 35+ nationalities, gender balance, and English levels.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.75rem' }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        const csv = getSampleStudentsCSV();
+                        const parsed = parseRawPastedText(csv);
+                        if (parsed.length > 0) {
+                          setWizardFileName('diverse_100_students_sample.csv');
+                          handleParsedRawMatrix(parsed);
+                          addToast('Loaded 100-student diverse sample dataset into wizard!', 'success');
+                        }
+                      }}
+                      style={{ fontSize: '0.78rem', justifyContent: 'center', gap: '0.35rem' }}
+                    >
+                      <Sparkles size={13} /> Load Sample into Wizard
+                    </button>
+                    <div style={{ display: 'flex', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => downloadSampleStudentsFile('csv')}
+                        style={{ flex: 1, fontSize: '0.72rem', padding: '0.25rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
+                      >
+                        <Download size={11} /> CSV
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => downloadSampleStudentsFile('xlsx')}
+                        style={{ flex: 1, fontSize: '0.72rem', padding: '0.25rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
+                      >
+                        <Download size={11} /> XLSX
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -3138,32 +4106,53 @@ export const AdminDashboard: React.FC = () => {
 
         {wizardStep === 2 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
-              File parsed: <b>{wizardFileName}</b> ({wizardRawData.length - 1} rows found). Match standard roster fields to the columns of your file:
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
+                File parsed: <b>{wizardFileName}</b> ({wizardRawData.length - 1} rows found). Match standard roster fields to the columns of your file:
+              </p>
+              <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
+                {wizardHeaders.length} Columns Detected
+              </span>
+            </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', padding: '0.5rem 1rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-              {Object.entries({
-                name: 'Full Name * (Required)',
-                email: 'Email ID * (Required)',
-                id: 'Unique Student ID (Optional)',
-                groupName: 'Roster Group / Team (Optional)',
-                university: 'University / School (Optional)',
-                degree: 'Degree / Program (Optional)',
-                studentType: 'Student Type (Optional)'
-              }).map(([fieldKey, labelText]) => (
-                <div key={fieldKey} className="schema-mapping-row">
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{labelText}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', padding: '0.75rem 1rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', gap: '0.35rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.35rem', marginBottom: '0.25rem' }}>
+                Profile Fields Mapping
+              </div>
+
+              {[
+                { key: 'name', label: 'Full Name', required: true, hint: 'Student legal or display name' },
+                { key: 'email', label: 'Email Address', required: true, hint: 'University or personal email' },
+                { key: 'gender', label: 'Gender', required: true, hint: 'Female, Male, Non-binary, etc.' },
+                { key: 'nationality', label: 'Nationality / Country', required: true, hint: 'Country of origin' },
+                { key: 'englishProficiency', label: 'English Proficiency Level', required: true, hint: 'CEFR skill level (C1, B2, etc.)' },
+                { key: 'id', label: 'Unique Student ID', required: false, hint: 'Auto-generated if unmapped' },
+                { key: 'groupName', label: 'Roster Group / Team', required: false, hint: 'Default: Unassigned' },
+                { key: 'university', label: 'University / School', required: false, hint: 'Institution name' },
+                { key: 'degree', label: 'Degree / Program', required: false, hint: 'Field of study / major' },
+                { key: 'studentType', label: 'Student Type', required: false, hint: 'Normal or Erasmus' }
+              ].map(({ key, label, required, hint }) => (
+                <div key={key} className="schema-mapping-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.45rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      {label} {required && <span style={{ color: 'var(--accent-rose)', fontWeight: 800 }}>*</span>}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{hint}</span>
+                  </div>
                   <select
                     className="form-select"
-                    value={wizardMapping[fieldKey]}
-                    onChange={(e) => setWizardMapping(prev => ({ ...prev, [fieldKey]: Number(e.target.value) }))}
-                    style={{ fontSize: '0.82rem', padding: '0.4rem 2rem 0.4rem 0.75rem', height: 'auto', border: '1px solid var(--border-color)' }}
+                    value={wizardMapping[key]}
+                    onChange={(e) => setWizardMapping(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                    style={{ fontSize: '0.82rem', padding: '0.4rem 2rem 0.4rem 0.75rem', height: 'auto', border: '1px solid var(--border-color)', maxWidth: '300px', width: '100%' }}
                   >
                     <option value="-1">-- Unmapped / Skip --</option>
-                    {wizardHeaders.map((headerText, hIdx) => (
-                      <option key={hIdx} value={hIdx}>Col {hIdx + 1}: {headerText}</option>
-                    ))}
+                    {wizardHeaders.map((headerText, hIdx) => {
+                      const sampleVal = wizardRawData[1] && wizardRawData[1][hIdx] ? wizardRawData[1][hIdx] : '';
+                      const sampleSnippet = sampleVal ? ` (e.g. "${sampleVal.length > 18 ? sampleVal.slice(0, 18) + '...' : sampleVal}")` : '';
+                      return (
+                        <option key={hIdx} value={hIdx}>Col {hIdx + 1}: {headerText}{sampleSnippet}</option>
+                      );
+                    })}
                   </select>
                 </div>
               ))}
@@ -3191,14 +4180,17 @@ export const AdminDashboard: React.FC = () => {
               <table className="verify-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '120px' }}>Student ID</th>
+                    <th style={{ width: '110px' }}>Student ID</th>
                     <th>Student Name *</th>
                     <th>Email ID *</th>
+                    <th style={{ width: '110px' }}>Gender *</th>
+                    <th>Nationality *</th>
+                    <th style={{ width: '130px' }}>English Level *</th>
                     <th>University</th>
                     <th>Degree</th>
-                    <th style={{ width: '120px' }}>Student Type</th>
-                    <th style={{ width: '130px' }}>Roster Group</th>
-                    <th style={{ width: '45px', textAlign: 'center' }}>Action</th>
+                    <th style={{ width: '100px' }}>Type</th>
+                    <th style={{ width: '110px' }}>Roster Group</th>
+                    <th style={{ width: '40px', textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3236,6 +4228,43 @@ export const AdminDashboard: React.FC = () => {
                             title={rowErrs.find(e => e.includes('email') || e.includes('Email'))}
                             onChange={(e) => handleWizardCellChange(idx, 'email', e.target.value)}
                           />
+                        </td>
+                        <td>
+                          <select
+                            className="verify-input"
+                            value={studentItem.gender || 'Female'}
+                            onChange={(e) => handleWizardCellChange(idx, 'gender', e.target.value)}
+                            style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '0.2rem' }}
+                          >
+                            <option value="Female">Female</option>
+                            <option value="Male">Male</option>
+                            <option value="Non-binary">Non-binary</option>
+                            <option value="Other">Other</option>
+                            <option value="Prefer not to say">Prefer not to say</option>
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            className="verify-input"
+                            value={studentItem.nationality || ''}
+                            placeholder="e.g. Germany"
+                            onChange={(e) => handleWizardCellChange(idx, 'nationality', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            className="verify-input"
+                            value={studentItem.englishProficiency || 'Fluent (C1/C2)'}
+                            onChange={(e) => handleWizardCellChange(idx, 'englishProficiency', e.target.value)}
+                            style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '0.2rem' }}
+                          >
+                            <option value="Native / Bilingual">Native / Bilingual</option>
+                            <option value="Fluent (C1/C2)">Fluent (C1/C2)</option>
+                            <option value="Advanced (B2)">Advanced (B2)</option>
+                            <option value="Intermediate (B1)">Intermediate (B1)</option>
+                            <option value="Basic (A1/A2)">Basic (A1/A2)</option>
+                          </select>
                         </td>
                         <td>
                           <input
@@ -4116,6 +5145,56 @@ export const AdminDashboard: React.FC = () => {
           );
         })()}
       </Modal>
+
+      {/* MODAL: CLASS QR CODE & SELF-ENROLLMENT */}
+      <ClassQRCodeModal
+        isOpen={isQRCodeModalOpen}
+        onClose={() => setIsQRCodeModalOpen(false)}
+        classNameTitle={activeClass.name}
+        enrollUrl={getClassEnrollmentUrl(activeClass.id)}
+        enrolledCount={activeClass.students.length}
+      />
+
+      {/* MODAL: INTELLIGENT AUTO-GROUP DIVERSITY STUDIO */}
+      <AutoGroupModal
+        isOpen={isAutoGroupModalOpen}
+        onClose={() => setIsAutoGroupModalOpen(false)}
+        students={activeClass.students}
+        onApplyGroups={(updatedStudents) => {
+          importRoster(activeClass.id, updatedStudents, true);
+          const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
+          addToast(`Successfully organized ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
+        }}
+      />
+
+      {/* MODAL: INDIVIDUAL STUDENT PDF REPORT CARDS & PREVIEWS */}
+      <StudentReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        initialStudentId={selectedReportStudentId}
+        classData={activeClass}
+        onToast={addToast}
+      />
+
+      {/* MODAL: LIVE CLASSROOM PROJECTOR / PRESENTATION MODE */}
+      {isProjectorModalOpen && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 99999, backgroundColor: 'var(--bg-app)', overflowY: 'auto' }}>
+          <ProjectorView
+            classData={activeClass}
+            onClose={() => setIsProjectorModalOpen(false)}
+            isStandalone={false}
+          />
+        </div>,
+        document.body
+      )}
+
+      {/* MODAL: FAST LINK DISPATCHER & BULK ROSTER LINKS */}
+      <LinkDispatcherModal
+        isOpen={isLinkDispatcherOpen}
+        onClose={() => setIsLinkDispatcherOpen(false)}
+        classData={activeClass}
+        onToast={addToast}
+      />
     </div>
   );
 };

@@ -8,6 +8,7 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  maxWidth?: string;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -15,7 +16,8 @@ export const Modal: React.FC<ModalProps> = ({
   onClose,
   title,
   children,
-  footer
+  footer,
+  maxWidth
 }) => {
   // Close modal on Escape key press
   useEffect(() => {
@@ -42,6 +44,7 @@ export const Modal: React.FC<ModalProps> = ({
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-content"
+        style={maxWidth ? { maxWidth } : undefined}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

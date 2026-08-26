@@ -15,6 +15,23 @@ export interface Student {
   university?: string;
   degree?: string;
   studentType?: string;
+  gender?: string;
+  nationality?: string;
+  englishProficiency?: string;
+}
+
+/**
+ * Normalizes nationality string for consistent grouping and comparison (case-insensitive).
+ */
+export function normalizeNationality(nationality?: string): string {
+  if (!nationality || !nationality.trim()) return '';
+  const trimmed = nationality.trim();
+  // Capitalize first letter of each word for clean display while preserving case-insensitive value
+  return trimmed
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 export interface Review {

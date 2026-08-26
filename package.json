@@ -11,9 +11,13 @@
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",
+    "@types/qrcode": "^1.5.6",
     "firebase": "^12.13.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.16.0",
     "pdfjs-dist": "^5.7.284",
+    "qrcode": "^1.5.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "xlsx": "^0.18.5"

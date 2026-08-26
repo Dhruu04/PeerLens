@@ -3,7 +3,8 @@ import {
   ShieldCheck, Send, AlertCircle, TrendingUp, 
   ThumbsUp, Rocket, Trophy, Lightbulb, Clock, Heart, 
   Award, MessageSquare, Target, Minus, Plus, CheckCircle,
-  GraduationCap, Users, Info, BarChart2, Download, Lock, BookOpen
+  GraduationCap, Users, Info, BarChart2, Download, Lock, BookOpen,
+  Check, Star, AlertTriangle
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
 import { calculateStudentMetrics, getTargetScale } from '../utils/math';
@@ -1245,7 +1246,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                         fontWeight: 800
                       }}
                     >
-                      {isDone ? '✓' : idx + 1}
+                      {isDone ? <Check size={8} /> : idx + 1}
                     </div>
                     <span style={{ fontWeight: 600 }}>{cleanStudentName(t.name)}</span>
                   </button>
@@ -1286,7 +1287,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                     fontWeight: 800
                   }}
                 >
-                  {selfTouched ? '✓' : '★'}
+                  {selfTouched ? <Check size={8} /> : <Star size={8} />}
                 </div>
                 <span style={{ fontWeight: 600 }}>Self</span>
               </button>
@@ -1474,8 +1475,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                           className="btn btn-sm"
                           style={{
                             borderRadius: '20px',
-                            fontSize: '0.75rem',
-                            padding: '0.4rem 0.85rem',
+                            fontSize: '0.82rem',
+                            padding: '0.5rem 0.95rem',
+                            minHeight: '40px',
                             border: `1px solid ${isSelected ? tagInfo.color : 'var(--border-color)'}`,
                             backgroundColor: isSelected ? tagInfo.bg : 'var(--bg-surface)',
                             color: isSelected ? tagInfo.color : 'var(--text-secondary)',
@@ -1483,7 +1485,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '0.35rem',
+                            gap: '0.4rem',
+                            touchAction: 'manipulation',
                             transition: 'all 150ms ease',
                             boxShadow: isSelected ? '0 2px 4px rgba(0, 0, 0, 0.05)' : 'none'
                           }}
@@ -1495,7 +1498,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                             setPraiseTags(prev => ({ ...prev, [peer.id]: next }));
                           }}
                         >
-                          <TagIcon size={12} /> {tagInfo.text} {isSelected && '✓'}
+                          <TagIcon size={14} /> {tagInfo.text} {isSelected && <Check size={12} style={{ marginLeft: '2px' }} />}
                         </button>
                       );
                     })}
@@ -1505,17 +1508,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                 {/* Qualitative Written Comments */}
                 <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px dashed var(--border-color)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem', margin: 0 }}>
-                    <MessageSquare size={16} className="text-primary" /> Written Constructive Feedback <span style={{ fontSize: '0.7rem', fontWeight: 400, color: 'var(--text-muted)' }}>(Shared anonymously, randomized & shuffled)</span>
+                    <MessageSquare size={16} className="text-primary" /> Written Constructive Feedback <span style={{ fontSize: '0.7rem', fontWeight: 400, color: 'var(--text-muted)' }}>(Shared anonymously, randomized &amp; shuffled)</span>
                   </span>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
                     <div className="form-group" style={{ margin: 0 }}>
-                      <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>What are this teammate's primary strengths?</label>
+                      <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>What are this teammate's primary strengths?</label>
                       <textarea
                         className="form-input"
                         placeholder="e.g. Completed documentation accurately, communicated proactively in standups, helped debugging scripts..."
                         rows={3}
-                        style={{ resize: 'vertical', fontSize: '0.8rem', fontFamily: 'inherit' }}
+                        style={{ resize: 'vertical', fontSize: '16px', lineHeight: 1.45, padding: '0.65rem 0.75rem', fontFamily: 'inherit' }}
                         maxLength={500}
                         value={strengthsText[peer.id] || ''}
                         onChange={(e) => setStrengthsText(prev => ({ ...prev, [peer.id]: e.target.value }))}
@@ -1523,12 +1526,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                     </div>
                     
                     <div className="form-group" style={{ margin: 0 }}>
-                      <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>What is one constructive suggestion for their improvement?</label>
+                      <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>What is one constructive suggestion for their improvement?</label>
                       <textarea
                         className="form-input"
                         placeholder="e.g. Could participate more actively in brainstorming, or submit code milestones slightly earlier..."
                         rows={3}
-                        style={{ resize: 'vertical', fontSize: '0.8rem', fontFamily: 'inherit' }}
+                        style={{ resize: 'vertical', fontSize: '16px', lineHeight: 1.45, padding: '0.65rem 0.75rem', fontFamily: 'inherit' }}
                         maxLength={500}
                         value={growthText[peer.id] || ''}
                         onChange={(e) => setGrowthText(prev => ({ ...prev, [peer.id]: e.target.value }))}
@@ -1536,8 +1539,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                     </div>
                   </div>
                   <details style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '0.25rem' }}>
-                    <summary style={{ outline: 'none', fontWeight: 700, color: 'var(--accent-amber)', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                      ⚠️ <span>Anonymity Guidelines & Warning (Tap to view)</span>
+                    <summary style={{ outline: 'none', fontWeight: 700, color: 'var(--accent-amber)', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <AlertTriangle size={13} className="text-amber" /> <span>Anonymity Guidelines &amp; Warning (Tap to view)</span>
                     </summary>
                     <p style={{ marginTop: '0.4rem', lineHeight: 1.45, padding: '0.5rem', backgroundColor: 'var(--accent-amber-light)', borderRadius: '4px', border: '1px solid hsla(35, 92%, 47%, 0.15)' }}>
                       Do not type identifying names or gendered pronouns (e.g. "He / She helped Bob..."). Maintain strictly constructive, gender-neutral peer vocabulary to preserve complete anonymity.
@@ -1554,7 +1557,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
             <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--accent-teal-light)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
-                  ★
+                  <Star size={18} />
                 </div>
                 <div>
                   <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Step 2: Self-Evaluation Calibration</h3>
@@ -1565,7 +1568,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
 
             <details style={{ backgroundColor: 'var(--primary-light)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--primary)', fontSize: '0.82rem', color: 'hsl(243, 75%, 25%)', marginBottom: '1.5rem', cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>
               <summary style={{ fontWeight: 700, outline: 'none', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.35rem', userSelect: 'none' }}>
-                💡 <span>Why evaluate myself? (Tap to expand calibration info)</span>
+                <Lightbulb size={14} className="text-primary" /> <span>Why evaluate myself? (Tap to expand calibration info)</span>
               </summary>
               <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)', lineHeight: 1.45, fontSize: '0.78rem' }}>
                 You are going to <b>compare side-by-side</b> the scores you give yourself with the anonymous scores your teammates give you! Evaluating your own performance honestly helps calibrate your self-perception and reconcile alignment gaps. <i>Rest assured, your classmates will never see your self-rating.</i>

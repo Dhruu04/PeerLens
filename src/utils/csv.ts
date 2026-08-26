@@ -1,4 +1,4 @@
-import { calculateStudentMetrics, calculateStudentWebPAScore, getTargetScale } from './math';
+import { calculateStudentMetrics, calculateStudentWebPAScore, getTargetScale, normalizeNationality } from './math';
 import type { Student, ClassData } from './math';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -11,7 +11,7 @@ try {
 
 /**
  * Intelligent client-side CSV parser.
- * Maps CSV headers dynamically to standard student keys (id, name, email, groupName).
+ * Maps CSV headers dynamically to standard student keys (id, name, email, groupName, gender, nationality, englishProficiency).
  */
 export function parseCSV(csvContent: string): {
   students: Student[];
@@ -69,6 +69,9 @@ export function parseCSV(csvContent: string): {
   const uniIdx = headers.findIndex((h) => ['university', 'uni', 'college', 'institution', 'school'].includes(h));
   const degreeIdx = headers.findIndex((h) => ['degree', 'major', 'program', 'course', 'degreefield'].includes(h));
   const studentTypeIdx = headers.findIndex((h) => ['studenttype', 'type', 'status', 'erasmus'].includes(h));
+  const genderIdx = headers.findIndex((h) => ['gender', 'sex'].includes(h));
+  const nationalityIdx = headers.findIndex((h) => ['nationality', 'country', 'citizenship', 'nation'].includes(h));
+  const englishIdx = headers.findIndex((h) => ['englishproficiency', 'english', 'englishlevel', 'languagelevel', 'proficiency'].includes(h));
 
   if (nameIdx === -1 || emailIdx === -1) {
     errors.push('Could not identify "Name" or "Email" columns in the CSV header.');
@@ -90,6 +93,9 @@ export function parseCSV(csvContent: string): {
     const rawUni = uniIdx !== -1 ? row[uniIdx] : '';
     const rawDegree = degreeIdx !== -1 ? row[degreeIdx] : '';
     const rawStudentType = studentTypeIdx !== -1 ? row[studentTypeIdx] : 'Normal';
+    const rawGender = genderIdx !== -1 ? row[genderIdx] : 'Prefer not to say';
+    const rawNationality = nationalityIdx !== -1 ? row[nationalityIdx] : '';
+    const rawEnglish = englishIdx !== -1 ? row[englishIdx] : 'Fluent (C1/C2)';
     
     // Auto-generate or capture unique ID
     let rawId = idIdx !== -1 && row[idIdx] ? row[idIdx] : '';
@@ -124,6 +130,9 @@ export function parseCSV(csvContent: string): {
       university: rawUni ? rawUni.trim() : undefined,
       degree: rawDegree ? rawDegree.trim() : undefined,
       studentType: rawStudentType ? rawStudentType.trim() : 'Normal',
+      gender: rawGender ? rawGender.trim() : 'Prefer not to say',
+      nationality: normalizeNationality(rawNationality),
+      englishProficiency: rawEnglish ? rawEnglish.trim() : 'Fluent (C1/C2)',
     });
   }
 
@@ -141,6 +150,9 @@ export function generateResultsCSV(classData: ClassData): string {
     'University',
     'Degree',
     'Student Type',
+    'Gender',
+    'Nationality',
+    'English Proficiency',
     'Group Name',
     'Submission Status',
     'Peer Reviews Received',
@@ -208,6 +220,9 @@ export function generateResultsCSV(classData: ClassData): string {
       escapeCSVValue(student.university || 'N/A'),
       escapeCSVValue(student.degree || 'N/A'),
       escapeCSVValue(student.studentType || 'Normal'),
+      escapeCSVValue(student.gender || 'Prefer not to say'),
+      escapeCSVValue(student.nationality || 'N/A'),
+      escapeCSVValue(student.englishProficiency || 'Fluent (C1/C2)'),
       escapeCSVValue(student.groupName),
       student.submitted ? 'Submitted' : 'Pending',
       metrics.reviewsReceived,
@@ -338,6 +353,86 @@ export function parsePDFFile(file: File): Promise<string[][]> {
 }
 
 /**
+ * Splits standard or complex CSV/TSV text into a 2D string matrix.
+ * Handles UTF-8 BOM, auto-detected delimiters (comma, semicolon, tab, pipe), and quoted cells.
+ */
+export function parseCSVToMatrix(rawContent: string): string[][] {
+  if (!rawContent || !rawContent.trim()) return [];
+
+  // Strip UTF-8 BOM if present
+  let content = rawContent.replace(/^\uFEFF/, '').trim();
+
+  // Detect dominant separator from the first few lines (ignoring quoted substrings)
+  const previewLines = content.split(/\r?\n/).slice(0, 5);
+  const counts: Record<string, number> = { ',': 0, ';': 0, '\t': 0, '|': 0 };
+
+  previewLines.forEach(line => {
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') inQuotes = !inQuotes;
+      else if (!inQuotes && counts[c] !== undefined) {
+        counts[c]++;
+      }
+    }
+  });
+
+  // Pick delimiter with max count (default to comma)
+  let separator = ',';
+  let maxCount = 0;
+  for (const [delim, count] of Object.entries(counts)) {
+    if (count > maxCount) {
+      maxCount = count;
+      separator = delim;
+    }
+  }
+
+  // Tokenize stream respecting quotes and newlines
+  const matrix: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+    const nextChar = content[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
+        i++; // Skip next quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === separator && !inQuotes) {
+      currentRow.push(currentCell.trim());
+      currentCell = '';
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++;
+      }
+      currentRow.push(currentCell.trim());
+      currentCell = '';
+      if (currentRow.some(c => c.length > 0)) {
+        matrix.push(currentRow);
+      }
+      currentRow = [];
+    } else {
+      currentCell += char;
+    }
+  }
+
+  if (currentCell.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    if (currentRow.some(c => c.length > 0)) {
+      matrix.push(currentRow);
+    }
+  }
+
+  return matrix;
+}
+
+/**
  * General router function to parse CSV, Excel, or PDF into 2D string matrix
  */
 export async function extractRosterMatrix(file: File): Promise<string[][]> {
@@ -353,30 +448,7 @@ export async function extractRosterMatrix(file: File): Promise<string[][]> {
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target?.result as string;
-        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-        let separator = ',';
-        if (lines[0]?.includes(';')) separator = ';';
-        else if (lines[0]?.includes('\t')) separator = '\t';
-        
-        const matrix = lines.map(line => {
-          const result: string[] = [];
-          let cell = '';
-          let inQuotes = false;
-          
-          for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            if (char === '"') {
-              inQuotes = !inQuotes;
-            } else if (char === separator && !inQuotes) {
-              result.push(cell.trim().replace(/^"|"$/g, ''));
-              cell = '';
-            } else {
-              cell += char;
-            }
-          }
-          result.push(cell.trim().replace(/^"|"$/g, ''));
-          return result;
-        });
+        const matrix = parseCSVToMatrix(text);
         resolve(matrix);
       };
       reader.onerror = () => reject(new Error('Failed to read CSV/plain text file.'));
@@ -386,11 +458,10 @@ export async function extractRosterMatrix(file: File): Promise<string[][]> {
 }
 
 /**
- * Helper to parse raw copy-pasted spreadsheet cells (tab-separated cells)
+ * Helper to parse raw copy-pasted spreadsheet cells (tab, comma, or semicolon separated)
  */
 export function parseRawPastedText(text: string): string[][] {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-  return lines.map(line => line.split('\t').map(c => c.trim()));
+  return parseCSVToMatrix(text);
 }
 
 /**
@@ -417,6 +488,9 @@ export function exportClassroomToExcel(classData: ClassData): void {
     'University',
     'Degree',
     'Student Type',
+    'Gender',
+    'Nationality',
+    'English Proficiency',
     'Group Name',
     'Submission Status',
     'Peer Reviews Received',
@@ -484,6 +558,9 @@ export function exportClassroomToExcel(classData: ClassData): void {
       student.university || 'N/A',
       student.degree || 'N/A',
       student.studentType || 'Normal',
+      student.gender || 'Prefer not to say',
+      student.nationality || 'N/A',
+      student.englishProficiency || 'Fluent (C1/C2)',
       student.groupName,
       student.submitted ? 'Submitted' : 'Pending',
       metrics.reviewsReceived,
