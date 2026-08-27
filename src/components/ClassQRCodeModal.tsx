@@ -115,77 +115,75 @@ export const ClassQRCodeModal: React.FC<ClassQRCodeModalProps> = ({
           </div>
         </div>
 
-        {/* Shareable Link Input with Copy Button */}
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'left' }}>
-          <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Direct Sharable Link</span>
+        {/* Direct Sharable Link Input */}
+        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.35rem', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Direct Shareable Link</span>
             {enrolledCount > 0 && (
-              <span className="badge badge-teal" style={{ fontSize: '0.7rem' }}>
-                <Users size={11} style={{ marginRight: '3px' }} /> {enrolledCount} Students Enrolled
+              <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem' }}>
+                <Users size={11} style={{ marginRight: '3px' }} /> {enrolledCount} Enrolled
               </span>
             )}
-          </label>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          </div>
+          <div style={{ display: 'flex', gap: '0.45rem' }}>
             <input 
               type="text" 
               readOnly 
               value={enrollUrl} 
               className="form-input" 
-              style={{ fontSize: '0.82rem', fontFamily: 'monospace', background: 'var(--bg-app)', color: 'var(--text-main)' }}
+              style={{ fontSize: '0.8rem', fontFamily: 'monospace', height: '36px', background: 'var(--bg-app)', color: 'var(--text-main)' }}
               onClick={(e) => (e.target as HTMLInputElement).select()}
             />
             <button 
               type="button"
               className={`btn ${copied ? 'btn-teal' : 'btn-primary'}`} 
               onClick={handleCopyLink}
-              style={{ flexShrink: 0, minWidth: '110px', justifyContent: 'center' }}
+              style={{ flexShrink: 0, height: '36px', padding: '0 0.85rem', fontSize: '0.8rem', fontWeight: 600, gap: '0.35rem' }}
             >
-              {copied ? (
-                <>
-                  <Check size={16} /> Copied!
-                </>
-              ) : (
-                <>
-                  <Copy size={16} /> Copy Link
-                </>
-              )}
+              {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
             </button>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', width: '100%', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.25rem' }}>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+        {/* Minimalized Action Toolbar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <button 
               type="button" 
               className="btn btn-secondary btn-sm"
               onClick={handleDownloadQR}
-              title="Download QR code image for lecture slides or syllabus handouts"
+              title="Download QR code image"
+              style={{ height: '32px', fontSize: '0.78rem', padding: '0 0.65rem', gap: '0.35rem' }}
             >
-              <Download size={15} /> Download PNG
+              <Download size={13} /> Download
             </button>
-            <button 
-              type="button" 
-              className={`btn btn-sm ${presentationMode ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setPresentationMode(!presentationMode)}
-            >
-              <QrCode size={15} /> {presentationMode ? 'Standard View' : 'Large Screen Mode'}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
             <a 
               href={enrollUrl} 
               target="_blank" 
               rel="noopener noreferrer" 
               className="btn btn-secondary btn-sm"
+              style={{ height: '32px', fontSize: '0.78rem', padding: '0 0.65rem', gap: '0.35rem', textDecoration: 'none' }}
             >
-              <ExternalLink size={15} /> Open Portal <span style={{ opacity: 0.7 }}>(Preview)</span>
+              <ExternalLink size={13} /> Preview
             </a>
-            <button type="button" className="btn btn-primary btn-sm" onClick={onClose}>
-              Done
+            <button 
+              type="button" 
+              className={`btn btn-sm ${presentationMode ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setPresentationMode(!presentationMode)}
+              style={{ height: '32px', fontSize: '0.78rem', padding: '0 0.65rem', gap: '0.35rem' }}
+            >
+              <QrCode size={13} /> {presentationMode ? 'Standard' : 'Enlarge'}
             </button>
           </div>
+
+          <button 
+            type="button" 
+            className="btn btn-primary btn-sm" 
+            onClick={onClose}
+            style={{ height: '32px', fontSize: '0.78rem', padding: '0 1rem', fontWeight: 700 }}
+          >
+            Done
+          </button>
         </div>
 
       </div>

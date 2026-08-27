@@ -4,6 +4,7 @@ export interface GradingScaleField {
   min: number;
   max: number;
   weight: number; // For future-proofing weighting, defaults to 1
+  description?: string; // Guidance / behavioral indicator for reviewers
 }
 
 export interface Student {
@@ -14,10 +15,16 @@ export interface Student {
   submitted: boolean;
   university?: string;
   degree?: string;
-  studentType?: string;
+  studentType?: string; // 'Normal' | 'Erasmus' | 'Exchange' | 'International' | etc.
   gender?: string;
   nationality?: string;
   englishProficiency?: string;
+  isInternational?: boolean;
+  isExchange?: boolean;
+  currentCountry?: string;
+  originalCountry?: string;
+  originalUniversity?: string;
+  currentUniversity?: string;
 }
 
 /**

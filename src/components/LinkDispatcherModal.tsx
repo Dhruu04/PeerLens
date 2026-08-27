@@ -5,17 +5,19 @@ import {
   Send, 
   Copy, 
   Check, 
-  Download, 
-  Search, 
-  ExternalLink, 
   Mail, 
-  MessageSquare, 
   Users,
-  Edit3,
   Eye,
-  RefreshCw
+  RefreshCw,
+  User,
+  Layers,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
+import emailjs from '@emailjs/browser';
 import type { ClassData, Student } from '../utils/math';
+import { useClass } from '../context/ClassContext';
+import CustomSelect from './CustomSelect';
 
 interface LinkDispatcherModalProps {
   isOpen: boolean;
@@ -27,22 +29,15 @@ interface LinkDispatcherModalProps {
 const DEFAULT_EMAIL_SUBJECT = 'Peer Evaluation Access Link - {class_name}';
 const DEFAULT_EMAIL_BODY = `Dear {student_name},
 
-Our peer evaluation session for "{class_name}" is now active! 
+Our anonymous peer evaluation session for "{class_name}" is now active!
 
-Please use your confidential link below to submit evaluations for your teammates ({team_name}):
+Please use your private evaluation link below to review your teammates ({team_name}):
 {evaluation_link}
 
-This evaluation is anonymous and takes only 2-3 minutes. Please complete your submission before the deadline.
+This evaluation is strictly confidential and takes only 2-3 minutes. Please complete your submission before the deadline.
 
 Best regards,
 Course Instructor`;
-
-const DEFAULT_WHATSAPP_MSG = `*Peer Evaluation Live: {class_name}*
-
-Hi everyone! Our peer evaluation window is open. Please check your email or visit your personal link to evaluate your teammates ({team_name}):
-{evaluation_link}
-
-Evaluations take 2-3 minutes. Thank you!`;
 
 export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
   isOpen,
@@ -50,10 +45,37 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
   classData,
   onToast
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [copiedBulkType, setCopiedBulkType] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'roster' | 'email_template' | 'whatsapp'>('roster');
+  const { isCloudSynced, firebaseConfig, user } = useClass();
+
+  // Cohort Selection Mode: 'all' | 'group' | 'single'
+  const [recipientMode, setRecipientMode] = useState<'all' | 'group' | 'single'>('all');
+  const [pendingOnly, setPendingOnly] = useState<boolean>(false);
+  const [selectedGroup, setSelectedGroup] = useState<string>('All');
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+
+  // Email Composer state
+  const [emailSubject, setEmailSubject] = useState<string>(() => {
+    return localStorage.getItem('peer_custom_email_subject') || DEFAULT_EMAIL_SUBJECT;
+  });
+  const [emailBody, setEmailBody] = useState<string>(() => {
+    return localStorage.getItem('peer_custom_email_body') || DEFAULT_EMAIL_BODY;
+  });
+  const [previewStudentIndex, setPreviewStudentIndex] = useState<number>(0);
+
+  // Sending progress & execution logs
+  const [isSending, setIsSending] = useState<boolean>(false);
+  const [sendProgress, setSendProgress] = useState<number>(0);
+  const [sendLogs, setSendLogs] = useState<string[]>([]);
+  const [copiedType, setCopiedType] = useState<string | null>(null);
+
+  // Read saved provider config from localStorage
+  const emailService = (localStorage.getItem('peer_email_service') as 'simulator' | 'emailjs' | 'brevo') || 'simulator';
+  const emailjsServiceId = localStorage.getItem('peer_emailjs_service_id') || '';
+  const emailjsTemplateId = localStorage.getItem('peer_emailjs_template_id') || '';
+  const emailjsUserId = localStorage.getItem('peer_emailjs_user_id') || '';
+  const brevoApiKey = localStorage.getItem('peer_brevo_api_key') || '';
+  const brevoSenderEmail = localStorage.getItem('peer_brevo_sender_email') || '';
+  const brevoSenderName = localStorage.getItem('peer_brevo_sender_name') || 'Instructor';
 
   // Disable background scrolling when modal is open
   useEffect(() => {
@@ -66,36 +88,60 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
     }
   }, [isOpen]);
 
-  // Editable Broadcast Templates state
-  const [emailSubject, setEmailSubject] = useState<string>(DEFAULT_EMAIL_SUBJECT);
-  const [emailBody, setEmailBody] = useState<string>(DEFAULT_EMAIL_BODY);
-  const [whatsappMsg, setWhatsappMsg] = useState<string>(DEFAULT_WHATSAPP_MSG);
-  const [previewStudentId, setPreviewStudentId] = useState<string>(classData.students[0]?.id || '');
-
   if (!isOpen) return null;
 
-  const getStudentPortalUrl = (studentId: string) => {
-    const params = new URLSearchParams(window.location.search);
-    const fbParam = params.get('fb');
-    let url = `${window.location.origin}${window.location.pathname}?classId=${classData.id}&studentId=${studentId}`;
-    if (fbParam) {
-      url += `&fb=${fbParam}`;
+  // Compute unique team groups
+  const uniqueGroups = Array.from(new Set(classData.students.map(s => s.groupName || 'Unassigned'))).sort();
+  const groupSelectOptions = [
+    { value: 'All', label: `All Groups (${uniqueGroups.length} Teams)` },
+    ...uniqueGroups.map(g => {
+      const count = classData.students.filter(s => (s.groupName || 'Unassigned') === g).length;
+      return { value: g, label: `${g} (${count} students)` };
+    })
+  ];
+
+  // Filter recipients based on cohort mode
+  let targetRecipients: Student[] = [];
+  if (recipientMode === 'all') {
+    targetRecipients = pendingOnly 
+      ? classData.students.filter(s => !s.submitted)
+      : classData.students;
+  } else if (recipientMode === 'group') {
+    targetRecipients = selectedGroup === 'All'
+      ? classData.students
+      : classData.students.filter(s => (s.groupName || 'Unassigned') === selectedGroup);
+    if (pendingOnly) {
+      targetRecipients = targetRecipients.filter(s => !s.submitted);
     }
-    return url;
-  };
+  } else {
+    // Single student
+    const found = classData.students.find(s => s.id === selectedStudentId);
+    targetRecipients = found ? [found] : (classData.students.length > 0 ? [classData.students[0]] : []);
+  }
 
-  const filteredStudents = classData.students.filter(s => 
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (s.groupName && s.groupName.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
-  const selectedPreviewStudent = classData.students.find(s => s.id === previewStudentId) || classData.students[0] || {
+  // Active preview student
+  const previewStudent: Student = targetRecipients[previewStudentIndex] || targetRecipients[0] || {
     id: 'sample_1',
     name: 'Sample Student',
     email: 'student@university.edu',
-    groupName: 'Team 1',
+    groupName: 'Team Alpha',
     submitted: false
+  };
+
+  const getStudentPortalUrl = (studentId: string) => {
+    let url = `${window.location.origin}${window.location.pathname}?classId=${classData.id}&studentId=${studentId}`;
+    if (isCloudSynced && firebaseConfig && user) {
+      const payload = {
+        a: firebaseConfig.apiKey,
+        p: firebaseConfig.projectId,
+        d: firebaseConfig.authDomain,
+        i: firebaseConfig.appId,
+        o: user.uid
+      };
+      const encoded = btoa(JSON.stringify(payload));
+      url += `&fb=${encoded}`;
+    }
+    return url;
   };
 
   const substituteVariables = (text: string, student: Student) => {
@@ -108,72 +154,152 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
       .replace(/{student_id}/g, student.id);
   };
 
-  const handleCopySingle = (student: Student) => {
-    const url = getStudentPortalUrl(student.id);
-    navigator.clipboard.writeText(url);
-    setCopiedId(student.id);
-    if (onToast) onToast(`Copied evaluation link for ${student.name}`, 'success');
-    setTimeout(() => setCopiedId(null), 2000);
+  // Direct Live Email Sender
+  const handleSendDirectEmails = async () => {
+    if (targetRecipients.length === 0) {
+      if (onToast) onToast('No recipients selected to send emails to.', 'warning');
+      return;
+    }
+
+    setIsSending(true);
+    setSendProgress(0);
+    setSendLogs([]);
+
+    let successCount = 0;
+    let failCount = 0;
+    const total = targetRecipients.length;
+
+    for (let i = 0; i < total; i++) {
+      const student = targetRecipients[i];
+      const link = getStudentPortalUrl(student.id);
+      const subject = substituteVariables(emailSubject, student);
+      const bodyText = substituteVariables(emailBody, student);
+
+      if (emailService === 'emailjs') {
+        try {
+          if (!emailjsServiceId || !emailjsTemplateId) {
+            throw new Error('EmailJS Service ID and Template ID are required in Settings.');
+          }
+          await emailjs.send(
+            emailjsServiceId.trim(),
+            emailjsTemplateId.trim(),
+            {
+              to_name: student.name,
+              to_email: student.email,
+              class_name: classData.name,
+              evaluation_link: link,
+              custom_subject: subject,
+              custom_body: bodyText
+            },
+            emailjsUserId.trim()
+          );
+          successCount++;
+          setSendLogs(prev => [...prev, `✅ [${i + 1}/${total}] Sent via EmailJS to ${student.name} (${student.email})`]);
+        } catch (err: any) {
+          failCount++;
+          const msg = err?.text || err?.message || 'Network error';
+          setSendLogs(prev => [...prev, `❌ [${i + 1}/${total}] Failed for ${student.name} (${student.email}): ${msg}`]);
+        }
+      } else if (emailService === 'brevo') {
+        try {
+          if (!brevoApiKey || !brevoSenderEmail) {
+            throw new Error('Brevo API Key and Sender Email are required in Settings.');
+          }
+          const htmlContent = `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 28px 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <span style="background-color: #e0e7ff; color: #4f46e5; padding: 5px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; text-transform: uppercase;">PeerLens Assessment</span>
+              </div>
+              <h2 style="color: #0f172a; font-size: 19px; font-weight: 700; margin: 0 0 16px 0; text-align: center;">${subject}</h2>
+              <div style="color: #334155; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${bodyText}</div>
+              <div style="text-align: center; margin: 26px 0;">
+                <a href="${link}" target="_blank" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; display: inline-block;">Open Grading Portal ➔</a>
+              </div>
+              <p style="color: #64748b; font-size: 12px; line-height: 1.4; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px; text-align: center;">
+                Confidential peer assessment link for <strong>${student.name}</strong> (${student.groupName || 'Unassigned'}).
+              </p>
+            </div>
+          `;
+
+          const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+              'accept': 'application/json',
+              'api-key': brevoApiKey.trim(),
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+              sender: { name: brevoSenderName.trim() || 'Instructor', email: brevoSenderEmail.trim() },
+              to: [{ email: student.email, name: student.name }],
+              subject: subject,
+              htmlContent: htmlContent
+            })
+          });
+
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || `Brevo HTTP ${res.status}`);
+          }
+          successCount++;
+          setSendLogs(prev => [...prev, `✅ [${i + 1}/${total}] Sent via Brevo to ${student.name} (${student.email})`]);
+        } catch (err: any) {
+          failCount++;
+          setSendLogs(prev => [...prev, `❌ [${i + 1}/${total}] Failed for ${student.name} (${student.email}): ${err.message}`]);
+        }
+      } else {
+        // High-Fidelity Simulator
+        await new Promise(r => setTimeout(r, 450));
+        successCount++;
+        setSendLogs(prev => [...prev, `⚡ [${i + 1}/${total}] [Simulator] Delivered private link to ${student.name} (${student.email})`]);
+      }
+
+      setSendProgress(Math.round(((i + 1) / total) * 100));
+    }
+
+    setIsSending(false);
+
+    if (onToast) {
+      if (emailService === 'simulator') {
+        onToast(`Simulated emails successfully sent to ${successCount} student(s)!`, 'success');
+      } else if (successCount > 0) {
+        onToast(`Live email campaign completed! Sent: ${successCount}, Failed: ${failCount}`, 'success');
+      } else {
+        onToast(`Email campaign failed. All ${failCount} emails failed to send. Check your API settings.`, 'error');
+      }
+    }
   };
 
-  const handleCopyCSV = () => {
-    const header = 'Student ID,Full Name,Email,Group,Personal Evaluation Link';
-    const rows = classData.students.map(s => 
-      `"${s.id}","${s.name}","${s.email}","${s.groupName || 'Unassigned'}","${getStudentPortalUrl(s.id)}"`
-    );
-    const content = [header, ...rows].join('\n');
-    navigator.clipboard.writeText(content);
-    setCopiedBulkType('csv');
-    if (onToast) onToast('Copied full student roster links table (CSV format) to clipboard!', 'success');
-    setTimeout(() => setCopiedBulkType(null), 2500);
-  };
-
-  const handleDownloadCSV = () => {
-    const header = 'Student ID,Full Name,Email,Group,Personal Evaluation Link';
-    const rows = classData.students.map(s => 
-      `"${s.id}","${s.name}","${s.email}","${s.groupName || 'Unassigned'}","${getStudentPortalUrl(s.id)}"`
-    );
-    const content = [header, ...rows].join('\n');
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${classData.name.replace(/\s+/g, '_')}_student_evaluation_links.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    if (onToast) onToast('Downloaded evaluation links CSV spreadsheet!', 'success');
-  };
-
-  const handleCopyResolvedEmail = () => {
-    const resolved = `Subject: ${substituteVariables(emailSubject, selectedPreviewStudent)}\n\n${substituteVariables(emailBody, selectedPreviewStudent)}`;
-    navigator.clipboard.writeText(resolved);
-    setCopiedBulkType('email');
-    if (onToast) onToast(`Copied email message customized for ${selectedPreviewStudent.name}!`, 'success');
-    setTimeout(() => setCopiedBulkType(null), 2500);
-  };
-
-  const handleCopyResolvedWhatsApp = () => {
-    const resolved = substituteVariables(whatsappMsg, selectedPreviewStudent);
-    navigator.clipboard.writeText(resolved);
-    setCopiedBulkType('whatsapp');
-    if (onToast) onToast('Copied WhatsApp broadcast message to clipboard!', 'success');
-    setTimeout(() => setCopiedBulkType(null), 2500);
-  };
-
-  const handleLaunchMailtoBCC = () => {
-    const allEmails = classData.students.map(s => s.email).filter(Boolean).join(',');
-    const subject = encodeURIComponent(substituteVariables(emailSubject, { ...selectedPreviewStudent, name: 'Student' }));
+  // Launch Default Mail Client (BCC)
+  const handleLaunchMailApp = () => {
+    if (targetRecipients.length === 0) return;
+    const allEmails = targetRecipients.map(s => s.email).filter(Boolean).join(',');
+    const subject = encodeURIComponent(substituteVariables(emailSubject, previewStudent));
     const genericLink = `${window.location.origin}${window.location.pathname}?classId=${classData.id}`;
-    const body = encodeURIComponent(emailBody.replace(/{student_name}/g, 'Student').replace(/{evaluation_link}/g, genericLink));
+    const body = encodeURIComponent(
+      emailBody
+        .replace(/{student_name}/g, 'Student')
+        .replace(/{team_name}/g, 'your team')
+        .replace(/{evaluation_link}/g, genericLink)
+    );
     window.open(`mailto:?bcc=${allEmails}&subject=${subject}&body=${body}`, '_blank');
   };
 
-  const insertVariableIntoEmail = (tag: string) => {
-    setEmailBody(prev => `${prev} ${tag}`);
+  // Copy Full Resolved Email Message
+  const handleCopyEmailText = () => {
+    const resolved = `Subject: ${substituteVariables(emailSubject, previewStudent)}\n\n${substituteVariables(emailBody, previewStudent)}`;
+    navigator.clipboard.writeText(resolved);
+    setCopiedType('email');
+    if (onToast) onToast(`Copied email message customized for ${previewStudent.name}!`, 'success');
+    setTimeout(() => setCopiedType(null), 2500);
   };
 
-  const insertVariableIntoWhatsApp = (tag: string) => {
-    setWhatsappMsg(prev => `${prev} ${tag}`);
+  // Copy Preview Student Personal Link
+  const handleCopyStudentLink = () => {
+    const link = getStudentPortalUrl(previewStudent.id);
+    navigator.clipboard.writeText(link);
+    setCopiedType('link');
+    if (onToast) onToast(`Copied evaluation link for ${previewStudent.name}!`, 'success');
+    setTimeout(() => setCopiedType(null), 2500);
   };
 
   return createPortal(
@@ -181,37 +307,44 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
       <div 
         className="modal-content" 
         style={{ 
-          maxWidth: '960px', 
+          maxWidth: '1020px', 
           width: '95vw', 
           maxHeight: '92vh', 
           height: '92vh', 
           display: 'flex', 
-          flexDirection: 'column',
-          padding: 0,
-          overflow: 'hidden',
-          borderRadius: '16px',
-          backgroundColor: 'var(--bg-surface)',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)'
+          flexDirection: 'column', 
+          padding: 0, 
+          overflow: 'hidden', 
+          borderRadius: '16px', 
+          backgroundColor: 'var(--bg-surface)', 
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)' 
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal Header */}
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between', 
-          padding: '1rem 1.5rem', 
-          borderBottom: '1px solid var(--border-color)',
-          backgroundColor: 'var(--bg-app)'
-        }}>
+        {/* 1. Modal Header */}
+        <div 
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between', 
+            padding: '1rem 1.5rem', 
+            borderBottom: '1px solid var(--border-color)', 
+            backgroundColor: 'var(--bg-app)' 
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Send size={18} />
+            <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Mail size={20} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Fast Link Dispatcher &amp; Broadcast Hub</h3>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Customize templates and distribute personal evaluation links to {classData.students.length} students
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Classroom Email Center</h3>
+                <span className={`badge ${emailService === 'simulator' ? 'badge-amber' : 'badge-teal'}`} style={{ fontSize: '0.7rem' }}>
+                  {emailService === 'emailjs' ? 'EmailJS API' : emailService === 'brevo' ? 'Brevo API' : 'Simulator Mode'}
+                </span>
+              </div>
+              <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Directly send customized evaluation links to selected students, groups, or the entire class.
               </p>
             </div>
           </div>
@@ -219,408 +352,348 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              padding: '0.4rem',
-              borderRadius: '6px'
-            }}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.4rem', borderRadius: '6px' }}
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', padding: '0 1.5rem' }}>
-          <button
-            type="button"
-            style={{ 
-              padding: '0.75rem 1rem', 
-              fontSize: '0.85rem', 
-              fontWeight: 700, 
-              borderBottom: activeTab === 'roster' ? '2px solid var(--primary)' : '2px solid transparent',
-              color: activeTab === 'roster' ? 'var(--primary)' : 'var(--text-secondary)',
-              background: 'none',
-              borderTop: 'none',
-              borderLeft: 'none',
-              borderRight: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem'
-            }}
-            onClick={() => setActiveTab('roster')}
-          >
-            <Users size={15} /> Student Links Sheet ({classData.students.length})
-          </button>
+        {/* 2. Recipient Cohort Selector Strip */}
+        <div 
+          style={{ 
+            padding: '0.75rem 1.5rem', 
+            backgroundColor: 'var(--bg-surface)', 
+            borderBottom: '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '0.75rem'
+          }}
+        >
+          {/* 3-Tier Segmented Control */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', backgroundColor: 'var(--bg-app)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <button
+              type="button"
+              className={`btn btn-sm ${recipientMode === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', gap: '0.35rem', border: 'none' }}
+              onClick={() => setRecipientMode('all')}
+            >
+              <Users size={14} /> All Students ({classData.students.length})
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${recipientMode === 'group' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', gap: '0.35rem', border: 'none' }}
+              onClick={() => setRecipientMode('group')}
+            >
+              <Layers size={14} /> By Group / Team
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${recipientMode === 'single' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', gap: '0.35rem', border: 'none' }}
+              onClick={() => setRecipientMode('single')}
+            >
+              <User size={14} /> Single Student
+            </button>
+          </div>
 
-          <button
-            type="button"
-            style={{ 
-              padding: '0.75rem 1rem', 
-              fontSize: '0.85rem', 
-              fontWeight: 700, 
-              borderBottom: activeTab === 'email_template' ? '2px solid var(--primary)' : '2px solid transparent',
-              color: activeTab === 'email_template' ? 'var(--primary)' : 'var(--text-secondary)',
-              background: 'none',
-              borderTop: 'none',
-              borderLeft: 'none',
-              borderRight: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem'
-            }}
-            onClick={() => setActiveTab('email_template')}
-          >
-            <Mail size={15} /> Editable Email Announcement
-          </button>
+          {/* Sub-Filters / Selection Dropdowns */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {recipientMode === 'all' && (
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                <input 
+                  type="checkbox" 
+                  checked={pendingOnly} 
+                  onChange={(e) => setPendingOnly(e.target.checked)} 
+                  style={{ accentColor: 'var(--primary)' }}
+                />
+                <span>Only Pending Reviewers ({classData.students.filter(s => !s.submitted).length})</span>
+              </label>
+            )}
 
-          <button
-            type="button"
-            style={{ 
-              padding: '0.75rem 1rem', 
-              fontSize: '0.85rem', 
-              fontWeight: 700, 
-              borderBottom: activeTab === 'whatsapp' ? '2px solid var(--primary)' : '2px solid transparent',
-              color: activeTab === 'whatsapp' ? 'var(--primary)' : 'var(--text-secondary)',
-              background: 'none',
-              borderTop: 'none',
-              borderLeft: 'none',
-              borderRight: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem'
-            }}
-            onClick={() => setActiveTab('whatsapp')}
-          >
-            <MessageSquare size={15} /> Editable WhatsApp / Chat Broadcast
-          </button>
+            {recipientMode === 'group' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <CustomSelect
+                  options={groupSelectOptions}
+                  value={selectedGroup}
+                  onChange={(val) => setSelectedGroup(val)}
+                  triggerStyle={{ height: '34px', fontSize: '0.8rem', minWidth: '180px' }}
+                />
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.76rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={pendingOnly} 
+                    onChange={(e) => setPendingOnly(e.target.checked)} 
+                    style={{ accentColor: 'var(--primary)' }}
+                  />
+                  <span>Pending only</span>
+                </label>
+              </div>
+            )}
+
+            {recipientMode === 'single' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <select
+                  className="form-select"
+                  value={selectedStudentId || classData.students[0]?.id || ''}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                  style={{ height: '34px', fontSize: '0.8rem', minWidth: '220px' }}
+                >
+                  {classData.students.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.groupName || 'Unassigned'}) - {s.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Recipient Count Tag */}
+            <span className="badge badge-teal" style={{ fontSize: '0.75rem', fontWeight: 700 }}>
+              {targetRecipients.length} Recipient{targetRecipients.length !== 1 ? 's' : ''} Target
+            </span>
+          </div>
         </div>
 
-        {/* Modal Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem' }}>
+        {/* 3. Modal Body: 2-Column Email Studio */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem', display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: '1.25rem' }}>
           
-          {/* TAB 1: ROSTER LINKS SPREADSHEET */}
-          {activeTab === 'roster' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {/* Quick Actions Bar */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
-                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Search by student name, email, or team..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{ paddingLeft: '32px', height: '38px', fontSize: '0.85rem' }}
-                  />
-                </div>
+          {/* Left: Email Composer & Sending Controls */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Mail size={15} className="text-primary" /> Email Template
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', gap: '0.25rem' }}
+                onClick={() => {
+                  setEmailSubject(DEFAULT_EMAIL_SUBJECT);
+                  setEmailBody(DEFAULT_EMAIL_BODY);
+                }}
+              >
+                <RefreshCw size={11} /> Reset Template
+              </button>
+            </div>
 
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {/* Subject Line */}
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700 }}>Subject Line:</label>
+              <input
+                type="text"
+                className="form-input"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                style={{ fontSize: '0.82rem', height: '36px' }}
+              />
+            </div>
+
+            {/* Body */}
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700 }}>Email Body Text:</label>
+              <textarea
+                className="form-input"
+                rows={7}
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                style={{ fontSize: '0.8rem', lineHeight: 1.45, resize: 'vertical' }}
+              />
+            </div>
+
+            {/* Dynamic Placeholder Insertion Chips */}
+            <div>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem' }}>
+                Insert Dynamic Tag:
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                {[
+                  { tag: '{student_name}', label: 'Student Name' },
+                  { tag: '{class_name}', label: 'Class Name' },
+                  { tag: '{team_name}', label: 'Team / Group' },
+                  { tag: '{evaluation_link}', label: 'Personal Link' }
+                ].map(v => (
                   <button
+                    key={v.tag}
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    onClick={handleCopyCSV}
-                    style={{ gap: '0.35rem', height: '38px' }}
+                    style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', backgroundColor: 'var(--bg-app)', color: 'var(--primary)', fontWeight: 600 }}
+                    onClick={() => setEmailBody(prev => `${prev} ${v.tag}`)}
                   >
-                    {copiedBulkType === 'csv' ? <Check size={14} className="text-teal" /> : <Copy size={14} />}
-                    {copiedBulkType === 'csv' ? 'Copied CSV!' : 'Copy All (CSV)'}
+                    + {v.label}
                   </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={handleDownloadCSV}
-                    style={{ gap: '0.35rem', height: '38px' }}
-                  >
-                    <Download size={14} /> Download CSV Spreadsheet
-                  </button>
-                </div>
-              </div>
-
-              {/* Students Links Table */}
-              <div className="table-container" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                <table className="custom-table" style={{ whiteSpace: 'nowrap' }}>
-                  <thead>
-                    <tr>
-                      <th>Student</th>
-                      <th>Email</th>
-                      <th>Team</th>
-                      <th>State</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredStudents.map((s) => (
-                      <tr key={s.id}>
-                        <td>
-                          <b>{s.name}</b>
-                        </td>
-                        <td style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                          {s.email}
-                        </td>
-                        <td>
-                          <span className="badge badge-teal">{s.groupName || 'Unassigned'}</span>
-                        </td>
-                        <td>
-                          {s.submitted ? (
-                            <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>Completed</span>
-                          ) : (
-                            <span className="badge badge-amber" style={{ fontSize: '0.72rem' }}>Pending</span>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => handleCopySingle(s)}
-                              style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', gap: '0.3rem' }}
-                              title="Copy personal evaluation link"
-                            >
-                              {copiedId === s.id ? <Check size={12} className="text-teal" /> : <Copy size={12} />}
-                              {copiedId === s.id ? 'Copied' : 'Copy Link'}
-                            </button>
-
-                            <a
-                              href={getStudentPortalUrl(s.id)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="btn btn-secondary btn-sm"
-                              style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
-                              title="Open student grading portal in new tab"
-                            >
-                              <ExternalLink size={12} />
-                            </a>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                ))}
               </div>
             </div>
-          )}
 
-          {/* TAB 2: EDITABLE EMAIL TEMPLATE */}
-          {activeTab === 'email_template' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '1.25rem' }}>
-              {/* Left: Interactive Editor */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Edit3 size={15} className="text-primary" /> Live Email Editor
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', gap: '0.25rem' }}
-                    onClick={() => {
-                      setEmailSubject(DEFAULT_EMAIL_SUBJECT);
-                      setEmailBody(DEFAULT_EMAIL_BODY);
-                    }}
-                  >
-                    <RefreshCw size={11} /> Reset Default
-                  </button>
-                </div>
+            {/* Direct Send & Utility Action Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleSendDirectEmails}
+                disabled={isSending || targetRecipients.length === 0}
+                style={{ width: '100%', justifyContent: 'center', gap: '0.45rem', padding: '0.65rem', fontWeight: 700, fontSize: '0.88rem' }}
+              >
+                {isSending ? (
+                  <>
+                    <RefreshCw size={15} className="spin" /> Sending to {targetRecipients.length} Student{targetRecipients.length !== 1 ? 's' : ''}... ({sendProgress}%)
+                  </>
+                ) : (
+                  <>
+                    <Send size={15} /> Send Direct Email ({targetRecipients.length} Recipient{targetRecipients.length !== 1 ? 's' : ''})
+                  </>
+                )}
+              </button>
 
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 700 }}>Subject Line:</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={emailSubject}
-                    onChange={(e) => setEmailSubject(e.target.value)}
-                    style={{ fontSize: '0.85rem' }}
-                  />
-                </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleLaunchMailApp}
+                  disabled={isSending || targetRecipients.length === 0}
+                  style={{ justifyContent: 'center', gap: '0.35rem', fontSize: '0.76rem', padding: '0.45rem' }}
+                  title="Open system default email client (Outlook, Apple Mail, Gmail) with BCC list"
+                >
+                  <Mail size={13} className="text-teal" /> Open in Mail App
+                </button>
 
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 700 }}>Email Body:</label>
-                  <textarea
-                    className="form-input"
-                    rows={8}
-                    value={emailBody}
-                    onChange={(e) => setEmailBody(e.target.value)}
-                    style={{ fontSize: '0.82rem', lineHeight: 1.45, resize: 'vertical' }}
-                  />
-                </div>
-
-                {/* Insertable Dynamic Placeholders */}
-                <div>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-                    Click to insert variables:
-                  </span>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                    {[
-                      { tag: '{student_name}', label: 'Student Name' },
-                      { tag: '{class_name}', label: 'Class Name' },
-                      { tag: '{team_name}', label: 'Team Name' },
-                      { tag: '{evaluation_link}', label: 'Personal Link' }
-                    ].map(v => (
-                      <button
-                        key={v.tag}
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', backgroundColor: 'var(--bg-app)', color: 'var(--primary)' }}
-                        onClick={() => insertVariableIntoEmail(v.tag)}
-                      >
-                        + {v.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={handleCopyResolvedEmail}
-                    style={{ flex: 1, justifyContent: 'center', gap: '0.4rem', padding: '0.55rem' }}
-                  >
-                    {copiedBulkType === 'email' ? <Check size={14} /> : <Copy size={14} />}
-                    {copiedBulkType === 'email' ? 'Copied Message!' : 'Copy Sample Message'}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={handleLaunchMailtoBCC}
-                    style={{ justifyContent: 'center', gap: '0.4rem', padding: '0.55rem' }}
-                    title="Open your default email client with all student emails BCC'd"
-                  >
-                    <Mail size={14} /> Launch in Mail App
-                  </button>
-                </div>
-              </div>
-
-              {/* Right: Live Sample Preview */}
-              <div style={{ backgroundColor: 'var(--bg-app)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Eye size={14} className="text-teal" /> Live Preview
-                  </span>
-                  <select
-                    className="form-select"
-                    value={previewStudentId}
-                    onChange={(e) => setPreviewStudentId(e.target.value)}
-                    style={{ fontSize: '0.72rem', padding: '0.15rem 1.5rem 0.15rem 0.5rem', height: '28px', maxWidth: '170px' }}
-                  >
-                    {classData.students.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ backgroundColor: 'var(--bg-surface)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, overflowY: 'auto' }}>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Subject: </span>
-                    <b style={{ color: 'var(--text-primary)' }}>{substituteVariables(emailSubject, selectedPreviewStudent)}</b>
-                  </div>
-                  <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '0.2rem 0' }} />
-                  <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0, color: 'var(--text-secondary)', lineHeight: 1.45, fontSize: '0.78rem' }}>
-                    {substituteVariables(emailBody, selectedPreviewStudent)}
-                  </pre>
-                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleCopyEmailText}
+                  style={{ justifyContent: 'center', gap: '0.35rem', fontSize: '0.76rem', padding: '0.45rem' }}
+                  title="Copy resolved email text for active preview student"
+                >
+                  {copiedType === 'email' ? <Check size={13} className="text-teal" /> : <Copy size={13} />}
+                  {copiedType === 'email' ? 'Copied Message!' : 'Copy Message'}
+                </button>
               </div>
             </div>
-          )}
 
-          {/* TAB 3: EDITABLE WHATSAPP BROADCAST */}
-          {activeTab === 'whatsapp' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '1.25rem' }}>
-              {/* Left: Interactive Editor */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Edit3 size={15} className="text-teal" /> WhatsApp Broadcast Editor
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', gap: '0.25rem' }}
-                    onClick={() => setWhatsappMsg(DEFAULT_WHATSAPP_MSG)}
-                  >
-                    <RefreshCw size={11} /> Reset Default
-                  </button>
+            {/* Live Progress Bar & Delivery Logs */}
+            {(isSending || sendLogs.length > 0) && (
+              <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Delivery Pipeline Status</span>
+                  <span style={{ fontWeight: 800, color: 'var(--primary)' }}>{sendProgress}%</span>
                 </div>
-
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 700 }}>Chat Message Body:</label>
-                  <textarea
-                    className="form-input"
-                    rows={8}
-                    value={whatsappMsg}
-                    onChange={(e) => setWhatsappMsg(e.target.value)}
-                    style={{ fontSize: '0.82rem', lineHeight: 1.45, resize: 'vertical' }}
+                
+                {/* Progress track */}
+                <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '999px', overflow: 'hidden' }}>
+                  <div 
+                    style={{ 
+                      width: `${sendProgress}%`, 
+                      height: '100%', 
+                      backgroundColor: 'var(--primary)', 
+                      transition: 'width 200ms ease' 
+                    }} 
                   />
                 </div>
 
-                {/* Insertable Dynamic Placeholders */}
-                <div>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-                    Click to insert variables:
-                  </span>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                    {[
-                      { tag: '{class_name}', label: 'Class Name' },
-                      { tag: '{team_name}', label: 'Team Name' },
-                      { tag: '{evaluation_link}', label: 'Link' }
-                    ].map(v => (
-                      <button
-                        key={v.tag}
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', backgroundColor: 'var(--bg-app)', color: 'var(--accent-teal)' }}
-                        onClick={() => insertVariableIntoWhatsApp(v.tag)}
-                      >
-                        + {v.label}
-                      </button>
-                    ))}
-                  </div>
+                {/* Log stream */}
+                <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.2rem' }}>
+                  {sendLogs.map((log, idx) => (
+                    <div key={idx} style={{ fontSize: '0.7rem', color: log.includes('❌') ? 'var(--accent-rose)' : 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                      {log}
+                    </div>
+                  ))}
                 </div>
+              </div>
+            )}
+          </div>
 
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+          {/* Right: Live Interactive Email Preview */}
+          <div style={{ backgroundColor: 'var(--bg-app)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Eye size={14} className="text-teal" /> Live Preview ({previewStudentIndex + 1}/{targetRecipients.length || 1})
+              </span>
+
+              {targetRecipients.length > 1 && (
+                <div style={{ display: 'flex', gap: '0.25rem' }}>
                   <button
                     type="button"
-                    className="btn btn-teal btn-sm"
-                    onClick={handleCopyResolvedWhatsApp}
-                    style={{ flex: 1, justifyContent: 'center', gap: '0.4rem', padding: '0.55rem' }}
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}
+                    onClick={() => setPreviewStudentIndex(prev => (prev > 0 ? prev - 1 : targetRecipients.length - 1))}
                   >
-                    {copiedBulkType === 'whatsapp' ? <Check size={14} /> : <Copy size={14} />}
-                    {copiedBulkType === 'whatsapp' ? 'Copied Message!' : 'Copy Chat Message'}
+                    ◀ Prev
                   </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}
+                    onClick={() => setPreviewStudentIndex(prev => (prev < targetRecipients.length - 1 ? prev + 1 : 0))}
+                  >
+                    Next ▶
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Email Shell Simulation */}
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, overflowY: 'auto' }}>
+              {/* Headers */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                <div>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 600 }}>To: </span>
+                  <b style={{ color: 'var(--text-primary)' }}>{previewStudent.name}</b>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}> &lt;{previewStudent.email}&gt;</span>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 600 }}>Team: </span>
+                  <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '1px 6px' }}>{previewStudent.groupName || 'Unassigned'}</span>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 600 }}>Subject: </span>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{substituteVariables(emailSubject, previewStudent)}</span>
                 </div>
               </div>
 
-              {/* Right: WhatsApp Style Preview */}
-              <div style={{ backgroundColor: '#e5ddd5', borderRadius: '12px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', border: '1px solid #d1d5db' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#111827', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <MessageSquare size={14} color="#059669" /> Chat Bubble Preview
+              {/* Message Body */}
+              <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-secondary)', lineHeight: 1.5, flex: 1, margin: '0.35rem 0' }}>
+                {substituteVariables(emailBody, previewStudent)}
+              </div>
+
+              {/* Action Button Simulation */}
+              <div style={{ textAlign: 'center', margin: '0.5rem 0' }}>
+                <a 
+                  href={getStudentPortalUrl(previewStudent.id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-primary btn-sm"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 1rem', fontSize: '0.78rem', textDecoration: 'none' }}
+                >
+                  Open Grading Portal <ExternalLink size={12} />
+                </a>
+              </div>
+
+              {/* Copy Student Link Action */}
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <ShieldCheck size={11} className="text-teal" /> Personalized hashed token link
                 </span>
-
-                <div style={{ backgroundColor: '#ffffff', padding: '0.85rem', borderRadius: '8px 8px 8px 0px', boxShadow: '0 1px 2px rgba(0,0,0,0.15)', fontSize: '0.8rem', color: '#111827', flex: 1, overflowY: 'auto' }}>
-                  <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0, lineHeight: 1.45 }}>
-                    {substituteVariables(whatsappMsg, selectedPreviewStudent)}
-                  </pre>
-                  <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem', marginTop: '0.35rem' }}>
-                    12:00 PM • <Check size={11} color="#059669" /> Delivered
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleCopyStudentLink}
+                  style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', gap: '0.25rem' }}
+                >
+                  {copiedType === 'link' ? <Check size={11} className="text-teal" /> : <Copy size={11} />}
+                  {copiedType === 'link' ? 'Copied Link!' : 'Copy Link'}
+                </button>
               </div>
             </div>
-          )}
+          </div>
 
         </div>
 
-        {/* Footer */}
+        {/* 4. Modal Footer */}
         <div style={{ padding: '0.75rem 1.5rem', backgroundColor: 'var(--bg-app)', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-          <span>Links contain hashed student tokens for secure authentication.</span>
+          <span>Emails send personalized, confidential links with direct one-click access for peer reviews.</span>
           <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
         </div>
       </div>

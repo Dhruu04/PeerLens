@@ -639,3 +639,354 @@ export function exportClassroomToExcel(classData: ClassData): void {
   XLSX.writeFile(wb, fileName);
 }
 
+/**
+ * Downloads a text/csv string as a file directly in the user's browser.
+ */
+export function downloadFileContent(content: string, fileName: string, mimeType: string = 'text/csv;charset=utf-8;') {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', fileName);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Exports a single team / group roster to CSV.
+ * Supports 'diversity_card' (demographic & bifurcation details) and 'all' (complete roster + evaluation metrics).
+ */
+export function exportSingleTeamToCSV(
+  teamName: string,
+  teamStudents: Student[],
+  scope: 'diversity_card' | 'all' = 'diversity_card',
+  classData?: ClassData | null
+): void {
+  const safeTeamName = teamName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  
+  if (scope === 'diversity_card') {
+    const headers = [
+      'Student ID',
+      'Full Name',
+      'Email',
+      'Team / Group',
+      'University / College',
+      'Degree / Major',
+      'Student Status',
+      'Exchange Student?',
+      'Original Country (Home)',
+      'Original University (Home)',
+      'Current Country (Host/Resident)',
+      'Current University (Host)',
+      'Gender',
+      'Nationality / Citizenship',
+      'English Proficiency Level'
+    ];
+
+    const rows = teamStudents.map((s) => [
+      escapeCSVValue(s.id),
+      escapeCSVValue(s.name),
+      escapeCSVValue(s.email || ''),
+      escapeCSVValue(s.groupName || teamName),
+      escapeCSVValue(s.university || s.currentUniversity || s.originalUniversity || 'N/A'),
+      escapeCSVValue(s.degree || 'N/A'),
+      escapeCSVValue(s.studentType || 'Normal'),
+      s.isExchange ? 'Yes' : 'No',
+      escapeCSVValue(s.originalCountry || s.nationality || 'N/A'),
+      escapeCSVValue(s.originalUniversity || s.university || 'N/A'),
+      escapeCSVValue(s.currentCountry || s.nationality || 'N/A'),
+      escapeCSVValue(s.currentUniversity || s.university || 'N/A'),
+      escapeCSVValue(s.gender || 'Prefer not to say'),
+      escapeCSVValue(s.nationality || 'N/A'),
+      escapeCSVValue(s.englishProficiency || 'Fluent (C1/C2)')
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    downloadFileContent(csvContent, `${safeTeamName}_diversity_roster.csv`);
+  } else {
+    // Full data scope
+    const headers = [
+      'Student ID',
+      'Full Name',
+      'Email',
+      'Team / Group',
+      'University / College',
+      'Degree / Major',
+      'Student Status',
+      'Exchange Student?',
+      'Original Country',
+      'Original University',
+      'Current Country',
+      'Current University',
+      'Gender',
+      'Nationality',
+      'English Proficiency',
+      'Evaluation Status',
+      'Reviews Received',
+      'Expected Reviews',
+      'Overall Grade %'
+    ];
+
+    const rows = teamStudents.map((s) => {
+      let reviewsReceived = 0;
+      let expectedReviews = Math.max(0, teamStudents.length - 1);
+      let gradeStr = 'N/A';
+
+      if (classData) {
+        const metrics = calculateStudentMetrics(s, classData);
+        reviewsReceived = metrics.reviewsReceived;
+        expectedReviews = metrics.expectedReviewsCount;
+        if (metrics.overallPercentage !== null) {
+          gradeStr = `${metrics.overallPercentage}%`;
+        }
+      }
+
+      return [
+        escapeCSVValue(s.id),
+        escapeCSVValue(s.name),
+        escapeCSVValue(s.email || ''),
+        escapeCSVValue(s.groupName || teamName),
+        escapeCSVValue(s.university || s.currentUniversity || s.originalUniversity || 'N/A'),
+        escapeCSVValue(s.degree || 'N/A'),
+        escapeCSVValue(s.studentType || 'Normal'),
+        s.isExchange ? 'Yes' : 'No',
+        escapeCSVValue(s.originalCountry || s.nationality || 'N/A'),
+        escapeCSVValue(s.originalUniversity || s.university || 'N/A'),
+        escapeCSVValue(s.currentCountry || s.nationality || 'N/A'),
+        escapeCSVValue(s.currentUniversity || s.university || 'N/A'),
+        escapeCSVValue(s.gender || 'Prefer not to say'),
+        escapeCSVValue(s.nationality || 'N/A'),
+        escapeCSVValue(s.englishProficiency || 'Fluent (C1/C2)'),
+        s.submitted ? 'Submitted' : 'Pending',
+        reviewsReceived,
+        expectedReviews,
+        gradeStr
+      ];
+    });
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    downloadFileContent(csvContent, `${safeTeamName}_full_roster.csv`);
+  }
+}
+
+/**
+ * Exports a single team / group roster to Excel (.xlsx).
+ * Supports 'diversity_card' and 'all' data scopes.
+ */
+export function exportSingleTeamToExcel(
+  teamName: string,
+  teamStudents: Student[],
+  scope: 'diversity_card' | 'all' = 'diversity_card',
+  classData?: ClassData | null
+): void {
+  const wb = XLSX.utils.book_new();
+  const safeTeamName = teamName.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  if (scope === 'diversity_card') {
+    const headers = [
+      'Student ID',
+      'Full Name',
+      'Email',
+      'Team / Group',
+      'University / College',
+      'Degree / Major',
+      'Student Status',
+      'Exchange Student?',
+      'Original Country (Home)',
+      'Original University (Home)',
+      'Current Country (Host/Resident)',
+      'Current University (Host)',
+      'Gender',
+      'Nationality / Citizenship',
+      'English Proficiency Level'
+    ];
+
+    const rows = teamStudents.map((s) => [
+      s.id,
+      s.name,
+      s.email || '',
+      s.groupName || teamName,
+      s.university || s.currentUniversity || s.originalUniversity || 'N/A',
+      s.degree || 'N/A',
+      s.studentType || 'Normal',
+      s.isExchange ? 'Yes' : 'No',
+      s.originalCountry || s.nationality || 'N/A',
+      s.originalUniversity || s.university || 'N/A',
+      s.currentCountry || s.nationality || 'N/A',
+      s.currentUniversity || s.university || 'N/A',
+      s.gender || 'Prefer not to say',
+      s.nationality || 'N/A',
+      s.englishProficiency || 'Fluent (C1/C2)'
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    XLSX.utils.book_append_sheet(wb, ws, `${teamName.slice(0, 25)} Diversity`);
+    XLSX.writeFile(wb, `${safeTeamName}_diversity_roster.xlsx`);
+  } else {
+    // Full data scope
+    const headers = [
+      'Student ID',
+      'Full Name',
+      'Email',
+      'Team / Group',
+      'University / College',
+      'Degree / Major',
+      'Student Status',
+      'Exchange Student?',
+      'Original Country',
+      'Original University',
+      'Current Country',
+      'Current University',
+      'Gender',
+      'Nationality',
+      'English Proficiency',
+      'Evaluation Status',
+      'Reviews Received',
+      'Expected Reviews',
+      'Overall Grade %'
+    ];
+
+    const rows = teamStudents.map((s) => {
+      let reviewsReceived = 0;
+      let expectedReviews = Math.max(0, teamStudents.length - 1);
+      let gradeStr = 'N/A';
+
+      if (classData) {
+        const metrics = calculateStudentMetrics(s, classData);
+        reviewsReceived = metrics.reviewsReceived;
+        expectedReviews = metrics.expectedReviewsCount;
+        if (metrics.overallPercentage !== null) {
+          gradeStr = `${metrics.overallPercentage}%`;
+        }
+      }
+
+      return [
+        s.id,
+        s.name,
+        s.email || '',
+        s.groupName || teamName,
+        s.university || s.currentUniversity || s.originalUniversity || 'N/A',
+        s.degree || 'N/A',
+        s.studentType || 'Normal',
+        s.isExchange ? 'Yes' : 'No',
+        s.originalCountry || s.nationality || 'N/A',
+        s.originalUniversity || s.university || 'N/A',
+        s.currentCountry || s.nationality || 'N/A',
+        s.currentUniversity || s.university || 'N/A',
+        s.gender || 'Prefer not to say',
+        s.nationality || 'N/A',
+        s.englishProficiency || 'Fluent (C1/C2)',
+        s.submitted ? 'Submitted' : 'Pending',
+        reviewsReceived,
+        expectedReviews,
+        gradeStr
+      ];
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    XLSX.utils.book_append_sheet(wb, ws, `${teamName.slice(0, 25)} Full`);
+    XLSX.writeFile(wb, `${safeTeamName}_full_roster.xlsx`);
+  }
+}
+
+/**
+ * Exports current classroom student roster to CSV with full demographic and academic details.
+ */
+export function exportRosterToCSV(classData: ClassData): void {
+  const headers = [
+    'Student ID',
+    'Full Name',
+    'Email Address',
+    'Group / Team Name',
+    'University / College',
+    'Degree / Major',
+    'Student Status',
+    'Exchange Student?',
+    'Original Country (Home)',
+    'Original University (Home)',
+    'Current Country (Host)',
+    'Current University (Host)',
+    'Gender',
+    'Nationality / Country',
+    'English Proficiency',
+    'Submission Status'
+  ];
+
+  const rows = classData.students.map((s) => [
+    escapeCSVValue(s.id),
+    escapeCSVValue(s.name),
+    escapeCSVValue(s.email || ''),
+    escapeCSVValue(s.groupName || 'Unassigned'),
+    escapeCSVValue(s.university || s.currentUniversity || s.originalUniversity || 'N/A'),
+    escapeCSVValue(s.degree || 'N/A'),
+    escapeCSVValue(s.studentType || 'Normal'),
+    s.isExchange ? 'Yes' : 'No',
+    escapeCSVValue(s.originalCountry || s.nationality || 'N/A'),
+    escapeCSVValue(s.originalUniversity || s.university || 'N/A'),
+    escapeCSVValue(s.currentCountry || s.nationality || 'N/A'),
+    escapeCSVValue(s.currentUniversity || s.university || 'N/A'),
+    escapeCSVValue(s.gender || 'Prefer not to say'),
+    escapeCSVValue(s.nationality || 'N/A'),
+    escapeCSVValue(s.englishProficiency || 'Fluent (C1/C2)'),
+    s.submitted ? 'Submitted' : 'Pending'
+  ]);
+
+  const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+  const safeName = classData.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+  downloadFileContent(csvContent, `${safeName}_roster.csv`);
+}
+
+/**
+ * Exports current classroom student roster to Excel (.xlsx) with full demographic and academic details.
+ */
+export function exportRosterToExcel(classData: ClassData): void {
+  const wb = XLSX.utils.book_new();
+  const safeName = classData.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  const headers = [
+    'Student ID',
+    'Full Name',
+    'Email Address',
+    'Group / Team Name',
+    'University / College',
+    'Degree / Major',
+    'Student Status',
+    'Exchange Student?',
+    'Original Country (Home)',
+    'Original University (Home)',
+    'Current Country (Host)',
+    'Current University (Host)',
+    'Gender',
+    'Nationality / Country',
+    'English Proficiency',
+    'Submission Status'
+  ];
+
+  const rows = classData.students.map((s) => [
+    s.id,
+    s.name,
+    s.email || '',
+    s.groupName || 'Unassigned',
+    s.university || s.currentUniversity || s.originalUniversity || 'N/A',
+    s.degree || 'N/A',
+    s.studentType || 'Normal',
+    s.isExchange ? 'Yes' : 'No',
+    s.originalCountry || s.nationality || 'N/A',
+    s.originalUniversity || s.university || 'N/A',
+    s.currentCountry || s.nationality || 'N/A',
+    s.currentUniversity || s.university || 'N/A',
+    s.gender || 'Prefer not to say',
+    s.nationality || 'N/A',
+    s.englishProficiency || 'Fluent (C1/C2)',
+    s.submitted ? 'Submitted' : 'Pending'
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  XLSX.utils.book_append_sheet(wb, ws, 'Student Roster');
+  XLSX.writeFile(wb, `${safeName}_roster.xlsx`);
+}
+
+

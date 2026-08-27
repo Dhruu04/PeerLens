@@ -55,7 +55,7 @@ import {
     createClass: (name: string) => string;
     deleteClass: (id: string) => void;
     selectClass: (id: string | null) => void;
-    updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null) => void;
+    updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify?: boolean) => void;
     importRoster: (classId: string, students: Student[], clearExisting?: boolean) => void;
     addStudent: (classId: string, student: Omit<Student, 'submitted'>) => void;
     enrollStudent: (classId: string, student: Omit<Student, 'submitted' | 'id'> & { id?: string }) => Promise<{ success: boolean; studentId: string; message?: string }>;
@@ -79,18 +79,19 @@ import {
     return {
       id: 'c_default',
       name: 'Intro to Web Development',
+      targetScale: 20,
       fields: [
-        { id: 'f_quality', name: 'Quality of Contribution', min: 1, max: 10, weight: 1 },
-        { id: 'f_collaboration', name: 'Collaboration & Communication', min: 1, max: 10, weight: 1 },
-        { id: 'f_reliability', name: 'Reliability & Commitment', min: 1, max: 10, weight: 1 }
+        { id: 'f_quality', name: 'Quality of Contribution', description: 'Produces thorough, accurate deliverables on schedule with high attention to detail.', min: 1, max: 20, weight: 1 },
+        { id: 'f_collaboration', name: 'Collaboration & Communication', description: 'Active engagement, responsiveness, transparency, and constructive teamwork.', min: 1, max: 20, weight: 1 },
+        { id: 'f_reliability', name: 'Reliability & Commitment', description: 'Punctuality, meeting milestone deadlines, and dependable follow-through on assignments.', min: 1, max: 20, weight: 1 }
       ],
       students: [
-        { id: 's_1', name: 'Alice Smith', email: 'alice@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', gender: 'Female', nationality: 'United States', englishProficiency: 'Native / Bilingual', submitted: false },
-        { id: 's_2', name: 'Bob Jones', email: 'bob@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Erasmus', gender: 'Male', nationality: 'United Kingdom', englishProficiency: 'Native / Bilingual', submitted: false },
-        { id: 's_3', name: 'Charlie Brown', email: 'charlie@example.com', groupName: 'Alpha Team', university: 'University of Toronto', degree: 'Software Engineering', studentType: 'Normal', gender: 'Male', nationality: 'Canada', englishProficiency: 'Fluent (C1/C2)', submitted: false },
-        { id: 's_4', name: 'David Miller', email: 'david@example.com', groupName: 'Beta Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', gender: 'Male', nationality: 'Germany', englishProficiency: 'Advanced (B2)', submitted: false },
-        { id: 's_5', name: 'Eva Green', email: 'eva@example.com', groupName: 'Beta Team', university: 'Sorbonne University', degree: 'Data Science', studentType: 'Erasmus', gender: 'Female', nationality: 'France', englishProficiency: 'Fluent (C1/C2)', submitted: false },
-        { id: 's_6', name: 'Frank Wright', email: 'frank@example.com', groupName: 'Beta Team', university: 'University of Oxford', degree: 'Information Systems', studentType: 'Normal', gender: 'Male', nationality: 'Australia', englishProficiency: 'Native / Bilingual', submitted: false }
+        { id: 's_1', name: 'Alice Smith', email: 'alice@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', isInternational: false, isExchange: false, currentCountry: 'United States', originalCountry: 'United States', originalUniversity: 'Stanford University', currentUniversity: 'Stanford University', gender: 'Female', nationality: 'United States', englishProficiency: 'Native / Bilingual', submitted: false },
+        { id: 's_2', name: 'Bob Jones', email: 'bob@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Erasmus', isInternational: true, isExchange: true, currentCountry: 'United States', originalCountry: 'United Kingdom', originalUniversity: 'Oxford University', currentUniversity: 'Stanford University', gender: 'Male', nationality: 'United Kingdom', englishProficiency: 'Native / Bilingual', submitted: false },
+        { id: 's_3', name: 'Charlie Brown', email: 'charlie@example.com', groupName: 'Alpha Team', university: 'University of Toronto', degree: 'Software Engineering', studentType: 'Normal', isInternational: true, isExchange: false, currentCountry: 'United States', originalCountry: 'Canada', originalUniversity: 'University of Toronto', currentUniversity: 'Stanford University', gender: 'Non-binary', nationality: 'Canada', englishProficiency: 'Fluent (C1/C2)', submitted: false },
+        { id: 's_4', name: 'David Miller', email: 'david@example.com', groupName: 'Beta Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', isInternational: true, isExchange: false, currentCountry: 'United States', originalCountry: 'Germany', originalUniversity: 'TU Munich', currentUniversity: 'Stanford University', gender: 'Male', nationality: 'Germany', englishProficiency: 'Advanced (B2)', submitted: false },
+        { id: 's_5', name: 'Eva Green', email: 'eva@example.com', groupName: 'Beta Team', university: 'Sorbonne University', degree: 'Data Science', studentType: 'Erasmus', isInternational: true, isExchange: true, currentCountry: 'United States', originalCountry: 'France', originalUniversity: 'Sorbonne University', currentUniversity: 'Stanford University', gender: 'Female', nationality: 'France', englishProficiency: 'Fluent (C1/C2)', submitted: false },
+        { id: 's_6', name: 'Frank Wright', email: 'frank@example.com', groupName: 'Beta Team', university: 'University of Oxford', degree: 'Information Systems', studentType: 'Normal', isInternational: true, isExchange: false, currentCountry: 'United States', originalCountry: 'Australia', originalUniversity: 'University of Melbourne', currentUniversity: 'Stanford University', gender: 'Male', nationality: 'Australia', englishProficiency: 'Native / Bilingual', submitted: false }
       ],
       reviews: []
     };
@@ -713,7 +714,7 @@ import {
       setActiveClassId(id);
     };
   
-    const updateGradingConfig = (classId: string, fields: GradingScaleField[], targetScale?: number | null) => {
+    const updateGradingConfig = (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify: boolean = false) => {
       const updatedClasses = classes.map((c) => {
         if (c.id === classId) {
           return { 
@@ -725,7 +726,9 @@ import {
         return c;
       });
       persistClasses(updatedClasses);
-      addToast('Grading configuration successfully updated.', 'success');
+      if (notify) {
+        addToast('Grading configuration successfully updated.', 'success');
+      }
     };
   
     const importRoster = (classId: string, newStudents: Student[], clearExisting = false) => {

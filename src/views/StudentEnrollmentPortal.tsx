@@ -2,35 +2,81 @@ import React, { useState } from 'react';
 import { 
   User, Mail, Globe, BookOpen, Sparkles, CheckCircle, 
   ArrowRight, ShieldCheck, Copy, Check,
-  GraduationCap, Languages, UserCheck, Lock, RefreshCw
+  GraduationCap, Languages, UserCheck, Lock, RefreshCw,
+  Building2, Plane, Info, ArrowRightLeft, Compass
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
 import { normalizeNationality } from '../utils/math';
-import CustomSelect from '../components/CustomSelect';
 import SearchableSelect from '../components/SearchableSelect';
 import { NATIONALITY_OPTIONS } from '../utils/nationalities';
 
-const ENGLISH_PROFICIENCY_OPTIONS = [
-  { value: 'Native / Bilingual', label: 'Native / Bilingual (Fluent proficiency)' },
-  { value: 'Fluent (C1/C2)', label: 'Fluent / Advanced Professional (C1 / C2)' },
-  { value: 'Advanced (B2)', label: 'Upper Intermediate / Advanced (B2)' },
-  { value: 'Intermediate (B1)', label: 'Intermediate Working (B1)' },
-  { value: 'Basic (A1/A2)', label: 'Elementary / Basic (A1 / A2)' }
+interface CEFRLevel {
+  value: string;
+  code: string;
+  title: string;
+  desc: string;
+  badgeBg: string;
+  badgeColor: string;
+}
+
+const CEFR_LEVELS: CEFRLevel[] = [
+  {
+    value: 'Native / Bilingual',
+    code: 'C2+',
+    title: 'Native / Bilingual',
+    desc: 'Mother tongue or full bilingual mastery',
+    badgeBg: 'rgba(99, 102, 241, 0.12)',
+    badgeColor: '#4f46e5'
+  },
+  {
+    value: 'Fluent (C1/C2)',
+    code: 'C1/C2',
+    title: 'Fluent / Advanced Professional',
+    desc: 'Effortless academic and professional discussions',
+    badgeBg: 'rgba(13, 148, 136, 0.12)',
+    badgeColor: '#0d9488'
+  },
+  {
+    value: 'Advanced (B2)',
+    code: 'B2',
+    title: 'Upper Intermediate',
+    desc: 'Comfortable technical and team communication',
+    badgeBg: 'rgba(2, 132, 199, 0.12)',
+    badgeColor: '#0284c7'
+  },
+  {
+    value: 'Intermediate (B1)',
+    code: 'B1',
+    title: 'Intermediate Working',
+    desc: 'Can convey main ideas in familiar topics',
+    badgeBg: 'rgba(217, 119, 6, 0.12)',
+    badgeColor: '#d97706'
+  },
+  {
+    value: 'Basic (A1/A2)',
+    code: 'A1/A2',
+    title: 'Elementary / Basic',
+    desc: 'Basic phrases and foundational comprehension',
+    badgeBg: 'rgba(100, 116, 139, 0.12)',
+    badgeColor: '#64748b'
+  }
 ];
 
 const GENDER_OPTIONS = [
   { value: 'Female', label: 'Female' },
   { value: 'Male', label: 'Male' },
   { value: 'Non-binary', label: 'Non-binary' },
-  { value: 'Prefer not to say', label: 'Prefer not to say' },
-  { value: 'Other', label: 'Other' }
+  { value: 'Prefer not to say', label: 'Prefer not to say' }
 ];
 
-const STUDENT_TYPE_OPTIONS = [
-  { value: 'Normal', label: 'Regular / Full-time Student' },
-  { value: 'Erasmus', label: 'Erasmus / International Exchange' },
-  { value: 'Part-time', label: 'Part-time Student' },
-  { value: 'Auditing', label: 'Auditing / Guest' }
+const DEGREE_SUGGESTIONS = [
+  'Computer Science',
+  'Software Engineering',
+  'Data Science & AI',
+  'Business Administration',
+  'Mechanical Engineering',
+  'Economics & Finance',
+  'Information Systems'
 ];
 
 interface StudentEnrollmentPortalProps {
@@ -42,16 +88,23 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
 
   const targetClass = classes.find((c) => c.id === classId) || null;
 
-  // Form state - Mandatory fields: name, email, nationality, gender, englishProficiency
+  // Form state - All fields are strictly mandatory
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    university: '',
-    degree: '',
-    studentType: 'Normal',
     gender: 'Female',
+    englishProficiency: 'Fluent (C1/C2)',
+    degree: '',
+    // International & Geographic status
+    isInternational: false,
     nationality: '',
-    englishProficiency: 'Fluent (C1/C2)'
+    currentCountry: '',
+    // Exchange status
+    isExchange: false,
+    university: '',
+    originalUniversity: '',
+    originalCountry: '',
+    currentUniversity: ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -67,18 +120,48 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
     }
 
     if (!formData.email.trim() || !formData.email.includes('@')) {
-      addToast('Please provide a valid university or personal email address.', 'warning');
-      return;
-    }
-
-    if (!formData.nationality.trim()) {
-      addToast('Please select your nationality.', 'warning');
+      addToast('Please provide a valid university email address.', 'warning');
       return;
     }
 
     if (!formData.gender.trim()) {
       addToast('Please select your gender.', 'warning');
       return;
+    }
+
+    if (!formData.nationality.trim()) {
+      addToast('Please select your nationality / country of origin.', 'warning');
+      return;
+    }
+
+    if (!formData.currentCountry.trim()) {
+      addToast('Please select the country where you currently reside or study.', 'warning');
+      return;
+    }
+
+    if (!formData.degree.trim()) {
+      addToast('Please enter your Degree / Major field of study in English.', 'warning');
+      return;
+    }
+
+    if (formData.isExchange) {
+      if (!formData.originalCountry.trim()) {
+        addToast('Please select your original (home) country.', 'warning');
+        return;
+      }
+      if (!formData.originalUniversity.trim()) {
+        addToast('Please enter your original (home) university in English.', 'warning');
+        return;
+      }
+      if (!formData.currentUniversity.trim()) {
+        addToast('Please enter your current (host) university in English.', 'warning');
+        return;
+      }
+    } else {
+      if (!formData.university.trim()) {
+        addToast('Please enter your university / college institution name in English.', 'warning');
+        return;
+      }
     }
 
     if (!formData.englishProficiency.trim()) {
@@ -92,18 +175,30 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
       // Auto-assign clean student ID behind the scenes
       const autoStudentId = 'std_' + Math.floor(100000 + Math.random() * 900000);
 
-      const res = await enrollStudent(classId, {
+      const effectiveUni = formData.isExchange 
+        ? formData.currentUniversity.trim() 
+        : formData.university.trim();
+
+      const studentPayload = {
         id: autoStudentId,
         name: formData.name.trim(),
         email: formData.email.trim().toLowerCase(),
-        groupName: 'Unassigned', // Professor will assign teams/groups
-        university: formData.university.trim() || undefined,
-        degree: formData.degree.trim() || undefined,
-        studentType: formData.studentType,
+        groupName: 'Unassigned',
+        university: effectiveUni,
+        degree: formData.degree.trim(),
+        studentType: formData.isExchange ? 'Erasmus' : (formData.isInternational ? 'International' : 'Normal'),
         gender: formData.gender,
         nationality: normalizeNationality(formData.nationality) || undefined,
-        englishProficiency: formData.englishProficiency
-      });
+        englishProficiency: formData.englishProficiency,
+        isInternational: formData.isInternational,
+        isExchange: formData.isExchange,
+        currentCountry: normalizeNationality(formData.currentCountry) || undefined,
+        originalCountry: formData.isExchange ? normalizeNationality(formData.originalCountry) : normalizeNationality(formData.nationality),
+        originalUniversity: formData.isExchange ? formData.originalUniversity.trim() : formData.university.trim(),
+        currentUniversity: formData.isExchange ? formData.currentUniversity.trim() : formData.university.trim()
+      };
+
+      const res = await enrollStudent(classId, studentPayload);
 
       if (res.success) {
         setEnrolledStudentId(res.studentId);
@@ -143,101 +238,101 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
   };
 
   return (
-    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-app)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '1rem 0.75rem 3rem' }}>
+    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-app)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '1.5rem 1rem 4rem' }}>
       
-      {/* Mobile-optimized Container */}
-      <div style={{ width: '100%', maxWidth: '580px', margin: '0 auto' }}>
+      {/* Centered Main Layout Container */}
+      <div style={{ width: '100%', maxWidth: '640px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
-        {/* Top Header Card */}
+        {/* Hero Card Banner */}
         <div 
-          className="card" 
           style={{ 
-            marginBottom: '1rem', 
-            padding: '1.25rem 1.25rem', 
-            borderRadius: 'var(--radius-lg)', 
-            background: 'linear-gradient(145deg, var(--bg-surface), var(--primary-light))', 
+            padding: '1.5rem', 
+            borderRadius: '16px', 
+            background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(99, 102, 241, 0.08) 100%)', 
             border: '1px solid var(--border-color)',
-            boxShadow: 'var(--shadow-sm)'
+            boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <span className="badge badge-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}>
-              <Sparkles size={12} /> Student Self-Registration
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <span className="badge badge-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', padding: '0.3rem 0.75rem', borderRadius: '20px' }}>
+              <Sparkles size={13} /> Student Self-Registration
             </span>
             {isCloudSynced && (
-              <span className="badge badge-teal" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem' }}>
-                <ShieldCheck size={12} /> Cloud Synchronized
+              <span className="badge badge-teal" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', borderRadius: '20px' }}>
+                <ShieldCheck size={13} /> Cloud Synchronized
               </span>
             )}
           </div>
 
-          <h1 style={{ fontSize: '1.45rem', fontWeight: 800, margin: '0.25rem 0 0.4rem', color: 'var(--text-primary)', lineHeight: 1.25 }}>
-            {targetClass ? targetClass.name : 'Classroom Registration'}
+          <h1 style={{ fontSize: '1.65rem', fontWeight: 900, margin: '0.25rem 0 0.4rem', color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.25 }}>
+            {targetClass ? targetClass.name : 'Classroom Enrollment'}
           </h1>
-          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-            Fill out your details below to register for this course's peer evaluation activities.
+          <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            Please fill out your student profile below. This information is used for intelligent, balanced group formations and anonymous peer evaluations.
           </p>
         </div>
 
-        {/* Successful Enrollment Screen */}
+        {/* Successful Enrollment Confirmation Screen */}
         {enrolledStudentId ? (
           <div 
             className="card" 
             style={{ 
-              padding: '1.75rem 1.25rem', 
-              borderRadius: 'var(--radius-lg)', 
+              padding: '2.5rem 1.75rem', 
+              borderRadius: '16px', 
               textAlign: 'center', 
-              border: '1px solid var(--accent-teal)', 
+              border: '1.5px solid var(--accent-teal)', 
               boxShadow: 'var(--shadow-premium)',
               animation: 'fadeIn 300ms ease'
             }}
           >
             <div 
               style={{ 
-                width: '64px', 
-                height: '64px', 
+                width: '72px', 
+                height: '72px', 
                 borderRadius: '50%', 
-                backgroundColor: 'var(--teal-light, rgba(20, 184, 166, 0.15))', 
+                backgroundColor: 'rgba(20, 184, 166, 0.15)', 
                 color: 'var(--accent-teal)', 
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'center', 
-                margin: '0 auto 1rem' 
+                margin: '0 auto 1.25rem',
+                boxShadow: '0 8px 20px rgba(20, 184, 166, 0.2)'
               }}
             >
-              <CheckCircle size={36} />
+              <CheckCircle size={40} />
             </div>
 
-            <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
               Registration Completed!
             </h2>
-            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', maxWidth: '420px', margin: '0 auto 1.5rem', lineHeight: 1.45 }}>
-              Welcome, <b>{formData.name}</b>! Your profile has been recorded in <b>{targetClass?.name || 'the class'}</b>.
+            <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)', maxWidth: '440px', margin: '0 auto 1.5rem', lineHeight: 1.5 }}>
+              Welcome, <b>{formData.name}</b>! Your profile has been recorded in <b>{targetClass?.name || 'the course'}</b>.
             </p>
 
-            {/* Notice about team assignment */}
+            {/* Team Assignment Notice */}
             <div 
               style={{ 
                 backgroundColor: 'var(--bg-app)', 
-                padding: '0.85rem 1rem', 
-                borderRadius: 'var(--radius-md)', 
+                padding: '1rem 1.15rem', 
+                borderRadius: '12px', 
                 marginBottom: '1.5rem', 
-                fontSize: '0.82rem', 
+                fontSize: '0.86rem', 
                 color: 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'flex-start',
-                gap: '0.6rem',
-                textAlign: 'left'
+                gap: '0.75rem',
+                textAlign: 'left',
+                border: '1px solid var(--border-color)'
               }}
             >
-              <UserCheck size={18} style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '2px' }} />
+              <UserCheck size={20} style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '2px' }} />
               <div>
-                <b style={{ color: 'var(--text-primary)', display: 'block', marginBottom: '2px' }}>Team Assignment</b>
-                Your professor will assign teams for peer evaluation activities. Once assigned, you can evaluate your teammates.
+                <b style={{ color: 'var(--text-primary)', display: 'block', marginBottom: '2px' }}>Next Step: Team Assignment</b>
+                Your professor will assign course teams for peer assessment. Once assigned, you can evaluate your teammates directly.
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* Action CTAs */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <a 
                 href={getStudentPortalUrl()} 
@@ -246,10 +341,12 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                   width: '100%', 
                   justifyContent: 'center', 
                   gap: '0.5rem', 
-                  padding: '0.85rem', 
-                  fontSize: '0.95rem',
+                  padding: '0.9rem', 
+                  fontSize: '0.98rem',
+                  fontWeight: 800,
                   textDecoration: 'none',
-                  minHeight: '48px'
+                  minHeight: '48px',
+                  borderRadius: '10px'
                 }}
               >
                 Enter Evaluation Portal <ArrowRight size={18} />
@@ -263,9 +360,11 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                   width: '100%', 
                   justifyContent: 'center', 
                   gap: '0.5rem', 
-                  padding: '0.75rem', 
+                  padding: '0.8rem', 
                   fontSize: '0.88rem',
-                  minHeight: '44px'
+                  fontWeight: 700,
+                  minHeight: '44px',
+                  borderRadius: '10px'
                 }}
               >
                 {copiedLink ? <Check size={16} /> : <Copy size={16} />}
@@ -273,144 +372,600 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
               </button>
             </div>
 
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1.25rem', marginBottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+            <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '1.35rem', marginBottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
               <Lock size={12} /> Bookmark your personal access link or keep it safe.
             </p>
           </div>
         ) : (
-          /* Enrollment Form */
+          /* Enrollment Form with Structured Sections */
           <form 
             onSubmit={handleSubmit} 
-            className="card" 
-            style={{ 
-              padding: '1.35rem 1.25rem', 
-              borderRadius: 'var(--radius-lg)', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '1.15rem', 
-              boxShadow: 'var(--shadow-premium)' 
-            }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
           >
-            {/* Full Name */}
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
-                <User size={14} className="text-primary" /> Full Name <span style={{ color: 'var(--accent-rose)' }}>*</span>
-              </label>
-              <input 
-                type="text" 
-                required 
-                placeholder="e.g. Alex Morgan" 
-                className="form-input" 
-                value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                style={{ minHeight: '44px', fontSize: '16px' }}
-                autoComplete="name"
-              />
-            </div>
+            {/* --- SECTION 1: IDENTITY & CONTACT --- */}
+            <div 
+              className="card" 
+              style={{ 
+                padding: '1.4rem', 
+                borderRadius: '14px', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '1.1rem',
+                boxShadow: 'var(--shadow-sm)',
+                border: '1px solid var(--border-color)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', fontWeight: 900 }}>
+                    1
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Identity &amp; Contact
+                  </h3>
+                </div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--accent-rose)', fontWeight: 700 }}>
+                  * Required
+                </span>
+              </div>
 
-            {/* University Email */}
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
-                <Mail size={14} className="text-primary" /> University / Institutional Email <span style={{ color: 'var(--accent-rose)' }}>*</span>
-              </label>
-              <input 
-                type="email" 
-                required 
-                placeholder="e.g. alex.morgan@university.edu" 
-                className="form-input" 
-                value={formData.email}
-                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                style={{ minHeight: '44px', fontSize: '16px' }}
-                autoComplete="email"
-              />
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
-                Used for your anonymous authentication &amp; milestone notifications.
-              </span>
-            </div>
-
-            {/* Nationality (Searchable Dropdown) & Gender */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+              {/* Full Name */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
-                  <Globe size={14} className="text-teal" /> Nationality <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem' }}>
+                  <User size={14} className="text-primary" /> Full Name <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                </label>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder="e.g. Alex Morgan" 
+                  className="form-input" 
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  style={{ minHeight: '44px', fontSize: '15px', borderRadius: '8px' }}
+                  autoComplete="name"
+                />
+              </div>
+
+              {/* Institutional Email */}
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem' }}>
+                  <Mail size={14} className="text-primary" /> Institutional / University Email <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                </label>
+                <input 
+                  type="email" 
+                  required 
+                  placeholder="e.g. alex.morgan@university.edu" 
+                  className="form-input" 
+                  value={formData.email}
+                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  style={{ minHeight: '44px', fontSize: '15px', borderRadius: '8px' }}
+                  autoComplete="email"
+                />
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
+                  Used for anonymous authentication &amp; peer review notifications.
+                </span>
+              </div>
+
+              {/* Gender Selection - Minimal & Professional Segmented Control */}
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem', marginBottom: '0.4rem' }}>
+                  <User size={14} className="text-indigo" /> Gender <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                </label>
+                <div 
+                  style={{ 
+                    display: 'flex', 
+                    backgroundColor: 'var(--bg-app)', 
+                    padding: '3px', 
+                    borderRadius: '9px', 
+                    border: '1px solid var(--border-color)',
+                    gap: '3px'
+                  }}
+                >
+                  {GENDER_OPTIONS.map((g) => {
+                    const isSelected = formData.gender === g.value;
+                    return (
+                      <button
+                        key={g.value}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, gender: g.value }))}
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem 0.35rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          backgroundColor: isSelected ? 'var(--primary)' : 'transparent',
+                          color: isSelected ? '#ffffff' : 'var(--text-secondary)',
+                          fontWeight: isSelected ? 800 : 600,
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          transition: 'all 150ms ease',
+                          whiteSpace: 'nowrap',
+                          boxShadow: isSelected ? '0 2px 6px rgba(79, 70, 229, 0.25)' : 'none'
+                        }}
+                      >
+                        {g.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* --- SECTION 2: GEOGRAPHIC & STUDENT STATUS --- */}
+            <div 
+              className="card" 
+              style={{ 
+                padding: '1.4rem', 
+                borderRadius: '14px', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '1.1rem',
+                boxShadow: 'var(--shadow-sm)',
+                border: '1px solid var(--border-color)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: 'var(--accent-teal)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', fontWeight: 900 }}>
+                    2
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Geographic &amp; Student Status
+                  </h3>
+                </div>
+              </div>
+
+              {/* Status Toggle Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                <label 
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.75rem', 
+                    padding: '0.85rem 1rem', 
+                    borderRadius: '10px', 
+                    backgroundColor: formData.isInternational ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-app)', 
+                    border: `1.5px solid ${formData.isInternational ? 'var(--primary)' : 'var(--border-color)'}`,
+                    cursor: 'pointer',
+                    transition: 'all 150ms ease'
+                  }}
+                >
+                  <input 
+                    type="checkbox"
+                    checked={formData.isInternational}
+                    onChange={(e) => setFormData(prev => ({ ...prev, isInternational: e.target.checked }))}
+                    style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <b style={{ fontSize: '0.86rem', color: 'var(--text-primary)', display: 'block' }}>International Student</b>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Studying outside home country</span>
+                  </div>
+                </label>
+
+                <label 
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.75rem', 
+                    padding: '0.85rem 1rem', 
+                    borderRadius: '10px', 
+                    backgroundColor: formData.isExchange ? 'rgba(20, 184, 166, 0.08)' : 'var(--bg-app)', 
+                    border: `1.5px solid ${formData.isExchange ? 'var(--accent-teal)' : 'var(--border-color)'}`,
+                    cursor: 'pointer',
+                    transition: 'all 150ms ease'
+                  }}
+                >
+                  <input 
+                    type="checkbox"
+                    checked={formData.isExchange}
+                    onChange={(e) => setFormData(prev => ({ ...prev, isExchange: e.target.checked }))}
+                    style={{ width: '18px', height: '18px', accentColor: 'var(--accent-teal)', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <b style={{ fontSize: '0.86rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Plane size={14} className="text-teal" /> Exchange / Erasmus
+                    </b>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Visiting / semester exchange</span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Nationality / Country of Origin */}
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem' }}>
+                  <Globe size={14} className="text-teal" /> Nationality / Country of Origin <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
                 <SearchableSelect
                   value={formData.nationality}
-                  onChange={(val) => setFormData(prev => ({ ...prev, nationality: val }))}
+                  onChange={(val) => {
+                    setFormData(prev => ({ 
+                      ...prev, 
+                      nationality: val,
+                      currentCountry: prev.currentCountry || val,
+                      originalCountry: prev.originalCountry || val
+                    }));
+                  }}
                   options={NATIONALITY_OPTIONS}
-                  placeholder="Select nationality / country..."
+                  placeholder="Select your nationality / passport country..."
                   searchPlaceholder="Search 195+ countries..."
                 />
               </div>
 
+              {/* Current Country where they reside */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
-                  <User size={14} className="text-indigo" /> Gender <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem' }}>
+                  <Compass size={14} className="text-indigo" /> Current Country of Residence / Study <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
-                <CustomSelect
-                  value={formData.gender}
-                  onChange={(val) => setFormData(prev => ({ ...prev, gender: val }))}
-                  options={GENDER_OPTIONS}
+                <SearchableSelect
+                  value={formData.currentCountry}
+                  onChange={(val) => setFormData(prev => ({ ...prev, currentCountry: val }))}
+                  options={NATIONALITY_OPTIONS}
+                  placeholder="Select current residing / host country..."
+                  searchPlaceholder="Search 195+ countries..."
                 />
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                  If you reside in your home country, select the same country as your nationality.
+                </span>
               </div>
             </div>
 
-            {/* English Proficiency Level */}
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
-                <Languages size={14} className="text-primary" /> English Proficiency Level <span style={{ color: 'var(--accent-rose)' }}>*</span>
-              </label>
-              <CustomSelect
-                value={formData.englishProficiency}
-                onChange={(val) => setFormData(prev => ({ ...prev, englishProficiency: val }))}
-                options={ENGLISH_PROFICIENCY_OPTIONS}
-              />
-            </div>
-
-            {/* University & Degree */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
-                  <GraduationCap size={14} className="text-indigo" /> University / College <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.75rem' }}>(Optional)</span>
-                </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Stanford University" 
-                  className="form-input" 
-                  value={formData.university}
-                  onChange={(e) => setFormData(prev => ({ ...prev, university: e.target.value }))}
-                  style={{ minHeight: '44px', fontSize: '16px' }}
-                />
+            {/* --- SECTION 3: ACADEMIC BACKGROUND (IN ENGLISH) --- */}
+            <div 
+              className="card" 
+              style={{ 
+                padding: '1.4rem', 
+                borderRadius: '14px', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '1.1rem',
+                boxShadow: 'var(--shadow-sm)',
+                border: '1px solid var(--border-color)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', fontWeight: 900 }}>
+                    3
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Academic Background &amp; Institution
+                  </h3>
+                </div>
               </div>
 
+              {/* English Instruction Banner */}
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.55rem', 
+                  padding: '0.7rem 0.95rem', 
+                  backgroundColor: 'rgba(99, 102, 241, 0.08)', 
+                  border: '1px solid rgba(99, 102, 241, 0.25)', 
+                  borderRadius: '10px',
+                  fontSize: '0.82rem',
+                  color: 'var(--primary)',
+                  fontWeight: 700
+                }}
+              >
+                <Info size={16} style={{ flexShrink: 0 }} />
+                <span>Please fill in your <b>Degree / Major</b> and <b>University name(s) in English</b>.</span>
+              </div>
+
+              {/* Degree / Major */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
-                  <BookOpen size={14} className="text-teal" /> Degree / Major <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.75rem' }}>(Optional)</span>
+                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem' }}>
+                  <BookOpen size={14} className="text-teal" /> Degree / Major Field of Study (in English) <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
                 <input 
                   type="text" 
-                  placeholder="e.g. Computer Science" 
+                  required
+                  placeholder="e.g. Computer Science, MSc Data Analytics, Economics" 
                   className="form-input" 
                   value={formData.degree}
                   onChange={(e) => setFormData(prev => ({ ...prev, degree: e.target.value }))}
-                  style={{ minHeight: '44px', fontSize: '16px' }}
+                  style={{ minHeight: '44px', fontSize: '15px', borderRadius: '8px' }}
                 />
+                
+                {/* Degree Quick Suggestion Chips */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.45rem' }}>
+                  {DEGREE_SUGGESTIONS.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, degree: item }))}
+                      style={{
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: formData.degree === item ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-app)',
+                        color: formData.degree === item ? 'var(--primary)' : 'var(--text-secondary)',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      + {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* University Details: Regular vs Exchange */}
+              {formData.isExchange ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.85rem' }}>
+                  
+                  {/* Exchange Institutions Banner */}
+                  <div 
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.55rem', 
+                      fontSize: '0.82rem', 
+                      color: 'var(--accent-teal)', 
+                      backgroundColor: 'rgba(20, 184, 166, 0.08)', 
+                      border: '1px solid rgba(20, 184, 166, 0.25)',
+                      padding: '0.65rem 0.95rem', 
+                      borderRadius: '10px', 
+                      fontWeight: 700 
+                    }}
+                  >
+                    <Plane size={16} style={{ flexShrink: 0 }} />
+                    <span>Exchange / Erasmus Academic Journey (Home ➔ Host)</span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    {/* Home Institution Card */}
+                    <div 
+                      style={{ 
+                        padding: '1.1rem 1.15rem', 
+                        backgroundColor: 'var(--bg-app)', 
+                        borderRadius: '12px', 
+                        border: '1.5px solid var(--border-color)', 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '0.85rem' 
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem', fontWeight: 800, color: 'var(--primary)' }}>
+                        <Building2 size={16} /> 1. Home Institution (Original / Sending University)
+                      </div>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem' }}>
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                            Home University Name (in English) <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                          </label>
+                          <input 
+                            type="text" 
+                            required
+                            placeholder="e.g. Sorbonne University, TU Munich" 
+                            className="form-input" 
+                            value={formData.originalUniversity}
+                            onChange={(e) => setFormData(prev => ({ ...prev, originalUniversity: e.target.value }))}
+                            style={{ minHeight: '42px', fontSize: '14px', borderRadius: '8px' }}
+                          />
+                        </div>
+
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                            Home Country <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                          </label>
+                          <SearchableSelect
+                            value={formData.originalCountry}
+                            onChange={(val) => setFormData(prev => ({ ...prev, originalCountry: val }))}
+                            options={NATIONALITY_OPTIONS}
+                            placeholder="Select home country..."
+                            searchPlaceholder="Search countries..."
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Visual Connector / Transition Pill */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', margin: '-0.35rem 0' }}>
+                      <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
+                      <span 
+                        style={{ 
+                          fontSize: '0.72rem', 
+                          fontWeight: 800, 
+                          color: 'var(--text-muted)', 
+                          backgroundColor: 'var(--bg-surface)', 
+                          padding: '0.2rem 0.65rem', 
+                          borderRadius: '12px', 
+                          border: '1px solid var(--border-color)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem'
+                        }}
+                      >
+                        <ArrowRightLeft size={11} className="text-teal" /> Visiting / Exchange At
+                      </span>
+                      <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
+                    </div>
+
+                    {/* Host Institution Card */}
+                    <div 
+                      style={{ 
+                        padding: '1.1rem 1.15rem', 
+                        backgroundColor: 'var(--bg-app)', 
+                        borderRadius: '12px', 
+                        border: '1.5px solid var(--border-color)', 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '0.85rem' 
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem', fontWeight: 800, color: 'var(--accent-teal)' }}>
+                        <GraduationCap size={16} /> 2. Host Institution (Current / Destination University)
+                      </div>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem' }}>
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                            Host University Name (in English) <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                          </label>
+                          <input 
+                            type="text" 
+                            required
+                            placeholder="e.g. Stanford University, Oxford University" 
+                            className="form-input" 
+                            value={formData.currentUniversity}
+                            onChange={(e) => setFormData(prev => ({ ...prev, currentUniversity: e.target.value }))}
+                            style={{ minHeight: '42px', fontSize: '14px', borderRadius: '8px' }}
+                          />
+                        </div>
+
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                            Host Country <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                          </label>
+                          <SearchableSelect
+                            value={formData.currentCountry}
+                            onChange={(val) => setFormData(prev => ({ ...prev, currentCountry: val }))}
+                            options={NATIONALITY_OPTIONS}
+                            placeholder="Select host country..."
+                            searchPlaceholder="Search countries..."
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Regular Student University Input */
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem' }}>
+                    <GraduationCap size={14} className="text-indigo" /> University / College Institution (in English) <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="e.g. Stanford University, University of Toronto, TU Munich" 
+                    className="form-input" 
+                    value={formData.university}
+                    onChange={(e) => setFormData(prev => ({ ...prev, university: e.target.value }))}
+                    style={{ minHeight: '44px', fontSize: '15px', borderRadius: '8px' }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
+                    Please write the English or official international name of your university.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* --- SECTION 4: ENGLISH LANGUAGE PROFICIENCY (CEFR) --- */}
+            <div 
+              className="card" 
+              style={{ 
+                padding: '1.4rem', 
+                borderRadius: '14px', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '1.1rem',
+                boxShadow: 'var(--shadow-sm)',
+                border: '1px solid var(--border-color)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: '#0284c7', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', fontWeight: 900 }}>
+                    4
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    English Language Proficiency
+                  </h3>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem', marginBottom: '0.45rem' }}>
+                  <Languages size={14} className="text-primary" /> CEFR English Level <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                </label>
+                
+                {/* Minimal Segmented CEFR Selector Bar */}
+                <div 
+                  style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(5, 1fr)', 
+                    backgroundColor: 'var(--bg-app)', 
+                    padding: '3px', 
+                    borderRadius: '10px', 
+                    border: '1px solid var(--border-color)',
+                    gap: '3px'
+                  }}
+                >
+                  {CEFR_LEVELS.map((lvl) => {
+                    const isSelected = formData.englishProficiency === lvl.value;
+                    return (
+                      <button
+                        key={lvl.value}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, englishProficiency: lvl.value }))}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '0.55rem 0.25rem',
+                          borderRadius: '7px',
+                          border: 'none',
+                          backgroundColor: isSelected ? 'var(--primary)' : 'transparent',
+                          color: isSelected ? '#ffffff' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          transition: 'all 150ms ease',
+                          boxShadow: isSelected ? '0 2px 6px rgba(79, 70, 229, 0.25)' : 'none'
+                        }}
+                      >
+                        <span style={{ fontSize: '0.82rem', fontWeight: 900, lineHeight: 1.1 }}>
+                          {lvl.code}
+                        </span>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 600, opacity: isSelected ? 0.95 : 0.75, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                          {lvl.title.split('/')[0].trim()}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Minimal Selected Level Explanation */}
+                {(() => {
+                  const selectedLvl = CEFR_LEVELS.find(l => l.value === formData.englishProficiency) || CEFR_LEVELS[1];
+                  return (
+                    <div 
+                      style={{ 
+                        marginTop: '0.55rem', 
+                        padding: '0.5rem 0.75rem', 
+                        backgroundColor: 'var(--bg-app)', 
+                        borderRadius: '8px', 
+                        border: '1px solid var(--border-color)',
+                        fontSize: '0.78rem',
+                        color: 'var(--text-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem'
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {selectedLvl.title} ({selectedLvl.code})
+                      </span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        {selectedLvl.desc}
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem', display: 'block' }}>
+                  Used to balance language proficiency across collaborative group activities.
+                </span>
               </div>
             </div>
 
-            {/* Student Type */}
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
-                <UserCheck size={14} className="text-teal" /> Student Status
-              </label>
-              <CustomSelect
-                value={formData.studentType}
-                onChange={(val) => setFormData(prev => ({ ...prev, studentType: val }))}
-                options={STUDENT_TYPE_OPTIONS}
-              />
-            </div>
-
-            {/* Submit Button */}
+            {/* Submit Registration Button */}
             <div style={{ marginTop: '0.5rem' }}>
               <button 
                 type="submit" 
@@ -420,42 +975,45 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                   width: '100%', 
                   justifyContent: 'center', 
                   gap: '0.5rem', 
-                  padding: '0.85rem', 
-                  fontSize: '0.98rem',
-                  fontWeight: 700,
-                  minHeight: '48px',
-                  borderRadius: 'var(--radius-md)'
+                  padding: '1rem', 
+                  fontSize: '1.02rem',
+                  fontWeight: 900,
+                  minHeight: '52px',
+                  borderRadius: '12px',
+                  boxShadow: '0 8px 25px rgba(99, 102, 241, 0.25)',
+                  letterSpacing: '0.01em'
                 }}
               >
                 {loading ? (
                   <>
-                    <RefreshCw size={16} className="spin" /> Submitting Registration...
+                    <RefreshCw size={18} className="spin" /> Submitting Registration...
                   </>
                 ) : (
                   <>
-                    <UserCheck size={18} /> Complete Registration &amp; Join
+                    <UserCheck size={20} /> Complete Registration &amp; Join Course
                   </>
                 )}
               </button>
             </div>
 
-            {/* Privacy & Anonymity guarantee badge */}
+            {/* Privacy & Double-Blind Guarantee Note */}
             <div 
               style={{ 
-                padding: '0.65rem 0.85rem', 
-                borderRadius: 'var(--radius-sm)', 
-                backgroundColor: 'var(--bg-app)', 
+                padding: '0.85rem 1rem', 
+                borderRadius: '10px', 
+                backgroundColor: 'var(--bg-surface)', 
                 border: '1px solid var(--border-color)', 
                 display: 'flex', 
                 alignItems: 'center', 
-                gap: '0.5rem',
-                fontSize: '0.75rem',
-                color: 'var(--text-secondary)'
+                gap: '0.65rem',
+                fontSize: '0.78rem',
+                color: 'var(--text-secondary)',
+                boxShadow: 'var(--shadow-sm)'
               }}
             >
-              <Lock size={14} style={{ color: 'var(--accent-teal)', flexShrink: 0 }} />
+              <Lock size={16} style={{ color: 'var(--accent-teal)', flexShrink: 0 }} />
               <span>
-                All peer evaluation responses are 100% anonymous &amp; double-blind.
+                All peer evaluation responses and demographic balancing records are strictly encrypted with double-blind anonymity.
               </span>
             </div>
           </form>

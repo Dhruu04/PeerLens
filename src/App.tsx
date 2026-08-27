@@ -54,7 +54,7 @@ const AppContent: React.FC = () => {
       <header className="app-header">
         <div className="brand" onClick={() => window.location.href = window.location.origin + window.location.pathname}>
           <img src="/PeerGrading.png" alt="Logo" style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'contain' }} />
-          <span>PeerLens <span style={{ fontWeight: 400, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>v1.0</span></span>
+          <span>PeerLens <span style={{ fontWeight: 600, fontSize: '0.78rem', color: 'var(--primary)', backgroundColor: 'var(--primary-light)', padding: '0.1rem 0.45rem', borderRadius: '12px', border: '1px solid hsla(243, 75%, 59%, 0.2)' }}>v2.4</span></span>
         </div>
 
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>

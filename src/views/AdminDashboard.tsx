@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
+import QRCode from 'qrcode';
 import { 
   Users, Plus, Trash2, Download, Upload, Sliders, Mail, 
   Database, RefreshCw, CheckCircle, Clock, BookOpen, 
@@ -8,7 +9,8 @@ import {
   Lightbulb, Heart, MessageSquare, Target, Minus,
   ThumbsUp, ShieldCheck, Rocket, Trophy, BarChart2,
   QrCode, Copy, Check, Globe, AlertTriangle, Lock, Unlock,
-  Send, Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X
+  Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X,
+  Settings, Plane
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { useClass } from '../context/ClassContext';
@@ -18,6 +20,10 @@ import type { GradingScaleField, Student } from '../utils/math';
 import { 
   parseCSV as _parseCSV, 
   exportClassroomToExcel,
+  exportRosterToCSV,
+  exportRosterToExcel,
+  generateResultsCSV,
+  downloadFileContent,
   extractRosterMatrix, 
   parseRawPastedText, 
   validateEmail,
@@ -36,26 +42,34 @@ import ProjectorView from './ProjectorView';
 import { LinkDispatcherModal } from '../components/LinkDispatcherModal';
 import { calculateJohariWindowMetric, extractClassFeedbackInsights } from '../utils/feedbackAnalytics';
 import { DIVERSE_100_STUDENTS, getSampleStudentsCSV, downloadSampleStudentsFile } from '../data/sampleStudents';
+import { RUBRIC_PRESETS } from '../utils/rubricPresets';
+import { SettingsModal } from '../components/SettingsModal';
+import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
+import { 
+  getStoredShortcuts, 
+  saveStoredShortcuts, 
+  resetStoredShortcuts 
+} from '../utils/keyboardShortcuts';
 
 
 const getPraiseTagInfo = (tagText: string) => {
   // Strip historical emojis if any
   const cleanText = tagText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
   
-  if (cleanText.includes('Creative')) return { icon: Lightbulb, color: 'hsl(45, 90%, 45%)', bg: 'hsl(45, 90%, 96%)', border: 'hsl(45, 90%, 90%)', text: 'Creative Ideas' };
-  if (cleanText.includes('Punctual')) return { icon: Clock, color: 'hsl(14, 90%, 50%)', bg: 'hsl(14, 90%, 96%)', border: 'hsl(14, 90%, 90%)', text: 'Always Punctual' };
-  if (cleanText.includes('Supportive')) return { icon: Heart, color: 'var(--accent-rose)', bg: 'var(--accent-rose-light)', border: 'hsl(346, 84%, 90%)', text: 'Super Supportive' };
-  if (cleanText.includes('Quality')) return { icon: Award, color: 'var(--primary)', bg: 'var(--primary-light)', border: 'hsl(243, 75%, 92%)', text: 'High Quality Work' };
-  if (cleanText.includes('Communicator')) return { icon: MessageSquare, color: 'hsl(199, 89%, 40%)', bg: 'hsl(199, 89%, 95%)', border: 'hsl(199, 89%, 90%)', text: 'Great Communicator' };
+  if (cleanText.includes('Creative') || cleanText.includes('Problem')) return { icon: Lightbulb, color: 'hsl(45, 90%, 45%)', bg: 'hsl(45, 90%, 96%)', border: 'hsl(45, 90%, 90%)', text: 'Creative Problem Solver' };
+  if (cleanText.includes('Punctual') || cleanText.includes('Reliable')) return { icon: Clock, color: 'hsl(14, 90%, 50%)', bg: 'hsl(14, 90%, 96%)', border: 'hsl(14, 90%, 90%)', text: 'Reliable & Punctual' };
+  if (cleanText.includes('Supportive') || cleanText.includes('Player')) return { icon: Heart, color: 'var(--accent-rose)', bg: 'var(--accent-rose-light)', border: 'hsl(346, 84%, 90%)', text: 'Supportive Team Player' };
+  if (cleanText.includes('Quality') || cleanText.includes('Deliverables')) return { icon: Award, color: 'var(--primary)', bg: 'var(--primary-light)', border: 'hsl(243, 75%, 92%)', text: 'High Quality Deliverables' };
+  if (cleanText.includes('Communicat')) return { icon: MessageSquare, color: 'hsl(199, 89%, 40%)', bg: 'hsl(199, 89%, 95%)', border: 'hsl(199, 89%, 90%)', text: 'Clear Communicator' };
   return { icon: Target, color: 'var(--accent-teal)', bg: 'var(--accent-teal-light)', border: 'hsl(173, 80%, 90%)', text: 'Detail Oriented' };
 };
 
 const getTierInfo = (pct: number) => {
-  if (pct <= 20) {
+  if (pct <= 25) {
     return {
       icon: AlertCircle,
-      title: 'Below Expectations',
-      desc: 'Minimal contribution, barely participated or was hard to reach.',
+      title: 'Needs Improvement',
+      desc: 'Limited contribution or inconsistent delivery; required substantial guidance.',
       color: 'var(--accent-rose)',
       bgColor: 'var(--accent-rose-light)',
       className: 'active-rose',
@@ -64,8 +78,8 @@ const getTierInfo = (pct: number) => {
   } else if (pct <= 50) {
     return {
       icon: TrendingUp,
-      title: 'Progressing',
-      desc: 'Completed basic tasks, but needed active prompting or reminders.',
+      title: 'Developing',
+      desc: 'Met baseline requirements; opportunities exist to improve consistency and collaboration.',
       color: 'var(--accent-amber)',
       bgColor: 'var(--accent-amber-light)',
       className: 'active-amber',
@@ -74,8 +88,8 @@ const getTierInfo = (pct: number) => {
   } else if (pct <= 75) {
     return {
       icon: ThumbsUp,
-      title: 'Meets Expectations',
-      desc: 'Met all standards, cooperative, communicative, reliable teamwork.',
+      title: 'Proficient / Meets Expectations',
+      desc: 'Consistently met established standards; dependable, communicative, and collaborative.',
       color: 'var(--primary)',
       bgColor: 'var(--primary-light)',
       className: 'active-indigo',
@@ -84,8 +98,8 @@ const getTierInfo = (pct: number) => {
   } else if (pct <= 90) {
     return {
       icon: Rocket,
-      title: 'Exceeds Expectations',
-      desc: 'Highly active contributor, went above and beyond, excellent work.',
+      title: 'Exemplary / Exceeds Expectations',
+      desc: 'Delivered high-quality contributions; took initiative and actively supported teammates.',
       color: 'var(--accent-teal)',
       bgColor: 'var(--accent-teal-light)',
       className: 'active-teal',
@@ -94,8 +108,8 @@ const getTierInfo = (pct: number) => {
   } else {
     return {
       icon: Trophy,
-      title: 'Distinguished Performer',
-      desc: 'Phenomenal drive, carried complex items, inspiring team commitment!',
+      title: 'Distinguished Leadership',
+      desc: 'Exceptional technical rigor and leadership; drove significant team outcomes.',
       color: 'hsl(142, 70%, 45%)',
       bgColor: 'hsl(142, 70%, 96%)',
       className: 'active-emerald',
@@ -121,6 +135,50 @@ const renderCustomBodyToHtml = (bodyText: string, studentName: string, courseNam
     .map(para => `<p style="font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;">${para.replace(/\n/g, '<br />')}</p>`)
     .join('');
 };
+
+const GENDER_OPTIONS = [
+  { value: 'Female', label: 'Female' },
+  { value: 'Male', label: 'Male' },
+  { value: 'Non-binary', label: 'Non-binary' },
+  { value: 'Prefer not to say', label: 'Prefer not to say' }
+];
+
+const CEFR_LEVELS = [
+  {
+    value: 'Native / Bilingual',
+    code: 'Native',
+    title: 'Native / Bilingual',
+    desc: 'Mother tongue or full bilingual proficiency'
+  },
+  {
+    value: 'Fluent (C1/C2)',
+    code: 'C1/C2',
+    title: 'Fluent (C1/C2)',
+    desc: 'Full professional working proficiency'
+  },
+  {
+    value: 'Intermediate (B1/B2)',
+    code: 'B1/B2',
+    title: 'Intermediate (B1/B2)',
+    desc: 'Can convey main ideas in familiar topics'
+  },
+  {
+    value: 'Basic (A1/A2)',
+    code: 'A1/A2',
+    title: 'Basic (A1/A2)',
+    desc: 'Elementary phrases and foundational comprehension'
+  }
+];
+
+const DEGREE_SUGGESTIONS = [
+  'Computer Science',
+  'Software Engineering',
+  'Data Science & AI',
+  'Business Administration',
+  'Mechanical Engineering',
+  'Economics & Finance',
+  'Information Systems'
+];
 
 export const AdminDashboard: React.FC = () => {
   const {
@@ -172,6 +230,7 @@ export const AdminDashboard: React.FC = () => {
   const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
   const [isAutoGroupModalOpen, setIsAutoGroupModalOpen] = useState(false);
   const [copiedEnrollLink, setCopiedEnrollLink] = useState(false);
+  const [miniQrUrl, setMiniQrUrl] = useState<string>('');
   const [isMobileProfileModalOpen, setIsMobileProfileModalOpen] = useState(false);
 
   // Roster Onboarding Wizard states
@@ -223,12 +282,18 @@ export const AdminDashboard: React.FC = () => {
     name: '',
     email: '',
     groupName: '',
+    gender: 'Female',
+    isInternational: false,
+    isExchange: false,
+    nationality: '',
+    currentCountry: '',
+    englishProficiency: 'Fluent (C1/C2)',
     university: '',
     degree: '',
-    studentType: 'Normal',
-    gender: 'Prefer not to say',
-    nationality: '',
-    englishProficiency: 'Fluent (C1/C2)'
+    originalUniversity: '',
+    originalCountry: '',
+    currentUniversity: '',
+    studentType: 'Normal'
   });
 
   // UI Filtering and Searching
@@ -250,12 +315,18 @@ export const AdminDashboard: React.FC = () => {
     name: '',
     email: '',
     groupName: '',
+    gender: 'Female',
+    isInternational: false,
+    isExchange: false,
+    nationality: '',
+    currentCountry: '',
+    englishProficiency: 'Fluent (C1/C2)',
     university: '',
     degree: '',
-    studentType: 'Normal',
-    gender: 'Prefer not to say',
-    nationality: '',
-    englishProficiency: 'Fluent (C1/C2)'
+    originalUniversity: '',
+    originalCountry: '',
+    currentUniversity: '',
+    studentType: 'Normal'
   });
 
   // Advanced settings and controls states
@@ -278,6 +349,21 @@ export const AdminDashboard: React.FC = () => {
   const [isProjectorModalOpen, setIsProjectorModalOpen] = useState(false);
   const [isLinkDispatcherOpen, setIsLinkDispatcherOpen] = useState(false);
   const [radarTeamFilter, setRadarTeamFilter] = useState<string>('All');
+
+  // Settings Modal & Keyboard Shortcuts States
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'email' | 'cloud' | 'shortcuts'>('email');
+  const [shortcuts, setShortcuts] = useState<KeyboardShortcut[]>(() => getStoredShortcuts());
+
+  const handleUpdateShortcuts = (updated: KeyboardShortcut[]) => {
+    setShortcuts(updated);
+    saveStoredShortcuts(updated);
+  };
+
+  const handleResetShortcuts = () => {
+    const defaults = resetStoredShortcuts();
+    setShortcuts(defaults);
+  };
 
   const openReportModal = (studentId?: string) => {
     if (studentId) setSelectedReportStudentId(studentId);
@@ -409,6 +495,151 @@ export const AdminDashboard: React.FC = () => {
     const classNamePart = activeClass ? ` | ${activeClass.name}` : '';
     document.title = `${tabTitles[activeTab] || 'Dashboard'}${classNamePart} - PeerLens`;
   }, [activeTab, activeClass, isCloudSynced, user]);
+
+  // Synchronize mini QR preview code whenever active classroom changes
+  React.useEffect(() => {
+    if (activeClass?.id) {
+      let url = `${window.location.origin}${window.location.pathname}?enrollClassId=${activeClass.id}`;
+      if (isCloudSynced && firebaseConfig && user) {
+        const payload = {
+          a: firebaseConfig.apiKey,
+          p: firebaseConfig.projectId,
+          d: firebaseConfig.authDomain,
+          i: firebaseConfig.appId,
+          o: user.uid
+        };
+        const encoded = btoa(JSON.stringify(payload));
+        url += `&fb=${encoded}`;
+      }
+      QRCode.toDataURL(url, {
+        width: 180,
+        margin: 1,
+        color: {
+          dark: '#1e1b4b',
+          light: '#ffffff'
+        },
+        errorCorrectionLevel: 'M'
+      })
+        .then((dataUrl) => setMiniQrUrl(dataUrl))
+        .catch((err) => console.error('Failed to generate mini QR:', err));
+    }
+  }, [activeClass?.id, isCloudSynced, user, firebaseConfig]);
+
+  // Global Keyboard Shortcuts Event Handler
+  React.useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInputFocused = target && (
+        target.tagName === 'INPUT' || 
+        target.tagName === 'TEXTAREA' || 
+        target.isContentEditable || 
+        target.tagName === 'SELECT'
+      );
+
+      if (e.key === 'Escape') {
+        if (isSettingsModalOpen) { setIsSettingsModalOpen(false); return; }
+        if (isLinkDispatcherOpen) { setIsLinkDispatcherOpen(false); return; }
+        if (isProjectorModalOpen) { setIsProjectorModalOpen(false); return; }
+        if (isAutoGroupModalOpen) { setIsAutoGroupModalOpen(false); return; }
+        if (isQRCodeModalOpen) { setIsQRCodeModalOpen(false); return; }
+        if (isReportModalOpen) { setIsReportModalOpen(false); return; }
+        if (isAddStudentModalOpen) { setIsAddStudentModalOpen(false); return; }
+        if (isWizardOpen) { setIsWizardOpen(false); return; }
+        if (isArchiveModalOpen) { setIsArchiveModalOpen(false); return; }
+        if (confirmModal.isOpen) { setConfirmModal(prev => ({ ...prev, isOpen: false })); return; }
+        return;
+      }
+
+      if (isInputFocused) return;
+
+      const pressedKey = e.key.toLowerCase();
+      const match = shortcuts.find(s => {
+        if (s.key.toLowerCase() !== pressedKey && s.key !== e.key) return false;
+        const reqCtrl = !!s.modifiers?.ctrl;
+        const reqAlt = !!s.modifiers?.alt;
+        const reqShift = !!s.modifiers?.shift;
+        const actCtrl = e.ctrlKey || e.metaKey;
+        const actAlt = e.altKey;
+        const actShift = e.shiftKey;
+        return reqCtrl === actCtrl && reqAlt === actAlt && reqShift === actShift;
+      });
+
+      if (!match) return;
+
+      e.preventDefault();
+      switch (match.id) {
+        case 'tab_roster':
+          setActiveTab('roster');
+          break;
+        case 'tab_rubric':
+          setActiveTab('grading');
+          break;
+        case 'tab_analytics':
+          setActiveTab('results');
+          break;
+        case 'open_autogroup':
+          setIsAutoGroupModalOpen(true);
+          break;
+        case 'open_email':
+          setIsLinkDispatcherOpen(true);
+          break;
+        case 'open_projector':
+          setIsProjectorModalOpen(true);
+          break;
+        case 'open_settings':
+          setSettingsInitialTab('email');
+          setIsSettingsModalOpen(true);
+          break;
+        case 'add_student':
+          setIsAddStudentModalOpen(true);
+          break;
+        case 'import_roster':
+          setIsWizardOpen(true);
+          break;
+        case 'set_deadline':
+          setIsArchiveModalOpen(true);
+          break;
+        case 'add_criterion': {
+          setActiveTab('grading');
+          if (activeClass) {
+            const nextNum = activeClass.fields.length + 1;
+            const newField: GradingScaleField = {
+              id: 'f_' + Math.random().toString(36).substring(2, 9),
+              name: `Criterion ${nextNum}`,
+              description: '',
+              min: 1,
+              max: 20,
+              weight: 1
+            };
+            updateGradingConfig(activeClass.id, [...activeClass.fields, newField]);
+            addToast(`Added Criterion ${nextNum} (Scale 1 to 20).`, 'success');
+          }
+          break;
+        }
+        case 'export_data':
+          if (activeClass) {
+            exportRosterToExcel(activeClass);
+            addToast('Exported complete gradebook to Excel!', 'success');
+          }
+          break;
+        case 'focus_search': {
+          const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+          }
+          break;
+        }
+        case 'open_shortcuts_sheet':
+          setSettingsInitialTab('shortcuts');
+          setIsSettingsModalOpen(true);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [shortcuts, isSettingsModalOpen, isLinkDispatcherOpen, isProjectorModalOpen, isAutoGroupModalOpen, isQRCodeModalOpen, isReportModalOpen, isAddStudentModalOpen, isWizardOpen, isArchiveModalOpen, confirmModal, activeClass, updateGradingConfig, addToast]);
 
   // Handle Admin Authentication Form Submission (Option A)
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -841,8 +1072,8 @@ export const AdminDashboard: React.FC = () => {
   // Add individual student manually
   const handleAddStudentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudent.name.trim() || !newStudent.email.trim() || !newStudent.nationality.trim() || !newStudent.gender.trim() || !newStudent.englishProficiency.trim()) {
-      addToast('Please fill out all mandatory fields (Name, Email, Nationality, Gender, English Level).', 'warning');
+    if (!newStudent.name.trim() || !newStudent.email.trim()) {
+      addToast('Please enter full name and email address.', 'warning');
       return;
     }
     
@@ -851,12 +1082,18 @@ export const AdminDashboard: React.FC = () => {
       name: newStudent.name.trim(),
       email: newStudent.email.trim(),
       groupName: newStudent.groupName.trim() || 'Unassigned',
-      university: newStudent.university.trim() || undefined,
-      degree: newStudent.degree.trim() || undefined,
-      studentType: newStudent.studentType.trim() || 'Normal',
       gender: newStudent.gender.trim() || 'Prefer not to say',
+      isInternational: newStudent.isInternational,
+      isExchange: newStudent.isExchange,
       nationality: normalizeNationality(newStudent.nationality) || undefined,
-      englishProficiency: newStudent.englishProficiency.trim() || 'Fluent (C1/C2)'
+      currentCountry: normalizeNationality(newStudent.currentCountry || newStudent.nationality) || undefined,
+      englishProficiency: newStudent.englishProficiency.trim() || 'Fluent (C1/C2)',
+      university: newStudent.isExchange ? (newStudent.currentUniversity.trim() || newStudent.university.trim() || undefined) : (newStudent.university.trim() || undefined),
+      degree: newStudent.degree.trim() || undefined,
+      originalUniversity: newStudent.isExchange ? newStudent.originalUniversity.trim() || undefined : undefined,
+      originalCountry: newStudent.isExchange ? normalizeNationality(newStudent.originalCountry) || undefined : undefined,
+      currentUniversity: newStudent.isExchange ? newStudent.currentUniversity.trim() || undefined : undefined,
+      studentType: newStudent.isExchange ? 'Erasmus' : newStudent.isInternational ? 'International' : 'Normal'
     });
 
     // Reset inputs
@@ -865,21 +1102,28 @@ export const AdminDashboard: React.FC = () => {
       name: '', 
       email: '', 
       groupName: '', 
-      university: '', 
-      degree: '', 
-      studentType: 'Normal',
       gender: 'Female',
+      isInternational: false,
+      isExchange: false,
       nationality: '',
-      englishProficiency: 'Fluent (C1/C2)'
+      currentCountry: '',
+      englishProficiency: 'Fluent (C1/C2)',
+      university: '',
+      degree: '',
+      originalUniversity: '',
+      originalCountry: '',
+      currentUniversity: '',
+      studentType: 'Normal'
     });
     setIsAddStudentModalOpen(false);
+    addToast('Student participant enrolled successfully!', 'success');
   };
 
   // Submit student edits
   const handleEditStudentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editStudentData.name.trim() || !editStudentData.email.trim() || !editStudentData.nationality.trim() || !editStudentData.gender.trim() || !editStudentData.englishProficiency.trim()) {
-      addToast('Please fill out all mandatory fields (Name, Email, Nationality, Gender, English Level).', 'warning');
+    if (!editStudentData.name.trim() || !editStudentData.email.trim()) {
+      addToast('Please enter full name and email address.', 'warning');
       return;
     }
     
@@ -887,15 +1131,22 @@ export const AdminDashboard: React.FC = () => {
       name: editStudentData.name.trim(),
       email: editStudentData.email.trim(),
       groupName: editStudentData.groupName.trim() || 'Unassigned',
-      university: editStudentData.university.trim() || undefined,
-      degree: editStudentData.degree.trim() || undefined,
-      studentType: editStudentData.studentType.trim() || 'Normal',
       gender: editStudentData.gender.trim() || 'Prefer not to say',
+      isInternational: editStudentData.isInternational,
+      isExchange: editStudentData.isExchange,
       nationality: normalizeNationality(editStudentData.nationality) || undefined,
-      englishProficiency: editStudentData.englishProficiency.trim() || 'Fluent (C1/C2)'
+      currentCountry: normalizeNationality(editStudentData.currentCountry || editStudentData.nationality) || undefined,
+      englishProficiency: editStudentData.englishProficiency.trim() || 'Fluent (C1/C2)',
+      university: editStudentData.isExchange ? (editStudentData.currentUniversity.trim() || editStudentData.university.trim() || undefined) : (editStudentData.university.trim() || undefined),
+      degree: editStudentData.degree.trim() || undefined,
+      originalUniversity: editStudentData.isExchange ? editStudentData.originalUniversity.trim() || undefined : undefined,
+      originalCountry: editStudentData.isExchange ? normalizeNationality(editStudentData.originalCountry) || undefined : undefined,
+      currentUniversity: editStudentData.isExchange ? editStudentData.currentUniversity.trim() || undefined : undefined,
+      studentType: editStudentData.isExchange ? 'Erasmus' : editStudentData.isInternational ? 'International' : 'Normal'
     });
 
     setIsEditStudentModalOpen(false);
+    addToast('Student profile updated successfully!', 'success');
   };
 
   // Helper to generate cloud-synced enrollment link for students
@@ -933,11 +1184,13 @@ export const AdminDashboard: React.FC = () => {
     const newField: GradingScaleField = {
       id: 'f_' + Math.random().toString(36).substring(2, 9),
       name: `Criterion ${nextNum}`,
+      description: '',
       min: 1,
-      max: 10,
+      max: 20,
       weight: 1
     };
     updateGradingConfig(activeClass.id, [...activeClass.fields, newField]);
+    addToast(`Added Criterion ${nextNum} (Scale 1 to 20).`, 'success');
   };
 
   const handleUpdateField = (id: string, updates: Partial<GradingScaleField>) => {
@@ -945,7 +1198,7 @@ export const AdminDashboard: React.FC = () => {
       if (f.id === id) return { ...f, ...updates };
       return f;
     });
-    updateGradingConfig(activeClass.id, updated);
+    updateGradingConfig(activeClass.id, updated, undefined, false);
   };
 
   const handleDeleteField = (id: string) => {
@@ -955,6 +1208,22 @@ export const AdminDashboard: React.FC = () => {
     }
     const filtered = activeClass.fields.filter(f => f.id !== id);
     updateGradingConfig(activeClass.id, filtered);
+    addToast('Rubric criterion removed.', 'info');
+  };
+
+  const handleApplyPreset = (presetId: string) => {
+    const preset = RUBRIC_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    const newFields: GradingScaleField[] = preset.fields.map((f, idx) => ({
+      id: `f_${Date.now()}_${idx}`,
+      name: f.name,
+      description: f.description,
+      min: f.min,
+      max: f.max,
+      weight: f.weight
+    }));
+    updateGradingConfig(activeClass.id, newFields, preset.targetScale);
+    addToast(`Applied "${preset.name}" (Scale out of 20) with ${newFields.length} criteria.`, 'success');
   };
 
   // Send secure grading links
@@ -1253,9 +1522,36 @@ export const AdminDashboard: React.FC = () => {
             type="button" 
             className="btn btn-secondary btn-sm dock-btn" 
             onClick={() => setIsLinkDispatcherOpen(true)}
-            title="Fast Link Dispatcher & Bulk Copy Sheet"
+            title="Classroom Email Center & Evaluation Links (Press E)"
           >
-            <Send size={14} className="text-primary" /> <span>Dispatch</span>
+            <Mail size={14} className="text-primary" /> <span>Email</span>
+          </button>
+
+          <button 
+            type="button" 
+            className="btn btn-secondary btn-sm dock-btn icon-only-btn" 
+            onClick={() => {
+              setSettingsInitialTab('email');
+              setIsSettingsModalOpen(true);
+            }}
+            title="Workspace Settings (Brevo API, Cloud Sync & Shortcuts - Press S)"
+            style={{ position: 'relative', width: '36px', minWidth: '36px', height: '34px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Settings size={15} className="text-primary" />
+            {isCloudSynced && (
+              <span 
+                style={{ 
+                  position: 'absolute', 
+                  top: '5px', 
+                  right: '5px', 
+                  width: '6px', 
+                  height: '6px', 
+                  borderRadius: '50%', 
+                  backgroundColor: '#10b981' 
+                }} 
+                title="Firebase Cloud Sync Active" 
+              />
+            )}
           </button>
 
           {/* Desktop Profile Pill */}
@@ -1402,80 +1698,87 @@ export const AdminDashboard: React.FC = () => {
         document.body
       )}
 
-      {/* Stats Cards Section */}
+      {/* Executive KPI Stats Cards Section */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon stat-icon-primary">
-            <Users size={22} />
+            <Users size={18} />
           </div>
           <div>
             <div className="stat-val">{stats.totalStudents}</div>
             <div className="stat-label">Enrolled Students</div>
+            <div className="stat-subtext">{stats.totalStudents > 0 ? `${stats.totalStudents} active in roster` : 'No students'}</div>
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-icon stat-icon-teal">
-            <TrendingUp size={22} />
+            <TrendingUp size={18} />
           </div>
           <div>
             <div className="stat-val">{stats.groupCount}</div>
             <div className="stat-label">Active Groups</div>
+            <div className="stat-subtext">{stats.groupCount > 0 ? `${stats.groupCount} assigned teams` : 'No teams assigned'}</div>
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-icon" style={{ backgroundColor: 'var(--accent-teal-light)', color: 'var(--accent-teal)' }}>
-            <CheckCircle size={22} />
+            <CheckCircle size={18} />
           </div>
           <div>
             <div className="stat-val">{stats.completionRate}%</div>
-            <div className="stat-label">Submission Rate ({stats.submittedCount} submitted)</div>
+            <div className="stat-label">Submission Rate</div>
+            <div className="stat-subtext">{stats.submittedCount} of {stats.totalStudents} submitted</div>
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-icon" style={{ backgroundColor: 'var(--accent-amber-light)', color: 'var(--accent-amber)' }}>
-            <Award size={22} />
+            <Award size={18} />
           </div>
           <div>
-            <div className="stat-val">{stats.averagePercentage !== null ? `${stats.averagePercentage}%` : 'N/A'}</div>
-            <div className="stat-label">Class Average Score</div>
+            <div className="stat-val">{stats.averagePercentage !== null ? `${stats.averagePercentage}%` : '—'}</div>
+            <div className="stat-label">Cohort Average</div>
+            <div className="stat-subtext">{stats.averagePercentage !== null ? 'Peer review mean' : 'Awaiting submissions'}</div>
           </div>
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="tabs-navigation">
+      {/* Segmented Modern Tabs Navigation Dock (3 Core Academic Tabs) */}
+      <div className="tabs-navigation" role="tablist">
         <button 
-          className={`btn tab-btn ${activeTab === 'roster' ? 'btn-primary' : 'btn-secondary'}`} 
+          className={`tab-btn ${activeTab === 'roster' ? 'active' : ''}`} 
           onClick={() => setActiveTab('roster')}
+          role="tab"
+          aria-selected={activeTab === 'roster'}
+          title="Student Roster, Group Manager & Enrollment (Press 1)"
         >
-          <Users size={16} /> Enrollment & Teams
+          <Users size={15} />
+          <span>Enrollment &amp; Teams</span>
+          <span className="tab-badge">{stats.totalStudents}</span>
         </button>
         <button 
-          className={`btn tab-btn ${activeTab === 'grading' ? 'btn-primary' : 'btn-secondary'}`} 
+          className={`tab-btn ${activeTab === 'grading' ? 'active' : ''}`} 
           onClick={() => setActiveTab('grading')}
+          role="tab"
+          aria-selected={activeTab === 'grading'}
+          title="Multi-Field Rubrics & Grading Scales (Press 2)"
         >
-          <Sliders size={16} /> Evaluation Rubric
+          <Sliders size={15} />
+          <span>Evaluation Rubric</span>
+          <span className="tab-badge">{activeClass.fields.length}</span>
         </button>
         <button 
-          className={`btn tab-btn ${activeTab === 'results' ? 'btn-primary' : 'btn-secondary'}`} 
+          className={`tab-btn ${activeTab === 'results' ? 'active' : ''}`} 
           onClick={() => setActiveTab('results')}
+          role="tab"
+          aria-selected={activeTab === 'results'}
+          title="Gradebook, Perception Analytics & Matrix (Press 3)"
         >
-          <Award size={16} /> Grade Analytics
-        </button>
-        <button 
-          className={`btn tab-btn ${activeTab === 'automation' ? 'btn-primary' : 'btn-secondary'}`} 
-          onClick={() => setActiveTab('automation')}
-        >
-          <Mail size={16} /> Notification Center
-        </button>
-        <button 
-          className={`btn tab-btn ${activeTab === 'cloud' ? 'btn-primary' : 'btn-secondary'}`} 
-          onClick={() => setActiveTab('cloud')}
-        >
-          <Database size={16} /> Data & Sync
+          <Award size={15} />
+          <span>Grade Analytics</span>
+          <span className="tab-badge">{stats.submittedCount}/{stats.totalStudents}</span>
         </button>
       </div>
 
@@ -1484,9 +1787,9 @@ export const AdminDashboard: React.FC = () => {
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
             {/* 1. Import Wizard Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem' }}>
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
               <div>
-                <div className="card-header" style={{ marginBottom: '0.6rem' }}>
+                <div className="card-header" style={{ marginBottom: '0.45rem' }}>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
                     <Upload size={18} className="text-teal" /> Import Wizard
                   </h3>
@@ -1494,44 +1797,60 @@ export const AdminDashboard: React.FC = () => {
                     Smart Mapper
                   </span>
                 </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
                   Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema header mapping.
                 </p>
-              </div>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <button 
-                  className="btn btn-primary"
+
+                {/* Interactive Dropzone / Format Trigger */}
+                <div 
                   onClick={() => {
                     setWizardStep(1);
                     setIsWizardOpen(true);
                   }}
-                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', gap: '0.5rem', fontWeight: 700, fontSize: '0.88rem' }}
+                  style={{
+                    padding: '0.75rem 0.65rem',
+                    borderRadius: '8px',
+                    border: '1.5px dashed var(--accent-teal)',
+                    backgroundColor: 'rgba(20, 184, 166, 0.04)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.45rem',
+                    textAlign: 'center',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title="Click to launch Roster Onboarding Wizard"
                 >
-                  <Sparkles size={16} /> Open Onboarding Wizard
-                </button>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem', textAlign: 'center' }}>
-                  <div style={{ padding: '0.4rem 0.2rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }} title="Microsoft Excel (.xlsx, .xls)">
-                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-teal)' }}>XLSX</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-teal)' }}>
+                    <Upload size={14} /> Click to Upload or Paste File
                   </div>
-                  <div style={{ padding: '0.4rem 0.2rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }} title="Portable Document Format (.pdf)">
-                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-rose)' }}>PDF</span>
-                  </div>
-                  <div style={{ padding: '0.4rem 0.2rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }} title="Comma Separated Values (.csv)">
-                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--primary)' }}>CSV</span>
-                  </div>
-                  <div style={{ padding: '0.4rem 0.2rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }} title="Clipboard Spreadsheet Paste">
-                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-amber)' }}>PASTE</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem', width: '100%' }}>
+                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-teal)' }}>XLSX</span>
+                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-rose)' }}>PDF</span>
+                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}>CSV</span>
+                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-amber)' }}>PASTE</span>
                   </div>
                 </div>
               </div>
+              
+              <button 
+                className="btn btn-primary"
+                onClick={() => {
+                  setWizardStep(1);
+                  setIsWizardOpen(true);
+                }}
+                style={{ width: '100%', justifyContent: 'center', padding: '0.55rem', gap: '0.45rem', fontWeight: 700, fontSize: '0.84rem' }}
+              >
+                <Sparkles size={15} /> Open Onboarding Wizard
+              </button>
             </div>
 
             {/* 2. Quick Actions Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem' }}>
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
               <div>
-                <div className="card-header" style={{ marginBottom: '0.6rem' }}>
+                <div className="card-header" style={{ marginBottom: '0.45rem' }}>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
                     <Sliders size={18} className="text-indigo" /> Quick Actions
                   </h3>
@@ -1539,78 +1858,106 @@ export const AdminDashboard: React.FC = () => {
                     Tools
                   </span>
                 </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
-                  Add individual members manually, load the 100-student demo dataset, or download sample files.
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                  Add individual members, load diverse demo datasets, or export roster records.
                 </p>
-              </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                <button 
-                  className="btn btn-primary" 
-                  onClick={() => setIsAddStudentModalOpen(true)}
-                  style={{ width: '100%', justifyContent: 'center', gap: '0.45rem', padding: '0.55rem', fontSize: '0.84rem' }}
-                >
-                  <Plus size={15} /> Add Member Manually
-                </button>
-                <button 
-                  type="button"
-                  className="btn btn-teal" 
-                  onClick={() => {
-                    importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
-                    addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
-                  }}
-                  style={{ width: '100%', fontSize: '0.82rem', gap: '0.4rem', justifyContent: 'center', padding: '0.55rem' }}
-                  title="Populate classroom with a diverse dataset of 100 students to test app features"
-                >
-                  <Sparkles size={14} /> Load 100 Diverse Students (Sample)
-                </button>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.35rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => downloadSampleStudentsFile('csv')}
-                    style={{ fontSize: '0.72rem', padding: '0.35rem 0.25rem', justifyContent: 'center', gap: '0.25rem' }}
-                    title="Download sample dataset as CSV"
-                  >
-                    <Download size={11} /> CSV
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => downloadSampleStudentsFile('xlsx')}
-                    style={{ fontSize: '0.72rem', padding: '0.35rem 0.25rem', justifyContent: 'center', gap: '0.25rem' }}
-                    title="Download sample dataset as Excel"
-                  >
-                    <Download size={11} /> XLSX
-                  </button>
-                  <button 
-                    type="button"
-                    className="btn btn-secondary text-rose btn-sm" 
-                    style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', fontSize: '0.72rem', padding: '0.35rem 0.25rem', justifyContent: 'center', gap: '0.25rem' }}
-                    onClick={() => {
-                      triggerConfirm(
-                        'Clear Class Roster',
-                        'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
-                        () => {
-                          importRoster(activeClass.id, [], true);
-                          resetClassReviews(activeClass.id);
-                        },
-                        'Clear Roster',
-                        'Cancel'
-                      );
-                    }}
-                    title="Clear all students from this classroom"
-                  >
-                    <Trash2 size={11} /> Clear
-                  </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                    <button 
+                      className="btn btn-primary btn-sm" 
+                      onClick={() => setIsAddStudentModalOpen(true)}
+                      style={{ justifyContent: 'center', gap: '0.35rem', padding: '0.45rem 0.35rem', fontSize: '0.78rem' }}
+                    >
+                      <Plus size={13} /> Add Member
+                    </button>
+                    <button 
+                      type="button"
+                      className="btn btn-teal btn-sm" 
+                      onClick={() => {
+                        importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+                        addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+                      }}
+                      style={{ fontSize: '0.78rem', gap: '0.35rem', justifyContent: 'center', padding: '0.45rem 0.35rem' }}
+                      title="Populate classroom with a diverse dataset of 100 students to test app features"
+                    >
+                      <Sparkles size={13} /> 100 Demo Sample
+                    </button>
+                  </div>
+
+                  {/* Export & Download Hub */}
+                  <div style={{ padding: '0.5rem 0.65rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Export &amp; Download Center
+                      </span>
+                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                        CSV &bull; Excel
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          if (activeClass.students.length === 0) {
+                            addToast('No students enrolled to export.', 'warning');
+                            return;
+                          }
+                          exportRosterToExcel(activeClass);
+                          addToast('Class roster exported to Excel (.xlsx)!', 'success');
+                        }}
+                        style={{ fontSize: '0.72rem', padding: '0.3rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
+                        title="Export current classroom roster to Excel"
+                      >
+                        <Download size={11} className="text-teal" /> Export Roster
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          downloadSampleStudentsFile('xlsx');
+                          addToast('Downloaded diverse student template spreadsheet (.xlsx)!', 'success');
+                        }}
+                        style={{ fontSize: '0.72rem', padding: '0.3rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
+                        title="Download sample spreadsheet template with 100 diverse students"
+                      >
+                        <Download size={11} className="text-indigo" /> Template
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* Clear Roster Action */}
+              <button 
+                type="button"
+                className="btn btn-secondary text-rose btn-sm" 
+                style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', fontSize: '0.72rem', padding: '0.4rem', justifyContent: 'center', gap: '0.3rem', width: '100%' }}
+                onClick={() => {
+                  triggerConfirm(
+                    'Clear Class Roster',
+                    'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
+                    () => {
+                      importRoster(activeClass.id, [], true);
+                      resetClassReviews(activeClass.id);
+                    },
+                    'Clear Roster',
+                    'Cancel'
+                  );
+                }}
+                title="Clear all students from this classroom"
+              >
+                <Trash2 size={11} /> Clear Class Roster
+              </button>
             </div>
 
             {/* 3. Student Self-Enrollment QR & Link Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem' }}>
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
               <div>
-                <div className="card-header" style={{ marginBottom: '0.6rem' }}>
+                <div className="card-header" style={{ marginBottom: '0.45rem' }}>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
                     <QrCode size={18} className="text-primary" /> Self-Enrollment
                   </h3>
@@ -1618,55 +1965,75 @@ export const AdminDashboard: React.FC = () => {
                     QR &amp; Link
                   </span>
                 </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.85rem', lineHeight: 1.45 }}>
-                  Share a class-specific QR code or join link with students for mobile self-registration.
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                  Share class QR code or direct join link with students for mobile self-registration.
                 </p>
 
-                <div style={{ display: 'flex', gap: '0.35rem' }}>
-                  <input 
-                    type="text" 
-                    readOnly 
-                    className="form-input" 
-                    value={getClassEnrollmentUrl(activeClass.id)} 
-                    style={{ fontSize: '0.74rem', fontFamily: 'monospace', background: 'var(--bg-app)', color: 'var(--text-main)', padding: '0.4rem 0.6rem', height: '36px' }}
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                  />
-                  <button 
-                    type="button" 
-                    className={`btn ${copiedEnrollLink ? 'btn-teal' : 'btn-secondary'} btn-sm`} 
-                    style={{ flexShrink: 0, padding: '0.35rem 0.65rem', height: '36px' }}
-                    onClick={() => {
-                      navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
-                      setCopiedEnrollLink(true);
-                      addToast('Classroom enrollment link copied to clipboard!', 'success');
-                      setTimeout(() => setCopiedEnrollLink(false), 2500);
-                    }}
-                    title="Copy enrollment link to clipboard"
-                  >
-                    {copiedEnrollLink ? <Check size={14} /> : <Copy size={14} />}
-                  </button>
+                {/* QR Code preview & URL copy box */}
+                <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.55rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  {miniQrUrl ? (
+                    <div 
+                      onClick={() => setIsQRCodeModalOpen(true)}
+                      style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      title="Click to expand QR Presentation Mode"
+                    >
+                      <img src={miniQrUrl} alt="Classroom QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    </div>
+                  ) : (
+                    <div 
+                      onClick={() => setIsQRCodeModalOpen(true)}
+                      style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}
+                      title="Click to expand QR Presentation Mode"
+                    >
+                      <QrCode size={26} />
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', gap: '0.3rem' }}>
+                      <input 
+                        type="text" 
+                        readOnly 
+                        className="form-input" 
+                        value={getClassEnrollmentUrl(activeClass.id)} 
+                        style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '0.3rem 0.5rem', height: '32px', flex: 1 }}
+                        onClick={(e) => (e.target as HTMLInputElement).select()}
+                      />
+                      <button 
+                        type="button" 
+                        className={`btn ${copiedEnrollLink ? 'btn-teal' : 'btn-secondary'} btn-sm`} 
+                        style={{ flexShrink: 0, padding: '0.25rem 0.55rem', height: '32px' }}
+                        onClick={() => {
+                          navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
+                          setCopiedEnrollLink(true);
+                          addToast('Classroom enrollment link copied to clipboard!', 'success');
+                          setTimeout(() => setCopiedEnrollLink(false), 2500);
+                        }}
+                        title="Copy enrollment link to clipboard"
+                      >
+                        {copiedEnrollLink ? <Check size={13} /> : <Copy size={13} />}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <ShieldCheck size={11} className="text-teal" /> Cloud Sync Active
+                      </span>
+                      <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
+                        {activeClass.students.length} Enrolled
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.85rem' }}>
-                <button 
-                  type="button" 
-                  className="btn btn-primary"
-                  style={{ width: '100%', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem', fontSize: '0.84rem' }}
-                  onClick={() => setIsQRCodeModalOpen(true)}
-                >
-                  <QrCode size={15} /> Open QR Presentation Mode
-                </button>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <ShieldCheck size={12} className="text-teal" /> Cloud Sync Active
-                  </span>
-                  <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
-                    {activeClass.students.length} Enrolled Members
-                  </span>
-                </div>
-              </div>
+              <button 
+                type="button" 
+                className="btn btn-primary"
+                style={{ width: '100%', justifyContent: 'center', gap: '0.45rem', padding: '0.55rem', fontSize: '0.84rem', fontWeight: 700 }}
+                onClick={() => setIsQRCodeModalOpen(true)}
+              >
+                <QrCode size={14} /> Open QR Presentation Mode
+              </button>
             </div>
 
           </div>
@@ -1696,8 +2063,8 @@ export const AdminDashboard: React.FC = () => {
                   {filteredStudents.length} of {activeClass.students.length} members
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: '100%', maxWidth: '520px' }}>
-                <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: '100%', maxWidth: '620px', alignItems: 'center' }}>
+                <div style={{ position: 'relative', flex: 1, minWidth: '190px' }}>
                   <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                   <input 
                     type="text" 
@@ -1722,8 +2089,42 @@ export const AdminDashboard: React.FC = () => {
                   options={groupOptions}
                   value={groupFilter}
                   onChange={(val) => setGroupFilter(val)}
-                  style={{ width: 'auto', minWidth: '160px' }}
+                  style={{ width: 'auto', minWidth: '150px' }}
                 />
+                <div style={{ display: 'flex', gap: '0.3rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      if (activeClass.students.length === 0) {
+                        addToast('No students enrolled to export.', 'warning');
+                        return;
+                      }
+                      exportRosterToExcel(activeClass);
+                      addToast('Class roster exported to Excel (.xlsx)!', 'success');
+                    }}
+                    style={{ fontSize: '0.76rem', padding: '0.4rem 0.55rem', gap: '0.3rem', height: '38px' }}
+                    title="Export complete roster with academic & demographic metadata to Excel"
+                  >
+                    <Download size={13} className="text-teal" /> Excel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      if (activeClass.students.length === 0) {
+                        addToast('No students enrolled to export.', 'warning');
+                        return;
+                      }
+                      exportRosterToCSV(activeClass);
+                      addToast('Class roster exported to CSV!', 'success');
+                    }}
+                    style={{ fontSize: '0.76rem', padding: '0.4rem 0.55rem', gap: '0.3rem', height: '38px' }}
+                    title="Export complete roster with academic & demographic metadata to CSV"
+                  >
+                    <Download size={13} className="text-indigo" /> CSV
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1896,12 +2297,18 @@ export const AdminDashboard: React.FC = () => {
                                     name: s.name,
                                     email: s.email,
                                     groupName: s.groupName,
+                                    gender: s.gender || 'Prefer not to say',
+                                    isInternational: s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus'),
+                                    isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
+                                    nationality: s.nationality || '',
+                                    currentCountry: s.currentCountry || s.nationality || '',
+                                    englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
                                     university: s.university || '',
                                     degree: s.degree || '',
-                                    studentType: s.studentType || 'Normal',
-                                    gender: s.gender || 'Prefer not to say',
-                                    nationality: s.nationality || '',
-                                    englishProficiency: s.englishProficiency || 'Fluent (C1/C2)'
+                                    originalUniversity: s.originalUniversity || '',
+                                    originalCountry: s.originalCountry || '',
+                                    currentUniversity: s.currentUniversity || s.university || '',
+                                    studentType: s.studentType || 'Normal'
                                   });
                                   setIsEditStudentModalOpen(true);
                                 }}
@@ -1942,18 +2349,88 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'grading' && (
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="card">
+            {/* Header & Presets Bar */}
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.85rem' }}>
-              <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+              <div style={{ flex: '1 1 280px', minWidth: 0 }}>
                 <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1.05rem', fontWeight: 800 }}>
-                  <Sliders size={18} className="text-indigo" /> Configure Grading Scales
+                  <Sliders size={18} className="text-indigo" /> Evaluation Rubric &amp; Grading Scales
                 </h3>
                 <p className="card-subtitle" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.45 }}>
-                  Define multi-field rubrics. Dynamic sliding parameters scale instantly inside both administrative reports and student submission cards.
+                  Configure multi-criteria rubrics with behavioral guidance. Define custom scales and load accredited academic presets.
                 </p>
               </div>
-              <button className="btn btn-primary" onClick={handleAddField} style={{ height: '38px', flexShrink: 0 }}>
-                <Plus size={16} /> Add Custom Metric
-              </button>
+              
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button className="btn btn-primary btn-sm" onClick={handleAddField} style={{ height: '36px', gap: '0.35rem' }}>
+                  <Plus size={15} /> Add Custom Criterion
+                </button>
+              </div>
+            </div>
+
+            {/* Rubric Presets Library Banner */}
+            <div 
+              style={{ 
+                backgroundColor: 'var(--bg-app)', 
+                border: '1px solid var(--border-color)', 
+                borderRadius: 'var(--radius-lg)', 
+                padding: '0.85rem 1.15rem', 
+                marginBottom: '1.25rem', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between', 
+                flexWrap: 'wrap', 
+                gap: '0.85rem' 
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <BookOpen size={17} />
+                </div>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Accredited Rubric Templates
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                    1-Click load standardized peer evaluation criteria &amp; behavioral guidance.
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Preset Buttons in a Clean Flex Wrap Ribbon */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {RUBRIC_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleApplyPreset(preset.id)}
+                    style={{
+                      fontSize: '0.76rem',
+                      padding: '0.35rem 0.7rem',
+                      height: '32px',
+                      borderRadius: '6px',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-color)',
+                      whiteSpace: 'nowrap'
+                    }}
+                    title={`${preset.name}: ${preset.description}`}
+                  >
+                    <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
+                      {preset.id === 'aacu_teamwork' ? 'AAC&U VALUE' : 
+                       preset.id === 'abet_engineering' ? 'ABET Engineering' : 
+                       preset.id === 'agile_scrum' ? 'Agile Scrum' : 
+                       preset.id === 'creative_design' ? 'Design Studio' : 'Standard 4-D Core'}
+                    </span>
+                    <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '1px 5px', height: '16px', lineHeight: '14px' }}>
+                      {preset.fields.length} criteria
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Target final scale setting */}
@@ -1964,7 +2441,7 @@ export const AdminDashboard: React.FC = () => {
                     <Sliders size={15} /> Final Grade Scaling Target Scale
                   </h4>
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
-                    Choose the custom scale value for student results. The system will automatically convert overall averages to display out of this target scale (e.g. 20, 100, 10) instead of simply summing up all grading rubrics' maximums.
+                    Choose the target scale for final student grade calculations. Averages scale automatically (e.g. Out of 20, 100, or Sum of Rubrics).
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '240px', flexWrap: 'wrap' }}>
@@ -1973,11 +2450,11 @@ export const AdminDashboard: React.FC = () => {
                     value={activeClass.targetScale === 0 ? 'sum' : activeClass.targetScale ? 'custom' : 'default'}
                     onChange={(e) => {
                       if (e.target.value === 'default') {
-                        updateGradingConfig(activeClass.id, activeClass.fields, null);
+                        updateGradingConfig(activeClass.id, activeClass.fields, null, true);
                       } else if (e.target.value === 'sum') {
-                        updateGradingConfig(activeClass.id, activeClass.fields, 0);
+                        updateGradingConfig(activeClass.id, activeClass.fields, 0, true);
                       } else {
-                        updateGradingConfig(activeClass.id, activeClass.fields, 20); // Default to custom scale of 20
+                        updateGradingConfig(activeClass.id, activeClass.fields, 20, true); // Default to custom scale of 20
                       }
                     }}
                     style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', width: 'auto', minWidth: '160px' }}
@@ -1998,7 +2475,7 @@ export const AdminDashboard: React.FC = () => {
                         onChange={(e) => {
                           const val = Number(e.target.value);
                           if (val > 0) {
-                            updateGradingConfig(activeClass.id, activeClass.fields, val);
+                            updateGradingConfig(activeClass.id, activeClass.fields, val, false);
                           }
                         }}
                         style={{ padding: '0.4rem 0.6rem', fontSize: '0.85rem', width: '70px', textAlign: 'center' }}
@@ -2009,48 +2486,89 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
 
+            {/* Criteria List Cards */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {activeClass.fields.map((field) => (
+              {activeClass.fields.map((field, idx) => (
                 <div 
                   key={field.id} 
-                  style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '1rem', alignItems: 'center', backgroundColor: 'var(--bg-app)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}
+                  style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '0.75rem', 
+                    backgroundColor: 'var(--bg-app)', 
+                    padding: '1rem 1.25rem', 
+                    borderRadius: 'var(--radius-md)', 
+                    border: '1px solid var(--border-color)' 
+                  }}
                 >
+                  {/* Top Row: Name, Scale, Relative Weight, and Delete */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(100px, 1fr) minmax(100px, 1fr) auto auto', gap: '0.85rem', alignItems: 'flex-end' }}>
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '1px 5px' }}>#{idx + 1}</span> Criterion Name
+                      </label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        value={field.name}
+                        placeholder="e.g. Quality of Contribution, Collaboration..."
+                        onChange={(e) => handleUpdateField(field.id, { name: e.target.value })}
+                        style={{ height: '36px', fontSize: '0.84rem', fontWeight: 600 }}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Min Scale</label>
+                      <input 
+                        type="number" 
+                        className="form-input" 
+                        value={field.min}
+                        onChange={(e) => handleUpdateField(field.id, { min: Number(e.target.value) })}
+                        style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Max Scale</label>
+                      <input 
+                        type="number" 
+                        className="form-input" 
+                        value={field.max}
+                        onChange={(e) => handleUpdateField(field.id, { max: Number(e.target.value) })}
+                        style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Relative Weight</label>
+                      <div style={{ height: '36px', display: 'flex', alignItems: 'center' }}>
+                        <span className="badge badge-teal" style={{ fontSize: '0.74rem', height: '34px', display: 'inline-flex', alignItems: 'center' }}>
+                          {Math.round((1 / activeClass.fields.length) * 100)}% Weight
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
+                      <button 
+                        className="btn btn-rose btn-sm" 
+                        onClick={() => handleDeleteField(field.id)}
+                        title="Delete rubric scale"
+                        style={{ height: '34px', padding: '0 0.6rem' }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Bottom Row: Behavioral Guidance / Criterion Description */}
                   <div>
-                    <label className="form-label">Metric Label Name</label>
+                    <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', margin: 0, marginBottom: '0.25rem' }}>
+                      Guidance &amp; Behavioral Indicator (Shown to students while grading):
+                    </label>
                     <input 
                       type="text" 
                       className="form-input" 
-                      value={field.name}
-                      placeholder="e.g. Collaboration, Contribution..."
-                      onChange={(e) => handleUpdateField(field.id, { name: e.target.value })}
+                      value={field.description || ''}
+                      placeholder="e.g. Produces thorough, accurate deliverables on schedule with high attention to detail..."
+                      onChange={(e) => handleUpdateField(field.id, { description: e.target.value })}
+                      style={{ fontSize: '0.78rem', height: '32px', color: 'var(--text-secondary)' }}
                     />
-                  </div>
-                  <div>
-                    <label className="form-label">Minimum Scale Value</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      value={field.min}
-                      onChange={(e) => handleUpdateField(field.id, { min: Number(e.target.value) })}
-                    />
-                  </div>
-                  <div>
-                    <label className="form-label">Maximum Scale Value</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      value={field.max}
-                      onChange={(e) => handleUpdateField(field.id, { max: Number(e.target.value) })}
-                    />
-                  </div>
-                  <div style={{ paddingTop: '1.5rem' }}>
-                    <button 
-                      className="btn btn-rose" 
-                      onClick={() => handleDeleteField(field.id)}
-                      title="Delete rubric scale"
-                    >
-                      <Trash2 size={16} />
-                    </button>
                   </div>
                 </div>
               ))}
@@ -2572,15 +3090,47 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Grades Matrix Sheet */}
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
               <h3 className="card-title"><Award size={18} className="text-indigo" /> Results Summary Sheet</h3>
               
-              <CustomSelect
-                options={groupOptions}
-                value={groupFilter}
-                onChange={(val) => setGroupFilter(val)}
-                style={{ width: 'auto', minWidth: '150px' }}
-              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <CustomSelect
+                  options={groupOptions}
+                  value={groupFilter}
+                  onChange={(val) => setGroupFilter(val)}
+                  style={{ width: 'auto', minWidth: '150px' }}
+                />
+
+                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-teal btn-sm"
+                    onClick={handleExportExcel}
+                    style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem', gap: '0.35rem', fontWeight: 700 }}
+                    title="Export complete 2-sheet Excel report with WebPA metrics and written comments"
+                  >
+                    <Download size={13} /> Export Excel Report
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      try {
+                        const csv = generateResultsCSV(activeClass);
+                        downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
+                        addToast('Results summary CSV downloaded successfully!', 'success');
+                      } catch (e) {
+                        addToast('Failed to export CSV results.', 'error');
+                      }
+                    }}
+                    style={{ fontSize: '0.78rem', padding: '0.45rem 0.65rem', gap: '0.35rem' }}
+                    title="Export results summary to CSV"
+                  >
+                    <Download size={13} /> CSV
+                  </button>
+                </div>
+              </div>
             </div>
 
             {activeClass.students.length === 0 ? (
@@ -3029,12 +3579,12 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Card 2: Email Dispatcher Engine */}
+              {/* Card 2: Email Notification Engine */}
               <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div>
                   <div className="card-header" style={{ marginBottom: '0.5rem' }}>
                     <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                      <Send size={18} className="text-teal" /> Email Dispatcher
+                      <Mail size={18} className="text-teal" /> Email Engine &amp; API
                     </h3>
                     <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
                       Direct Links
@@ -3042,7 +3592,7 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                   
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
-                    Dispatch individualized evaluation links to students with unique tokens for anonymous submissions.
+                    Send individualized evaluation links to students with unique tokens for secure anonymous submissions.
                   </p>
 
                   <div className="form-group">
@@ -3206,7 +3756,7 @@ export const AdminDashboard: React.FC = () => {
             {(isSendingEmails || emailLogs.length > 0) && (
               <div className="card" style={{ animation: 'fadeIn 200ms ease' }}>
                 <h4 style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                  <RefreshCw size={16} className={isSendingEmails ? 'spin' : ''} /> Dispatching Pipeline Status
+                  <RefreshCw size={16} className={isSendingEmails ? 'spin' : ''} /> Email Transmission Status
                 </h4>
                 
                 <div style={{ height: '8px', width: '100%', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden', marginBottom: '1rem' }}>
@@ -3408,130 +3958,376 @@ export const AdminDashboard: React.FC = () => {
         isOpen={isAddStudentModalOpen}
         onClose={() => setIsAddStudentModalOpen(false)}
         title="Add Class Participant Manually"
+        maxWidth="720px"
         footer={
-          <>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
             <button className="btn btn-secondary" onClick={() => setIsAddStudentModalOpen(false)}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleAddStudentSubmit}>Add Member</button>
-          </>
+            <button className="btn btn-primary" onClick={handleAddStudentSubmit} style={{ gap: '0.35rem', fontWeight: 700 }}>
+              <Plus size={15} /> Enroll Participant
+            </button>
+          </div>
         }
       >
         <form onSubmit={handleAddStudentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div className="form-group">
-            <label className="form-label">Unique Student ID <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.78rem' }}>(Optional — auto-generated if blank)</span></label>
-            <input 
-              type="text" 
-              placeholder="e.g. std_8291" 
-              className="form-input" 
-              value={newStudent.id}
-              onChange={(e) => setNewStudent(prev => ({ ...prev, id: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Full Student Name *</label>
-            <input 
-              type="text" 
-              placeholder="Alice Johnson" 
-              className="form-input" 
-              required
-              value={newStudent.name}
-              onChange={(e) => setNewStudent(prev => ({ ...prev, name: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">University Email ID *</label>
-            <input 
-              type="email" 
-              placeholder="alice@univ.edu" 
-              className="form-input" 
-              required
-              value={newStudent.email}
-              onChange={(e) => setNewStudent(prev => ({ ...prev, email: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Roster Group Name (Team Title)</label>
-            <input 
-              type="text" 
-              placeholder="e.g. Group Gamma, Team Alpha" 
-              className="form-input" 
-              value={newStudent.groupName}
-              onChange={(e) => setNewStudent(prev => ({ ...prev, groupName: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">University / Institution <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.78rem' }}>(Optional)</span></label>
-            <input 
-              type="text" 
-              placeholder="e.g. Stanford University" 
-              className="form-input" 
-              value={newStudent.university}
-              onChange={(e) => setNewStudent(prev => ({ ...prev, university: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Degree / Major <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.78rem' }}>(Optional)</span></label>
-            <input 
-              type="text" 
-              placeholder="e.g. Computer Science, MBA" 
-              className="form-input" 
-              value={newStudent.degree}
-              onChange={(e) => setNewStudent(prev => ({ ...prev, degree: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Student Type</label>
-            <select 
-              className="form-input"
-              value={newStudent.studentType}
-              onChange={(e) => setNewStudent(prev => ({ ...prev, studentType: e.target.value }))}
-              style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
-            >
-              <option value="Normal">Normal Student</option>
-              <option value="Erasmus">Erasmus / Exchange</option>
-              <option value="Part-time">Part-time Student</option>
-            </select>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+          
+          {/* SECTION 1: IDENTITY & CONTACT */}
+          <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
+              <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800 }}>1</div>
+              <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Identity &amp; Contact
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Full Student Name <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Alice Johnson" 
+                  className="form-input" 
+                  required
+                  value={newStudent.name}
+                  onChange={(e) => setNewStudent(prev => ({ ...prev, name: e.target.value }))}
+                  style={{ height: '36px', fontSize: '0.82rem' }}
+                />
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Institutional Email <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                </label>
+                <input 
+                  type="email" 
+                  placeholder="e.g. alice@university.edu" 
+                  className="form-input" 
+                  required
+                  value={newStudent.email}
+                  onChange={(e) => setNewStudent(prev => ({ ...prev, email: e.target.value }))}
+                  style={{ height: '36px', fontSize: '0.82rem' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Student ID <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.72rem' }}>(Auto-generated if blank)</span>
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. std_8291" 
+                  className="form-input" 
+                  value={newStudent.id}
+                  onChange={(e) => setNewStudent(prev => ({ ...prev, id: e.target.value }))}
+                  style={{ height: '36px', fontSize: '0.82rem' }}
+                />
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Assigned Team / Group Title
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Team Alpha, Group Gamma" 
+                  className="form-input" 
+                  value={newStudent.groupName}
+                  onChange={(e) => setNewStudent(prev => ({ ...prev, groupName: e.target.value }))}
+                  style={{ height: '36px', fontSize: '0.82rem' }}
+                />
+              </div>
+            </div>
+
+            {/* Gender Segmented Control */}
             <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Gender *</label>
-              <select 
-                className="form-input"
-                value={newStudent.gender}
-                onChange={(e) => setNewStudent(prev => ({ ...prev, gender: e.target.value }))}
-                style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
+              <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.3rem' }}>
+                Gender Identity
+              </label>
+              <div style={{ display: 'flex', backgroundColor: '#ffffff', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', gap: '3px' }}>
+                {GENDER_OPTIONS.map((g) => {
+                  const isSel = newStudent.gender === g.value;
+                  return (
+                    <button
+                      key={g.value}
+                      type="button"
+                      onClick={() => setNewStudent(prev => ({ ...prev, gender: g.value }))}
+                      style={{
+                        flex: 1,
+                        padding: '0.35rem 0.25rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: isSel ? 'var(--primary)' : 'transparent',
+                        color: isSel ? '#ffffff' : 'var(--text-secondary)',
+                        fontWeight: isSel ? 700 : 600,
+                        fontSize: '0.76rem',
+                        cursor: 'pointer',
+                        transition: 'all 150ms ease'
+                      }}
+                    >
+                      {g.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 2: GEOGRAPHIC & STUDENT STATUS */}
+          <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
+              <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--accent-teal)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800 }}>2</div>
+              <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Geographic &amp; Diversity Status
+              </span>
+            </div>
+
+            {/* Toggle Status Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+              <label 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.65rem', 
+                  padding: '0.65rem 0.85rem', 
+                  borderRadius: '8px', 
+                  backgroundColor: newStudent.isInternational ? 'rgba(99, 102, 241, 0.08)' : '#ffffff', 
+                  border: `1.5px solid ${newStudent.isInternational ? 'var(--primary)' : 'var(--border-color)'}`,
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease'
+                }}
               >
-                <option value="Female">Female</option>
-                <option value="Male">Male</option>
-                <option value="Non-binary">Non-binary</option>
-                <option value="Prefer not to say">Prefer not to say</option>
-                <option value="Other">Other</option>
-              </select>
+                <input 
+                  type="checkbox"
+                  checked={newStudent.isInternational}
+                  onChange={(e) => setNewStudent(prev => ({ ...prev, isInternational: e.target.checked }))}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+                <div>
+                  <b style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'block' }}>International Student</b>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Studying outside home country</span>
+                </div>
+              </label>
+
+              <label 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.65rem', 
+                  padding: '0.65rem 0.85rem', 
+                  borderRadius: '8px', 
+                  backgroundColor: newStudent.isExchange ? 'rgba(20, 184, 166, 0.08)' : '#ffffff', 
+                  border: `1.5px solid ${newStudent.isExchange ? 'var(--accent-teal)' : 'var(--border-color)'}`,
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease'
+                }}
+              >
+                <input 
+                  type="checkbox"
+                  checked={newStudent.isExchange}
+                  onChange={(e) => setNewStudent(prev => ({ ...prev, isExchange: e.target.checked }))}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent-teal)', cursor: 'pointer' }}
+                />
+                <div>
+                  <b style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <Plane size={13} className="text-teal" /> Exchange / Erasmus
+                  </b>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Visiting / exchange semester</span>
+                </div>
+              </label>
             </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Nationality *</label>
-              <SearchableSelect
-                value={newStudent.nationality}
-                onChange={(val) => setNewStudent(prev => ({ ...prev, nationality: val }))}
-                options={NATIONALITY_OPTIONS}
-                placeholder="Select nationality..."
-                searchPlaceholder="Search 195+ countries..."
-              />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Nationality / Passport Country
+                </label>
+                <SearchableSelect
+                  value={newStudent.nationality}
+                  onChange={(val) => setNewStudent(prev => ({ 
+                    ...prev, 
+                    nationality: val,
+                    currentCountry: prev.currentCountry || val
+                  }))}
+                  options={NATIONALITY_OPTIONS}
+                  placeholder="Select nationality..."
+                  searchPlaceholder="Search 195+ countries..."
+                />
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Current Country of Residence / Study
+                </label>
+                <SearchableSelect
+                  value={newStudent.currentCountry}
+                  onChange={(val) => setNewStudent(prev => ({ ...prev, currentCountry: val }))}
+                  options={NATIONALITY_OPTIONS}
+                  placeholder="Select current country..."
+                  searchPlaceholder="Search countries..."
+                />
+              </div>
             </div>
           </div>
-          <div className="form-group">
-            <label className="form-label">English Proficiency Level *</label>
-            <select 
-              className="form-input"
-              value={newStudent.englishProficiency}
-              onChange={(e) => setNewStudent(prev => ({ ...prev, englishProficiency: e.target.value }))}
-              style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
-            >
-              <option value="Native / Bilingual">Native / Bilingual</option>
-              <option value="Fluent (C1/C2)">Fluent / Advanced Professional (C1/C2)</option>
-              <option value="Advanced (B2)">Upper Intermediate / Advanced (B2)</option>
-              <option value="Intermediate (B1)">Intermediate Working (B1)</option>
-              <option value="Basic (A1/A2)">Elementary / Basic (A1/A2)</option>
-            </select>
+
+          {/* SECTION 3: ACADEMIC BACKGROUND & LANGUAGE */}
+          <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
+              <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800 }}>3</div>
+              <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Academic Background &amp; Language
+              </span>
+            </div>
+
+            {/* CEFR English Proficiency Level */}
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.35rem' }}>
+                CEFR English Proficiency Level
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.45rem' }}>
+                {CEFR_LEVELS.map((cefr) => {
+                  const isSel = newStudent.englishProficiency === cefr.value;
+                  return (
+                    <div
+                      key={cefr.value}
+                      onClick={() => setNewStudent(prev => ({ ...prev, englishProficiency: cefr.value }))}
+                      style={{
+                        padding: '0.55rem 0.65rem',
+                        borderRadius: '7px',
+                        backgroundColor: isSel ? 'rgba(99, 102, 241, 0.08)' : '#ffffff',
+                        border: `1.5px solid ${isSel ? 'var(--primary)' : 'var(--border-color)'}`,
+                        cursor: 'pointer',
+                        transition: 'all 150ms ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
+                        <span style={{ fontSize: '0.76rem', fontWeight: 800, color: isSel ? 'var(--primary)' : 'var(--text-primary)' }}>
+                          {cefr.code}
+                        </span>
+                        {isSel && <Check size={12} className="text-primary" />}
+                      </div>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', lineHeight: 1.2 }}>
+                        {cefr.title}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Degree & Suggestions */}
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                Degree / Field of Study
+              </label>
+              <input 
+                type="text" 
+                placeholder="e.g. Computer Science, Mechanical Engineering, MBA" 
+                className="form-input" 
+                value={newStudent.degree}
+                onChange={(e) => setNewStudent(prev => ({ ...prev, degree: e.target.value }))}
+                style={{ height: '36px', fontSize: '0.82rem', marginBottom: '0.35rem' }}
+              />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                {DEGREE_SUGGESTIONS.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setNewStudent(prev => ({ ...prev, degree: item }))}
+                    style={{
+                      padding: '0.15rem 0.45rem',
+                      borderRadius: '5px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: newStudent.degree === item ? 'rgba(99, 102, 241, 0.12)' : '#ffffff',
+                      color: newStudent.degree === item ? 'var(--primary)' : 'var(--text-secondary)',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    + {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* University Details: Regular vs Exchange */}
+            {!newStudent.isExchange ? (
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  University / Institution Name
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Stanford University, TU Munich" 
+                  className="form-input" 
+                  value={newStudent.university}
+                  onChange={(e) => setNewStudent(prev => ({ ...prev, university: e.target.value }))}
+                  style={{ height: '36px', fontSize: '0.82rem' }}
+                />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.65rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                      Home Sending University (in English) <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Sorbonne University, TU Munich" 
+                      className="form-input" 
+                      value={newStudent.originalUniversity}
+                      onChange={(e) => setNewStudent(prev => ({ ...prev, originalUniversity: e.target.value }))}
+                      style={{ height: '34px', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                      Home Country <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                    </label>
+                    <SearchableSelect
+                      value={newStudent.originalCountry}
+                      onChange={(val) => setNewStudent(prev => ({ ...prev, originalCountry: val }))}
+                      options={NATIONALITY_OPTIONS}
+                      placeholder="Select home country..."
+                      searchPlaceholder="Search countries..."
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                      Host / Destination University <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Stanford University, Oxford" 
+                      className="form-input" 
+                      value={newStudent.currentUniversity}
+                      onChange={(e) => setNewStudent(prev => ({ ...prev, currentUniversity: e.target.value }))}
+                      style={{ height: '34px', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                      Host Destination Country
+                    </label>
+                    <SearchableSelect
+                      value={newStudent.currentCountry}
+                      onChange={(val) => setNewStudent(prev => ({ ...prev, currentCountry: val }))}
+                      options={NATIONALITY_OPTIONS}
+                      placeholder="Select host country..."
+                      searchPlaceholder="Search countries..."
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         </form>
       </Modal>
@@ -3540,131 +4336,376 @@ export const AdminDashboard: React.FC = () => {
       <Modal
         isOpen={isEditStudentModalOpen}
         onClose={() => setIsEditStudentModalOpen(false)}
-        title="Edit Student Details"
+        title="Edit Student Profile Details"
+        maxWidth="720px"
         footer={
-          <>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
             <button className="btn btn-secondary" onClick={() => setIsEditStudentModalOpen(false)}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleEditStudentSubmit}>Save Changes</button>
-          </>
+            <button className="btn btn-primary" onClick={handleEditStudentSubmit} style={{ gap: '0.35rem', fontWeight: 700 }}>
+              <Check size={15} /> Save Changes
+            </button>
+          </div>
         }
       >
         <form onSubmit={handleEditStudentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div className="form-group">
-            <label className="form-label">Full Student Name *</label>
-            <input 
-              type="text" 
-              placeholder="Alice Johnson" 
-              className="form-input" 
-              required
-              value={editStudentData.name}
-              onChange={(e) => setEditStudentData(prev => ({ ...prev, name: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">University Email ID *</label>
-            <input 
-              type="email" 
-              placeholder="alice@univ.edu" 
-              className="form-input" 
-              required
-              value={editStudentData.email}
-              onChange={(e) => setEditStudentData(prev => ({ ...prev, email: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Roster Group Name (Team Title)</label>
-            <input 
-              type="text" 
-              placeholder="e.g. Group Gamma, Team Alpha" 
-              className="form-input" 
-              value={editStudentData.groupName}
-              onChange={(e) => setEditStudentData(prev => ({ ...prev, groupName: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">University / Institution (Optional)</label>
-            <input 
-              type="text" 
-              placeholder="e.g. Stanford University" 
-              className="form-input" 
-              value={editStudentData.university}
-              onChange={(e) => setEditStudentData(prev => ({ ...prev, university: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Degree / Major (Optional)</label>
-            <input 
-              type="text" 
-              placeholder="e.g. Computer Science, MBA" 
-              className="form-input" 
-              value={editStudentData.degree}
-              onChange={(e) => setEditStudentData(prev => ({ ...prev, degree: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Student Type</label>
-            <select 
-              className="form-input"
-              value={editStudentData.studentType}
-              onChange={(e) => setEditStudentData(prev => ({ ...prev, studentType: e.target.value }))}
-              style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
-            >
-              <option value="Normal">Normal Student</option>
-              <option value="Erasmus">Erasmus / Exchange</option>
-              <option value="Part-time">Part-time Student</option>
-            </select>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+          
+          {/* SECTION 1: IDENTITY & CONTACT */}
+          <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
+              <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800 }}>1</div>
+              <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Identity &amp; Contact
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Full Student Name <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Alice Johnson" 
+                  className="form-input" 
+                  required
+                  value={editStudentData.name}
+                  onChange={(e) => setEditStudentData(prev => ({ ...prev, name: e.target.value }))}
+                  style={{ height: '36px', fontSize: '0.82rem' }}
+                />
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Institutional Email <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                </label>
+                <input 
+                  type="email" 
+                  placeholder="e.g. alice@university.edu" 
+                  className="form-input" 
+                  required
+                  value={editStudentData.email}
+                  onChange={(e) => setEditStudentData(prev => ({ ...prev, email: e.target.value }))}
+                  style={{ height: '36px', fontSize: '0.82rem' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Student ID <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.72rem' }}>(Read-only)</span>
+                </label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  disabled
+                  value={editStudentData.id}
+                  style={{ height: '36px', fontSize: '0.82rem', backgroundColor: '#ffffff', opacity: 0.7, cursor: 'not-allowed' }}
+                />
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Assigned Team / Group Title
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Team Alpha, Group Gamma" 
+                  className="form-input" 
+                  value={editStudentData.groupName}
+                  onChange={(e) => setEditStudentData(prev => ({ ...prev, groupName: e.target.value }))}
+                  style={{ height: '36px', fontSize: '0.82rem' }}
+                />
+              </div>
+            </div>
+
+            {/* Gender Segmented Control */}
             <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Gender *</label>
-              <select 
-                className="form-input"
-                value={editStudentData.gender || 'Female'}
-                onChange={(e) => setEditStudentData(prev => ({ ...prev, gender: e.target.value }))}
-                style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
+              <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.3rem' }}>
+                Gender Identity
+              </label>
+              <div style={{ display: 'flex', backgroundColor: '#ffffff', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', gap: '3px' }}>
+                {GENDER_OPTIONS.map((g) => {
+                  const isSel = editStudentData.gender === g.value;
+                  return (
+                    <button
+                      key={g.value}
+                      type="button"
+                      onClick={() => setEditStudentData(prev => ({ ...prev, gender: g.value }))}
+                      style={{
+                        flex: 1,
+                        padding: '0.35rem 0.25rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: isSel ? 'var(--primary)' : 'transparent',
+                        color: isSel ? '#ffffff' : 'var(--text-secondary)',
+                        fontWeight: isSel ? 700 : 600,
+                        fontSize: '0.76rem',
+                        cursor: 'pointer',
+                        transition: 'all 150ms ease'
+                      }}
+                    >
+                      {g.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 2: GEOGRAPHIC & STUDENT STATUS */}
+          <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
+              <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--accent-teal)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800 }}>2</div>
+              <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Geographic &amp; Diversity Status
+              </span>
+            </div>
+
+            {/* Toggle Status Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+              <label 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.65rem', 
+                  padding: '0.65rem 0.85rem', 
+                  borderRadius: '8px', 
+                  backgroundColor: editStudentData.isInternational ? 'rgba(99, 102, 241, 0.08)' : '#ffffff', 
+                  border: `1.5px solid ${editStudentData.isInternational ? 'var(--primary)' : 'var(--border-color)'}`,
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease'
+                }}
               >
-                <option value="Female">Female</option>
-                <option value="Male">Male</option>
-                <option value="Non-binary">Non-binary</option>
-                <option value="Prefer not to say">Prefer not to say</option>
-                <option value="Other">Other</option>
-              </select>
+                <input 
+                  type="checkbox"
+                  checked={editStudentData.isInternational}
+                  onChange={(e) => setEditStudentData(prev => ({ ...prev, isInternational: e.target.checked }))}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+                <div>
+                  <b style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'block' }}>International Student</b>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Studying outside home country</span>
+                </div>
+              </label>
+
+              <label 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.65rem', 
+                  padding: '0.65rem 0.85rem', 
+                  borderRadius: '8px', 
+                  backgroundColor: editStudentData.isExchange ? 'rgba(20, 184, 166, 0.08)' : '#ffffff', 
+                  border: `1.5px solid ${editStudentData.isExchange ? 'var(--accent-teal)' : 'var(--border-color)'}`,
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease'
+                }}
+              >
+                <input 
+                  type="checkbox"
+                  checked={editStudentData.isExchange}
+                  onChange={(e) => setEditStudentData(prev => ({ ...prev, isExchange: e.target.checked }))}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent-teal)', cursor: 'pointer' }}
+                />
+                <div>
+                  <b style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <Plane size={13} className="text-teal" /> Exchange / Erasmus
+                  </b>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Visiting / exchange semester</span>
+                </div>
+              </label>
             </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Nationality / Passport Country
+                </label>
+                <SearchableSelect
+                  value={editStudentData.nationality || ''}
+                  onChange={(val) => setEditStudentData(prev => ({ 
+                    ...prev, 
+                    nationality: val,
+                    currentCountry: prev.currentCountry || val
+                  }))}
+                  options={NATIONALITY_OPTIONS}
+                  placeholder="Select nationality..."
+                  searchPlaceholder="Search 195+ countries..."
+                />
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Current Country of Residence / Study
+                </label>
+                <SearchableSelect
+                  value={editStudentData.currentCountry || editStudentData.nationality || ''}
+                  onChange={(val) => setEditStudentData(prev => ({ ...prev, currentCountry: val }))}
+                  options={NATIONALITY_OPTIONS}
+                  placeholder="Select current country..."
+                  searchPlaceholder="Search countries..."
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 3: ACADEMIC BACKGROUND & LANGUAGE */}
+          <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
+              <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800 }}>3</div>
+              <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Academic Background &amp; Language
+              </span>
+            </div>
+
+            {/* CEFR English Proficiency Level */}
             <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Nationality *</label>
-              <SearchableSelect
-                value={editStudentData.nationality || ''}
-                onChange={(val) => setEditStudentData(prev => ({ ...prev, nationality: val }))}
-                options={NATIONALITY_OPTIONS}
-                placeholder="Select nationality..."
-                searchPlaceholder="Search 195+ countries..."
-              />
+              <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.35rem' }}>
+                CEFR English Proficiency Level
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.45rem' }}>
+                {CEFR_LEVELS.map((cefr) => {
+                  const isSel = editStudentData.englishProficiency === cefr.value;
+                  return (
+                    <div
+                      key={cefr.value}
+                      onClick={() => setEditStudentData(prev => ({ ...prev, englishProficiency: cefr.value }))}
+                      style={{
+                        padding: '0.55rem 0.65rem',
+                        borderRadius: '7px',
+                        backgroundColor: isSel ? 'rgba(99, 102, 241, 0.08)' : '#ffffff',
+                        border: `1.5px solid ${isSel ? 'var(--primary)' : 'var(--border-color)'}`,
+                        cursor: 'pointer',
+                        transition: 'all 150ms ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
+                        <span style={{ fontSize: '0.76rem', fontWeight: 800, color: isSel ? 'var(--primary)' : 'var(--text-primary)' }}>
+                          {cefr.code}
+                        </span>
+                        {isSel && <Check size={12} className="text-primary" />}
+                      </div>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', lineHeight: 1.2 }}>
+                        {cefr.title}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">English Proficiency Level *</label>
-            <select 
-              className="form-input"
-              value={editStudentData.englishProficiency || 'Fluent (C1/C2)'}
-              onChange={(e) => setEditStudentData(prev => ({ ...prev, englishProficiency: e.target.value }))}
-              style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.6rem' }}
-            >
-              <option value="Native / Bilingual">Native / Bilingual</option>
-              <option value="Fluent (C1/C2)">Fluent / Advanced Professional (C1/C2)</option>
-              <option value="Advanced (B2)">Upper Intermediate / Advanced (B2)</option>
-              <option value="Intermediate (B1)">Intermediate Working (B1)</option>
-              <option value="Basic (A1/A2)">Elementary / Basic (A1/A2)</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Unique Student ID (Read-only)</label>
-            <input 
-              type="text" 
-              className="form-input" 
-              disabled
-              value={editStudentData.id}
-              style={{ backgroundColor: 'var(--bg-app)', cursor: 'not-allowed', opacity: 0.7 }}
-            />
+
+            {/* Degree & Suggestions */}
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                Degree / Field of Study
+              </label>
+              <input 
+                type="text" 
+                placeholder="e.g. Computer Science, Mechanical Engineering, MBA" 
+                className="form-input" 
+                value={editStudentData.degree || ''}
+                onChange={(e) => setEditStudentData(prev => ({ ...prev, degree: e.target.value }))}
+                style={{ height: '36px', fontSize: '0.82rem', marginBottom: '0.35rem' }}
+              />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                {DEGREE_SUGGESTIONS.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setEditStudentData(prev => ({ ...prev, degree: item }))}
+                    style={{
+                      padding: '0.15rem 0.45rem',
+                      borderRadius: '5px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: editStudentData.degree === item ? 'rgba(99, 102, 241, 0.12)' : '#ffffff',
+                      color: editStudentData.degree === item ? 'var(--primary)' : 'var(--text-secondary)',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    + {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* University Details: Regular vs Exchange */}
+            {!editStudentData.isExchange ? (
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  University / Institution Name
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Stanford University, TU Munich" 
+                  className="form-input" 
+                  value={editStudentData.university || ''}
+                  onChange={(e) => setEditStudentData(prev => ({ ...prev, university: e.target.value }))}
+                  style={{ height: '36px', fontSize: '0.82rem' }}
+                />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.65rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                      Home Sending University (in English) <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Sorbonne University, TU Munich" 
+                      className="form-input" 
+                      value={editStudentData.originalUniversity || ''}
+                      onChange={(e) => setEditStudentData(prev => ({ ...prev, originalUniversity: e.target.value }))}
+                      style={{ height: '34px', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                      Home Country <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                    </label>
+                    <SearchableSelect
+                      value={editStudentData.originalCountry || ''}
+                      onChange={(val) => setEditStudentData(prev => ({ ...prev, originalCountry: val }))}
+                      options={NATIONALITY_OPTIONS}
+                      placeholder="Select home country..."
+                      searchPlaceholder="Search countries..."
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                      Host / Destination University <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Stanford University, Oxford" 
+                      className="form-input" 
+                      value={editStudentData.currentUniversity || editStudentData.university || ''}
+                      onChange={(e) => setEditStudentData(prev => ({ ...prev, currentUniversity: e.target.value }))}
+                      style={{ height: '34px', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                      Host Destination Country
+                    </label>
+                    <SearchableSelect
+                      value={editStudentData.currentCountry || ''}
+                      onChange={(val) => setEditStudentData(prev => ({ ...prev, currentCountry: val }))}
+                      options={NATIONALITY_OPTIONS}
+                      placeholder="Select host country..."
+                      searchPlaceholder="Search countries..."
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         </form>
       </Modal>
@@ -4083,18 +5124,26 @@ export const AdminDashboard: React.FC = () => {
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
-                        onClick={() => downloadSampleStudentsFile('csv')}
-                        style={{ flex: 1, fontSize: '0.72rem', padding: '0.25rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
+                        onClick={() => {
+                          downloadSampleStudentsFile('xlsx');
+                          addToast('Downloaded sample spreadsheet template (.xlsx)!', 'success');
+                        }}
+                        style={{ flex: 1, fontSize: '0.74rem', padding: '0.35rem 0.4rem', justifyContent: 'center', gap: '0.3rem' }}
+                        title="Download sample student spreadsheet (.xlsx)"
                       >
-                        <Download size={11} /> CSV
+                        <Download size={12} className="text-teal" /> Excel Template
                       </button>
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
-                        onClick={() => downloadSampleStudentsFile('xlsx')}
-                        style={{ flex: 1, fontSize: '0.72rem', padding: '0.25rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
+                        onClick={() => {
+                          downloadSampleStudentsFile('csv');
+                          addToast('Downloaded sample CSV template (.csv)!', 'success');
+                        }}
+                        style={{ flex: 1, fontSize: '0.74rem', padding: '0.35rem 0.4rem', justifyContent: 'center', gap: '0.3rem' }}
+                        title="Download sample CSV file (.csv)"
                       >
-                        <Download size={11} /> XLSX
+                        <Download size={12} className="text-indigo" /> CSV Template
                       </button>
                     </div>
                   </div>
@@ -5194,6 +6243,16 @@ export const AdminDashboard: React.FC = () => {
         onClose={() => setIsLinkDispatcherOpen(false)}
         classData={activeClass}
         onToast={addToast}
+      />
+
+      {/* MODAL: UNIFIED SETTINGS HUB (EMAIL, CLOUD & SHORTCUTS) */}
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        initialTab={settingsInitialTab}
+        shortcuts={shortcuts}
+        onUpdateShortcuts={handleUpdateShortcuts}
+        onResetShortcuts={handleResetShortcuts}
       />
     </div>
   );

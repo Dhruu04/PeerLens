@@ -15,13 +15,13 @@ interface StudentPortalProps {
   studentId: string;
 }
 
-// Professional mapping for contribution tiers
+// Professional mapping for contribution expectation tiers
 const getTierInfo = (pct: number) => {
-  if (pct <= 20) {
+  if (pct <= 25) {
     return {
       icon: AlertCircle,
-      title: 'Below Expectations',
-      desc: 'Minimal contribution, barely participated or was hard to reach.',
+      title: 'Needs Improvement',
+      desc: 'Limited contribution or inconsistent delivery; required substantial guidance.',
       color: 'var(--accent-rose)',
       bgColor: 'var(--accent-rose-light)',
       className: 'active-rose',
@@ -30,8 +30,8 @@ const getTierInfo = (pct: number) => {
   } else if (pct <= 50) {
     return {
       icon: TrendingUp,
-      title: 'Progressing',
-      desc: 'Completed basic tasks, but needed active prompting or reminders.',
+      title: 'Developing',
+      desc: 'Met baseline requirements; opportunities exist to improve consistency and collaboration.',
       color: 'var(--accent-amber)',
       bgColor: 'var(--accent-amber-light)',
       className: 'active-amber',
@@ -40,8 +40,8 @@ const getTierInfo = (pct: number) => {
   } else if (pct <= 75) {
     return {
       icon: ThumbsUp,
-      title: 'Meets Expectations',
-      desc: 'Met all standards, cooperative, communicative, reliable teamwork.',
+      title: 'Proficient / Meets Expectations',
+      desc: 'Consistently met established standards; dependable, communicative, and collaborative.',
       color: 'var(--primary)',
       bgColor: 'var(--primary-light)',
       className: 'active-indigo',
@@ -50,8 +50,8 @@ const getTierInfo = (pct: number) => {
   } else if (pct <= 90) {
     return {
       icon: Rocket,
-      title: 'Exceeds Expectations',
-      desc: 'Highly active contributor, went above and beyond, excellent work.',
+      title: 'Exemplary / Exceeds Expectations',
+      desc: 'Delivered high-quality contributions; took initiative and actively supported teammates.',
       color: 'var(--accent-teal)',
       bgColor: 'var(--accent-teal-light)',
       className: 'active-teal',
@@ -60,8 +60,8 @@ const getTierInfo = (pct: number) => {
   } else {
     return {
       icon: Trophy,
-      title: 'Distinguished Performer',
-      desc: 'Phenomenal drive, carried complex items, inspiring team commitment!',
+      title: 'Distinguished Leadership',
+      desc: 'Exceptional technical rigor and leadership; drove significant team outcomes.',
       color: 'hsl(142, 70%, 45%)',
       bgColor: 'hsl(142, 70%, 96%)',
       className: 'active-emerald',
@@ -70,25 +70,24 @@ const getTierInfo = (pct: number) => {
   }
 };
 
-
 const getPraiseTagInfo = (tagText: string) => {
   // Strip historical emojis if any
   const cleanText = tagText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
   
-  if (cleanText.includes('Creative')) return { icon: Lightbulb, color: 'hsl(45, 90%, 45%)', bg: 'hsl(45, 90%, 96%)', border: 'hsl(45, 90%, 90%)', text: 'Creative Ideas' };
-  if (cleanText.includes('Punctual')) return { icon: Clock, color: 'hsl(14, 90%, 50%)', bg: 'hsl(14, 90%, 96%)', border: 'hsl(14, 90%, 90%)', text: 'Always Punctual' };
-  if (cleanText.includes('Supportive')) return { icon: Heart, color: 'var(--accent-rose)', bg: 'var(--accent-rose-light)', border: 'hsl(346, 84%, 90%)', text: 'Super Supportive' };
-  if (cleanText.includes('Quality')) return { icon: Award, color: 'var(--primary)', bg: 'var(--primary-light)', border: 'hsl(243, 75%, 92%)', text: 'High Quality Work' };
-  if (cleanText.includes('Communicator')) return { icon: MessageSquare, color: 'hsl(199, 89%, 40%)', bg: 'hsl(199, 89%, 95%)', border: 'hsl(199, 89%, 90%)', text: 'Great Communicator' };
+  if (cleanText.includes('Creative') || cleanText.includes('Problem')) return { icon: Lightbulb, color: 'hsl(45, 90%, 45%)', bg: 'hsl(45, 90%, 96%)', border: 'hsl(45, 90%, 90%)', text: 'Creative Problem Solver' };
+  if (cleanText.includes('Punctual') || cleanText.includes('Reliable')) return { icon: Clock, color: 'hsl(14, 90%, 50%)', bg: 'hsl(14, 90%, 96%)', border: 'hsl(14, 90%, 90%)', text: 'Reliable & Punctual' };
+  if (cleanText.includes('Supportive') || cleanText.includes('Player')) return { icon: Heart, color: 'var(--accent-rose)', bg: 'var(--accent-rose-light)', border: 'hsl(346, 84%, 90%)', text: 'Supportive Team Player' };
+  if (cleanText.includes('Quality') || cleanText.includes('Deliverables')) return { icon: Award, color: 'var(--primary)', bg: 'var(--primary-light)', border: 'hsl(243, 75%, 92%)', text: 'High Quality Deliverables' };
+  if (cleanText.includes('Communicat')) return { icon: MessageSquare, color: 'hsl(199, 89%, 40%)', bg: 'hsl(199, 89%, 95%)', border: 'hsl(199, 89%, 90%)', text: 'Clear Communicator' };
   return { icon: Target, color: 'var(--accent-teal)', bg: 'var(--accent-teal-light)', border: 'hsl(173, 80%, 90%)', text: 'Detail Oriented' };
 };
 
 const AVAILABLE_TAGS = [
-  'Creative Ideas',
-  'Always Punctual',
-  'Super Supportive',
-  'High Quality Work',
-  'Great Communicator',
+  'Creative Problem Solver',
+  'Reliable & Punctual',
+  'Supportive Team Player',
+  'High Quality Deliverables',
+  'Clear Communicator',
   'Detail Oriented'
 ];
 
@@ -1351,19 +1350,57 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                     const TierIcon = tier.icon;
                     return (
                       <div key={field.id} className="grading-slider-container" style={{ margin: 0 }}>
-                        <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                          <div>
+                        <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                          <div style={{ flex: 1 }}>
                             <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
                               {field.name}
                             </span>
+                            {field.description && (
+                              <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.2rem', lineHeight: 1.35 }}>
+                                {field.description}
+                              </span>
+                            )}
                           </div>
-                          <span className="slider-value-bubble" style={{ backgroundColor: tier.color, fontSize: '0.85rem', padding: '0.25rem 0.75rem', borderRadius: '4px', fontWeight: 700 }}>
+                          <span className="slider-value-bubble" style={{ backgroundColor: tier.color, fontSize: '0.85rem', padding: '0.25rem 0.75rem', borderRadius: '4px', fontWeight: 700, flexShrink: 0 }}>
                             {currentVal} / {field.max}
                           </span>
                         </div>
 
                         {/* Consolidated Single Scale: Unified Numeric Selector with Dynamic Expectation Feedback */}
                         <div className="score-fine-tuner" style={{ marginTop: '0.25rem' }}>
+                          {/* Quick Expectation Tier Snapping Buttons */}
+                          <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.65rem', flexWrap: 'wrap' }}>
+                            {[
+                              { label: '🌟 Exemplary (100%)', pct: 1.0, color: 'var(--accent-teal)' },
+                              { label: '👍 Proficient (75%)', pct: 0.75, color: 'var(--primary)' },
+                              { label: '⚡ Developing (50%)', pct: 0.5, color: 'var(--accent-amber)' },
+                              { label: '⚠️ Needs Work (25%)', pct: 0.25, color: 'var(--accent-rose)' }
+                            ].map((t) => {
+                              const targetVal = Math.round(field.min + t.pct * (field.max - field.min));
+                              const isCurrent = currentVal === targetVal;
+                              return (
+                                <button
+                                  key={t.label}
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => handleSliderChange(peer.id, field.id, targetVal)}
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    padding: '0.2rem 0.55rem',
+                                    height: '24px',
+                                    borderRadius: '12px',
+                                    fontWeight: isCurrent ? 700 : 500,
+                                    backgroundColor: isCurrent ? `${t.color}18` : 'transparent',
+                                    borderColor: isCurrent ? t.color : 'var(--border-color)',
+                                    color: isCurrent ? t.color : 'var(--text-secondary)'
+                                  }}
+                                >
+                                  {t.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+
                           {/* Dynamic Qualitative Tier Indicator */}
                           <div 
                             style={{ 
@@ -1591,19 +1628,57 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                 const TierIcon = tier.icon;
                 return (
                   <div key={field.id} className="grading-slider-container" style={{ margin: 0 }}>
-                    <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                      <div>
+                    <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                      <div style={{ flex: 1 }}>
                         <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
                           Self-Rating: {field.name}
                         </span>
+                        {field.description && (
+                          <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.2rem', lineHeight: 1.35 }}>
+                            {field.description}
+                          </span>
+                        )}
                       </div>
-                      <span className="slider-value-bubble" style={{ backgroundColor: 'var(--accent-teal)', color: '#fff', fontSize: '0.85rem', padding: '0.25rem 0.75rem', borderRadius: '4px', fontWeight: 700 }}>
+                      <span className="slider-value-bubble" style={{ backgroundColor: 'var(--accent-teal)', color: '#fff', fontSize: '0.85rem', padding: '0.25rem 0.75rem', borderRadius: '4px', fontWeight: 700, flexShrink: 0 }}>
                         {currentVal} / {field.max}
                       </span>
                     </div>
 
                     {/* Consolidated Single Scale: Unified Numeric Selector with Dynamic Expectation Feedback */}
                     <div className="score-fine-tuner" style={{ marginTop: '0.25rem' }}>
+                      {/* Quick Expectation Tier Snapping Buttons */}
+                      <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.65rem', flexWrap: 'wrap' }}>
+                        {[
+                          { label: '🌟 Exemplary (100%)', pct: 1.0, color: 'var(--accent-teal)' },
+                          { label: '👍 Proficient (75%)', pct: 0.75, color: 'var(--primary)' },
+                          { label: '⚡ Developing (50%)', pct: 0.5, color: 'var(--accent-amber)' },
+                          { label: '⚠️ Needs Work (25%)', pct: 0.25, color: 'var(--accent-rose)' }
+                        ].map((t) => {
+                          const targetVal = Math.round(field.min + t.pct * (field.max - field.min));
+                          const isCurrent = currentVal === targetVal;
+                          return (
+                            <button
+                              key={t.label}
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleSliderChange(student.id, field.id, targetVal)}
+                              style={{
+                                fontSize: '0.7rem',
+                                padding: '0.2rem 0.55rem',
+                                height: '24px',
+                                borderRadius: '12px',
+                                fontWeight: isCurrent ? 700 : 500,
+                                backgroundColor: isCurrent ? `${t.color}18` : 'transparent',
+                                borderColor: isCurrent ? t.color : 'var(--border-color)',
+                                color: isCurrent ? t.color : 'var(--text-secondary)'
+                              }}
+                            >
+                              {t.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
                       {/* Dynamic Qualitative Tier Indicator */}
                       <div 
                         style={{ 

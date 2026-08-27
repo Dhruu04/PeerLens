@@ -9,6 +9,7 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   maxWidth?: string;
+  zIndex?: number;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -17,7 +18,8 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   children,
   footer,
-  maxWidth
+  maxWidth,
+  zIndex = 100050
 }) => {
   // Close modal on Escape key press
   useEffect(() => {
@@ -40,8 +42,14 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!isOpen) return null;
 
+  const targetNode = (typeof document !== 'undefined' && (document.fullscreenElement || document.body)) || document.body;
+
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
+    <div 
+      className="modal-overlay" 
+      onClick={onClose} 
+      style={{ zIndex }}
+    >
       <div
         className="modal-content"
         style={maxWidth ? { maxWidth } : undefined}
@@ -67,7 +75,7 @@ export const Modal: React.FC<ModalProps> = ({
         )}
       </div>
     </div>,
-    document.body
+    targetNode
   );
 };
 export default Modal;

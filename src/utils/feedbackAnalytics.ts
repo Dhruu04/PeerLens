@@ -98,7 +98,7 @@ export function calculateJohariWindowMetric(studentId: string, classData: ClassD
       badgeClass: 'badge-teal',
       color: 'var(--accent-teal)',
       bgColor: 'var(--accent-teal-light)',
-      description: `High self-awareness: Self-perception (${selfScorePct}%) aligns closely with teammate consensus (${peerScorePct}%).`,
+      description: `High self-awareness: Self-evaluation (${selfScorePct}%) aligns closely with teammate evaluation consensus (${peerScorePct}%).`,
       iconName: 'check'
     };
   }
@@ -109,11 +109,11 @@ export function calculateJohariWindowMetric(studentId: string, classData: ClassD
       peerScorePct,
       gapPct: gap,
       category: 'overestimating',
-      label: 'Blind Spot (Overestimating)',
+      label: 'Performance Blind Spot (Overestimating)',
       badgeClass: 'badge-amber',
       color: 'var(--accent-amber)',
       bgColor: 'var(--accent-amber-light)',
-      description: `Self-rating (${selfScorePct}%) is +${gap}% higher than teammate average (${peerScorePct}%). Potential blind spot in performance.`,
+      description: `Self-evaluation (${selfScorePct}%) is +${gap}% higher than teammate average (${peerScorePct}%). Potential developmental blind spot.`,
       iconName: 'trending-up'
     };
   }
@@ -123,11 +123,11 @@ export function calculateJohariWindowMetric(studentId: string, classData: ClassD
     peerScorePct,
     gapPct: gap,
     category: 'underestimating',
-    label: 'Imposter / Modest (Underestimating)',
+    label: 'Hidden Potential (Underestimating)',
     badgeClass: 'badge-primary',
     color: 'var(--primary)',
     bgColor: 'var(--primary-light)',
-    description: `Self-rating (${selfScorePct}%) is ${Math.abs(gap)}% lower than teammate praise (${peerScorePct}%). Student underestimates their real impact.`,
+    description: `Self-evaluation (${selfScorePct}%) is ${Math.abs(gap)}% lower than teammate evaluation (${peerScorePct}%). Student may underestimate their team impact.`,
     iconName: 'trending-down'
   };
 }

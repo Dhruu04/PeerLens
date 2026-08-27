@@ -86,18 +86,19 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           className="custom-select-dropdown"
           style={{
             position: 'absolute',
-            top: 'calc(100% + 6px)',
+            top: 'calc(100% + 4px)',
             left: 0,
             right: 0,
-            zIndex: 1050,
+            minWidth: '100%',
+            zIndex: 9999,
             backgroundColor: 'var(--bg-surface)',
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-premium), 0 12px 30px -8px rgba(0, 0, 0, 0.08)',
+            boxShadow: '0 12px 28px -4px rgba(0, 0, 0, 0.14), 0 8px 10px -4px rgba(0, 0, 0, 0.08)',
             maxHeight: '220px',
             overflowY: 'auto',
             padding: '4px',
-            animation: 'slideUp 200ms cubic-bezier(0.16, 1, 0.3, 1)'
+            animation: 'slideUp 180ms cubic-bezier(0.16, 1, 0.3, 1)'
           }}
         >
           {options.map((option) => {
@@ -111,15 +112,16 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                   display: 'block',
                   width: '100%',
                   textAlign: 'left',
-                  padding: '0.65rem 1rem',
-                  fontSize: '0.9rem',
+                  padding: '0.45rem 0.75rem',
+                  fontSize: '0.8rem',
                   fontWeight: isSelected ? 700 : 500,
                   borderRadius: 'var(--radius-sm)',
                   border: 'none',
                   backgroundColor: isSelected ? 'var(--primary-light)' : 'transparent',
                   color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
                   cursor: 'pointer',
-                  transition: 'all var(--transition-fast)'
+                  transition: 'all var(--transition-fast)',
+                  lineHeight: 1.35
                 }}
                 onClick={() => {
                   onChange(option.value);

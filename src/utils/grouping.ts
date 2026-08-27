@@ -23,6 +23,7 @@ export interface GroupDiversityReport {
   uniqueNationalityCount: number;
   englishLevels: Record<string, number>;
   avgEnglishScore: number;
+  avgEnglishCEFR: string;
   diversityScore: number; // 0 - 100%
 }
 
@@ -62,6 +63,25 @@ export function getEnglishScore(level?: string): number {
     if (cleaned.includes(key)) return val;
   }
   return 3;
+}
+
+/**
+ * Converts a numerical English score (1-5) into a clean, human-readable CEFR level (A1, A2, B1, B2, C1, C2/Native).
+ */
+export function getCEFRLevelFromScore(score: number): { code: string; label: string; full: string } {
+  if (score >= 4.5) {
+    return { code: 'C2', label: 'Native / Bilingual', full: 'C2 (Native/Bilingual)' };
+  } else if (score >= 3.5) {
+    return { code: 'C1', label: 'Fluent', full: 'C1 (Fluent)' };
+  } else if (score >= 2.5) {
+    return { code: 'B2', label: 'Advanced', full: 'B2 (Advanced)' };
+  } else if (score >= 1.7) {
+    return { code: 'B1', label: 'Intermediate', full: 'B1 (Intermediate)' };
+  } else if (score >= 1.2) {
+    return { code: 'A2', label: 'Elementary', full: 'A2 (Elementary)' };
+  } else {
+    return { code: 'A1', label: 'Basic', full: 'A1 (Basic)' };
+  }
 }
 
 /**
@@ -392,6 +412,7 @@ export function calculateGroupReport(groupName: string, members: Student[], clas
   }
 
   const finalDiversityScore = Math.max(35, Math.min(100, Math.round(score)));
+  const avgCEFR = getCEFRLevelFromScore(avgEnglishScore);
 
   return {
     groupName,
@@ -402,6 +423,7 @@ export function calculateGroupReport(groupName: string, members: Student[], clas
     uniqueNationalityCount,
     englishLevels,
     avgEnglishScore,
+    avgEnglishCEFR: avgCEFR.full,
     diversityScore: finalDiversityScore
   };
 }
