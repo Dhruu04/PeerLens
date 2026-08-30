@@ -17,6 +17,7 @@ import {
   downloadStudentReportPDF, 
   generateStudentReportPDF 
 } from '../utils/pdfReport';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface StudentReportModalProps {
   isOpen: boolean;
@@ -262,6 +263,8 @@ export const StudentReportModal: React.FC<StudentReportModalProps> = ({
               <Sparkles size={14} /> {isBatchDownloading ? 'Exporting...' : 'Export All Class'}
             </button>
 
+            <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Student Report & Radar Guide" />
+
             <button
               type="button"
               onClick={onClose}
@@ -311,6 +314,7 @@ export const StudentReportModal: React.FC<StudentReportModalProps> = ({
             <span style={{ fontWeight: 800, color: 'var(--primary)' }}>
               {webpa.adjustedGrade.toFixed(1)} / {baseGrade}
             </span>
+            <FeatureInfoButton featureId="webpa-calibration" size="sm" tooltipText="How WebPA grade is calculated" />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ color: 'var(--text-muted)' }}>Reviews:</span>

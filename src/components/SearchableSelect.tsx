@@ -46,19 +46,22 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick);
+    document.addEventListener('touchend', handleOutsideClick);
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('touchstart', handleOutsideClick);
+      document.removeEventListener('touchend', handleOutsideClick);
     };
   }, []);
 
-  // Autofocus search input when dropdown opens
+  // Autofocus search input when dropdown opens (only on non-touch devices to avoid mobile keyboard jump)
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 50);
+      const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+      if (!isTouchDevice) {
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 50);
+      }
     }
   }, [isOpen]);
 
@@ -66,6 +69,12 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     option.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
     option.value.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleSelectOption = (optVal: string) => {
+    onChange(optVal);
+    setIsOpen(false);
+    setSearchTerm('');
+  };
 
   return (
     <div
@@ -88,12 +97,14 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           minHeight: '44px',
           backgroundImage: 'none',
           cursor: 'pointer',
+          userSelect: 'none',
+          WebkitTapHighlightColor: 'transparent',
           ...triggerStyle
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
           {showIcon && <Globe size={15} style={{ color: value ? 'var(--accent-teal)' : 'var(--text-muted)', flexShrink: 0 }} />}
-          <span style={{ color: selectedOption ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: selectedOption ? 500 : 400 }}>
+          <span style={{ color: selectedOption ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: selectedOption ? 600 : 400 }}>
             {selectedOption ? selectedOption.label : (value || placeholder)}
           </span>
         </span>
@@ -183,6 +194,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
             style={{
               maxHeight: '220px',
               overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
               padding: '4px',
               display: 'flex',
               flexDirection: 'column',
@@ -201,11 +213,11 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                     key={option.value}
                     type="button"
                     className="custom-select-option"
-                    onClick={() => {
-                      onChange(option.value);
-                      setIsOpen(false);
-                      setSearchTerm('');
+                    onPointerDown={(e) => {
+                      // Prevent input blur cancellation on mobile
+                      e.stopPropagation();
                     }}
+                    onClick={() => handleSelectOption(option.value)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -214,14 +226,15 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                       padding: '0.55rem 0.75rem',
                       minHeight: '38px',
                       fontSize: '0.85rem',
-                      fontWeight: isSelected ? 600 : 400,
+                      fontWeight: isSelected ? 700 : 400,
                       color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
                       backgroundColor: isSelected ? 'var(--primary-light)' : 'transparent',
                       border: 'none',
                       borderRadius: 'var(--radius-sm)',
                       cursor: 'pointer',
                       textAlign: 'left',
-                      transition: 'background-color 150ms ease'
+                      transition: 'background-color 150ms ease',
+                      touchAction: 'manipulation'
                     }}
                   >
                     <span>{option.label}</span>

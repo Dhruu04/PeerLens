@@ -18,6 +18,7 @@ import {
 } from '../utils/grouping';
 import { exportSingleTeamToCSV, exportSingleTeamToExcel } from '../utils/csv';
 import CustomSelect from './CustomSelect';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface AutoGroupStudioProps {
   students: Student[];
@@ -229,6 +230,7 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
               <h3 className="card-title" style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>
                 Intelligent Auto-Group &amp; Diversity Studio
               </h3>
+              <FeatureInfoButton featureId="auto-group-studio" size="sm" tooltipText="Learn about Auto-Group Studio" />
               {groupingResult && (
                 <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
                   {groupingResult.overallDiversityScore}% Diversity Score
@@ -283,14 +285,16 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
             <div 
               style={{
                 padding: '0.85rem 1rem',
-                display: 'grid',
-                gridTemplateColumns: 'auto minmax(200px, 1.4fr) minmax(170px, 1fr) auto',
-                gap: '0.85rem',
-                alignItems: 'flex-end'
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+                alignItems: 'flex-end',
+                width: '100%',
+                boxSizing: 'border-box'
               }}
             >
               {/* Target Size with Quick Stepper */}
-              <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem', flexShrink: 0 }}>
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)' }}>
                   <Users size={13} className="text-teal" /> Team Size
                 </label>
@@ -304,7 +308,7 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
                   >
                     -
                   </button>
-                  <span style={{ minWidth: '42px', textAlign: 'center', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  <span style={{ minWidth: '38px', textAlign: 'center', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                     {targetSize}
                   </span>
                   <button
@@ -320,7 +324,7 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
               </div>
 
               {/* Diversity Strategy */}
-              <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem', minWidth: 0 }}>
+              <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: '1 1 180px', minWidth: '140px', maxWidth: '100%' }}>
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)' }}>
                   <Sparkles size={13} className="text-primary" /> Diversity Strategy
                 </label>
@@ -328,22 +332,23 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
                   options={STRATEGY_OPTIONS}
                   value={strategy}
                   onChange={(val) => setStrategy(val as DiversityStrategy)}
-                  triggerStyle={{ height: '36px', fontSize: '0.8rem', padding: '0.35rem 0.65rem' }}
+                  style={{ width: '100%' }}
+                  triggerStyle={{ height: '36px', fontSize: '0.8rem', padding: '0.35rem 0.65rem', width: '100%' }}
                 />
               </div>
 
               {/* Group Naming Prefix + Custom Option */}
-              <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem', minWidth: 0 }}>
+              <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: '1 1 160px', minWidth: '130px', maxWidth: '100%' }}>
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)' }}>
                   <Layers size={13} className="text-teal" /> Naming Style
                 </label>
-                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                <div style={{ display: 'flex', gap: '0.35rem', width: '100%' }}>
                   <CustomSelect
                     options={PREFIX_OPTIONS}
                     value={prefix}
                     onChange={(val) => setPrefix(val)}
                     triggerStyle={{ height: '36px', fontSize: '0.8rem', padding: '0.35rem 0.65rem' }}
-                    style={{ flex: prefix === 'custom' ? '0 0 120px' : '1' }}
+                    style={{ flex: prefix === 'custom' ? '0 0 110px' : '1', minWidth: 0 }}
                   />
                   {prefix === 'custom' && (
                     <input
@@ -352,14 +357,14 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
                       placeholder="e.g. Pod..."
                       value={customPrefix}
                       onChange={(e) => setCustomPrefix(e.target.value)}
-                      style={{ height: '36px', fontSize: '0.8rem', fontWeight: 600, flex: 1, padding: '0.35rem 0.6rem' }}
+                      style={{ height: '36px', fontSize: '0.8rem', fontWeight: 600, flex: 1, minWidth: '60px', padding: '0.35rem 0.6rem' }}
                     />
                   )}
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="form-group" style={{ margin: 0, display: 'flex', gap: '0.4rem', height: '36px' }}>
+              <div className="form-group" style={{ margin: 0, display: 'flex', gap: '0.4rem', height: '36px', flexShrink: 0, marginTop: 'auto' }}>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"

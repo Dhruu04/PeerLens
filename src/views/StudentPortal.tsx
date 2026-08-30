@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
 import { calculateStudentMetrics, getTargetScale } from '../utils/math';
+import FeatureInfoButton from '../components/FeatureInfoButton';
 
 
 interface StudentPortalProps {
@@ -140,6 +141,51 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
   // Countdown timer clock
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [selfTouched, setSelfTouched] = useState(false);
+  const [lastDraftSaved, setLastDraftSaved] = useState<number | null>(null);
+
+  const draftKey = `peer_draft_${classId}_${studentId}`;
+
+  // Restore unsaved draft on load
+  useEffect(() => {
+    if (!student || student.submitted || isSubmitted) return;
+    try {
+      const stored = localStorage.getItem(draftKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.evaluations) setEvaluations(parsed.evaluations);
+        if (parsed.praiseTags) setPraiseTags(parsed.praiseTags);
+        if (parsed.strengthsText) setStrengthsText(parsed.strengthsText);
+        if (parsed.growthText) setGrowthText(parsed.growthText);
+        if (parsed.selfTouched) setSelfTouched(parsed.selfTouched);
+        if (parsed.savedAt) setLastDraftSaved(parsed.savedAt);
+      }
+    } catch (e) {
+      console.warn('Failed to restore draft', e);
+    }
+  }, [draftKey, student?.submitted, isSubmitted]);
+
+  // Real-time debounce auto-save to localStorage
+  useEffect(() => {
+    if (!student || student.submitted || isSubmitted) return;
+    const timer = setTimeout(() => {
+      try {
+        const now = Date.now();
+        localStorage.setItem(draftKey, JSON.stringify({
+          evaluations,
+          praiseTags,
+          strengthsText,
+          growthText,
+          selfTouched,
+          savedAt: now
+        }));
+        setLastDraftSaved(now);
+      } catch (e) {
+        console.warn('Failed to auto-save draft', e);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [evaluations, praiseTags, strengthsText, growthText, selfTouched, draftKey, student?.submitted, isSubmitted]);
 
   useEffect(() => {
     if (!activeClass || !activeClass.deadline) return;
@@ -1067,6 +1113,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
 
       // Submit feedback via our context engine
       await submitPeerReviews(activeClass.id, student.id, reviewPayload);
+      localStorage.removeItem(draftKey);
       setIsSubmitted(true);
     } catch (err) {
       console.error(err);
@@ -1127,6 +1174,22 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
               <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
                 as <strong style={{ color: 'var(--text-secondary)' }}>{cleanStudentName(student.name)}</strong>
               </span>
+
+              {lastDraftSaved && (
+                <span 
+                  className="badge badge-teal" 
+                  style={{ 
+                    fontSize: '0.64rem', 
+                    padding: '0.1rem 0.35rem', 
+                    gap: '0.2rem',
+                    borderRadius: '4px',
+                    fontWeight: 700
+                  }}
+                  title="Your rating changes and text are automatically saved locally"
+                >
+                  <Check size={9} /> Draft Saved
+                </span>
+              )}
               
               {timeLeft !== null && (
                 <span 
@@ -1321,7 +1384,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {teammates.map((peer, idx) => (
               <div key={peer.id} id={`card-peer-${peer.id}`} className="card" style={{ borderLeft: '4px solid var(--primary)', position: 'relative' }}>
-                <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
+                <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--bg-app)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'var(--primary)' }}>
                       {idx + 1}
@@ -1331,6 +1394,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Teammate ID: {peer.id}</span>
                     </div>
                   </div>
+                  <FeatureInfoButton featureId="student-grading-matrix" size="sm" tooltipText="How Peer Grading Works" />
                 </div>
 
                 {/* Rubric Sliders */}
@@ -1591,7 +1655,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
 
           {/* SELF-EVALUATION CALIBRATION CARD */}
           <div id="card-self-calibration" className="card" style={{ borderLeft: '4px solid var(--accent-teal)', backgroundColor: 'var(--bg-surface)' }}>
-            <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
+            <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--accent-teal-light)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
                   <Star size={18} />
@@ -1601,6 +1665,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Provide an objective self-reflection of your own contributions</span>
                 </div>
               </div>
+              <FeatureInfoButton featureId="webpa-scoring" size="sm" tooltipText="Why Self-Calibration Matters" />
             </div>
 
             <details style={{ backgroundColor: 'var(--primary-light)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--primary)', fontSize: '0.82rem', color: 'hsl(243, 75%, 25%)', marginBottom: '1.5rem', cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>

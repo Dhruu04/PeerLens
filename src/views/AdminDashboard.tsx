@@ -10,13 +10,13 @@ import {
   ThumbsUp, ShieldCheck, Rocket, Trophy, BarChart2,
   QrCode, Copy, Check, Globe, AlertTriangle, Lock, Unlock,
   Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X,
-  Settings, Plane
+  Settings, Plane, ExternalLink
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { useClass } from '../context/ClassContext';
 import type { FirebaseConfig } from '../context/ClassContext';
 import { calculateClassStats, calculateStudentMetrics, calculateStudentWebPAScore, detectClassAnomalies, getTargetScale, normalizeNationality } from '../utils/math';
-import type { GradingScaleField, Student } from '../utils/math';
+import type { GradingScaleField, Student, ClassData } from '../utils/math';
 import { 
   parseCSV as _parseCSV, 
   exportClassroomToExcel,
@@ -44,6 +44,8 @@ import { calculateJohariWindowMetric, extractClassFeedbackInsights } from '../ut
 import { DIVERSE_100_STUDENTS, getSampleStudentsCSV, downloadSampleStudentsFile } from '../data/sampleStudents';
 import { RUBRIC_PRESETS } from '../utils/rubricPresets';
 import { SettingsModal } from '../components/SettingsModal';
+import FeatureInfoButton from '../components/FeatureInfoButton';
+import CommandPaletteModal from '../components/CommandPaletteModal';
 import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
 import { 
   getStoredShortcuts, 
@@ -355,6 +357,11 @@ export const AdminDashboard: React.FC = () => {
   const [settingsInitialTab, setSettingsInitialTab] = useState<'email' | 'cloud' | 'shortcuts'>('email');
   const [shortcuts, setShortcuts] = useState<KeyboardShortcut[]>(() => getStoredShortcuts());
 
+  // Command Palette & Multi-select Bulk Actions
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [bulkTargetTeam, setBulkTargetTeam] = useState<string>('');
+
   const handleUpdateShortcuts = (updated: KeyboardShortcut[]) => {
     setShortcuts(updated);
     saveStoredShortcuts(updated);
@@ -537,6 +544,7 @@ export const AdminDashboard: React.FC = () => {
       );
 
       if (e.key === 'Escape') {
+        if (isCommandPaletteOpen) { setIsCommandPaletteOpen(false); return; }
         if (isSettingsModalOpen) { setIsSettingsModalOpen(false); return; }
         if (isLinkDispatcherOpen) { setIsLinkDispatcherOpen(false); return; }
         if (isProjectorModalOpen) { setIsProjectorModalOpen(false); return; }
@@ -547,6 +555,13 @@ export const AdminDashboard: React.FC = () => {
         if (isWizardOpen) { setIsWizardOpen(false); return; }
         if (isArchiveModalOpen) { setIsArchiveModalOpen(false); return; }
         if (confirmModal.isOpen) { setConfirmModal(prev => ({ ...prev, isOpen: false })); return; }
+        return;
+      }
+
+      // Ctrl + K / Cmd + K to open Command Palette
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
         return;
       }
 
@@ -1501,7 +1516,18 @@ export const AdminDashboard: React.FC = () => {
         {/* Action Dock (Desktop Inline, Mobile 4-Column Bar) */}
         <div className="dashboard-action-dock">
           <button 
-            type="button"
+            type="button" 
+            className="btn btn-secondary btn-sm dock-btn" 
+            onClick={() => setIsCommandPaletteOpen(true)}
+            title="Quick Command Palette & Student Finder (Ctrl+K)"
+            style={{ gap: '0.4rem', padding: '0.35rem 0.65rem' }}
+          >
+            <Search size={13} className="text-primary" /> <span>Search</span>
+            <kbd style={{ fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '4px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontWeight: 700 }}>Ctrl+K</kbd>
+          </button>
+
+          <button 
+            type="button" 
             className="btn btn-secondary btn-sm dock-btn" 
             onClick={() => setIsNewClassModalOpen(true)}
             title="Create new classroom roster"
@@ -1792,6 +1818,7 @@ export const AdminDashboard: React.FC = () => {
                 <div className="card-header" style={{ marginBottom: '0.45rem' }}>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
                     <Upload size={18} className="text-teal" /> Import Wizard
+                    <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import Wizard Guide" />
                   </h3>
                   <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
                     Smart Mapper
@@ -1960,6 +1987,7 @@ export const AdminDashboard: React.FC = () => {
                 <div className="card-header" style={{ marginBottom: '0.45rem' }}>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
                     <QrCode size={18} className="text-primary" /> Self-Enrollment
+                    <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Self-Enrollment QR Guide" />
                   </h3>
                   <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
                     QR &amp; Link
@@ -2058,6 +2086,7 @@ export const AdminDashboard: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1.05rem', fontWeight: 800 }}>
                   <Users size={19} className="text-indigo" /> Classroom Roster
+                  <FeatureInfoButton featureId="classroom-roster" size="sm" tooltipText="Classroom Roster Guide" />
                 </h3>
                 <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700 }}>
                   {filteredStudents.length} of {activeClass.students.length} members
@@ -2176,10 +2205,24 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="table-container">
+              <div className="table-container table-container-sticky">
                 <table className="custom-table">
                   <thead>
                     <tr>
+                      <th style={{ width: '38px', textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.has(s.id))}
+                          onChange={() => {
+                            if (filteredStudents.every(s => selectedStudentIds.has(s.id))) {
+                              setSelectedStudentIds(new Set());
+                            } else {
+                              setSelectedStudentIds(new Set(filteredStudents.map(s => s.id)));
+                            }
+                          }}
+                          aria-label="Select all students"
+                        />
+                      </th>
                       <th style={{ whiteSpace: 'nowrap', width: '110px' }}>Unique ID</th>
                       <th style={{ whiteSpace: 'nowrap' }}>Name</th>
                       <th style={{ whiteSpace: 'nowrap' }}>Email ID</th>
@@ -2189,7 +2232,7 @@ export const AdminDashboard: React.FC = () => {
                       <th style={{ whiteSpace: 'nowrap', width: '90px' }}>Student Type</th>
                       <th style={{ whiteSpace: 'nowrap', width: '110px' }}>Roster Group</th>
                       <th style={{ whiteSpace: 'nowrap', width: '130px' }}>Evaluation Link</th>
-                      <th style={{ whiteSpace: 'nowrap', width: '90px', textAlign: 'right' }}>Actions</th>
+                      <th style={{ whiteSpace: 'nowrap', width: '120px', textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2206,8 +2249,25 @@ export const AdminDashboard: React.FC = () => {
                         const encoded = btoa(JSON.stringify(payload));
                         gradingUrl += `&fb=${encoded}`;
                       }
+                      const isSelected = selectedStudentIds.has(s.id);
+
                       return (
-                        <tr key={s.id}>
+                        <tr key={s.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : undefined }}>
+                          <td style={{ textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                setSelectedStudentIds(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(s.id)) next.delete(s.id);
+                                  else next.add(s.id);
+                                  return next;
+                                });
+                              }}
+                              aria-label={`Select ${s.name}`}
+                            />
+                          </td>
                           <td style={{ whiteSpace: 'nowrap', fontWeight: 600, fontSize: '0.82rem' }}>
                             <code>{s.id}</code>
                           </td>
@@ -2278,11 +2338,33 @@ export const AdminDashboard: React.FC = () => {
                             </a>
                           </td>
                           <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'flex-end' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', justifyContent: 'flex-end' }}>
                               <button 
                                 type="button"
                                 className="btn btn-secondary btn-sm"
-                                style={{ padding: '0.35rem 0.55rem', borderRadius: '6px', color: 'var(--accent-teal)', borderColor: 'var(--accent-teal)' }}
+                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px' }}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(gradingUrl);
+                                  addToast(`Copied evaluation link for ${s.name}!`, 'success');
+                                }}
+                                title="Copy personal evaluation link"
+                              >
+                                <Copy size={13} />
+                              </button>
+                              <a 
+                                href={gradingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-secondary btn-sm"
+                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', color: 'var(--primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                                title="Preview / Test Student Portal in new tab"
+                              >
+                                <ExternalLink size={13} />
+                              </a>
+                              <button 
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', color: 'var(--accent-teal)', borderColor: 'var(--accent-teal)' }}
                                 onClick={() => openReportModal(s.id)}
                                 title="View & Download Individual Student PDF Report Card"
                               >
@@ -2290,7 +2372,7 @@ export const AdminDashboard: React.FC = () => {
                               </button>
                               <button 
                                 className="btn btn-secondary btn-sm"
-                                style={{ padding: '0.35rem 0.55rem', borderRadius: '6px' }}
+                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px' }}
                                 onClick={() => {
                                   setEditStudentData({
                                     id: s.id,
@@ -2318,7 +2400,7 @@ export const AdminDashboard: React.FC = () => {
                               </button>
                               <button 
                                 className="btn btn-rose btn-sm"
-                                style={{ padding: '0.35rem 0.55rem', borderRadius: '6px' }}
+                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px' }}
                                 onClick={() => {
                                   triggerConfirm(
                                     'Remove Student Record',
@@ -2341,6 +2423,102 @@ export const AdminDashboard: React.FC = () => {
                 </table>
               </div>
             )}
+
+            {/* Floating Bulk Actions Bar */}
+            {selectedStudentIds.size > 0 && (
+              <div className="bulk-actions-floating-bar">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <span className="badge badge-primary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', fontWeight: 800 }}>
+                    {selectedStudentIds.size} Selected
+                  </span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    of {filteredStudents.length} students
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {/* Assign to Group */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <select
+                      className="form-select"
+                      value={bulkTargetTeam}
+                      onChange={(e) => setBulkTargetTeam(e.target.value)}
+                      style={{ height: '34px', fontSize: '0.78rem', padding: '0.2rem 0.6rem', minWidth: '130px' }}
+                    >
+                      <option value="">-- Assign to Team --</option>
+                      {groupOptions.filter(g => g.value !== 'All Groups').map(g => (
+                        <option key={g.value} value={g.value}>{g.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={!bulkTargetTeam}
+                      onClick={() => {
+                        selectedStudentIds.forEach(id => updateStudent(activeClass.id, id, { groupName: bulkTargetTeam }));
+                        addToast(`Assigned ${selectedStudentIds.size} students to "${bulkTargetTeam}"!`, 'success');
+                        setSelectedStudentIds(new Set());
+                        setBulkTargetTeam('');
+                      }}
+                      style={{ height: '34px', fontSize: '0.78rem', padding: '0.3rem 0.75rem' }}
+                    >
+                      Apply
+                    </button>
+                  </div>
+
+                  {/* Bulk Export */}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      const selectedData: ClassData = {
+                        ...activeClass,
+                        students: activeClass.students.filter(s => selectedStudentIds.has(s.id))
+                      };
+                      exportRosterToExcel(selectedData);
+                      addToast(`Exported ${selectedStudentIds.size} selected students to Excel!`, 'success');
+                    }}
+                    style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
+                    title="Export selected students to Excel"
+                  >
+                    <Download size={13} className="text-teal" /> Excel
+                  </button>
+
+                  {/* Bulk Delete */}
+                  <button
+                    type="button"
+                    className="btn btn-rose btn-sm"
+                    onClick={() => {
+                      triggerConfirm(
+                        'Delete Selected Students',
+                        `Are you sure you want to delete ${selectedStudentIds.size} selected students and ALL associated peer evaluations? This action cannot be undone.`,
+                        () => {
+                          selectedStudentIds.forEach(id => deleteStudent(activeClass.id, id));
+                          addToast(`Deleted ${selectedStudentIds.size} students.`, 'info');
+                          setSelectedStudentIds(new Set());
+                        },
+                        'Delete Selected',
+                        'Cancel'
+                      );
+                    }}
+                    style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
+                    title="Delete selected students from roster"
+                  >
+                    <Trash2 size={13} /> Delete
+                  </button>
+
+                  {/* Deselect All */}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setSelectedStudentIds(new Set())}
+                    style={{ height: '34px', fontSize: '0.78rem' }}
+                  >
+                    Deselect
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2354,6 +2532,7 @@ export const AdminDashboard: React.FC = () => {
               <div style={{ flex: '1 1 280px', minWidth: 0 }}>
                 <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1.05rem', fontWeight: 800 }}>
                   <Sliders size={18} className="text-indigo" /> Evaluation Rubric &amp; Grading Scales
+                  <FeatureInfoButton featureId="grading-rubric" size="sm" tooltipText="Rubric & Grading Scales Guide" />
                 </h3>
                 <p className="card-subtitle" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.45 }}>
                   Configure multi-criteria rubrics with behavioral guidance. Define custom scales and load accredited academic presets.
@@ -2387,9 +2566,12 @@ export const AdminDashboard: React.FC = () => {
                   <BookOpen size={17} />
                 </div>
                 <div>
-                  <h4 style={{ margin: 0, fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Accredited Rubric Templates
-                  </h4>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Accredited Rubric Templates
+                    </h4>
+                    <FeatureInfoButton featureId="rubric-presets" size="sm" tooltipText="Rubric Templates Guide" />
+                  </div>
                   <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
                     1-Click load standardized peer evaluation criteria &amp; behavioral guidance.
                   </p>
@@ -2481,6 +2663,52 @@ export const AdminDashboard: React.FC = () => {
                         style={{ padding: '0.4rem 0.6rem', fontSize: '0.85rem', width: '70px', textAlign: 'center' }}
                       />
                     </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Milestone Evaluation Deadline Setting Card */}
+            <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ maxWidth: '520px' }}>
+                  <h4 style={{ fontWeight: 700, color: 'var(--accent-amber)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Clock size={15} /> Submission Deadline &amp; Countdown Timer
+                  </h4>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
+                    Set an optional closing deadline. Displays a live countdown timer in the Projector View and Student Portal, and locks evaluations when time expires.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <input
+                    type="datetime-local"
+                    className="form-input"
+                    value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const iso = new Date(e.target.value).toISOString();
+                        saveClassDeadline(activeClass.id, iso);
+                        addToast('Classroom deadline updated successfully!', 'success');
+                      } else {
+                        saveClassDeadline(activeClass.id, null);
+                        addToast('Classroom deadline cleared.', 'info');
+                      }
+                    }}
+                    style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', height: '36px' }}
+                  />
+                  {activeClass.deadline && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm text-rose"
+                      onClick={() => {
+                        saveClassDeadline(activeClass.id, null);
+                        addToast('Deadline cleared.', 'info');
+                      }}
+                      style={{ height: '36px', padding: '0.4rem 0.6rem' }}
+                      title="Clear Deadline"
+                    >
+                      Clear
+                    </button>
                   )}
                 </div>
               </div>
@@ -2709,7 +2937,10 @@ export const AdminDashboard: React.FC = () => {
           {/* Action Header Card */}
           <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
-              <h3 className="card-title"><Award size={18} className="text-teal" /> Real-time Calculation Matrix</h3>
+              <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Award size={18} className="text-teal" /> Real-time Calculation Matrix
+                <FeatureInfoButton featureId="calculation-matrix" size="sm" tooltipText="Calculation Matrix Guide" />
+              </h3>
               <p className="card-subtitle">Self-excluded student averages recalculate instantly as submissions arrive. Calculations do not count self-grading reviews.</p>
             </div>
             
@@ -2763,6 +2994,7 @@ export const AdminDashboard: React.FC = () => {
                     <div>
                       <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.98rem', fontWeight: 800 }}>
                         <Activity size={17} className="text-primary" /> Competency Spider Radar
+                        <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Competency Radar Guide" />
                       </h3>
                       <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                         Class rubric benchmarks vs individual team averages.
@@ -2849,6 +3081,7 @@ export const AdminDashboard: React.FC = () => {
                       <div>
                         <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                           <UserCheck size={17} className="text-teal" /> Self-Awareness &amp; Johari Alignment
+                          <FeatureInfoButton featureId="johari-window" size="sm" tooltipText="Johari Alignment Guide" />
                         </h3>
                         <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                           Self-evaluation alignment vs anonymous peer consensus (±7.5% threshold).
@@ -2898,6 +3131,7 @@ export const AdminDashboard: React.FC = () => {
                       <div>
                         <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                           <MessageSquare size={17} className="text-primary" /> Qualitative Feedback Themes
+                          <FeatureInfoButton featureId="feedback-sentiment" size="sm" tooltipText="Feedback Themes Guide" />
                         </h3>
                         <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                           Automated keyword extraction across all written teammate comments.
@@ -2954,6 +3188,7 @@ export const AdminDashboard: React.FC = () => {
                 <div>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                     <Sliders size={17} className="text-teal" /> WebPA Grade Calibration
+                    <FeatureInfoButton featureId="webpa-calibration" size="sm" tooltipText="WebPA Calibration & Fudge Weight Guide" />
                   </h3>
                   <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
                     Compare peer vs team averages to calculate individual multipliers.
@@ -3000,6 +3235,7 @@ export const AdminDashboard: React.FC = () => {
                 <div>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                     <ShieldCheck size={17} className="text-rose" /> Anomaly &amp; Collusion Audit
+                    <FeatureInfoButton featureId="anomaly-detection" size="sm" tooltipText="Anomaly Audit Guide" />
                   </h3>
                   <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
                     Statistical auditing flags collusion, outlier ratings, and uniform grades.
@@ -3039,6 +3275,7 @@ export const AdminDashboard: React.FC = () => {
                 <div>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                     <RefreshCw size={17} className="text-indigo" /> Milestone &amp; Sprints History
+                    <FeatureInfoButton featureId="milestones-sprints" size="sm" tooltipText="Milestone History Guide" />
                   </h3>
                   <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
                     Archive evaluations into permanent records to freeze sprint marks.
@@ -3091,7 +3328,12 @@ export const AdminDashboard: React.FC = () => {
           {/* Grades Matrix Sheet */}
           <div className="card">
             <div className="card-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
-              <h3 className="card-title"><Award size={18} className="text-indigo" /> Results Summary Sheet</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <Award size={18} className="text-indigo" /> Results Summary Sheet &amp; Gradebook
+                </h3>
+                <FeatureInfoButton featureId="results-summary-sheet" size="sm" tooltipText="Gradebook & Results Matrix Guide" />
+              </div>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <CustomSelect
@@ -3142,11 +3384,11 @@ export const AdminDashboard: React.FC = () => {
                 <p style={{ fontSize: '0.82rem', margin: 0, maxWidth: '300px', lineHeight: 1.5 }}>Add participants to the roster and collect peer evaluations before viewing the performance matrix.</p>
               </div>
             ) : (
-              <div className="table-container">
+              <div className="table-container table-container-sticky">
                 <table className="custom-table" style={{ whiteSpace: 'nowrap' }}>
                   <thead>
                     <tr>
-                      <th>Participant Name</th>
+                      <th className="freeze-col-1">Participant Name</th>
                       <th>University</th>
                       <th>Degree</th>
                       <th>Student Type</th>
@@ -3159,7 +3401,7 @@ export const AdminDashboard: React.FC = () => {
                       {activeClass.fields.map(f => (
                         <th key={f.id} style={{ fontSize: '0.75rem' }}>StdDev: {f.name}</th>
                       ))}
-                      <th>Received Praise & Strengths</th>
+                      <th>Received Praise &amp; Strengths</th>
                       <th>WebPA Ratio</th>
                       <th>Calibrated Mark</th>
                       <th>Overall Weighted Avg %</th>
@@ -3199,7 +3441,7 @@ export const AdminDashboard: React.FC = () => {
 
                       return (
                         <tr key={s.id}>
-                          <td style={{ fontWeight: 600 }}>{s.name}</td>
+                          <td className="freeze-col-1" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{s.name}</td>
                           <td>
                             {s.university ? (
                               <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{s.university}</span>
@@ -4149,7 +4391,7 @@ export const AdminDashboard: React.FC = () => {
                   onChange={(val) => setNewStudent(prev => ({ 
                     ...prev, 
                     nationality: val,
-                    currentCountry: prev.currentCountry || val
+                    currentCountry: (!prev.currentCountry && !prev.isInternational) ? val : prev.currentCountry
                   }))}
                   options={NATIONALITY_OPTIONS}
                   placeholder="Select nationality..."
@@ -4527,7 +4769,7 @@ export const AdminDashboard: React.FC = () => {
                   onChange={(val) => setEditStudentData(prev => ({ 
                     ...prev, 
                     nationality: val,
-                    currentCountry: prev.currentCountry || val
+                    currentCountry: (!prev.currentCountry && !prev.isInternational) ? val : prev.currentCountry
                   }))}
                   options={NATIONALITY_OPTIONS}
                   placeholder="Select nationality..."
@@ -4540,7 +4782,7 @@ export const AdminDashboard: React.FC = () => {
                   Current Country of Residence / Study
                 </label>
                 <SearchableSelect
-                  value={editStudentData.currentCountry || editStudentData.nationality || ''}
+                  value={editStudentData.currentCountry || ''}
                   onChange={(val) => setEditStudentData(prev => ({ ...prev, currentCountry: val }))}
                   options={NATIONALITY_OPTIONS}
                   placeholder="Select current country..."
@@ -6253,6 +6495,32 @@ export const AdminDashboard: React.FC = () => {
         shortcuts={shortcuts}
         onUpdateShortcuts={handleUpdateShortcuts}
         onResetShortcuts={handleResetShortcuts}
+      />
+
+      {/* MODAL: QUICK COMMAND PALETTE & FINDER (CTRL/CMD + K) */}
+      <CommandPaletteModal
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        classData={activeClass}
+        onNavigateTab={(tab) => setActiveTab(tab)}
+        onOpenProjector={() => setIsProjectorModalOpen(true)}
+        onOpenDispatcher={() => setIsLinkDispatcherOpen(true)}
+        onOpenSettings={(tab) => {
+          if (tab) setSettingsInitialTab(tab);
+          setIsSettingsModalOpen(true);
+        }}
+        onOpenShortcuts={() => {
+          setSettingsInitialTab('shortcuts');
+          setIsSettingsModalOpen(true);
+        }}
+        onOpenAddStudent={() => setIsAddStudentModalOpen(true)}
+        onOpenReportModal={(studentId) => openReportModal(studentId)}
+        onExportExcel={handleExportExcel}
+        onSelectTeamFilter={(teamName) => {
+          setGroupFilter(teamName);
+          setSearchTerm('');
+        }}
+        onToast={addToast}
       />
     </div>
   );

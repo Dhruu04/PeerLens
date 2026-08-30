@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { QrCode, Copy, Check, Download, ExternalLink, Sparkles, Smartphone, Users } from 'lucide-react';
 import Modal from './Modal';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface ClassQRCodeModalProps {
   isOpen: boolean;
@@ -68,6 +69,7 @@ export const ClassQRCodeModal: React.FC<ClassQRCodeModalProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0.75rem', borderRadius: '999px', background: 'var(--primary-light)', color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 600 }}>
             <Sparkles size={14} /> Instant Classroom Onboarding
+            <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Classroom QR & Projector Guide" />
           </div>
           <h3 style={{ margin: 0, fontSize: presentationMode ? '1.5rem' : '1.2rem', fontWeight: 700, color: 'var(--text-main)' }}>
             Scan to Join <span style={{ color: 'var(--primary)' }}>{classNameTitle}</span>

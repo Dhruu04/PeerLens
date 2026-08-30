@@ -44,6 +44,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   } = useClass();
 
   const [activeTab, setActiveTab] = useState<'email' | 'cloud' | 'shortcuts'>(initialTab);
+
+  // Disable background scrolling when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const prevBodyOverflow = document.body.style.overflow;
+      const prevDocOverflow = document.documentElement.style.overflow;
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevBodyOverflow || '';
+        document.documentElement.style.overflow = prevDocOverflow || '';
+      };
+    }
+  }, [isOpen]);
   
   // Cloud form state
   const [apiKey, setApiKey] = useState(firebaseConfig?.apiKey || '');

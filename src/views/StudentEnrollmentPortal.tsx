@@ -9,10 +9,12 @@ import { useClass } from '../context/ClassContext';
 import { normalizeNationality } from '../utils/math';
 import SearchableSelect from '../components/SearchableSelect';
 import { NATIONALITY_OPTIONS } from '../utils/nationalities';
+import FeatureInfoButton from '../components/FeatureInfoButton';
 
 interface CEFRLevel {
   value: string;
   code: string;
+  short: string;
   title: string;
   desc: string;
   badgeBg: string;
@@ -23,6 +25,7 @@ const CEFR_LEVELS: CEFRLevel[] = [
   {
     value: 'Native / Bilingual',
     code: 'C2+',
+    short: 'Native',
     title: 'Native / Bilingual',
     desc: 'Mother tongue or full bilingual mastery',
     badgeBg: 'rgba(99, 102, 241, 0.12)',
@@ -31,6 +34,7 @@ const CEFR_LEVELS: CEFRLevel[] = [
   {
     value: 'Fluent (C1/C2)',
     code: 'C1/C2',
+    short: 'Fluent',
     title: 'Fluent / Advanced Professional',
     desc: 'Effortless academic and professional discussions',
     badgeBg: 'rgba(13, 148, 136, 0.12)',
@@ -39,7 +43,8 @@ const CEFR_LEVELS: CEFRLevel[] = [
   {
     value: 'Advanced (B2)',
     code: 'B2',
-    title: 'Upper Intermediate',
+    short: 'Advanced',
+    title: 'Upper Intermediate (B2)',
     desc: 'Comfortable technical and team communication',
     badgeBg: 'rgba(2, 132, 199, 0.12)',
     badgeColor: '#0284c7'
@@ -47,7 +52,8 @@ const CEFR_LEVELS: CEFRLevel[] = [
   {
     value: 'Intermediate (B1)',
     code: 'B1',
-    title: 'Intermediate Working',
+    short: 'Working',
+    title: 'Intermediate Working (B1)',
     desc: 'Can convey main ideas in familiar topics',
     badgeBg: 'rgba(217, 119, 6, 0.12)',
     badgeColor: '#d97706'
@@ -55,7 +61,8 @@ const CEFR_LEVELS: CEFRLevel[] = [
   {
     value: 'Basic (A1/A2)',
     code: 'A1/A2',
-    title: 'Elementary / Basic',
+    short: 'Basic',
+    title: 'Elementary / Basic (A1/A2)',
     desc: 'Basic phrases and foundational comprehension',
     badgeBg: 'rgba(100, 116, 139, 0.12)',
     badgeColor: '#64748b'
@@ -254,9 +261,12 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <span className="badge badge-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', padding: '0.3rem 0.75rem', borderRadius: '20px' }}>
-              <Sparkles size={13} /> Student Self-Registration
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="badge badge-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', padding: '0.3rem 0.75rem', borderRadius: '20px' }}>
+                <Sparkles size={13} /> Student Self-Registration
+              </span>
+              <FeatureInfoButton featureId="student-enrollment-portal" size="sm" tooltipText="Learn about Self-Registration" />
+            </div>
             {isCloudSynced && (
               <span className="badge badge-teal" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', borderRadius: '20px' }}>
                 <ShieldCheck size={13} /> Cloud Synchronized
@@ -446,21 +456,12 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                 </span>
               </div>
 
-              {/* Gender Selection - Minimal & Professional Segmented Control */}
+              {/* Gender Selection - Minimal & Professional Responsive Segmented Control */}
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem', marginBottom: '0.4rem' }}>
                   <User size={14} className="text-indigo" /> Gender <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
-                <div 
-                  style={{ 
-                    display: 'flex', 
-                    backgroundColor: 'var(--bg-app)', 
-                    padding: '3px', 
-                    borderRadius: '9px', 
-                    border: '1px solid var(--border-color)',
-                    gap: '3px'
-                  }}
-                >
+                <div className="gender-segmented-bar">
                   {GENDER_OPTIONS.map((g) => {
                     const isSelected = formData.gender === g.value;
                     return (
@@ -468,21 +469,7 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                         key={g.value}
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, gender: g.value }))}
-                        style={{
-                          flex: 1,
-                          padding: '0.5rem 0.35rem',
-                          borderRadius: '6px',
-                          border: 'none',
-                          backgroundColor: isSelected ? 'var(--primary)' : 'transparent',
-                          color: isSelected ? '#ffffff' : 'var(--text-secondary)',
-                          fontWeight: isSelected ? 800 : 600,
-                          fontSize: '0.8rem',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 150ms ease',
-                          whiteSpace: 'nowrap',
-                          boxShadow: isSelected ? '0 2px 6px rgba(79, 70, 229, 0.25)' : 'none'
-                        }}
+                        className={`gender-btn-item ${isSelected ? 'active' : ''}`}
                       >
                         {g.label}
                       </button>
@@ -514,6 +501,7 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                     Geographic &amp; Student Status
                   </h3>
                 </div>
+                <FeatureInfoButton featureId="auto-group-studio" size="sm" tooltipText="Why Geographic Status is collected" />
               </div>
 
               {/* Status Toggle Cards */}
@@ -574,7 +562,7 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
               {/* Nationality / Country of Origin */}
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem' }}>
-                  <Globe size={14} className="text-teal" /> Nationality / Country of Origin <span style={{ color: 'var(--accent-rose)' }}>*</span>
+                  <Globe size={14} className="text-teal" /> Nationality / Passport Country of Origin <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
                 <SearchableSelect
                   value={formData.nationality}
@@ -582,12 +570,13 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                     setFormData(prev => ({ 
                       ...prev, 
                       nationality: val,
-                      currentCountry: prev.currentCountry || val,
+                      // Only default currentCountry if empty and NOT international
+                      currentCountry: (!prev.currentCountry && !prev.isInternational) ? val : prev.currentCountry,
                       originalCountry: prev.originalCountry || val
                     }));
                   }}
                   options={NATIONALITY_OPTIONS}
-                  placeholder="Select your nationality / passport country..."
+                  placeholder="Select your nationality / passport country (e.g. India)..."
                   searchPlaceholder="Search 195+ countries..."
                 />
               </div>
@@ -601,11 +590,13 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                   value={formData.currentCountry}
                   onChange={(val) => setFormData(prev => ({ ...prev, currentCountry: val }))}
                   options={NATIONALITY_OPTIONS}
-                  placeholder="Select current residing / host country..."
+                  placeholder="Select current residing / host country (e.g. Italy)..."
                   searchPlaceholder="Search 195+ countries..."
                 />
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
-                  If you reside in your home country, select the same country as your nationality.
+                  {formData.isInternational 
+                    ? 'Select the country where you currently live or study abroad (e.g. Italy).' 
+                    : 'If you reside in your home country, select the same country as your nationality.'}
                 </span>
               </div>
             </div>
@@ -877,6 +868,7 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                     English Language Proficiency
                   </h3>
                 </div>
+                <FeatureInfoButton featureId="auto-group-studio" size="sm" tooltipText="How CEFR Language Balancing works" />
               </div>
 
               <div className="form-group" style={{ margin: 0 }}>
@@ -884,18 +876,8 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                   <Languages size={14} className="text-primary" /> CEFR English Level <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
                 
-                {/* Minimal Segmented CEFR Selector Bar */}
-                <div 
-                  style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(5, 1fr)', 
-                    backgroundColor: 'var(--bg-app)', 
-                    padding: '3px', 
-                    borderRadius: '10px', 
-                    border: '1px solid var(--border-color)',
-                    gap: '3px'
-                  }}
-                >
+                {/* Responsive CEFR Selector Bar */}
+                <div className="cefr-selector-bar">
                   {CEFR_LEVELS.map((lvl) => {
                     const isSelected = formData.englishProficiency === lvl.value;
                     return (
@@ -903,27 +885,14 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                         key={lvl.value}
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, englishProficiency: lvl.value }))}
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '0.55rem 0.25rem',
-                          borderRadius: '7px',
-                          border: 'none',
-                          backgroundColor: isSelected ? 'var(--primary)' : 'transparent',
-                          color: isSelected ? '#ffffff' : 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 150ms ease',
-                          boxShadow: isSelected ? '0 2px 6px rgba(79, 70, 229, 0.25)' : 'none'
-                        }}
+                        className={`cefr-btn-item ${isSelected ? 'active' : ''}`}
+                        title={`${lvl.title} (${lvl.code})`}
                       >
-                        <span style={{ fontSize: '0.82rem', fontWeight: 900, lineHeight: 1.1 }}>
+                        <span className="cefr-code">
                           {lvl.code}
                         </span>
-                        <span style={{ fontSize: '0.68rem', fontWeight: 600, opacity: isSelected ? 0.95 : 0.75, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
-                          {lvl.title.split('/')[0].trim()}
+                        <span className="cefr-sub">
+                          {lvl.short}
                         </span>
                       </button>
                     );

@@ -18,6 +18,7 @@ import emailjs from '@emailjs/browser';
 import type { ClassData, Student } from '../utils/math';
 import { useClass } from '../context/ClassContext';
 import CustomSelect from './CustomSelect';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface LinkDispatcherModalProps {
   isOpen: boolean;
@@ -60,6 +61,20 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
   const [emailBody, setEmailBody] = useState<string>(() => {
     return localStorage.getItem('peer_custom_email_body') || DEFAULT_EMAIL_BODY;
   });
+  // Disable background scrolling when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const prevBodyOverflow = document.body.style.overflow;
+      const prevDocOverflow = document.documentElement.style.overflow;
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevBodyOverflow || '';
+        document.documentElement.style.overflow = prevDocOverflow || '';
+      };
+    }
+  }, [isOpen]);
+
   const [previewStudentIndex, setPreviewStudentIndex] = useState<number>(0);
 
   // Sending progress & execution logs
@@ -342,6 +357,7 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
                 <span className={`badge ${emailService === 'simulator' ? 'badge-amber' : 'badge-teal'}`} style={{ fontSize: '0.7rem' }}>
                   {emailService === 'emailjs' ? 'EmailJS API' : emailService === 'brevo' ? 'Brevo API' : 'Simulator Mode'}
                 </span>
+                <FeatureInfoButton featureId="link-dispatcher" size="sm" tooltipText="Link Dispatcher Guide" />
               </div>
               <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                 Directly send customized evaluation links to selected students, groups, or the entire class.

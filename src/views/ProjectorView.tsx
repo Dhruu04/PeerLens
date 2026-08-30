@@ -32,6 +32,7 @@ import Modal from '../components/Modal';
 import SearchableSelect from '../components/SearchableSelect';
 import { NATIONALITY_OPTIONS } from '../utils/nationalities';
 import { normalizeNationality } from '../utils/math';
+import FeatureInfoButton from '../components/FeatureInfoButton';
 
 const GENDER_OPTIONS = [
   { value: 'Female', label: 'Female' },
@@ -446,6 +447,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               <span style={{ backgroundColor: 'rgba(6, 182, 212, 0.12)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#0891b2', fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.65rem', borderRadius: '20px', letterSpacing: '0.05em' }}>
                 LIVE CLASSROOM MONITOR
               </span>
+              <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Live Projector & QR Guide" />
             </div>
             <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
               Real-Time Peer Assessment Tracker • {totalStudents} Students Enrolled
@@ -458,6 +460,41 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.45rem 0.85rem', fontSize: '0.85rem', fontWeight: 800, color: '#475569', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
             {currentTime.toLocaleTimeString()}
           </div>
+
+          {currentClass.deadline && (
+            <div 
+              style={{ 
+                backgroundColor: new Date(currentClass.deadline) <= new Date() ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)', 
+                border: `1px solid ${new Date(currentClass.deadline) <= new Date() ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`, 
+                borderRadius: '8px', 
+                padding: '0.45rem 0.85rem', 
+                fontSize: '0.85rem', 
+                fontWeight: 800, 
+                color: new Date(currentClass.deadline) <= new Date() ? '#dc2626' : '#d97706', 
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+              title={`Evaluation deadline: ${new Date(currentClass.deadline).toLocaleString()}`}
+            >
+              <Clock size={14} />
+              <span>
+                {(() => {
+                  const diff = new Date(currentClass.deadline).getTime() - currentTime.getTime();
+                  if (diff <= 0) return 'Evaluation Window Closed';
+                  const totalSec = Math.floor(diff / 1000);
+                  const days = Math.floor(totalSec / 86400);
+                  const hours = Math.floor((totalSec % 86400) / 3600);
+                  const mins = Math.floor((totalSec % 3600) / 60);
+                  const secs = totalSec % 60;
+                  if (days > 0) return `${days}d ${hours}h ${mins}m left`;
+                  if (hours > 0) return `${hours}h ${mins}m ${secs}s left`;
+                  return `${mins}m ${secs}s left`;
+                })()}
+              </span>
+            </div>
+          )}
 
           <button
             type="button"
@@ -1554,7 +1591,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   onChange={(val) => setNewStudent(prev => ({ 
                     ...prev, 
                     nationality: val,
-                    currentCountry: prev.currentCountry || val
+                    currentCountry: (!prev.currentCountry && !prev.isInternational) ? val : prev.currentCountry
                   }))}
                   options={NATIONALITY_OPTIONS}
                   placeholder="Select nationality..."

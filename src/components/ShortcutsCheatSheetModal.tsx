@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Keyboard, Sliders } from 'lucide-react';
 import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
 import { formatShortcutDisplay } from '../utils/keyboardShortcuts';
@@ -16,6 +16,20 @@ export const ShortcutsCheatSheetModal: React.FC<ShortcutsCheatSheetModalProps> =
   shortcuts,
   onOpenSettings
 }) => {
+  // Disable background scrolling when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const prevBodyOverflow = document.body.style.overflow;
+      const prevDocOverflow = document.documentElement.style.overflow;
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevBodyOverflow || '';
+        document.documentElement.style.overflow = prevDocOverflow || '';
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
