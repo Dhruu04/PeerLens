@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  X, 
-  Maximize2, 
-  Minimize2, 
-  Users, 
-  CheckCircle2, 
-  Clock, 
-  QrCode, 
-  Award, 
-  ShieldCheck, 
-  Zap, 
-  Copy, 
-  Check, 
+import {
+  X,
+  Maximize2,
+  Minimize2,
+  Users,
+  CheckCircle2,
+  Clock,
+  QrCode,
+  Award,
+  ShieldCheck,
+  Zap,
+  Copy,
+  Check,
   ExternalLink,
   Plus,
   UserPlus,
@@ -22,7 +22,8 @@ import {
   Search,
   LayoutGrid,
   Tv,
-  CheckCheck
+  CheckCheck,
+  Sparkles
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useClass } from '../context/ClassContext';
@@ -30,6 +31,7 @@ import type { ClassData, Student } from '../utils/math';
 import { calculateGroupReport, type GroupDiversityReport } from '../utils/grouping';
 import Modal from '../components/Modal';
 import SearchableSelect from '../components/SearchableSelect';
+import AutoGroupModal from '../components/AutoGroupModal';
 import { NATIONALITY_OPTIONS } from '../utils/nationalities';
 import { normalizeNationality } from '../utils/math';
 import FeatureInfoButton from '../components/FeatureInfoButton';
@@ -58,10 +60,11 @@ const DEGREE_SUGGESTIONS = [
   'Information Systems'
 ];
 
-interface ProjectorViewProps {
+export interface ProjectorViewProps {
   classData?: ClassData;
   onClose?: () => void;
   isStandalone?: boolean;
+  initialTab?: 'matrix' | 'diversity' | 'qr_focus';
 }
 
 type ProjectorTab = 'matrix' | 'diversity' | 'qr_focus';
@@ -69,12 +72,13 @@ type ProjectorTab = 'matrix' | 'diversity' | 'qr_focus';
 export const ProjectorView: React.FC<ProjectorViewProps> = ({
   classData: propClassData,
   onClose,
-  isStandalone = false
+  isStandalone = false,
+  initialTab = 'matrix'
 }) => {
-  const { classes, activeClass, updateStudent, addStudent } = useClass();
-  const currentClass = propClassData || activeClass || classes[0];
+  const { classes, activeClass, updateStudent, addStudent, importRoster, isCloudSynced, firebaseConfig, user } = useClass();
+  const currentClass = (propClassData ? classes.find(c => c.id === propClassData.id) : null) || propClassData || activeClass || classes[0];
 
-  const [activeTab, setActiveTab] = useState<ProjectorTab>('matrix');
+  const [activeTab, setActiveTab] = useState<ProjectorTab>(initialTab);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -83,6 +87,9 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
   // Search & Filter in Matrix View
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'completed'>('all');
+
+  // Diversity Auto-Group Modal State
+  const [isAutoGroupModalOpen, setIsAutoGroupModalOpen] = useState(false);
 
   // Dynamic Add Team & Add Student Modal State
   const [isAddTeamModalOpen, setIsAddTeamModalOpen] = useState(false);
@@ -108,21 +115,36 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     originalCountry: ''
   });
 
-  const enrollUrl = currentClass 
-    ? `${window.location.origin}${window.location.pathname}?enrollClassId=${currentClass.id}`
-    : '';
+  const getEnrollUrl = () => {
+    if (!currentClass) return '';
+    let url = `${window.location.origin}${window.location.pathname}?enrollClassId=${currentClass.id}`;
+    if (isCloudSynced && firebaseConfig && user) {
+      const payload = {
+        a: firebaseConfig.apiKey,
+        p: firebaseConfig.projectId,
+        d: firebaseConfig.authDomain,
+        i: firebaseConfig.appId,
+        o: user.uid
+      };
+      const encoded = btoa(JSON.stringify(payload));
+      url += `&fb=${encoded}`;
+    }
+    return url;
+  };
 
-  // Clock ticker & QR Generator (Light theme only)
+  const enrollUrl = getEnrollUrl();
+
+  // Clock ticker & QR Generator
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    
+
     if (enrollUrl) {
       QRCode.toDataURL(enrollUrl, {
         width: 600,
         margin: 1,
-        color: { 
-          dark: '#1e1b4b', 
-          light: '#ffffff' 
+        color: {
+          dark: '#1e1b4b',
+          light: '#ffffff'
         }
       })
         .then(url => setQrDataUrl(url))
@@ -132,6 +154,13 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     return () => clearInterval(timer);
   }, [enrollUrl]);
 
+  const handleCopyLink = () => {
+    if (!enrollUrl) return;
+    navigator.clipboard.writeText(enrollUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
   // Lock background scrolling and Escape key handler
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
@@ -140,7 +169,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (document.fullscreenElement) {
-          document.exitFullscreen().catch(() => {});
+          document.exitFullscreen().catch(() => { });
           setIsFullscreen(false);
         } else if (onClose) {
           onClose();
@@ -165,16 +194,20 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     }
   };
 
-  const handleCopyLink = () => {
-    if (!enrollUrl) return;
-    navigator.clipboard.writeText(enrollUrl);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
-  };
-
   const handleOpenInNewWindow = () => {
     if (!currentClass) return;
-    const url = `${window.location.origin}${window.location.pathname}?projector=true&classId=${currentClass.id}`;
+    let url = `${window.location.origin}${window.location.pathname}?projector=true&classId=${currentClass.id}`;
+    if (isCloudSynced && firebaseConfig && user) {
+      const payload = {
+        a: firebaseConfig.apiKey,
+        p: firebaseConfig.projectId,
+        d: firebaseConfig.authDomain,
+        i: firebaseConfig.appId,
+        o: user.uid
+      };
+      const encoded = btoa(JSON.stringify(payload));
+      url += `&fb=${encoded}`;
+    }
     window.open(url, '_blank', 'width=1400,height=900,menubar=no,toolbar=no,location=no');
   };
 
@@ -203,7 +236,9 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
       isInternational: newStudent.isInternational,
       isExchange: newStudent.isExchange,
       nationality: normalizeNationality(newStudent.nationality) || undefined,
-      currentCountry: normalizeNationality(newStudent.currentCountry || newStudent.nationality) || undefined,
+      currentCountry: newStudent.isInternational
+        ? (normalizeNationality(newStudent.currentCountry) || undefined)
+        : (normalizeNationality(newStudent.currentCountry || newStudent.nationality) || undefined),
       englishProficiency: newStudent.englishProficiency.trim() || 'Fluent (C1/C2)',
       university: newStudent.isExchange ? (newStudent.currentUniversity.trim() || newStudent.university.trim() || undefined) : (newStudent.university.trim() || undefined),
       degree: newStudent.degree.trim() || undefined,
@@ -273,27 +308,17 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     updateStudent(currentClass.id, studentId, { groupName: targetTeam });
   };
 
-  // Auto-assign one student to the smallest existing team
+  // Auto-assign one student to the smallest existing team (or Team 1 if no teams exist yet)
   const handleAutoAssignToSmallestTeam = (studentId: string) => {
-    if (!currentClass || groupStats.length === 0) return;
+    if (!currentClass) return;
+    if (groupStats.length === 0) {
+      updateStudent(currentClass.id, studentId, { groupName: 'Team 1' });
+      return;
+    }
     const sorted = [...groupStats].sort((a, b) => a.total - b.total);
     if (sorted[0]) {
       updateStudent(currentClass.id, studentId, { groupName: sorted[0].groupName });
     }
-  };
-
-  // Auto-balance all unassigned students across existing teams
-  const handleAutoAssignAllUnassigned = () => {
-    if (!currentClass || groupStats.length === 0 || unassignedStudents.length === 0) return;
-    const teams = [...groupStats].map(g => ({ name: g.groupName, count: g.total }));
-    unassignedStudents.forEach((student) => {
-      teams.sort((a, b) => a.count - b.count);
-      const chosen = teams[0];
-      if (chosen) {
-        updateStudent(currentClass.id, student.id, { groupName: chosen.name });
-        chosen.count += 1;
-      }
-    });
   };
 
   // Overall classroom demographic aggregations for Diversity Wall
@@ -373,7 +398,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     return true;
   });
 
-  // Calculate live praise tag cloud
+  // Calculate live praise tag cloud and review activity metrics
   const tagCounts: Record<string, number> = {};
   currentClass.reviews.forEach(r => {
     if (Array.isArray(r.praiseTags)) {
@@ -384,13 +409,31 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     }
   });
   const topPraiseList = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+  const totalPraiseGiven = Object.values(tagCounts).reduce((a, b) => a + b, 0);
+
+  // Calculate total expected evaluations across the cohort
+  const totalExpectedReviews = useMemo(() => {
+    let count = 0;
+    const teamCounts: Record<string, number> = {};
+    currentClass.students.forEach(s => {
+      teamCounts[s.groupName] = (teamCounts[s.groupName] || 0) + 1;
+    });
+    currentClass.students.forEach(s => {
+      const size = teamCounts[s.groupName] || 1;
+      count += Math.max(0, size - 1);
+    });
+    return count;
+  }, [currentClass]);
+
+  const totalReviewsLogged = currentClass.reviews.length;
+  const reviewsPct = totalExpectedReviews > 0 ? Math.min(100, Math.round((totalReviewsLogged / totalExpectedReviews) * 100)) : 0;
 
   // Helper to format student university text cleanly
   const renderStudentUniText = (student: Student) => {
     if (student.isExchange && student.originalUniversity && student.currentUniversity) {
       return (
-        <span 
-          style={{ fontSize: '0.72rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} 
+        <span
+          style={{ fontSize: '0.72rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           title={`Exchange: ${student.originalUniversity} ➔ ${student.currentUniversity}`}
         >
           <Plane size={11} className="text-teal" style={{ flexShrink: 0 }} />
@@ -401,8 +444,8 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     const uni = student.university || student.currentUniversity || student.originalUniversity;
     if (uni) {
       return (
-        <span 
-          style={{ fontSize: '0.72rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} 
+        <span
+          style={{ fontSize: '0.72rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           title={uni}
         >
           <GraduationCap size={11} style={{ flexShrink: 0, opacity: 0.75 }} />
@@ -418,7 +461,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
   };
 
   return (
-    <div 
+    <div
       style={{
         minHeight: '100vh',
         width: '100%',
@@ -462,15 +505,15 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           </div>
 
           {currentClass.deadline && (
-            <div 
-              style={{ 
-                backgroundColor: new Date(currentClass.deadline) <= new Date() ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)', 
-                border: `1px solid ${new Date(currentClass.deadline) <= new Date() ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`, 
-                borderRadius: '8px', 
-                padding: '0.45rem 0.85rem', 
-                fontSize: '0.85rem', 
-                fontWeight: 800, 
-                color: new Date(currentClass.deadline) <= new Date() ? '#dc2626' : '#d97706', 
+            <div
+              style={{
+                backgroundColor: new Date(currentClass.deadline) <= new Date() ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                border: `1px solid ${new Date(currentClass.deadline) <= new Date() ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                borderRadius: '8px',
+                padding: '0.45rem 0.85rem',
+                fontSize: '0.85rem',
+                fontWeight: 800,
+                color: new Date(currentClass.deadline) <= new Date() ? '#dc2626' : '#d97706',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                 display: 'flex',
                 alignItems: 'center',
@@ -566,7 +609,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
 
       {/* --- SUB-HEADER: VIEW TABS & LIVE FILTER BAR --- */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-        
+
         {/* Clean Mode Tab Selector */}
         <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#e2e8f0', padding: '3px', borderRadius: '10px', gap: '2px' }}>
           <button
@@ -711,13 +754,13 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
 
       {/* --- INCOMING & UNASSIGNED STUDENTS DOCK --- */}
       {unassignedStudents.length > 0 && (
-        <div 
-          style={{ 
-            backgroundColor: '#ffffff', 
-            border: '2px solid #f59e0b', 
-            borderRadius: '14px', 
-            padding: '0.85rem 1.15rem', 
-            marginBottom: '1.25rem', 
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            border: '2px solid #f59e0b',
+            borderRadius: '14px',
+            padding: '0.85rem 1.15rem',
+            marginBottom: '1.25rem',
             boxShadow: '0 4px 18px rgba(217, 119, 6, 0.12)',
             display: 'flex',
             flexDirection: 'column',
@@ -738,11 +781,11 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                onClick={handleAutoAssignAllUnassigned}
-                style={{ height: '30px', fontSize: '0.76rem', fontWeight: 700, gap: '0.35rem' }}
-                title="Automatically distribute all unassigned incoming students across existing teams"
+                onClick={() => setIsAutoGroupModalOpen(true)}
+                style={{ height: '30px', fontSize: '0.76rem', fontWeight: 700, gap: '0.35rem', backgroundColor: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}
+                title="Launch Intelligent Diversity Auto-Grouping Studio to balance teams"
               >
-                <Zap size={13} className="text-amber" /> Auto-Balance All
+                <Sparkles size={13} className="text-amber" /> Auto-Grouping Studio
               </button>
               <button
                 type="button"
@@ -829,12 +872,12 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
       )}
 
       {/* --- STREAMLINED 3-CARD HERO METRICS RIBBON --- */}
-      <div 
-        style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
-          gap: '1rem', 
-          marginBottom: '1.25rem' 
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '1rem',
+          marginBottom: '1.25rem'
         }}
       >
         {/* Metric 1: Circular Progress Gauge */}
@@ -902,55 +945,49 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           </div>
 
           <div style={{ width: '100%', height: '7px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-            <div 
-              style={{ 
-                height: '100%', 
-                width: `${groupStats.length > 0 ? (fullyCompletedGroups / groupStats.length) * 100 : 0}%`, 
+            <div
+              style={{
+                height: '100%',
+                width: `${groupStats.length > 0 ? (fullyCompletedGroups / groupStats.length) * 100 : 0}%`,
                 backgroundColor: '#0d9488',
                 transition: 'width 0.5s ease'
-              }} 
+              }}
             />
           </div>
         </div>
 
-        {/* Metric 3: Quick Scan Smartphone QR Card */}
-        <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-          <div style={{ backgroundColor: '#ffffff', padding: '4px', borderRadius: '8px', border: '1px solid #cbd5e1', width: '70px', height: '70px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {qrDataUrl ? (
-              <img src={qrDataUrl} alt="Classroom Access QR" style={{ width: '100%', height: '100%', display: 'block' }} />
-            ) : (
-              <QrCode size={32} color="#6366f1" />
-            )}
+        {/* Metric 3: Peer Reviews & Evaluation Velocity */}
+        <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', padding: '1.15rem 1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Peer Reviews Activity
+            </span>
+            <span className="badge badge-primary" style={{ fontSize: '0.72rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />
+              Live Synced
+            </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0284c7', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <QrCode size={14} /> Scan from Mobile
-            </span>
-            <span style={{ fontSize: '0.72rem', color: '#64748b', lineHeight: 1.3 }}>
-              Scan from seat to access peer evaluation portal.
-            </span>
-            <button
-              type="button"
-              onClick={handleCopyLink}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div>
+              <b style={{ fontSize: '1.3rem', color: '#4f46e5', fontWeight: 900 }}>{totalReviewsLogged}</b>
+              <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.35rem' }}>Reviews Logged</span>
+            </div>
+            <div>
+              <b style={{ fontSize: '1.3rem', color: '#7c3aed', fontWeight: 900 }}>{totalPraiseGiven}</b>
+              <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.35rem' }}>Praise Given</span>
+            </div>
+          </div>
+
+          <div style={{ width: '100%', height: '7px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+            <div
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.3rem',
-                backgroundColor: '#f1f5f9',
-                border: '1px solid #e2e8f0',
-                borderRadius: '5px',
-                padding: '0.22rem 0.55rem',
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                color: '#0f172a',
-                cursor: 'pointer',
-                width: 'fit-content'
+                height: '100%',
+                width: `${reviewsPct}%`,
+                backgroundColor: '#4f46e5',
+                transition: 'width 0.5s ease'
               }}
-            >
-              {copiedLink ? <Check size={11} className="text-teal" /> : <Copy size={11} />}
-              {copiedLink ? 'Copied Link!' : 'Copy Portal URL'}
-            </button>
+            />
           </div>
         </div>
       </div>
@@ -963,7 +1000,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           </span>
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'nowrap' }}>
             {topPraiseList.slice(0, 8).map(([tag, count]) => (
-              <span 
+              <span
                 key={tag}
                 style={{
                   backgroundColor: 'hsl(270, 100%, 96%)',
@@ -998,10 +1035,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               </div>
             </div>
           ) : (
-            <div 
-              style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', 
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))',
                 gap: '1rem',
                 overflowY: 'auto',
                 flex: 1,
@@ -1011,7 +1048,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               }}
             >
               {filteredGroups.map((grp) => (
-                <div 
+                <div
                   key={grp.groupName}
                   style={{
                     backgroundColor: grp.isFullyCompleted ? 'hsl(150, 80%, 98%)' : '#ffffff',
@@ -1049,22 +1086,22 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
 
                   {/* Progress Bar */}
                   <div style={{ width: '100%', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                    <div 
-                      style={{ 
-                        height: '100%', 
-                        width: `${grp.progressPct}%`, 
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${grp.progressPct}%`,
                         backgroundColor: grp.isFullyCompleted ? '#0d9488' : '#4f46e5',
                         borderRadius: '4px',
                         transition: 'width 0.4s ease'
-                      }} 
+                      }}
                     />
                   </div>
 
                   {/* Team Diversity & CEFR Metric Ribbon */}
-                  <div 
-                    style={{ 
-                      display: 'grid', 
-                      gridTemplateColumns: 'repeat(3, 1fr)', 
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
                       gap: '0.25rem',
                       backgroundColor: '#f8fafc',
                       border: '1px solid #e2e8f0',
@@ -1098,7 +1135,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   {/* Team Members List */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.1rem' }}>
                     {grp.members.map(member => (
-                      <div 
+                      <div
                         key={member.id}
                         style={{
                           display: 'flex',
@@ -1125,13 +1162,13 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                         {/* Right Status */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
                           {member.nationality && (
-                            <span 
-                              style={{ 
-                                fontSize: '0.66rem', 
-                                padding: '0.1rem 0.35rem', 
-                                backgroundColor: '#ffffff', 
-                                border: '1px solid #e2e8f0', 
-                                borderRadius: '4px', 
+                            <span
+                              style={{
+                                fontSize: '0.66rem',
+                                padding: '0.1rem 0.35rem',
+                                backgroundColor: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '4px',
                                 color: '#64748b',
                                 maxWidth: '75px',
                                 overflow: 'hidden',
@@ -1191,7 +1228,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
       {/* --- TAB 2: DIVERSITY & GLOBAL DEMOGRAPHICS WALL --- */}
       {activeTab === 'diversity' && demographicStats && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto', paddingBottom: '1rem' }}>
-          
+
           {/* Top Demographic Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
             <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
@@ -1421,7 +1458,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
         }
       >
         <form onSubmit={handleQuickAddStudent} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          
+
           {/* SECTION 1: IDENTITY & CONTACT */}
           <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
@@ -1436,10 +1473,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Full Student Name <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Alex Morgan" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  placeholder="e.g. Alex Morgan"
+                  className="form-input"
                   required
                   autoFocus
                   value={newStudent.name}
@@ -1452,10 +1489,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Institutional Email
                 </label>
-                <input 
-                  type="email" 
-                  placeholder="e.g. alex.morgan@university.edu" 
-                  className="form-input" 
+                <input
+                  type="email"
+                  placeholder="e.g. alex.morgan@university.edu"
+                  className="form-input"
                   value={newStudent.email}
                   onChange={(e) => setNewStudent(prev => ({ ...prev, email: e.target.value }))}
                   style={{ height: '36px', fontSize: '0.82rem' }}
@@ -1528,23 +1565,27 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
 
             {/* Toggle Status Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-              <label 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.65rem', 
-                  padding: '0.65rem 0.85rem', 
-                  borderRadius: '8px', 
-                  backgroundColor: newStudent.isInternational ? 'rgba(99, 102, 241, 0.08)' : '#ffffff', 
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  backgroundColor: newStudent.isInternational ? 'rgba(99, 102, 241, 0.08)' : '#ffffff',
                   border: `1.5px solid ${newStudent.isInternational ? 'var(--primary)' : 'var(--border-color)'}`,
                   cursor: 'pointer',
                   transition: 'all 150ms ease'
                 }}
               >
-                <input 
+                <input
                   type="checkbox"
                   checked={newStudent.isInternational}
-                  onChange={(e) => setNewStudent(prev => ({ ...prev, isInternational: e.target.checked }))}
+                  onChange={(e) => setNewStudent(prev => ({
+                    ...prev,
+                    isInternational: e.target.checked,
+                    currentCountry: (e.target.checked && prev.currentCountry === prev.nationality) ? '' : prev.currentCountry
+                  }))}
                   style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
                 />
                 <div>
@@ -1553,20 +1594,20 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                 </div>
               </label>
 
-              <label 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.65rem', 
-                  padding: '0.65rem 0.85rem', 
-                  borderRadius: '8px', 
-                  backgroundColor: newStudent.isExchange ? 'rgba(20, 184, 166, 0.08)' : '#ffffff', 
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  backgroundColor: newStudent.isExchange ? 'rgba(20, 184, 166, 0.08)' : '#ffffff',
                   border: `1.5px solid ${newStudent.isExchange ? 'var(--accent-teal)' : 'var(--border-color)'}`,
                   cursor: 'pointer',
                   transition: 'all 150ms ease'
                 }}
               >
-                <input 
+                <input
                   type="checkbox"
                   checked={newStudent.isExchange}
                   onChange={(e) => setNewStudent(prev => ({ ...prev, isExchange: e.target.checked }))}
@@ -1588,8 +1629,8 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                 </label>
                 <SearchableSelect
                   value={newStudent.nationality}
-                  onChange={(val) => setNewStudent(prev => ({ 
-                    ...prev, 
+                  onChange={(val) => setNewStudent(prev => ({
+                    ...prev,
                     nationality: val,
                     currentCountry: (!prev.currentCountry && !prev.isInternational) ? val : prev.currentCountry
                   }))}
@@ -1664,10 +1705,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                 Degree / Field of Study
               </label>
-              <input 
-                type="text" 
-                placeholder="e.g. Computer Science, Mechanical Engineering, MBA" 
-                className="form-input" 
+              <input
+                type="text"
+                placeholder="e.g. Computer Science, Mechanical Engineering, MBA"
+                className="form-input"
                 value={newStudent.degree}
                 onChange={(e) => setNewStudent(prev => ({ ...prev, degree: e.target.value }))}
                 style={{ height: '36px', fontSize: '0.82rem', marginBottom: '0.35rem' }}
@@ -1701,10 +1742,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   University / Institution Name
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Stanford University, TU Munich" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  placeholder="e.g. Stanford University, TU Munich"
+                  className="form-input"
                   value={newStudent.university}
                   onChange={(e) => setNewStudent(prev => ({ ...prev, university: e.target.value }))}
                   style={{ height: '36px', fontSize: '0.82rem' }}
@@ -1717,10 +1758,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                     <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                       Home Sending University (in English) <span style={{ color: 'var(--accent-rose)' }}>*</span>
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Sorbonne University, TU Munich" 
-                      className="form-input" 
+                    <input
+                      type="text"
+                      placeholder="e.g. Sorbonne University, TU Munich"
+                      className="form-input"
                       value={newStudent.originalUniversity}
                       onChange={(e) => setNewStudent(prev => ({ ...prev, originalUniversity: e.target.value }))}
                       style={{ height: '34px', fontSize: '0.8rem' }}
@@ -1745,10 +1786,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                     <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                       Host / Destination University <span style={{ color: 'var(--accent-rose)' }}>*</span>
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Stanford University, Oxford" 
-                      className="form-input" 
+                    <input
+                      type="text"
+                      placeholder="e.g. Stanford University, Oxford"
+                      className="form-input"
                       value={newStudent.currentUniversity}
                       onChange={(e) => setNewStudent(prev => ({ ...prev, currentUniversity: e.target.value }))}
                       style={{ height: '34px', fontSize: '0.8rem' }}
@@ -1773,6 +1814,19 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           </div>
         </form>
       </Modal>
+
+      {/* --- MODAL: DIVERSITY AUTO-GROUP STUDIO --- */}
+      {isAutoGroupModalOpen && currentClass && (
+        <AutoGroupModal
+          isOpen={isAutoGroupModalOpen}
+          onClose={() => setIsAutoGroupModalOpen(false)}
+          students={currentClass.students}
+          onApplyGroups={(updatedStudents) => {
+            importRoster(currentClass.id, updatedStudents, true);
+            setIsAutoGroupModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 };

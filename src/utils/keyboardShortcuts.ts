@@ -169,7 +169,7 @@ export function formatShortcutDisplay(key: string, modifiers?: { ctrl?: boolean;
   if (modifiers?.ctrl) parts.push('Ctrl');
   if (modifiers?.alt) parts.push('Alt');
   if (modifiers?.shift) parts.push('Shift');
-  
+
   if (key === ' ') {
     parts.push('Space');
   } else if (key === 'Escape') {

@@ -61,13 +61,17 @@ import {
     enrollStudent: (classId: string, student: Omit<Student, 'submitted' | 'id'> & { id?: string }) => Promise<{ success: boolean; studentId: string; message?: string }>;
     updateStudent: (classId: string, studentId: string, updatedFields: Partial<Student>) => void;
     deleteStudent: (classId: string, studentId: string) => void;
+    deleteStudents: (classId: string, studentIds: string[]) => void;
     submitPeerReviews: (classId: string, reviewerId: string, reviews: Omit<Review, 'reviewerId'>[]) => Promise<void>;
-    resetClassReviews: (classId: string) => void;
+    batchSubmitClassReviews: (classId: string, reviews: Review[], submittedStudentIds?: string[], silent?: boolean) => void;
+    resetClassReviews: (classId: string, silent?: boolean) => void;
+    clearClassRoster: (classId: string, silent?: boolean) => void;
     saveClassDeadline: (classId: string, deadline: string | null) => void;
     archiveActiveMilestone: (classId: string, milestoneName: string) => void;
     deleteMilestone: (classId: string, milestoneId: string) => void;
     
     // Settings / UI
+    restoreClassesSnapshot: (snapshot: ClassData[]) => void;
     saveFirebaseConfig: (config: FirebaseConfig | null) => void;
     addToast: (message: string, type: ToastMessage['type']) => void;
     removeToast: (id: string) => void;
@@ -81,17 +85,17 @@ import {
       name: 'Intro to Web Development',
       targetScale: 20,
       fields: [
-        { id: 'f_quality', name: 'Quality of Contribution', description: 'Produces thorough, accurate deliverables on schedule with high attention to detail.', min: 1, max: 20, weight: 1 },
-        { id: 'f_collaboration', name: 'Collaboration & Communication', description: 'Active engagement, responsiveness, transparency, and constructive teamwork.', min: 1, max: 20, weight: 1 },
-        { id: 'f_reliability', name: 'Reliability & Commitment', description: 'Punctuality, meeting milestone deadlines, and dependable follow-through on assignments.', min: 1, max: 20, weight: 1 }
+        { id: 'f_quality', name: 'Quality of Contribution', description: 'Produces thorough, accurate deliverables on schedule with high attention to detail.', min: 1, max: 20, weight: 34 },
+        { id: 'f_collaboration', name: 'Collaboration & Communication', description: 'Active engagement, responsiveness, transparency, and constructive teamwork.', min: 1, max: 20, weight: 33 },
+        { id: 'f_reliability', name: 'Reliability & Commitment', description: 'Punctuality, meeting milestone deadlines, and dependable follow-through on assignments.', min: 1, max: 20, weight: 33 }
       ],
       students: [
-        { id: 's_1', name: 'Alice Smith', email: 'alice@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', isInternational: false, isExchange: false, currentCountry: 'United States', originalCountry: 'United States', originalUniversity: 'Stanford University', currentUniversity: 'Stanford University', gender: 'Female', nationality: 'United States', englishProficiency: 'Native / Bilingual', submitted: false },
-        { id: 's_2', name: 'Bob Jones', email: 'bob@example.com', groupName: 'Alpha Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Erasmus', isInternational: true, isExchange: true, currentCountry: 'United States', originalCountry: 'United Kingdom', originalUniversity: 'Oxford University', currentUniversity: 'Stanford University', gender: 'Male', nationality: 'United Kingdom', englishProficiency: 'Native / Bilingual', submitted: false },
-        { id: 's_3', name: 'Charlie Brown', email: 'charlie@example.com', groupName: 'Alpha Team', university: 'University of Toronto', degree: 'Software Engineering', studentType: 'Normal', isInternational: true, isExchange: false, currentCountry: 'United States', originalCountry: 'Canada', originalUniversity: 'University of Toronto', currentUniversity: 'Stanford University', gender: 'Non-binary', nationality: 'Canada', englishProficiency: 'Fluent (C1/C2)', submitted: false },
-        { id: 's_4', name: 'David Miller', email: 'david@example.com', groupName: 'Beta Team', university: 'Stanford University', degree: 'Computer Science', studentType: 'Normal', isInternational: true, isExchange: false, currentCountry: 'United States', originalCountry: 'Germany', originalUniversity: 'TU Munich', currentUniversity: 'Stanford University', gender: 'Male', nationality: 'Germany', englishProficiency: 'Advanced (B2)', submitted: false },
-        { id: 's_5', name: 'Eva Green', email: 'eva@example.com', groupName: 'Beta Team', university: 'Sorbonne University', degree: 'Data Science', studentType: 'Erasmus', isInternational: true, isExchange: true, currentCountry: 'United States', originalCountry: 'France', originalUniversity: 'Sorbonne University', currentUniversity: 'Stanford University', gender: 'Female', nationality: 'France', englishProficiency: 'Fluent (C1/C2)', submitted: false },
-        { id: 's_6', name: 'Frank Wright', email: 'frank@example.com', groupName: 'Beta Team', university: 'University of Oxford', degree: 'Information Systems', studentType: 'Normal', isInternational: true, isExchange: false, currentCountry: 'United States', originalCountry: 'Australia', originalUniversity: 'University of Melbourne', currentUniversity: 'Stanford University', gender: 'Male', nationality: 'Australia', englishProficiency: 'Native / Bilingual', submitted: false }
+        { id: 's_1', name: 'Matteo Rossi', email: 'matteo.rossi@unipr.it', groupName: 'Alpha Team', university: 'University of Parma', degree: 'Computer Science', studentType: 'Normal', isInternational: false, isExchange: false, currentCountry: 'Italy', originalCountry: 'Italy', originalUniversity: 'University of Parma', currentUniversity: 'University of Parma', gender: 'Male', nationality: 'Italy', englishProficiency: 'Fluent (C1/C2)', submitted: false },
+        { id: 's_2', name: 'Sophie Laurent', email: 'sophie.laurent@etu.sorbonne.fr', groupName: 'Alpha Team', university: 'University of Parma', degree: 'Data Science & AI', studentType: 'Erasmus', isInternational: true, isExchange: true, currentCountry: 'Italy', originalCountry: 'France', originalUniversity: 'Sorbonne University', currentUniversity: 'University of Parma', gender: 'Female', nationality: 'France', englishProficiency: 'Fluent (C1/C2)', submitted: false },
+        { id: 's_3', name: 'Lukas Weber', email: 'lukas.weber@tum.de', groupName: 'Alpha Team', university: 'TU Munich', degree: 'Software Engineering', studentType: 'Normal', isInternational: false, isExchange: false, currentCountry: 'Germany', originalCountry: 'Germany', originalUniversity: 'TU Munich', currentUniversity: 'TU Munich', gender: 'Male', nationality: 'Germany', englishProficiency: 'Advanced (B2)', submitted: false },
+        { id: 's_4', name: 'Chiara Ferrari', email: 'chiara.ferrari@unipr.it', groupName: 'Beta Team', university: 'University of Parma', degree: 'Biomedical Engineering', studentType: 'Normal', isInternational: false, isExchange: false, currentCountry: 'Italy', originalCountry: 'Italy', originalUniversity: 'University of Parma', currentUniversity: 'University of Parma', gender: 'Female', nationality: 'Italy', englishProficiency: 'Fluent (C1/C2)', submitted: false },
+        { id: 's_5', name: 'Pietro Bernardi', email: 'pietro.bernardi@tum.de', groupName: 'Beta Team', university: 'TU Munich', degree: 'Mechanical Engineering', studentType: 'Erasmus', isInternational: true, isExchange: true, currentCountry: 'Germany', originalCountry: 'Italy', originalUniversity: 'University of Parma', currentUniversity: 'TU Munich', gender: 'Male', nationality: 'Italy', englishProficiency: 'Fluent (C1/C2)', submitted: false },
+        { id: 's_6', name: 'Valentina Moretti', email: 'valentina.moretti@polimi.it', groupName: 'Beta Team', university: 'Politecnico di Milano', degree: 'Computer Science', studentType: 'Normal', isInternational: false, isExchange: false, currentCountry: 'Italy', originalCountry: 'Italy', originalUniversity: 'Politecnico di Milano', currentUniversity: 'Politecnico di Milano', gender: 'Female', nationality: 'Italy', englishProficiency: 'Native / Bilingual', submitted: false }
       ],
       reviews: []
     };
@@ -122,12 +126,13 @@ import {
     const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(null);
     const [isCloudSynced, setIsCloudSynced] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  
-    // Toast utilities
+
+    // Toast utilities — Minimal, single active toast to prevent screen obstruction
     const addToast = (message: string, type: ToastMessage['type']) => {
       const id = Math.random().toString(36).substring(2, 9);
-      setToasts((prev) => [...prev, { id, message, type }]);
-      setTimeout(() => removeToast(id), 4000);
+      // Replace existing toast immediately so messages NEVER stack up or block UI
+      setToasts([{ id, message, type }]);
+      setTimeout(() => removeToast(id), 2400);
     };
   
     const removeToast = (id: string) => {
@@ -499,6 +504,12 @@ import {
           gender: s.gender || 'Prefer not to say',
           nationality: s.nationality || '',
           englishProficiency: s.englishProficiency || '',
+          isInternational: !!s.isInternational,
+          isExchange: !!s.isExchange,
+          currentCountry: s.currentCountry || '',
+          originalCountry: s.originalCountry || '',
+          originalUniversity: s.originalUniversity || '',
+          currentUniversity: s.currentUniversity || '',
           submitted: !!s.submitted
         })) : [],
         reviews: Array.isArray(c.reviews) ? c.reviews.map(r => ({
@@ -529,12 +540,11 @@ import {
 
     // Save classes to localStorage whenever they change
     const persistClasses = async (updatedClasses: ClassData[]) => {
+      classesRef.current = updatedClasses;
       setClasses(updatedClasses);
       
-      // Save local backup if we are in admin dashboard mode or if Cloud Sync is disabled (to support offline testing)
-      if (!window.location.search.includes('studentId') || !isCloudSynced) {
-        localStorage.setItem(`peer_grading_classes_${activeAdminProfile}`, JSON.stringify(updatedClasses));
-      }
+      // Save local backup unconditionally for full offline and instant availability
+      localStorage.setItem(`peer_grading_classes_${activeAdminProfile}`, JSON.stringify(updatedClasses));
 
       if (isCloudSynced && firebaseConfig) {
         const ownerUid = user ? user.uid : studentOwnerUid;
@@ -582,9 +592,11 @@ import {
                   };
                   transaction.set(classDocRef, sanitizeClassForFirestore(updatedClass));
                 } else {
-                  // Admin mode: Authoritative updates, but merge concurrent student reviews to prevent wiping them out
+                  // Admin mode: Authoritative updates
+                  // If clearing roster or resetting reviews, overwrite directly
+                  const isClearingRoster = c.students.length === 0;
                   const isResetOrArchive = c.reviews.length === 0 && !c.students.some(s => s.submitted);
-                  if (isResetOrArchive) {
+                  if (isClearingRoster || isResetOrArchive) {
                     transaction.set(classDocRef, sanitizeClassForFirestore(c));
                   } else {
                     const localStudentIds = new Set(c.students.map(s => s.id));
@@ -670,6 +682,9 @@ import {
       addToast(`Workspace profile "${profileName}" deleted permanently.`, 'info');
     };
 
+    // Helper to always retrieve the freshest synchronous classes state
+    const getCurrentClasses = () => classesRef.current.length > 0 ? classesRef.current : classes;
+
     // Actions
     const createClass = (name: string): string => {
       const id = 'c_' + Math.random().toString(36).substring(2, 9);
@@ -680,14 +695,14 @@ import {
         students: [],
         reviews: []
       };
-      persistClasses([...classes, newClass]);
+      persistClasses([...getCurrentClasses(), newClass]);
       setActiveClassId(id);
       addToast(`Class "${name}" successfully created!`, 'success');
       return id;
     };
   
     const deleteClass = async (id: string) => {
-      const remainingClasses = classes.filter((c) => c.id !== id);
+      const remainingClasses = getCurrentClasses().filter((c) => c.id !== id);
       persistClasses(remainingClasses);
 
       if (isCloudSynced && firebaseConfig) {
@@ -715,7 +730,7 @@ import {
     };
   
     const updateGradingConfig = (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify: boolean = false) => {
-      const updatedClasses = classes.map((c) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
           return { 
             ...c, 
@@ -732,7 +747,7 @@ import {
     };
   
     const importRoster = (classId: string, newStudents: Student[], clearExisting = false) => {
-      const updatedClasses = classes.map((c) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
           const mergedStudents = clearExisting 
             ? newStudents 
@@ -747,7 +762,7 @@ import {
     };
   
     const addStudent = (classId: string, studentData: Omit<Student, 'submitted'>) => {
-      const updatedClasses = classes.map((c) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
           // Check for duplicate Email (case-insensitive)
           if (c.students.some(s => s.email.toLowerCase() === studentData.email.toLowerCase())) {
@@ -871,7 +886,7 @@ import {
     };
  
     const updateStudent = (classId: string, studentId: string, updatedFields: Partial<Student>) => {
-      const updatedClasses = classes.map((c) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
           const updatedStudents = c.students.map((s) => {
             if (s.id === studentId) {
@@ -884,11 +899,10 @@ import {
         return c;
       });
       persistClasses(updatedClasses);
-      addToast('Student details updated successfully.', 'success');
     };
   
     const deleteStudent = (classId: string, studentId: string) => {
-      const updatedClasses = classes.map((c) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
           // Remove their student record AND any reviews they wrote or received
           const filteredStudents = c.students.filter((s) => s.id !== studentId);
@@ -902,6 +916,22 @@ import {
       persistClasses(updatedClasses);
       addToast('Student removed from class.', 'info');
     };
+
+    const deleteStudents = (classId: string, studentIds: string[]) => {
+      const idSet = new Set(studentIds);
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const filteredStudents = c.students.filter((s) => !idSet.has(s.id));
+          const filteredReviews = c.reviews.filter(
+            (r) => !idSet.has(r.reviewerId) && !idSet.has(r.recipientId)
+          );
+          return { ...c, students: filteredStudents, reviews: filteredReviews };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast(`Deleted ${studentIds.length} students.`, 'info');
+    };
   
     const submitPeerReviews = async (
       classId: string,
@@ -909,7 +939,7 @@ import {
       newReviews: Omit<Review, 'reviewerId'>[]
     ) => {
       // Find class
-      const updatedClasses = classes.map((c) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
           // Remove existing reviews written by this reviewer (to prevent duplication)
           const remainingReviews = c.reviews.filter((r) => r.reviewerId !== reviewerId);
@@ -940,20 +970,50 @@ import {
       persistClasses(updatedClasses);
       addToast('Thank you! Your peer feedback was submitted successfully.', 'success');
     };
+
+    const batchSubmitClassReviews = (
+      classId: string,
+      allReviews: Review[],
+      submittedStudentIds?: string[],
+      silent?: boolean
+    ) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const submittedSet = submittedStudentIds ? new Set(submittedStudentIds) : null;
+          const updatedStudents = c.students.map((s) => {
+            if (!submittedSet || submittedSet.has(s.id)) {
+              return { ...s, submitted: true };
+            }
+            return s;
+          });
+
+          return {
+            ...c,
+            students: updatedStudents,
+            reviews: allReviews
+          };
+        }
+        return c;
+      });
+
+      persistClasses(updatedClasses);
+      if (!silent) {
+        addToast(`Successfully populated reviews for ${allReviews.length} evaluations.`, 'success');
+      }
+    };
   
     const saveClassDeadline = (classId: string, deadline: string | null) => {
-      const updatedClasses = classes.map((c) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
           return { ...c, deadline };
         }
         return c;
       });
       persistClasses(updatedClasses);
-      addToast(deadline ? 'Classroom submission deadline updated!' : 'Submission deadline cleared.', 'success');
     };
  
     const archiveActiveMilestone = (classId: string, milestoneName: string) => {
-      const updatedClasses = classes.map((c) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
           const milestones = c.milestones || [];
           const newMilestone: Milestone = {
@@ -980,7 +1040,7 @@ import {
     };
  
     const deleteMilestone = (classId: string, milestoneId: string) => {
-      const updatedClasses = classes.map((c) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
           const milestones = (c.milestones || []).filter((m) => m.id !== milestoneId);
           return { ...c, milestones };
@@ -991,8 +1051,9 @@ import {
       addToast('Historical milestone deleted.', 'info');
     };
  
-    const resetClassReviews = (classId: string) => {
-      const updatedClasses = classes.map((c) => {
+    const resetClassReviews = (classId: string, silent: boolean = false) => {
+      const currentList = classesRef.current.length > 0 ? classesRef.current : classes;
+      const updatedClasses = currentList.map((c) => {
         if (c.id === classId) {
           const resetStudents = c.students.map((s) => ({ ...s, submitted: false }));
           return { ...c, students: resetStudents, reviews: [] };
@@ -1000,9 +1061,33 @@ import {
         return c;
       });
       persistClasses(updatedClasses);
-      addToast('All peer feedback data has been reset.', 'warning');
+      if (!silent) {
+        addToast('All peer feedback data has been reset.', 'warning');
+      }
+    };
+
+    const clearClassRoster = (classId: string, silent: boolean = false) => {
+      const currentList = classesRef.current.length > 0 ? classesRef.current : classes;
+      const updatedClasses = currentList.map((c) => {
+        if (c.id === classId) {
+          return { ...c, students: [], reviews: [] };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      if (!silent) {
+        addToast('Class roster and peer evaluations cleared completely.', 'info');
+      }
     };
   
+    const restoreClassesSnapshot = (snapshot: ClassData[]) => {
+      if (Array.isArray(snapshot) && snapshot.length > 0) {
+        setClasses(snapshot);
+        classesRef.current = snapshot;
+        localStorage.setItem(`peer_grading_classes_${activeAdminProfile}`, JSON.stringify(snapshot));
+      }
+    };
+
     const saveFirebaseConfig = (config: FirebaseConfig | null) => {
       setFirebaseConfig(config);
       const targetKey = `peer_grading_firebase_config_${activeAdminProfile}`;
@@ -1046,11 +1131,15 @@ import {
           enrollStudent,
           updateStudent,
           deleteStudent,
+          deleteStudents,
           submitPeerReviews,
+          batchSubmitClassReviews,
           resetClassReviews,
+          clearClassRoster,
           saveClassDeadline,
           archiveActiveMilestone,
           deleteMilestone,
+          restoreClassesSnapshot,
           saveFirebaseConfig,
           addToast,
           removeToast

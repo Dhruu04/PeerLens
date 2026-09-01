@@ -14,7 +14,8 @@ import {
   FileText,
   Globe,
   CornerDownLeft,
-  X
+  X,
+  Compass
 } from 'lucide-react';
 import type { ClassData } from '../utils/math';
 
@@ -40,6 +41,8 @@ interface CommandPaletteModalProps {
   onOpenAddStudent: () => void;
   onOpenReportModal: (studentId?: string) => void;
   onExportExcel: () => void;
+  onOpenTour?: () => void;
+  onOpenGuideCenter?: () => void;
   onSelectTeamFilter?: (teamName: string) => void;
   onToast?: (msg: string, type: 'success' | 'warning' | 'error' | 'info') => void;
 }
@@ -56,6 +59,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenAddStudent,
   onOpenReportModal,
   onExportExcel,
+  onOpenTour,
+  onOpenGuideCenter,
   onSelectTeamFilter
 }) => {
   const [query, setQuery] = useState('');
@@ -123,6 +128,19 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         onExecute: () => {
           onNavigateTab('results');
           onClose();
+        }
+      },
+      {
+        id: 'act_guide_center',
+        title: 'Academic Guidance & Tutorial Center',
+        category: 'Actions',
+        subtitle: 'Explore step-by-step feature guides, algorithms, and interactive tours',
+        icon: Compass,
+        badge: 'Guide',
+        onExecute: () => {
+          onClose();
+          if (onOpenGuideCenter) onOpenGuideCenter();
+          else if (onOpenTour) onOpenTour();
         }
       },
       {
@@ -196,7 +214,19 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onOpenShortcuts();
           onClose();
         }
-      }
+      },
+      ...(onOpenTour ? [{
+        id: 'act_tour',
+        title: 'Start Interactive App Walkthrough',
+        category: 'Actions' as const,
+        subtitle: 'Step-by-step interactive spotlight guide across all features',
+        icon: Compass,
+        badge: 'Tour',
+        onExecute: () => {
+          onClose();
+          onOpenTour();
+        }
+      }] : [])
     ];
 
     if (classData) {

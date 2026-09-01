@@ -22,35 +22,35 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
         description: 'Actively articulates ideas, advances team discussion, listens to others, and respects team meeting schedules.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 20
       },
       {
         name: 'Facilitating Teammate Contributions',
         description: 'Invites and encourages contributions from all team members; bridges different perspectives constructively.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 20
       },
       {
         name: 'Individual Work Quality & Rigor',
         description: 'Produces thorough, high-quality deliverables that advance project goals with high attention to detail.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 20
       },
       {
         name: 'Fostering Constructive Team Climate',
         description: 'Treats teammates with respect, maintains a positive collaborative attitude, and motivates team progress.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 20
       },
       {
         name: 'Conflict Resolution & Professionalism',
         description: 'Handles disagreements constructively, focuses on shared project goals, and accepts team compromises.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 20
       }
     ]
   },
@@ -66,28 +66,28 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
         description: 'Formulates technical solutions, executes core engineering tasks, and verifies deliverables with rigor.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Milestone Delivery & Project Reliability',
         description: 'Delivers project milestones on schedule, attends scheduled sessions, and fulfills agreed technical commitments.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Technical Communication & Sharing',
         description: 'Shares code, models, and documentation clearly; conducts constructive technical reviews with peers.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Inclusive Teamwork & Ethics',
         description: 'Values diverse inputs, upholds engineering ethics, and fosters psychological safety within the team.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       }
     ]
   },
@@ -103,28 +103,28 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
         description: 'Delivers committed sprint stories and tasks with consistent output across the sprint cycle.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Craftsmanship & Quality',
         description: 'Writes clean, well-tested, maintainable code or documentation meeting definition of done (DoD).',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Standup Transparency & Communication',
         description: 'Provides transparent progress updates, flags blockers early, and coordinates actively during standups.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Unblocking Peers & Code Reviews',
         description: 'Conducts thoughtful PR code reviews, helps unblock teammates, and shares technical context willingly.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       }
     ]
   },
@@ -140,28 +140,28 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
         description: 'Excellence, accuracy, and depth of work contributed to the project deliverables.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Collaboration & Communication',
         description: 'Active engagement, transparency, responsive messaging, and positive cooperative attitude.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Reliability & Deadlines',
         description: 'Punctuality, meeting milestone deadlines, and dependable follow-through on assignments.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Initiative & Effort',
         description: 'Proactive work ethic, proposing solutions, and taking ownership when challenges arise.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       }
     ]
   },
@@ -177,28 +177,28 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
         description: 'Generates original concepts, explores diverse creative avenues, and pushes beyond obvious solutions.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Visual Execution & Craftsmanship',
         description: 'Delivers polished prototypes, high visual fidelity, typography, and refined aesthetic execution.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Critique Receptivity & Growth',
         description: 'Actively receives and integrates peer critique constructively; gives insightful feedback to others.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       },
       {
         name: 'Studio Work Ethic & Deadlines',
         description: 'Meets production schedules, actively participates in pin-ups and studio critiques, and respects deadlines.',
         min: 1,
         max: 20,
-        weight: 1
+        weight: 25
       }
     ]
   }

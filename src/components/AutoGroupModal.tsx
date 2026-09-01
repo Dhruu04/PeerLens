@@ -25,9 +25,9 @@ interface AutoGroupModalProps {
 }
 
 const STRATEGY_OPTIONS = [
-  { value: 'balanced_all', label: 'Balanced Multi-Dimensional (Gender + Nationality + English)' },
+  { value: 'balanced_all', label: 'Balanced Multi-Dimensional (Gender + Nationality + University + English)' },
   { value: 'gender_first', label: 'Gender Parity First (50/50 Male-Female Priority)' },
-  { value: 'nationality_first', label: 'Nationality Mixing First (Cross-Cultural Focus)' },
+  { value: 'nationality_first', label: 'Nationality & University Mixing First' },
   { value: 'random_fast', label: 'Equal-Size Standard Distribution' }
 ];
 
@@ -494,10 +494,10 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'center' }} title={`${grp.uniqueNationalityCount} Countries`}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'center' }} title={`${grp.uniqueUniversityCount || grp.studentCount} Universities • ${grp.uniqueNationalityCount} Nationalities`}>
                         <Globe size={12} className="text-teal" style={{ flexShrink: 0 }} />
                         <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                          {grp.uniqueNationalityCount} {grp.uniqueNationalityCount === 1 ? 'Country' : 'Countries'}
+                          {grp.uniqueNationalityCount} {grp.uniqueNationalityCount === 1 ? 'Nationality' : 'Nationalities'}
                         </span>
                       </div>
 

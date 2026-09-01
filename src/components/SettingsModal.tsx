@@ -12,7 +12,9 @@ import {
   Sparkles, 
   ExternalLink,
   Settings,
-  X
+  X,
+  Sliders,
+  CheckCircle
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
 import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
@@ -21,10 +23,12 @@ import { formatShortcutDisplay } from '../utils/keyboardShortcuts';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'email' | 'cloud' | 'shortcuts';
+  initialTab?: 'email' | 'cloud' | 'shortcuts' | 'preferences';
   shortcuts: KeyboardShortcut[];
   onUpdateShortcuts: (updated: KeyboardShortcut[]) => void;
   onResetShortcuts: () => void;
+  showChecklist?: boolean;
+  onToggleChecklist?: (show: boolean) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -33,7 +37,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   initialTab = 'email',
   shortcuts,
   onUpdateShortcuts,
-  onResetShortcuts
+  onResetShortcuts,
+  showChecklist = true,
+  onToggleChecklist
 }) => {
   const { 
     classes, 
@@ -43,7 +49,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     addToast 
   } = useClass();
 
-  const [activeTab, setActiveTab] = useState<'email' | 'cloud' | 'shortcuts'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'email' | 'cloud' | 'shortcuts' | 'preferences'>(initialTab);
 
   // Disable background scrolling when modal is open
   useEffect(() => {
@@ -326,7 +332,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Minimal Segmented Tab Strip */}
-        <div style={{ padding: '0.4rem 1.25rem', backgroundColor: 'var(--bg-app)', borderBottom: '1px solid var(--border-color)', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+        <div style={{ padding: '0.4rem 1.25rem', backgroundColor: 'var(--bg-app)', borderBottom: '1px solid var(--border-color)', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.35rem' }}>
           <button
             type="button"
             onClick={() => setActiveTab('email')}
@@ -335,8 +341,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.4rem',
-              fontSize: '0.8rem',
+              gap: '0.35rem',
+              fontSize: '0.78rem',
               fontWeight: activeTab === 'email' ? 700 : 600,
               borderRadius: '7px',
               border: activeTab === 'email' ? '1px solid rgba(0,0,0,0.08)' : '1px solid transparent',
@@ -347,7 +353,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               transition: 'all 150ms ease'
             }}
           >
-            <Mail size={13} /> Email &amp; Delivery
+            <Mail size={13} /> Email
           </button>
           <button
             type="button"
@@ -357,8 +363,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.4rem',
-              fontSize: '0.8rem',
+              gap: '0.35rem',
+              fontSize: '0.78rem',
               fontWeight: activeTab === 'cloud' ? 700 : 600,
               borderRadius: '7px',
               border: activeTab === 'cloud' ? '1px solid rgba(0,0,0,0.08)' : '1px solid transparent',
@@ -369,7 +375,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               transition: 'all 150ms ease'
             }}
           >
-            <Cloud size={13} /> Cloud Sync
+            <Cloud size={13} /> Cloud
             {isCloudSynced && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />}
           </button>
           <button
@@ -380,8 +386,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.4rem',
-              fontSize: '0.8rem',
+              gap: '0.35rem',
+              fontSize: '0.78rem',
               fontWeight: activeTab === 'shortcuts' ? 700 : 600,
               borderRadius: '7px',
               border: activeTab === 'shortcuts' ? '1px solid rgba(0,0,0,0.08)' : '1px solid transparent',
@@ -392,13 +398,108 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               transition: 'all 150ms ease'
             }}
           >
-            <Keyboard size={13} /> Keyboard Shortcuts
-            <span style={{ fontSize: '0.66rem', fontWeight: 700, padding: '1px 5px', borderRadius: '8px', backgroundColor: activeTab === 'shortcuts' ? 'var(--primary-light)' : 'rgba(0,0,0,0.06)', color: activeTab === 'shortcuts' ? 'var(--primary)' : 'var(--text-secondary)' }}>{shortcuts.length}</span>
+            <Keyboard size={13} /> Shortcuts
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('preferences')}
+            style={{
+              height: '34px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.35rem',
+              fontSize: '0.78rem',
+              fontWeight: activeTab === 'preferences' ? 700 : 600,
+              borderRadius: '7px',
+              border: activeTab === 'preferences' ? '1px solid rgba(0,0,0,0.08)' : '1px solid transparent',
+              backgroundColor: activeTab === 'preferences' ? '#ffffff' : 'transparent',
+              color: activeTab === 'preferences' ? 'var(--primary)' : 'var(--text-secondary)',
+              boxShadow: activeTab === 'preferences' ? '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+              cursor: 'pointer',
+              transition: 'all 150ms ease'
+            }}
+          >
+            <Sliders size={13} /> Preferences
           </button>
         </div>
 
         {/* Body Content */}
         <div style={{ padding: '1rem 1.25rem', overflowY: 'auto', flex: 1, backgroundColor: '#ffffff' }}>
+          
+          {/* TAB 4: PREFERENCES & ONBOARDING */}
+          {activeTab === 'preferences' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div style={{ maxWidth: '450px' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Instructor Onboarding &amp; Setup Checklist
+                  </h4>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Display the 4-step progressive getting-started checklist at the top of your dashboard.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVal = !showChecklist;
+                    localStorage.setItem('peer_onboarding_dismissed', nextVal ? 'false' : 'true');
+                    if (onToggleChecklist) onToggleChecklist(nextVal);
+                    addToast(nextVal ? 'Onboarding Checklist enabled!' : 'Onboarding Checklist hidden.', 'info');
+                  }}
+                  style={{
+                    padding: '0.35rem 0.85rem',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    border: showChecklist ? '1px solid #10b981' : '1px solid #cbd5e1',
+                    backgroundColor: showChecklist ? '#ecfdf5' : '#ffffff',
+                    color: showChecklist ? '#047857' : '#64748b',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  {showChecklist ? <CheckCircle size={13} /> : null}
+                  {showChecklist ? 'Checklist Visible' : 'Checklist Hidden'}
+                </button>
+              </div>
+
+              {/* Data & Backup Card */}
+              <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div style={{ maxWidth: '450px' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Export Full Course Workspace Backup
+                  </h4>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Download a comprehensive offline JSON backup of all courses, student cohorts, rubrics, and peer evaluations.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleExportJSON}
+                  style={{
+                    padding: '0.35rem 0.85rem',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    border: '1px solid var(--primary)',
+                    backgroundColor: 'var(--primary-light)',
+                    color: 'var(--primary)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  <Download size={13} /> Download JSON Backup
+                </button>
+              </div>
+            </div>
+          )}
           
           {/* TAB 1: EMAIL & DELIVERY */}
           {activeTab === 'email' && (

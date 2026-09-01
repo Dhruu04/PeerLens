@@ -10,6 +10,7 @@ export interface GroupingConfig {
   weights?: {
     gender?: number;
     nationality?: number;
+    university?: number;
     english?: number;
   };
 }
@@ -21,6 +22,10 @@ export interface GroupDiversityReport {
   genderCounts: Record<string, number>;
   nationalities: string[];
   uniqueNationalityCount: number;
+  universities: string[];
+  uniqueUniversityCount: number;
+  currentCountries: string[];
+  uniqueCurrentCountryCount: number;
   englishLevels: Record<string, number>;
   avgEnglishScore: number;
   avgEnglishCEFR: string;
@@ -66,7 +71,7 @@ export function getEnglishScore(level?: string): number {
 }
 
 /**
- * Converts a numerical English score (1-5) into a clean, human-readable CEFR level (A1, A2, B1, B2, C1, C2/Native).
+ * Converts a numerical English score (1-5) into a clean, human-readable CEFR level.
  */
 export function getCEFRLevelFromScore(score: number): { code: string; label: string; full: string } {
   if (score >= 4.5) {
@@ -85,9 +90,44 @@ export function getCEFRLevelFromScore(score: number): { code: string; label: str
 }
 
 /**
+ * Extracts normalized effective university institution for a student.
+ */
+export function getEffectiveUniversity(s: Student): string {
+  if (s.isExchange && s.currentUniversity && s.currentUniversity.trim()) {
+    return s.currentUniversity.trim();
+  }
+  const uni = s.university || s.currentUniversity || s.originalUniversity || '';
+  return uni.trim();
+}
+
+/**
+ * Extracts normalized current country of residence/study.
+ */
+export function getEffectiveCurrentCountry(s: Student): string {
+  if (s.currentCountry && s.currentCountry.trim()) {
+    return normalizeNationality(s.currentCountry);
+  }
+  return normalizeNationality(s.nationality) || 'Unspecified';
+}
+
+/**
+ * Extracts normalized nationality of origin.
+ */
+export function getEffectiveNationality(s: Student): string {
+  return normalizeNationality(s.nationality || s.originalCountry) || 'Unspecified';
+}
+
+/**
  * Intelligent Multi-Criteria Diversity Grouping Engine
- * Balances Gender representation (e.g. 50/50 male-female), mixes Nationalities,
- * and distributes English Proficiency levels evenly across all teams.
+ * 
+ * Balances:
+ * 1. University Diversity (High Priority): Prevents clustering students from the same university.
+ * 2. Smart Geographic & Nationality Diversity: Gives higher priority to difference in university/study location
+ *    rather than pure nationality alone (e.g. an Italian student studying in Germany and an Italian student
+ *    studying in Italy can naturally share a team without heavy penalties because they bring diverse institutional
+ *    and country experiences).
+ * 3. 50/50 Gender Parity.
+ * 4. Balanced CEFR English proficiency distribution.
  */
 export function generateDiverseGroups(
   students: Student[],
@@ -133,11 +173,13 @@ export function generateDiverseGroups(
     };
   }
 
-  // Clone student records
+  // Clone student records with standardized fields
   const pool: Student[] = students.map(s => ({
     ...s,
     gender: (s.gender && s.gender.trim()) ? s.gender.trim() : 'Unspecified',
-    nationality: normalizeNationality(s.nationality) || 'Unspecified',
+    nationality: getEffectiveNationality(s),
+    currentCountry: getEffectiveCurrentCountry(s),
+    university: getEffectiveUniversity(s),
     englishProficiency: (s.englishProficiency && s.englishProficiency.trim()) ? s.englishProficiency.trim() : 'Fluent (C1/C2)'
   }));
 
@@ -151,23 +193,27 @@ export function generateDiverseGroups(
   // Group buckets initialized
   const groupBuckets: Student[][] = Array.from({ length: numGroups }, () => []);
 
-  // Compute class-wide statistics for penalty targets
+  // Compute class-wide statistics
   const classAvgEnglish = pool.reduce((acc, s) => acc + getEnglishScore(s.englishProficiency), 0) / totalStudents;
   
-  // Weights based on chosen strategy
-  let wGender = 12.0;
-  let wNat = 10.0;
-  let wEng = 6.0;
+  // Weights prioritizing University difference over raw nationality
+  let wUni = 16.0;      // High priority to spread students from the same university
+  let wGender = 12.0;   // High priority to balance male / female ratios
+  let wNat = 8.0;       // Moderate priority for nationality (nuanced by host university/country)
+  let wEng = 6.0;       // Balanced CEFR English distribution
 
   if (strategy === 'gender_first') {
-    wGender = 25.0;
+    wGender = 26.0;
+    wUni = 12.0;
     wNat = 5.0;
     wEng = 3.0;
   } else if (strategy === 'nationality_first') {
-    wGender = 5.0;
-    wNat = 25.0;
+    wUni = 20.0;
+    wNat = 16.0;
+    wGender = 6.0;
     wEng = 4.0;
   } else if (strategy === 'random_fast') {
+    wUni = 1.0;
     wGender = 1.0;
     wNat = 1.0;
     wEng = 1.0;
@@ -176,20 +222,31 @@ export function generateDiverseGroups(
   if (config.weights) {
     if (config.weights.gender !== undefined) wGender = config.weights.gender;
     if (config.weights.nationality !== undefined) wNat = config.weights.nationality;
+    if (config.weights.university !== undefined) wUni = config.weights.university;
     if (config.weights.english !== undefined) wEng = config.weights.english;
   }
 
   // 1. Initial Stratified Partitioning (Snake distribution across sorted strata)
-  // Sort students into multi-criteria strata: Gender -> Nationality -> English Score
+  // Sort students into multi-criteria strata: University -> Gender -> Current Country -> Nationality -> English Score
   const stratifiedPool = [...pool].sort((a, b) => {
+    // University comparison (primary: separate students from same university into different teams)
+    const ua = (a.university || '').toLowerCase();
+    const ub = (b.university || '').toLowerCase();
+    if (ua !== ub) return ua.localeCompare(ub);
+
     // Gender comparison
     const ga = a.gender || '';
     const gb = b.gender || '';
     if (ga !== gb) return ga.localeCompare(gb);
 
+    // Current Country comparison
+    const ca = (a.currentCountry || '').toLowerCase();
+    const cb = (b.currentCountry || '').toLowerCase();
+    if (ca !== cb) return ca.localeCompare(cb);
+
     // Nationality comparison
-    const na = a.nationality || '';
-    const nb = b.nationality || '';
+    const na = (a.nationality || '').toLowerCase();
+    const nb = (b.nationality || '').toLowerCase();
     if (na !== nb) return na.localeCompare(nb);
 
     // English proficiency comparison
@@ -201,7 +258,6 @@ export function generateDiverseGroups(
   let direction = 1;
 
   for (const student of stratifiedPool) {
-    // Find next available group that has capacity
     let attempts = 0;
     while (groupBuckets[currentGroupIdx].length >= targetSizes[currentGroupIdx] && attempts < numGroups) {
       currentGroupIdx += direction;
@@ -217,7 +273,6 @@ export function generateDiverseGroups(
 
     groupBuckets[currentGroupIdx].push(student);
 
-    // Move index in snake pattern
     currentGroupIdx += direction;
     if (currentGroupIdx >= numGroups) {
       currentGroupIdx = numGroups - 1;
@@ -245,33 +300,68 @@ export function generateDiverseGroups(
     const specified = females + males;
     if (specified >= 2) {
       const diff = Math.abs(females - males);
-      // Square difference to penalize extreme imbalances (e.g. 4 females 0 males)
       cost += Math.pow(diff, 2) * wGender;
     }
 
-    // B. Nationality clustering penalty: penalize multiple students from identical nationality in same team
-    const natCounts: Record<string, number> = {};
+    // B. University Clustering Penalty (HIGHEST PRIORITY)
+    // Penalize multiple students from the same university in the same group
+    const uniCounts: Record<string, number> = {};
     for (const s of group) {
-      const n = (s.nationality || 'Unspecified').toLowerCase();
-      if (n !== 'unspecified') {
-        natCounts[n] = (natCounts[n] || 0) + 1;
+      const u = (s.university || '').toLowerCase().trim();
+      if (u && u !== 'unspecified' && u !== 'n/a') {
+        uniCounts[u] = (uniCounts[u] || 0) + 1;
       }
     }
-    for (const count of Object.values(natCounts)) {
+    for (const count of Object.values(uniCounts)) {
       if (count > 1) {
-        // High penalty for duplicates
-        cost += Math.pow(count - 1, 2) * wNat * 4.0;
+        // Heavy quadratic penalty for clustering same university
+        cost += Math.pow(count - 1, 2) * wUni * 5.0;
       }
     }
 
-    // C. English Proficiency balance penalty
+    // C. Smart Nationality & Geographic Location Mixing
+    // Pairwise evaluation:
+    // If two students share the SAME nationality:
+    // - If they have DIFFERENT universities OR DIFFERENT current countries (e.g. Italian at TU Munich vs Italian at Polimi):
+    //   -> Almost NO penalty (they bring genuine institutional/cross-border diversity)!
+    // - If they share the SAME nationality AND the SAME university AND the SAME current country:
+    //   -> Full clustering penalty!
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        const s1 = group[i];
+        const s2 = group[j];
+
+        const nat1 = (s1.nationality || '').toLowerCase().trim();
+        const nat2 = (s2.nationality || '').toLowerCase().trim();
+
+        if (nat1 && nat2 && nat1 !== 'unspecified' && nat1 === nat2) {
+          const uni1 = (s1.university || '').toLowerCase().trim();
+          const uni2 = (s2.university || '').toLowerCase().trim();
+          const curCountry1 = (s1.currentCountry || '').toLowerCase().trim();
+          const curCountry2 = (s2.currentCountry || '').toLowerCase().trim();
+
+          const hasDifferentUni = uni1 && uni2 && uni1 !== uni2;
+          const hasDifferentCountry = curCountry1 && curCountry2 && curCountry1 !== curCountry2;
+
+          if (hasDifferentUni || hasDifferentCountry) {
+            // Diverse academic or geographic environment! Low penalty
+            cost += wNat * 0.5;
+          } else {
+            // Same nationality + same university/country: clustering penalty
+            cost += wNat * 4.0;
+          }
+        }
+      }
+    }
+
+    // D. English Proficiency balance penalty
     const avgScore = group.reduce((acc, s) => acc + getEnglishScore(s.englishProficiency), 0) / group.length;
-    cost += Math.pow(avgScore - classAvgEnglish, 2) * wEng * 5.0;
+    cost += Math.pow(avgScore - classAvgEnglish, 2) * wEng * 4.0;
 
     // Check if group has 0 proficient/advanced speakers
     const hasAdvancedOrNative = group.some(s => getEnglishScore(s.englishProficiency) >= 4);
     if (!hasAdvancedOrNative && group.length >= 3) {
-      cost += 30.0 * wEng;
+      cost += 25.0 * wEng;
     }
 
     return cost;
@@ -283,10 +373,9 @@ export function generateDiverseGroups(
 
   // 3. Iterative Local Search / Optimization Swaps (Simulated Annealing)
   let currentTotalCost = evaluateTotalCost();
-  const maxIterations = 2500;
+  const maxIterations = 3000;
 
   for (let iter = 0; iter < maxIterations; iter++) {
-    // Pick two random distinct groups
     const g1Idx = Math.floor(Math.random() * numGroups);
     let g2Idx = Math.floor(Math.random() * numGroups);
     while (g2Idx === g1Idx) {
@@ -301,20 +390,16 @@ export function generateDiverseGroups(
     const s1Idx = Math.floor(Math.random() * g1.length);
     const s2Idx = Math.floor(Math.random() * g2.length);
 
-    // Compute cost before swap for these 2 groups
     const oldCost = evaluateGroupCost(g1) + evaluateGroupCost(g2);
 
-    // Tentatively swap
     const s1 = g1[s1Idx];
     const s2 = g2[s2Idx];
     g1[s1Idx] = s2;
     g2[s2Idx] = s1;
 
-    // Compute cost after swap
     const newCost = evaluateGroupCost(g1) + evaluateGroupCost(g2);
 
     if (newCost < oldCost) {
-      // Keep swap (cost decreased)
       currentTotalCost += (newCost - oldCost);
     } else {
       // Revert swap
@@ -343,7 +428,6 @@ export function generateDiverseGroups(
     ? Math.round(groupReports.reduce((acc, g) => acc + g.diversityScore, 0) / groupReports.length)
     : 100;
 
-  // Compute qualitative rating labels
   const genderBalanceRating = avgDiversityScore >= 85 ? 'Optimal' : avgDiversityScore >= 70 ? 'Good' : 'Moderate';
   const nationalityMixRating = avgDiversityScore >= 80 ? 'Highly Mixed' : avgDiversityScore >= 65 ? 'Balanced' : 'Moderate';
   const englishMixRating = avgDiversityScore >= 75 ? 'Evenly Distributed' : avgDiversityScore >= 60 ? 'Good' : 'Fair';
@@ -359,11 +443,13 @@ export function generateDiverseGroups(
 }
 
 /**
- * Calculates detailed diversity metrics for a single group.
+ * Calculates detailed multi-dimensional diversity metrics for a single group.
  */
 export function calculateGroupReport(groupName: string, members: Student[], classAvgEnglish: number = 3.5): GroupDiversityReport {
   const genderCounts: Record<string, number> = {};
   const natSet = new Set<string>();
+  const uniSet = new Set<string>();
+  const curCountrySet = new Set<string>();
   const englishLevels: Record<string, number> = {};
   let totalEnglishScore = 0;
 
@@ -371,8 +457,14 @@ export function calculateGroupReport(groupName: string, members: Student[], clas
     const g = s.gender || 'Unspecified';
     genderCounts[g] = (genderCounts[g] || 0) + 1;
 
-    const n = normalizeNationality(s.nationality);
-    if (n) natSet.add(n);
+    const n = getEffectiveNationality(s);
+    if (n && n !== 'Unspecified') natSet.add(n);
+
+    const u = getEffectiveUniversity(s);
+    if (u && u !== 'Unassigned' && u !== 'N/A') uniSet.add(u);
+
+    const c = getEffectiveCurrentCountry(s);
+    if (c && c !== 'Unspecified') curCountrySet.add(c);
 
     const eng = s.englishProficiency || 'Fluent (C1/C2)';
     englishLevels[eng] = (englishLevels[eng] || 0) + 1;
@@ -381,19 +473,45 @@ export function calculateGroupReport(groupName: string, members: Student[], clas
 
   const studentCount = members.length;
   const uniqueNationalityCount = natSet.size;
+  const uniqueUniversityCount = uniSet.size;
+  const uniqueCurrentCountryCount = curCountrySet.size;
   const avgEnglishScore = studentCount > 0 ? Number((totalEnglishScore / studentCount).toFixed(1)) : 0;
 
   // Diversity Score (0 to 100)
   // Components:
-  // 1. Nationality diversity ratio (unique nats / total members) - 40 pts
-  // 2. Gender balance (female / male parity) - 35 pts
-  // 3. English spread variance from class mean - 25 pts
+  // 1. University diversity ratio (unique unis / total members) - 35 pts
+  // 2. Nationality & Country diversity (unique nationalities & host countries) - 30 pts
+  // 3. Gender parity (female / male balance) - 20 pts
+  // 4. English spread (variance from class mean) - 15 pts
   let score = 100;
 
   if (studentCount >= 2) {
-    // Nationality penalty: duplicates
-    const natDuplicates = Math.max(0, studentCount - uniqueNationalityCount);
-    score -= (natDuplicates * 15);
+    // University duplicates penalty
+    const uniDuplicates = Math.max(0, studentCount - uniqueUniversityCount);
+    score -= (uniDuplicates * 14);
+
+    // Nationality duplicates penalty (mitigated if universities or current countries differ)
+    let effectiveNatDuplicates = 0;
+    for (let i = 0; i < members.length; i++) {
+      for (let j = i + 1; j < members.length; j++) {
+        const s1 = members[i];
+        const s2 = members[j];
+        const n1 = getEffectiveNationality(s1);
+        const n2 = getEffectiveNationality(s2);
+        if (n1 && n2 && n1 !== 'Unspecified' && n1 === n2) {
+          const u1 = getEffectiveUniversity(s1);
+          const u2 = getEffectiveUniversity(s2);
+          const c1 = getEffectiveCurrentCountry(s1);
+          const c2 = getEffectiveCurrentCountry(s2);
+          if (u1 === u2 && c1 === c2) {
+            effectiveNatDuplicates += 1;
+          } else {
+            effectiveNatDuplicates += 0.25;
+          }
+        }
+      }
+    }
+    score -= Math.min(25, Math.round(effectiveNatDuplicates * 10));
 
     // Gender skew penalty
     const females = genderCounts['Female'] || genderCounts['female'] || 0;
@@ -402,13 +520,13 @@ export function calculateGroupReport(groupName: string, members: Student[], clas
     if (specified >= 2) {
       const diff = Math.abs(females - males);
       if (diff > 1) {
-        score -= (diff * 10);
+        score -= (diff * 8);
       }
     }
 
     // English deviation penalty
     const engDev = Math.abs(avgEnglishScore - classAvgEnglish);
-    score -= (engDev * 10);
+    score -= (engDev * 8);
   }
 
   const finalDiversityScore = Math.max(35, Math.min(100, Math.round(score)));
@@ -421,6 +539,10 @@ export function calculateGroupReport(groupName: string, members: Student[], clas
     genderCounts,
     nationalities: Array.from(natSet),
     uniqueNationalityCount,
+    universities: Array.from(uniSet),
+    uniqueUniversityCount,
+    currentCountries: Array.from(curCountrySet),
+    uniqueCurrentCountryCount,
     englishLevels,
     avgEnglishScore,
     avgEnglishCEFR: avgCEFR.full,

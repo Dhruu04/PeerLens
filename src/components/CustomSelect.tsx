@@ -13,6 +13,8 @@ interface CustomSelectProps {
   style?: React.CSSProperties;
   className?: string;
   triggerStyle?: React.CSSProperties;
+  dropdownAlign?: 'left' | 'right';
+  dropdownMinWidth?: string;
 }
 
 export const CustomSelect: React.FC<CustomSelectProps> = ({
@@ -21,7 +23,9 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   options,
   style,
   className = '',
-  triggerStyle
+  triggerStyle,
+  dropdownAlign = 'left',
+  dropdownMinWidth
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -43,7 +47,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     <div
       ref={containerRef}
       className={`custom-select-container ${className}`}
-      style={{ position: 'relative', display: 'block', width: '100%', ...style }}
+      style={{ position: 'relative', display: 'block', width: '100%', zIndex: isOpen ? 9999 : 'auto', ...style }}
     >
       <button
         type="button"
@@ -53,10 +57,10 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '0.6rem',
+          gap: '0.4rem',
           textAlign: 'left',
           width: '100%',
-          padding: '0.45rem 0.85rem',
+          padding: '0.35rem 0.65rem',
           height: 'auto',
           backgroundImage: 'none',
           cursor: 'pointer',
@@ -64,7 +68,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           ...triggerStyle
         }}
       >
-        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', paddingRight: '0.5rem' }}>
+        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', paddingRight: '0.25rem' }}>
           {selectedOption?.label}
         </span>
         <ChevronDown
@@ -86,18 +90,20 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           className="custom-select-dropdown"
           style={{
             position: 'absolute',
-            top: 'calc(100% + 4px)',
-            left: 0,
-            right: 0,
-            minWidth: '100%',
+            top: 'calc(100% + 5px)',
+            left: dropdownAlign === 'right' ? 'auto' : 0,
+            right: dropdownAlign === 'right' ? 0 : 'auto',
+            minWidth: dropdownMinWidth || (dropdownAlign === 'right' ? 'max-content' : '100%'),
+            maxWidth: '340px',
             zIndex: 9999,
             backgroundColor: 'var(--bg-surface)',
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)',
-            boxShadow: '0 12px 28px -4px rgba(0, 0, 0, 0.14), 0 8px 10px -4px rgba(0, 0, 0, 0.08)',
-            maxHeight: '220px',
+            boxShadow: '0 14px 32px -4px rgba(0, 0, 0, 0.16), 0 6px 12px -2px rgba(0, 0, 0, 0.08)',
+            maxHeight: '260px',
             overflowY: 'auto',
-            padding: '4px',
+            overflowX: 'hidden',
+            padding: '5px',
             animation: 'slideUp 180ms cubic-bezier(0.16, 1, 0.3, 1)'
           }}
         >
@@ -121,7 +127,10 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                   color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
                   cursor: 'pointer',
                   transition: 'all var(--transition-fast)',
-                  lineHeight: 1.35
+                  lineHeight: 1.35,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
                 }}
                 onClick={() => {
                   onChange(option.value);

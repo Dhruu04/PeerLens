@@ -397,12 +397,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
       return history;
     })();
 
-    // Shuffled written comments extraction
+    // Anonymized written comments extraction
     const strengthsComments = peerReviews.map((r) => r.strengthsText).filter(Boolean) as string[];
     const growthComments = peerReviews.map((r) => r.growthText).filter(Boolean) as string[];
 
-    const shuffledStrengths = [...strengthsComments].sort(() => Math.random() - 0.5);
-    const shuffledGrowth = [...growthComments].sort(() => Math.random() - 0.5);
+    const shuffledStrengths = strengthsComments;
+    const shuffledGrowth = growthComments;
 
     // Dynamic gamified achievements badges hub calculations
     const badges = (() => {
@@ -1132,228 +1132,211 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
   
   const totalCompleted = completedTeammatesCount + (selfTouched ? 1 : 0);
   const totalTarget = teammates.length + 1;
-  const progressPct = totalTarget > 0 ? Math.round((totalCompleted / totalTarget) * 100) : 100;
-
-  return (
-    <div className="main-content tab-pane" style={{ maxWidth: '800px' }}>
+  const progressPct = totalTarget > 0 ? Math.round((totalCompleted / totalTarget) * 100) : 100;  return (
+    <div className="main-content tab-pane student-portal-wrapper" style={{ maxWidth: '800px', width: '100%', boxSizing: 'border-box' }}>
       
-      {/* Integrated Sticky Top Header & Tracker */}
+      {/* Integrated Sticky Top Header & Tracker — 100% Mobile Optimized */}
       {teammates.length > 0 && (
         <div 
           className="progression-timeline-container" 
           style={{ 
             position: 'sticky',
-            top: '57px',
+            top: 0,
             zIndex: 90,
-            background: 'var(--bg-header)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            borderBottom: '1px solid var(--border-color)',
-            padding: '0.5rem 1rem',
-            margin: '-1.5rem -1.5rem 1.25rem -1.5rem',
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid var(--border-color)',
+            padding: '0.45rem 0.75rem',
+            margin: '0 0 1rem 0',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '0.5rem',
-            boxShadow: 'var(--shadow-sm)',
-            borderRadius: 'var(--radius-md) var(--radius-md) 0 0'
+            flexDirection: 'column',
+            gap: '0.4rem',
+            boxShadow: '0 4px 16px -4px rgba(0, 0, 0, 0.06)',
+            borderRadius: '12px'
           }}
         >
-          {/* Left Area: Context & Student Metadata */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.66rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
-              <span>{activeClass.name}</span>
-              <span style={{ opacity: 0.5 }}>•</span>
-              <span style={{ color: 'var(--primary)' }}>Group {student.groupName}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.019em' }}>
-                Peer Evaluation
-              </h2>
-              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
-                as <strong style={{ color: 'var(--text-secondary)' }}>{cleanStudentName(student.name)}</strong>
+          {/* Row 1: Student Metadata & Progress Percentage */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '0.5rem', flexWrap: 'nowrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0, overflow: 'hidden' }}>
+              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--primary)', backgroundColor: 'var(--primary-light)', padding: '0.12rem 0.45rem', borderRadius: '6px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                Group {student.groupName}
               </span>
-
+              <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {cleanStudentName(student.name)}
+              </span>
               {lastDraftSaved && (
                 <span 
                   className="badge badge-teal" 
                   style={{ 
-                    fontSize: '0.64rem', 
-                    padding: '0.1rem 0.35rem', 
-                    gap: '0.2rem',
+                    fontSize: '0.6rem', 
+                    padding: '0.08rem 0.3rem', 
+                    gap: '0.15rem',
                     borderRadius: '4px',
-                    fontWeight: 700
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
                   }}
                   title="Your rating changes and text are automatically saved locally"
                 >
-                  <Check size={9} /> Draft Saved
+                  <Check size={8} /> Saved
                 </span>
               )}
-              
+
               {timeLeft !== null && (
                 <span 
                   style={{ 
-                    fontSize: '0.66rem', 
+                    fontSize: '0.6rem', 
                     fontWeight: 700, 
-                    color: timeLeft < 3600000 ? 'var(--accent-rose)' : timeLeft < 43200000 ? 'var(--accent-amber)' : 'var(--text-muted)',
+                    color: timeLeft < 3600000 ? 'var(--accent-rose)' : 'var(--accent-amber)',
+                    backgroundColor: timeLeft < 3600000 ? 'var(--accent-rose-light)' : 'var(--accent-amber-light)',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.2rem',
-                    backgroundColor: timeLeft < 3600000 ? 'var(--accent-rose-light)' : timeLeft < 43200000 ? 'var(--accent-amber-light)' : 'var(--bg-app)',
-                    padding: '0.1rem 0.35rem',
+                    gap: '0.15rem',
+                    padding: '0.08rem 0.3rem',
                     borderRadius: '4px',
-                    border: `1px solid ${timeLeft < 3600000 ? 'var(--accent-rose)30' : timeLeft < 43200000 ? 'var(--accent-amber)30' : 'var(--border-color)'}`
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
                   }}
-                  title="Time remaining for evaluations"
+                  title="Time remaining"
                 >
-                  <Clock size={11} />
-                  <span>
-                    {(() => {
-                      const s = Math.floor(timeLeft / 1000);
-                      const mins = Math.floor(s / 60);
-                      const hrs = Math.floor(mins / 60);
-                      const days = Math.floor(hrs / 24);
-                      if (days > 0) return `${days}d ${hrs % 24}h`;
-                      if (hrs > 0) return `${hrs}h ${mins % 60}m`;
-                      return `${mins}m ${s % 60}s`;
-                    })()} left
-                  </span>
+                  <Clock size={9} />
+                  {(() => {
+                    const s = Math.floor(timeLeft / 1000);
+                    const mins = Math.floor(s / 60);
+                    const hrs = Math.floor(mins / 60);
+                    const days = Math.floor(hrs / 24);
+                    if (days > 0) return `${days}d`;
+                    if (hrs > 0) return `${hrs}h ${mins % 60}m`;
+                    return `${mins}m`;
+                  })()}
                 </span>
               )}
             </div>
-          </div>
 
-          {/* Right Area: Minimal progression hub */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            {/* High-Contrast Dynamic Progress Bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <div 
-                style={{ 
-                  width: '70px', 
-                  height: '6px', 
-                  backgroundColor: 'var(--border-color)', 
-                  borderRadius: '9999px', 
-                  overflow: 'hidden', 
-                  position: 'relative',
-                  display: 'block'
-                }}
-              >
-                <div 
-                  style={{ 
-                    width: `${progressPct}%`, 
-                    height: '100%', 
-                    minHeight: '6px',
-                    background: 'linear-gradient(90deg, var(--accent-teal) 0%, hsl(142, 70%, 45%) 100%)', 
-                    borderRadius: '9999px', 
-                    transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                    display: 'block'
-                  }} 
-                />
+            {/* Progress badge */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+              <div style={{ width: '45px', height: '5px', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden' }}>
+                <div style={{ width: `${progressPct}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-teal) 0%, hsl(142, 70%, 45%) 100%)', borderRadius: '9999px', transition: 'width 0.3s ease' }} />
               </div>
-              <span 
-                style={{ 
-                  fontSize: '0.7rem', 
-                  fontWeight: 800, 
-                  color: 'var(--accent-teal)', 
-                  whiteSpace: 'nowrap',
-                  backgroundColor: 'var(--accent-teal-light)',
-                  padding: '0.1rem 0.35rem',
-                  borderRadius: '4px'
-                }}
-              >
-                {progressPct}% Done
+              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-teal)', backgroundColor: 'var(--accent-teal-light)', padding: '0.08rem 0.35rem', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                {progressPct}%
               </span>
             </div>
+          </div>
 
-            {/* Nodes */}
-            <div className="progression-nodes-list" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', margin: 0, padding: 0, border: 'none', maxWidth: 'none' }}>
-              {teammates.map((t, idx) => {
-                const isDone = (strengthsText[t.id] || '').trim().length > 0 ||
-                               (growthText[t.id] || '').trim().length > 0 ||
-                               (praiseTags[t.id] || []).length > 0;
-                
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className={`progression-node-bubble ${isDone ? 'completed' : ''}`}
-                    style={{ 
-                      padding: '0.2rem 0.5rem', 
-                      fontSize: '0.7rem', 
-                      borderRadius: '20px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.2rem',
-                      border: '1px solid var(--border-color)',
-                      cursor: 'pointer',
-                      transition: 'all 200ms ease'
-                    }}
-                    onClick={() => {
-                      const el = document.getElementById(`card-peer-${t.id}`);
-                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }}
-                    title={`Evaluate ${cleanStudentName(t.name)}`}
-                  >
-                    <div 
-                      className="progression-node-badge"
-                      style={{
-                        width: '12px',
-                        height: '12px',
-                        fontSize: '0.55rem',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: '50%',
-                        fontWeight: 800
-                      }}
-                    >
-                      {isDone ? <Check size={8} /> : idx + 1}
-                    </div>
-                    <span style={{ fontWeight: 600 }}>{cleanStudentName(t.name)}</span>
-                  </button>
-                );
-              })}
-
-              <button
-                key="self-node"
-                type="button"
-                className={`progression-node-bubble ${selfTouched ? 'completed' : ''}`}
-                style={{ 
-                  padding: '0.2rem 0.5rem', 
-                  fontSize: '0.7rem', 
-                  borderRadius: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.2rem',
-                  border: '1px solid var(--border-color)',
-                  cursor: 'pointer',
-                  transition: 'all 200ms ease'
-                }}
-                onClick={() => {
-                  const el = document.getElementById('card-self-calibration');
-                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }}
-                title="Self Evaluation"
-              >
-                <div 
-                  className="progression-node-badge"
-                  style={{
-                    width: '12px',
-                    height: '12px',
-                    fontSize: '0.55rem',
+          {/* Row 2: Swipeable Horizontal Teammates List */}
+          <div
+            className="progression-nodes-list"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.3rem',
+              overflowX: 'auto',
+              flexWrap: 'nowrap',
+              width: '100%',
+              paddingBottom: '2px',
+              WebkitOverflowScrolling: 'touch',
+              scrollbarWidth: 'none'
+            }}
+          >
+            {teammates.map((t, idx) => {
+              const isDone = (strengthsText[t.id] || '').trim().length > 0 ||
+                             (growthText[t.id] || '').trim().length > 0 ||
+                             (praiseTags[t.id] || []).length > 0;
+              
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`progression-node-bubble ${isDone ? 'completed' : ''}`}
+                  style={{ 
+                    padding: '0.18rem 0.5rem', 
+                    fontSize: '0.68rem', 
+                    borderRadius: '16px',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '50%',
-                    fontWeight: 800
+                    gap: '0.25rem',
+                    border: '1px solid var(--border-color)',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    backgroundColor: isDone ? 'var(--accent-teal-light)' : 'var(--bg-surface)',
+                    color: isDone ? 'var(--accent-teal)' : 'var(--text-secondary)',
+                    transition: 'all 150ms ease'
                   }}
+                  onClick={() => {
+                    const el = document.getElementById(`card-peer-${t.id}`);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  title={`Evaluate ${cleanStudentName(t.name)}`}
                 >
-                  {selfTouched ? <Check size={8} /> : <Star size={8} />}
-                </div>
-                <span style={{ fontWeight: 600 }}>Self</span>
-              </button>
-            </div>
+                  <div 
+                    className="progression-node-badge"
+                    style={{
+                      width: '13px',
+                      height: '13px',
+                      fontSize: '0.55rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '50%',
+                      fontWeight: 800,
+                      backgroundColor: isDone ? 'var(--accent-teal)' : 'var(--border-color)',
+                      color: isDone ? '#fff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {isDone ? <Check size={8} /> : idx + 1}
+                  </div>
+                  <span style={{ fontWeight: 600 }}>{cleanStudentName(t.name).split(' ')[0]}</span>
+                </button>
+              );
+            })}
+
+            <button
+              key="self-node"
+              type="button"
+              className={`progression-node-bubble ${selfTouched ? 'completed' : ''}`}
+              style={{ 
+                padding: '0.18rem 0.5rem', 
+                fontSize: '0.68rem', 
+                borderRadius: '16px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                border: '1px solid var(--border-color)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                backgroundColor: selfTouched ? 'var(--accent-teal-light)' : 'var(--bg-surface)',
+                color: selfTouched ? 'var(--accent-teal)' : 'var(--text-secondary)',
+                transition: 'all 150ms ease'
+              }}
+              onClick={() => {
+                const el = document.getElementById('card-self-calibration');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              title="Self Evaluation"
+            >
+              <div 
+                className="progression-node-badge"
+                style={{
+                  width: '13px',
+                  height: '13px',
+                  fontSize: '0.55rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '50%',
+                  fontWeight: 800,
+                  backgroundColor: selfTouched ? 'var(--accent-teal)' : 'var(--border-color)',
+                  color: selfTouched ? '#fff' : 'var(--text-secondary)'
+                }}
+              >
+                {selfTouched ? <Check size={8} /> : <Star size={8} />}
+              </div>
+              <span style={{ fontWeight: 600 }}>Self</span>
+            </button>
           </div>
         </div>
       )}
@@ -1371,34 +1354,34 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
       )}
 
       {teammates.length === 0 ? (
-        <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-          <AlertCircle size={44} className="text-amber" style={{ margin: '0 auto 1rem auto' }} />
-          <h3>Solo Group Detected</h3>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            You are currently the only member assigned to the team <b>{student.groupName}</b>. Peer evaluations are not possible for solo teams.
+        <div className="card" style={{ textAlign: 'center', padding: '2rem 1rem' }}>
+          <AlertCircle size={36} className="text-amber" style={{ margin: '0 auto 0.75rem auto' }} />
+          <h3 style={{ fontSize: '1.05rem', fontWeight: 800 }}>Solo Group Detected</h3>
+          <p style={{ color: 'var(--text-secondary)', marginTop: '0.35rem', fontSize: '0.82rem' }}>
+            You are currently the only member assigned to the team <b>{student.groupName}</b>. Peer evaluations require at least 2 team members.
           </p>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           {/* Peer Evaluator Cards List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {teammates.map((peer, idx) => (
-              <div key={peer.id} id={`card-peer-${peer.id}`} className="card" style={{ borderLeft: '4px solid var(--primary)', position: 'relative' }}>
-                <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--bg-app)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'var(--primary)' }}>
+              <div key={peer.id} id={`card-peer-${peer.id}`} className="card" style={{ borderLeft: '4px solid var(--primary)', position: 'relative', padding: '1rem 0.85rem', scrollMarginTop: '80px' }}>
+                <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: 'var(--primary)', fontSize: '0.85rem' }}>
                       {idx + 1}
                     </div>
                     <div>
-                      <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>{cleanStudentName(peer.name)}</h3>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Teammate ID: {peer.id}</span>
+                      <h3 style={{ fontSize: '0.98rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>{cleanStudentName(peer.name)}</h3>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Teammate ID: {peer.id}</span>
                     </div>
                   </div>
                   <FeatureInfoButton featureId="student-grading-matrix" size="sm" tooltipText="How Peer Grading Works" />
                 </div>
 
                 {/* Rubric Sliders */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                   {activeClass.fields.map((field) => {
                     const currentVal = evaluations[peer.id]?.[field.id] ?? Math.round((field.min + field.max) / 2);
                     const pct = ((currentVal - field.min) / (field.max - field.min || 1)) * 100;
@@ -1414,34 +1397,35 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                     const TierIcon = tier.icon;
                     return (
                       <div key={field.id} className="grading-slider-container" style={{ margin: 0 }}>
-                        <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
+                        <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
                               {field.name}
                             </span>
                             {field.description && (
-                              <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.2rem', lineHeight: 1.35 }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.15rem', lineHeight: 1.3 }}>
                                 {field.description}
                               </span>
                             )}
                           </div>
-                          <span className="slider-value-bubble" style={{ backgroundColor: tier.color, fontSize: '0.85rem', padding: '0.25rem 0.75rem', borderRadius: '4px', fontWeight: 700, flexShrink: 0 }}>
+                          <span className="slider-value-bubble" style={{ backgroundColor: tier.color, fontSize: '0.78rem', padding: '0.2rem 0.55rem', borderRadius: '4px', fontWeight: 800, flexShrink: 0, color: '#fff' }}>
                             {currentVal} / {field.max}
                           </span>
                         </div>
 
                         {/* Consolidated Single Scale: Unified Numeric Selector with Dynamic Expectation Feedback */}
-                        <div className="score-fine-tuner" style={{ marginTop: '0.25rem' }}>
-                          {/* Quick Expectation Tier Snapping Buttons */}
-                          <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.65rem', flexWrap: 'wrap' }}>
+                        <div className="score-fine-tuner" style={{ marginTop: '0.2rem' }}>
+                          {/* Quick Expectation Tier Snapping Buttons — Swipeable on small screens */}
+                          <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.5rem', overflowX: 'auto', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: '2px' }}>
                             {[
-                              { label: '🌟 Exemplary (100%)', pct: 1.0, color: 'var(--accent-teal)' },
-                              { label: '👍 Proficient (75%)', pct: 0.75, color: 'var(--primary)' },
-                              { label: '⚡ Developing (50%)', pct: 0.5, color: 'var(--accent-amber)' },
-                              { label: '⚠️ Needs Work (25%)', pct: 0.25, color: 'var(--accent-rose)' }
+                              { label: 'Exemplary (100%)', pct: 1.0, color: 'var(--accent-teal)', icon: Trophy },
+                              { label: 'Proficient (75%)', pct: 0.75, color: 'var(--primary)', icon: ThumbsUp },
+                              { label: 'Developing (50%)', pct: 0.5, color: 'var(--accent-amber)', icon: TrendingUp },
+                              { label: 'Needs Work (25%)', pct: 0.25, color: 'var(--accent-rose)', icon: AlertCircle }
                             ].map((t) => {
                               const targetVal = Math.round(field.min + t.pct * (field.max - field.min));
                               const isCurrent = currentVal === targetVal;
+                              const TierIcon = t.icon;
                               return (
                                 <button
                                   key={t.label}
@@ -1449,17 +1433,23 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                                   className="btn btn-secondary btn-sm"
                                   onClick={() => handleSliderChange(peer.id, field.id, targetVal)}
                                   style={{
-                                    fontSize: '0.7rem',
-                                    padding: '0.2rem 0.55rem',
+                                    fontSize: '0.68rem',
+                                    padding: '0.15rem 0.5rem',
                                     height: '24px',
                                     borderRadius: '12px',
-                                    fontWeight: isCurrent ? 700 : 500,
-                                    backgroundColor: isCurrent ? `${t.color}18` : 'transparent',
+                                    fontWeight: isCurrent ? 800 : 500,
+                                    backgroundColor: isCurrent ? `${t.color}18` : 'var(--bg-surface)',
                                     borderColor: isCurrent ? t.color : 'var(--border-color)',
-                                    color: isCurrent ? t.color : 'var(--text-secondary)'
+                                    color: isCurrent ? t.color : 'var(--text-secondary)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.2rem',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0
                                   }}
                                 >
-                                  {t.label}
+                                  <TierIcon size={10} />
+                                  <span>{t.label}</span>
                                 </button>
                               );
                             })}
@@ -1470,27 +1460,27 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                             style={{ 
                               display: 'flex', 
                               alignItems: 'center', 
-                              gap: '0.75rem', 
-                              padding: '0.65rem 0.85rem', 
-                              borderRadius: 'var(--radius-sm)', 
+                              gap: '0.6rem', 
+                              padding: '0.5rem 0.65rem', 
+                              borderRadius: '8px', 
                               backgroundColor: tier.bgColor, 
                               color: tier.color,
-                              border: `1px solid ${tier.color}20`,
-                              marginBottom: '1rem',
-                              transition: 'all 0.25s ease'
+                              border: `1px solid ${tier.color}25`,
+                              marginBottom: '0.75rem',
+                              transition: 'all 0.2s ease'
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: tier.color, color: '#fff', width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0 }}>
-                              <TierIcon size={13} />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: tier.color, color: '#fff', width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0 }}>
+                              <TierIcon size={12} />
                             </div>
-                            <div>
-                              <strong style={{ fontSize: '0.82rem', display: 'block', color: 'var(--text-primary)' }}>{tier.title}</strong>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25 }}>{tier.desc}</span>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <strong style={{ fontSize: '0.78rem', display: 'block', color: 'var(--text-primary)', lineHeight: 1.2 }}>{tier.title}</strong>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25, marginTop: '2px' }}>{tier.desc}</span>
                             </div>
                           </div>
 
                           {isNarrowRange ? (
-                            <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', justifyContent: 'center' }}>
+                            <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', justifyContent: 'center' }}>
                               {scoreNodes.map((nodeVal) => {
                                 const isActive = currentVal === nodeVal;
                                 return (
@@ -1507,20 +1497,21 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                               })}
                             </div>
                           ) : (
-                            <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
                                 <button
                                   type="button"
                                   className="score-stepper-btn"
                                   disabled={currentVal <= field.min}
                                   onClick={() => handleSliderChange(peer.id, field.id, Math.max(field.min, currentVal - 1))}
+                                  style={{ width: '32px', height: '32px', minWidth: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
                                 >
-                                  <Minus size={14} />
+                                  <Minus size={13} />
                                 </button>
                                 
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '45px' }}>
-                                  <span className="score-stepper-value" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{currentVal}</span>
-                                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '38px' }}>
+                                  <span style={{ fontSize: '1.2rem', fontWeight: 800, lineHeight: 1.1 }}>{currentVal}</span>
+                                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 700 }}>
                                     {Math.round(pct)}%
                                   </span>
                                 </div>
@@ -1530,12 +1521,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                                   className="score-stepper-btn"
                                   disabled={currentVal >= field.max}
                                   onClick={() => handleSliderChange(peer.id, field.id, Math.min(field.max, currentVal + 1))}
+                                  style={{ width: '32px', height: '32px', minWidth: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
                                 >
-                                  <Plus size={14} />
+                                  <Plus size={13} />
                                 </button>
                               </div>
 
-                              <div style={{ flex: 1, minWidth: '150px' }}>
+                              <div style={{ flex: 1, minWidth: '80px' }}>
                                 <input
                                   type="range"
                                   className="custom-slider"
@@ -1543,6 +1535,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                                   max={field.max}
                                   value={currentVal}
                                   style={{
+                                    width: '100%',
                                     background: `linear-gradient(to right, ${tier.color} 0%, ${tier.color} ${pct}%, var(--border-color) ${pct}%, var(--border-color) 100%)`
                                   }}
                                   onChange={(e) => handleSliderChange(peer.id, field.id, Number(e.target.value))}
@@ -1558,11 +1551,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                 </div>
 
                 {/* Positive praise tag selector */}
-                <div style={{ marginTop: '1.75rem', paddingTop: '1.25rem', borderTop: '1px dashed var(--border-color)' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Award size={16} className="text-teal" /> Select Strengths & Praise Tags <span style={{ fontSize: '0.7rem', fontWeight: 400, color: 'var(--text-muted)' }}>(Shared anonymously)</span>
+                <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px dashed var(--border-color)' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Award size={14} className="text-teal" /> Strengths &amp; Praise Tags <span style={{ fontSize: '0.68rem', fontWeight: 500, color: 'var(--text-muted)' }}>(Anonymous)</span>
                   </span>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
                     {AVAILABLE_TAGS.map(tag => {
                       const selectedList = praiseTags[peer.id] || [];
                       const isSelected = selectedList.includes(tag);
@@ -1575,10 +1568,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                           type="button"
                           className="btn btn-sm"
                           style={{
-                            borderRadius: '20px',
-                            fontSize: '0.82rem',
-                            padding: '0.5rem 0.95rem',
-                            minHeight: '40px',
+                            borderRadius: '16px',
+                            fontSize: '0.74rem',
+                            padding: '0.35rem 0.65rem',
+                            minHeight: '32px',
                             border: `1px solid ${isSelected ? tagInfo.color : 'var(--border-color)'}`,
                             backgroundColor: isSelected ? tagInfo.bg : 'var(--bg-surface)',
                             color: isSelected ? tagInfo.color : 'var(--text-secondary)',
@@ -1586,7 +1579,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '0.4rem',
+                            gap: '0.3rem',
                             touchAction: 'manipulation',
                             transition: 'all 150ms ease',
                             boxShadow: isSelected ? '0 2px 4px rgba(0, 0, 0, 0.05)' : 'none'
@@ -1599,7 +1592,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                             setPraiseTags(prev => ({ ...prev, [peer.id]: next }));
                           }}
                         >
-                          <TagIcon size={14} /> {tagInfo.text} {isSelected && <Check size={12} style={{ marginLeft: '2px' }} />}
+                          <TagIcon size={12} /> {tagInfo.text} {isSelected && <Check size={11} style={{ marginLeft: '2px' }} />}
                         </button>
                       );
                     })}
@@ -1607,19 +1600,19 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                 </div>
 
                 {/* Qualitative Written Comments */}
-                <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px dashed var(--border-color)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem', margin: 0 }}>
-                    <MessageSquare size={16} className="text-primary" /> Written Constructive Feedback <span style={{ fontSize: '0.7rem', fontWeight: 400, color: 'var(--text-muted)' }}>(Shared anonymously, randomized &amp; shuffled)</span>
+                <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px dashed var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem', margin: 0 }}>
+                    <MessageSquare size={14} className="text-primary" /> Written Constructive Feedback <span style={{ fontSize: '0.68rem', fontWeight: 500, color: 'var(--text-muted)' }}>(Anonymous)</span>
                   </span>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div className="form-group" style={{ margin: 0 }}>
-                      <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>What are this teammate's primary strengths?</label>
+                      <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 600 }}>What are this teammate's primary strengths?</label>
                       <textarea
                         className="form-input"
-                        placeholder="e.g. Completed documentation accurately, communicated proactively in standups, helped debugging scripts..."
-                        rows={3}
-                        style={{ resize: 'vertical', fontSize: '16px', lineHeight: 1.45, padding: '0.65rem 0.75rem', fontFamily: 'inherit' }}
+                        placeholder="e.g. Completed documentation accurately, communicated proactively in standups..."
+                        rows={2}
+                        style={{ resize: 'vertical', fontSize: '15px', lineHeight: 1.4, padding: '0.55rem 0.65rem', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' }}
                         maxLength={500}
                         value={strengthsText[peer.id] || ''}
                         onChange={(e) => setStrengthsText(prev => ({ ...prev, [peer.id]: e.target.value }))}
@@ -1627,24 +1620,24 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                     </div>
                     
                     <div className="form-group" style={{ margin: 0 }}>
-                      <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>What is one constructive suggestion for their improvement?</label>
+                      <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 600 }}>What is one constructive suggestion for their improvement?</label>
                       <textarea
                         className="form-input"
-                        placeholder="e.g. Could participate more actively in brainstorming, or submit code milestones slightly earlier..."
-                        rows={3}
-                        style={{ resize: 'vertical', fontSize: '16px', lineHeight: 1.45, padding: '0.65rem 0.75rem', fontFamily: 'inherit' }}
+                        placeholder="e.g. Could participate more actively in brainstorming, or submit code milestones earlier..."
+                        rows={2}
+                        style={{ resize: 'vertical', fontSize: '15px', lineHeight: 1.4, padding: '0.55rem 0.65rem', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' }}
                         maxLength={500}
                         value={growthText[peer.id] || ''}
                         onChange={(e) => setGrowthText(prev => ({ ...prev, [peer.id]: e.target.value }))}
                       />
                     </div>
                   </div>
-                  <details style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '0.25rem' }}>
-                    <summary style={{ outline: 'none', fontWeight: 700, color: 'var(--accent-amber)', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <AlertTriangle size={13} className="text-amber" /> <span>Anonymity Guidelines &amp; Warning (Tap to view)</span>
+                  <details style={{ fontSize: '0.7rem', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '0.15rem' }}>
+                    <summary style={{ outline: 'none', fontWeight: 700, color: 'var(--accent-amber)', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <AlertTriangle size={12} className="text-amber" /> <span>Anonymity Guidelines (Tap to view)</span>
                     </summary>
-                    <p style={{ marginTop: '0.4rem', lineHeight: 1.45, padding: '0.5rem', backgroundColor: 'var(--accent-amber-light)', borderRadius: '4px', border: '1px solid hsla(35, 92%, 47%, 0.15)' }}>
-                      Do not type identifying names or gendered pronouns (e.g. "He / She helped Bob..."). Maintain strictly constructive, gender-neutral peer vocabulary to preserve complete anonymity.
+                    <p style={{ marginTop: '0.35rem', lineHeight: 1.4, padding: '0.45rem', backgroundColor: 'var(--accent-amber-light)', borderRadius: '4px', border: '1px solid hsla(35, 92%, 47%, 0.15)' }}>
+                      Maintain strictly constructive, gender-neutral peer vocabulary to preserve complete anonymity.
                     </p>
                   </details>
                 </div>
@@ -1654,31 +1647,31 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
           </div>
 
           {/* SELF-EVALUATION CALIBRATION CARD */}
-          <div id="card-self-calibration" className="card" style={{ borderLeft: '4px solid var(--accent-teal)', backgroundColor: 'var(--bg-surface)' }}>
-            <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--accent-teal-light)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
-                  <Star size={18} />
+          <div id="card-self-calibration" className="card" style={{ borderLeft: '4px solid var(--accent-teal)', backgroundColor: 'var(--bg-surface)', padding: '1rem 0.85rem', scrollMarginTop: '80px' }}>
+            <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--accent-teal-light)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
+                  <Star size={16} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Step 2: Self-Evaluation Calibration</h3>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Provide an objective self-reflection of your own contributions</span>
+                  <h3 style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Self-Evaluation Calibration</h3>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Objective self-reflection of your contributions</span>
                 </div>
               </div>
               <FeatureInfoButton featureId="webpa-scoring" size="sm" tooltipText="Why Self-Calibration Matters" />
             </div>
 
-            <details style={{ backgroundColor: 'var(--primary-light)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--primary)', fontSize: '0.82rem', color: 'hsl(243, 75%, 25%)', marginBottom: '1.5rem', cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>
-              <summary style={{ fontWeight: 700, outline: 'none', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.35rem', userSelect: 'none' }}>
-                <Lightbulb size={14} className="text-primary" /> <span>Why evaluate myself? (Tap to expand calibration info)</span>
+            <details style={{ backgroundColor: 'var(--primary-light)', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--primary)', fontSize: '0.76rem', color: 'hsl(243, 75%, 25%)', marginBottom: '1rem', cursor: 'pointer' }}>
+              <summary style={{ fontWeight: 700, outline: 'none', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.3rem', userSelect: 'none' }}>
+                <Lightbulb size={13} className="text-primary" /> <span>Why evaluate myself? (Tap to expand)</span>
               </summary>
-              <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)', lineHeight: 1.45, fontSize: '0.78rem' }}>
-                You are going to <b>compare side-by-side</b> the scores you give yourself with the anonymous scores your teammates give you! Evaluating your own performance honestly helps calibrate your self-perception and reconcile alignment gaps. <i>Rest assured, your classmates will never see your self-rating.</i>
+              <p style={{ marginTop: '0.35rem', color: 'var(--text-secondary)', lineHeight: 1.4, fontSize: '0.74rem' }}>
+                Your scores will be compared side-by-side with anonymous peer feedback to calibrate self-perception. <i>Classmates never see your self-ratings.</i>
               </p>
             </details>
 
             {/* Rubric Sliders for Self */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {activeClass.fields.map((field) => {
                 const currentVal = evaluations[student.id]?.[field.id] ?? Math.round((field.min + field.max) / 2);
                 const pct = ((currentVal - field.min) / (field.max - field.min || 1)) * 100;
@@ -1693,34 +1686,35 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                 const TierIcon = tier.icon;
                 return (
                   <div key={field.id} className="grading-slider-container" style={{ margin: 0 }}>
-                    <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
+                    <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
                           Self-Rating: {field.name}
                         </span>
                         {field.description && (
-                          <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.2rem', lineHeight: 1.35 }}>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.15rem', lineHeight: 1.3 }}>
                             {field.description}
                           </span>
                         )}
                       </div>
-                      <span className="slider-value-bubble" style={{ backgroundColor: 'var(--accent-teal)', color: '#fff', fontSize: '0.85rem', padding: '0.25rem 0.75rem', borderRadius: '4px', fontWeight: 700, flexShrink: 0 }}>
+                      <span className="slider-value-bubble" style={{ backgroundColor: 'var(--accent-teal)', color: '#fff', fontSize: '0.78rem', padding: '0.2rem 0.55rem', borderRadius: '4px', fontWeight: 800, flexShrink: 0 }}>
                         {currentVal} / {field.max}
                       </span>
                     </div>
 
                     {/* Consolidated Single Scale: Unified Numeric Selector with Dynamic Expectation Feedback */}
-                    <div className="score-fine-tuner" style={{ marginTop: '0.25rem' }}>
+                    <div className="score-fine-tuner" style={{ marginTop: '0.2rem' }}>
                       {/* Quick Expectation Tier Snapping Buttons */}
-                      <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.65rem', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.5rem', overflowX: 'auto', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: '2px' }}>
                         {[
-                          { label: '🌟 Exemplary (100%)', pct: 1.0, color: 'var(--accent-teal)' },
-                          { label: '👍 Proficient (75%)', pct: 0.75, color: 'var(--primary)' },
-                          { label: '⚡ Developing (50%)', pct: 0.5, color: 'var(--accent-amber)' },
-                          { label: '⚠️ Needs Work (25%)', pct: 0.25, color: 'var(--accent-rose)' }
+                          { label: 'Exemplary (100%)', pct: 1.0, color: 'var(--accent-teal)', icon: Trophy },
+                          { label: 'Proficient (75%)', pct: 0.75, color: 'var(--primary)', icon: ThumbsUp },
+                          { label: 'Developing (50%)', pct: 0.5, color: 'var(--accent-amber)', icon: TrendingUp },
+                          { label: 'Needs Work (25%)', pct: 0.25, color: 'var(--accent-rose)', icon: AlertCircle }
                         ].map((t) => {
                           const targetVal = Math.round(field.min + t.pct * (field.max - field.min));
                           const isCurrent = currentVal === targetVal;
+                          const TierIcon = t.icon;
                           return (
                             <button
                               key={t.label}
@@ -1728,17 +1722,23 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                               className="btn btn-secondary btn-sm"
                               onClick={() => handleSliderChange(student.id, field.id, targetVal)}
                               style={{
-                                fontSize: '0.7rem',
-                                padding: '0.2rem 0.55rem',
+                                fontSize: '0.68rem',
+                                padding: '0.15rem 0.5rem',
                                 height: '24px',
                                 borderRadius: '12px',
-                                fontWeight: isCurrent ? 700 : 500,
-                                backgroundColor: isCurrent ? `${t.color}18` : 'transparent',
+                                fontWeight: isCurrent ? 800 : 500,
+                                backgroundColor: isCurrent ? `${t.color}18` : 'var(--bg-surface)',
                                 borderColor: isCurrent ? t.color : 'var(--border-color)',
-                                color: isCurrent ? t.color : 'var(--text-secondary)'
+                                color: isCurrent ? t.color : 'var(--text-secondary)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.2rem',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0
                               }}
                             >
-                              {t.label}
+                              <TierIcon size={10} />
+                              <span>{t.label}</span>
                             </button>
                           );
                         })}
@@ -1749,27 +1749,27 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                         style={{ 
                           display: 'flex', 
                           alignItems: 'center', 
-                          gap: '0.75rem', 
-                          padding: '0.65rem 0.85rem', 
-                          borderRadius: 'var(--radius-sm)', 
+                          gap: '0.6rem', 
+                          padding: '0.5rem 0.65rem', 
+                          borderRadius: '8px', 
                           backgroundColor: tier.bgColor, 
                           color: tier.color,
-                          border: `1px solid ${tier.color}20`,
-                          marginBottom: '1rem',
-                          transition: 'all 0.25s ease'
+                          border: `1px solid ${tier.color}25`,
+                          marginBottom: '0.75rem',
+                          transition: 'all 0.2s ease'
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: tier.color, color: '#fff', width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0 }}>
-                          <TierIcon size={13} />
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: tier.color, color: '#fff', width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0 }}>
+                          <TierIcon size={12} />
                         </div>
-                        <div>
-                          <strong style={{ fontSize: '0.82rem', display: 'block', color: 'var(--text-primary)' }}>{tier.title}</strong>
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25 }}>{tier.desc}</span>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <strong style={{ fontSize: '0.78rem', display: 'block', color: 'var(--text-primary)', lineHeight: 1.2 }}>{tier.title}</strong>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25, marginTop: '2px' }}>{tier.desc}</span>
                         </div>
                       </div>
 
                       {isNarrowRange ? (
-                        <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', justifyContent: 'center' }}>
+                        <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', justifyContent: 'center' }}>
                           {scoreNodes.map((nodeVal) => {
                             const isActive = currentVal === nodeVal;
                             return (
@@ -1786,20 +1786,21 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                           })}
                         </div>
                       ) : (
-                        <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
                             <button
                               type="button"
                               className="score-stepper-btn"
                               disabled={currentVal <= field.min}
                               onClick={() => handleSliderChange(student.id, field.id, Math.max(field.min, currentVal - 1))}
+                              style={{ width: '32px', height: '32px', minWidth: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
                             >
-                              <Minus size={14} />
+                              <Minus size={13} />
                             </button>
                             
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '45px' }}>
-                              <span className="score-stepper-value" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{currentVal}</span>
-                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '38px' }}>
+                              <span style={{ fontSize: '1.2rem', fontWeight: 800, lineHeight: 1.1 }}>{currentVal}</span>
+                              <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 700 }}>
                                 {Math.round(pct)}%
                               </span>
                             </div>
@@ -1809,12 +1810,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                               className="score-stepper-btn"
                               disabled={currentVal >= field.max}
                               onClick={() => handleSliderChange(student.id, field.id, Math.min(field.max, currentVal + 1))}
+                              style={{ width: '32px', height: '32px', minWidth: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
                             >
-                              <Plus size={14} />
+                              <Plus size={13} />
                             </button>
                           </div>
 
-                          <div style={{ flex: 1, minWidth: '150px' }}>
+                          <div style={{ flex: 1, minWidth: '80px' }}>
                             <input
                               type="range"
                               className="custom-slider"
@@ -1822,6 +1824,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                               max={field.max}
                               value={currentVal}
                               style={{
+                                width: '100%',
                                 background: `linear-gradient(to right, var(--accent-teal) 0%, var(--accent-teal) ${pct}%, var(--border-color) ${pct}%, var(--border-color) 100%)`
                               }}
                               onChange={(e) => handleSliderChange(student.id, field.id, Number(e.target.value))}
@@ -1836,14 +1839,14 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
             </div>
           </div>
 
-          {/* Submission Panel */}
-          <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', backgroundColor: 'var(--primary-light)', borderColor: 'var(--primary)' }}>
-            <div style={{ maxWidth: '480px' }}>
-              <h4 style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                <ShieldCheck size={18} /> Review Anonymity Assurance
+          {/* Submission Panel — 100% Mobile Full-Width Responsive */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', backgroundColor: 'var(--primary-light)', borderColor: 'var(--primary)', padding: '1rem' }}>
+            <div>
+              <h4 style={{ fontWeight: 800, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.4rem', margin: '0 0 0.25rem 0', fontSize: '0.92rem' }}>
+                <ShieldCheck size={16} /> Review Anonymity Assurance
               </h4>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                Double check your scores. Once submitted, your reviews are locked, fully anonymized, and compiled into peer averages.
+              <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4, margin: 0 }}>
+                Once submitted, your peer reviews are encrypted, locked, and aggregated into anonymous averages.
               </p>
             </div>
 
@@ -1851,9 +1854,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
               type="submit"
               className={`btn btn-primary ${isSubmitting ? 'btn-disabled' : ''}`}
               disabled={isSubmitting}
-              style={{ padding: '0.8rem 2rem', fontSize: '1rem', gap: '0.75rem' }}
+              style={{ width: '100%', height: '44px', fontSize: '0.92rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderRadius: '10px', boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)' }}
             >
-              {isSubmitting ? 'Submitting...' : 'Submit Anonymous Feedback'} <Send size={16} />
+              {isSubmitting ? 'Submitting Evaluations...' : 'Submit Anonymous Feedback'} <Send size={15} />
             </button>
           </div>
         </form>

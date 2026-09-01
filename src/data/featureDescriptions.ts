@@ -16,21 +16,21 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
     title: 'Intelligent Auto-Group & Diversity Studio',
     category: 'Algorithm',
     summary: 'Combinatorial multi-criteria balancing partitioner for high-synergy student teams.',
-    whatItDoes: 'Solves the complex group formation problem by balancing student teams across 3 key demographic and skill dimensions: 50/50 gender parity, cross-cultural nationality dispersion (195+ countries), and CEFR English language proficiency spread.',
+    whatItDoes: 'Solves the complex group formation problem by balancing student teams across multi-dimensional criteria: university institution dispersion, cross-border nationality mixing (195+ countries), 50/50 gender parity, and CEFR English language proficiency spread.',
     whatToDo: [
       'Choose whether to optimize by target group size (e.g. 4–5 members) or a fixed number of teams.',
-      'Select an algorithmic strategy: "Multi-Dimensional (Gender + Culture + English)", "Language Spread", or "Gender Parity".',
+      'Select an algorithmic strategy: "Multi-Dimensional (Gender + Nationality + University + English)", "Gender Parity", or "Nationality & University Mixing".',
       'Click "Generate Optimized Groups" to run the combinatorial simulated annealing optimizer.',
       'Inspect the computed team diversity scores and drag-and-drop students between teams if manual fine-tuning is desired.',
       'Click "Apply Formed Groups to Roster" to lock the teams into the classroom directory.'
     ],
     whatYouGet: [
-      'Balanced teams with zero demographic isolation (no lone international or minority students).',
+      'Balanced teams with zero demographic isolation and rich multi-institutional collaboration.',
       'An aggregate Diversity Score (0–100%) measuring overall balance across the entire class.',
-      'Per-group diagnostic report cards showing gender breakdown, national origins, and average English level.',
+      'Per-group diagnostic report cards showing gender breakdown, university origins, nationalities, and average English level.',
       'Exportable team rosters in CSV and Excel formats.'
     ],
-    formula: 'Diversity Score = w₁·GenderParity + w₂·NationalityEntropy + w₃·LanguageDistribution',
+    formula: 'Diversity Score = w₁·UniversityDispersion + w₂·NationalityEntropy + w₃·GenderParity + w₄·LanguageDistribution',
     proTip: 'A diversity score above 85% minimizes communication silos, prevents groupthink, and yields higher overall team satisfaction in semester projects.'
   },
 
@@ -260,21 +260,21 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'classroom-qr': {
     id: 'classroom-qr',
-    title: 'Live Classroom QR & Presentation Mode',
+    title: 'Classroom QR & Presentation View',
     category: 'Student Portal',
-    summary: 'Full-screen projector display for in-class self-enrollment and real-time grading.',
-    whatItDoes: 'Renders dynamic QR codes for projection in lecture halls, allowing students to scan on their smartphones and instantly self-register or submit peer evaluations.',
+    summary: 'Projector display for in-class self-enrollment and real-time evaluation.',
+    whatItDoes: 'Displays classroom QR codes for quick self-registration and peer evaluation submission.',
     whatToDo: [
-      'Click "Open QR Presentation Mode" to open the high-contrast projector view.',
-      'Students scan the QR code to reach the mobile-optimized self-registration portal.',
-      'Watch live participant counters increment as students register.'
+      'Open the projector view to display the QR code.',
+      'Students scan the code to access their registration and evaluation portal.',
+      'Monitor live participant enrollment progress.'
     ],
     whatYouGet: [
-      'Frictionless classroom onboarding: zero student accounts or passwords required.',
-      'Real-time live counter showing enrollment and evaluation progress on the big screen.',
-      'Cloud synchronization keeping student smartphones instantly in sync with the instructor.'
+      'Direct classroom enrollment without pre-generated credentials.',
+      'Live counters showing participant progress.',
+      'Real-time synchronization with the instructor dashboard.'
     ],
-    proTip: 'Cloud synchronization ensures student smartphones instantly sync with the professor’s dashboard.'
+    proTip: 'Cloud synchronization updates student submissions on the dashboard in real-time.'
   },
 
   'rubric-presets': {

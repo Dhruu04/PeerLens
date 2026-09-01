@@ -28,9 +28,9 @@ interface AutoGroupStudioProps {
 }
 
 const STRATEGY_OPTIONS = [
-  { value: 'balanced_all', label: 'Multi-Dimensional (Gender + Culture + English)' },
+  { value: 'balanced_all', label: 'Multi-Dimensional (Gender + Nationality + University + English)' },
   { value: 'gender_first', label: 'Gender Parity First (50/50 Balance)' },
-  { value: 'nationality_first', label: 'Cross-Cultural Mixing First' },
+  { value: 'nationality_first', label: 'Nationality & University Mixing First' },
   { value: 'random_fast', label: 'Standard Equal Distribution' }
 ];
 
@@ -609,10 +609,10 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'center' }} title={`${grp.uniqueNationalityCount} Countries`}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'center' }} title={`${grp.uniqueUniversityCount || grp.studentCount} Universities, ${grp.uniqueNationalityCount} Nationalities`}>
                       <Globe size={11} className="text-teal" style={{ flexShrink: 0 }} />
                       <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {grp.uniqueNationalityCount} {grp.uniqueNationalityCount === 1 ? 'ctry' : 'ctrys'}
+                        {grp.uniqueNationalityCount} {grp.uniqueNationalityCount === 1 ? 'nat' : 'nats'}
                       </span>
                     </div>
 
@@ -800,10 +800,10 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'center' }} title={`${grp.uniqueNationalityCount} Countries`}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'center' }} title={`${grp.uniqueUniversityCount || grp.studentCount} Universities • ${grp.uniqueNationalityCount} Nationalities`}>
                       <Globe size={12} className="text-teal" style={{ flexShrink: 0 }} />
                       <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {grp.uniqueNationalityCount} {grp.uniqueNationalityCount === 1 ? 'Country' : 'Countries'}
+                        {grp.uniqueNationalityCount} {grp.uniqueNationalityCount === 1 ? 'Nationality' : 'Nationalities'}
                       </span>
                     </div>
 

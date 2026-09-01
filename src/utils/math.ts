@@ -155,9 +155,8 @@ export function calculateStudentMetrics(
   const fieldAverages: Record<string, number | null> = {};
   const fieldStdDevs: Record<string, number | null> = {};
   
-  let totalScoreSum = 0;
-  let totalMaxSum = 0;
-  let validFieldsCount = 0;
+  let weightedScoreSum = 0;
+  let totalWeightSum = 0;
 
   classData.fields.forEach((field) => {
     const avg = calculateStudentFieldAverage(student.id, field.id, classData.reviews, teammates);
@@ -167,15 +166,17 @@ export function calculateStudentMetrics(
     fieldStdDevs[field.id] = stdDev;
 
     if (avg !== null) {
-      // Scale relative to field's range
-      totalScoreSum += avg;
-      totalMaxSum += field.max;
-      validFieldsCount++;
+      const fieldWeight = field.weight !== undefined && field.weight > 0 
+        ? field.weight 
+        : (100 / Math.max(1, classData.fields.length));
+      const fieldPercentage = field.max > 0 ? (avg / field.max) * 100 : 0;
+      weightedScoreSum += fieldPercentage * fieldWeight;
+      totalWeightSum += fieldWeight;
     }
   });
 
-  const overallPercentage = totalMaxSum > 0 
-    ? Number(((totalScoreSum / totalMaxSum) * 100).toFixed(1)) 
+  const overallPercentage = totalWeightSum > 0 
+    ? Number((weightedScoreSum / totalWeightSum).toFixed(1)) 
     : null;
 
   // Count reviews received
@@ -218,20 +219,14 @@ export function calculateClassStats(classData: ClassData) {
   const groups = new Set(classData.students.map((s) => s.groupName));
   const groupCount = groups.size;
 
-  // Calculate overall class score percentage average
-  let totalPctSum = 0;
-  let validStudentsCount = 0;
+  // Average percentage of all students
+  const activeClassMetrics = classData.students.map((s) => calculateStudentMetrics(s, classData));
+  const validPercentages = activeClassMetrics
+    .map((m) => m.overallPercentage)
+    .filter((p): p is number => p !== null);
 
-  classData.students.forEach((s) => {
-    const { overallPercentage } = calculateStudentMetrics(s, classData);
-    if (overallPercentage !== null) {
-      totalPctSum += overallPercentage;
-      validStudentsCount++;
-    }
-  });
-
-  const averagePercentage = validStudentsCount > 0 
-    ? Number((totalPctSum / validStudentsCount).toFixed(1)) 
+  const averagePercentage = validPercentages.length > 0
+    ? Number((validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length).toFixed(1))
     : null;
 
   return {
@@ -265,19 +260,23 @@ export function calculateStudentWebPAScore(
   // Calculate peer averages received for each student in the group
   const peerAverages = groupStudents.map((s) => {
     const teammates = getTeammates(s.id, s.groupName, classData.students);
-    let totalScoreSum = 0;
-    let totalMaxSum = 0;
+    let weightedScoreSum = 0;
+    let totalWeightSum = 0;
     
     classData.fields.forEach((field) => {
       const avg = calculateStudentFieldAverage(s.id, field.id, classData.reviews, teammates);
       if (avg !== null) {
-        totalScoreSum += avg;
-        totalMaxSum += field.max;
+        const fieldWeight = field.weight !== undefined && field.weight > 0 
+          ? field.weight 
+          : (100 / Math.max(1, classData.fields.length));
+        const fieldPercentage = field.max > 0 ? (avg / field.max) * 100 : 0;
+        weightedScoreSum += fieldPercentage * fieldWeight;
+        totalWeightSum += fieldWeight;
       }
     });
 
     // percentage score
-    const pct = totalMaxSum > 0 ? totalScoreSum / totalMaxSum : null;
+    const pct = totalWeightSum > 0 ? (weightedScoreSum / totalWeightSum) / 100 : null;
     return { studentId: s.id, pct };
   });
 

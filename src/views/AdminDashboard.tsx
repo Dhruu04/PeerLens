@@ -1,33 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
-import { 
-  Users, Plus, Trash2, Download, Upload, Sliders, Mail, 
-  Database, RefreshCw, CheckCircle, Clock, BookOpen, 
-  Award, TrendingUp, AlertCircle, FileText, 
+import {
+  Users, Plus, Trash2, Download, Upload, Sliders, Mail,
+  Database, RefreshCw, CheckCircle, Clock, BookOpen,
+  Award, TrendingUp, AlertCircle, FileText,
   Search, Eye, Sparkles, Edit2, User, Info,
   Lightbulb, Heart, MessageSquare, Target, Minus,
   ThumbsUp, ShieldCheck, Rocket, Trophy, BarChart2,
   QrCode, Copy, Check, Globe, AlertTriangle, Lock, Unlock,
   Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X,
-  Settings, Plane, ExternalLink
+  Settings, Plane, EyeOff, LogOut, Compass
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { useClass } from '../context/ClassContext';
 import type { FirebaseConfig } from '../context/ClassContext';
 import { calculateClassStats, calculateStudentMetrics, calculateStudentWebPAScore, detectClassAnomalies, getTargetScale, normalizeNationality } from '../utils/math';
-import type { GradingScaleField, Student, ClassData } from '../utils/math';
-import { 
-  parseCSV as _parseCSV, 
+import type { GradingScaleField, Student, ClassData, Review } from '../utils/math';
+import { detectDuplicateEnrollments } from '../utils/duplicateDetector';
+import type { DuplicateFlag } from '../utils/duplicateDetector';
+import {
   exportClassroomToExcel,
   exportRosterToCSV,
   exportRosterToExcel,
   generateResultsCSV,
   downloadFileContent,
-  extractRosterMatrix, 
-  parseRawPastedText, 
+  extractRosterMatrix,
+  parseRawPastedText,
   validateEmail,
-  hashCode 
+  hashCode
 } from '../utils/csv';
 import Modal from '../components/Modal';
 import CustomSelect from '../components/CustomSelect';
@@ -46,18 +47,26 @@ import { RUBRIC_PRESETS } from '../utils/rubricPresets';
 import { SettingsModal } from '../components/SettingsModal';
 import FeatureInfoButton from '../components/FeatureInfoButton';
 import CommandPaletteModal from '../components/CommandPaletteModal';
+import InteractiveTour from '../components/InteractiveTour';
+import GuideCenterModal from '../components/GuideCenterModal';
+import { StudentPortalPreviewModal } from '../components/StudentPortalPreviewModal';
+import { ContextHelpPopover } from '../components/ContextHelpPopover';
+import { OnboardingChecklistWidget } from '../components/OnboardingChecklistWidget';
+import { KeyboardShortcutsModal } from '../components/KeyboardShortcutsModal';
+import { GuidedSandboxHUD, type SandboxMission } from '../components/GuidedSandboxHUD';
+import { Smartphone } from 'lucide-react';
 import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
-import { 
-  getStoredShortcuts, 
-  saveStoredShortcuts, 
-  resetStoredShortcuts 
+import {
+  getStoredShortcuts,
+  saveStoredShortcuts,
+  resetStoredShortcuts
 } from '../utils/keyboardShortcuts';
 
 
 const getPraiseTagInfo = (tagText: string) => {
   // Strip historical emojis if any
   const cleanText = tagText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
-  
+
   if (cleanText.includes('Creative') || cleanText.includes('Problem')) return { icon: Lightbulb, color: 'hsl(45, 90%, 45%)', bg: 'hsl(45, 90%, 96%)', border: 'hsl(45, 90%, 90%)', text: 'Creative Problem Solver' };
   if (cleanText.includes('Punctual') || cleanText.includes('Reliable')) return { icon: Clock, color: 'hsl(14, 90%, 50%)', bg: 'hsl(14, 90%, 96%)', border: 'hsl(14, 90%, 90%)', text: 'Reliable & Punctual' };
   if (cleanText.includes('Supportive') || cleanText.includes('Player')) return { icon: Heart, color: 'var(--accent-rose)', bg: 'var(--accent-rose-light)', border: 'hsl(346, 84%, 90%)', text: 'Supportive Team Player' };
@@ -194,10 +203,14 @@ export const AdminDashboard: React.FC = () => {
     addStudent,
     updateStudent,
     deleteStudent,
+    deleteStudents,
+    batchSubmitClassReviews,
     resetClassReviews,
+    clearClassRoster,
     saveClassDeadline,
     archiveActiveMilestone,
     deleteMilestone,
+    restoreClassesSnapshot,
     saveFirebaseConfig,
     isCloudSynced,
     firebaseConfig,
@@ -234,6 +247,117 @@ export const AdminDashboard: React.FC = () => {
   const [copiedEnrollLink, setCopiedEnrollLink] = useState(false);
   const [miniQrUrl, setMiniQrUrl] = useState<string>('');
   const [isMobileProfileModalOpen, setIsMobileProfileModalOpen] = useState(false);
+  const [isTourOpen, setIsTourOpen] = useState(false);
+  const [isGuideCenterOpen, setIsGuideCenterOpen] = useState(false);
+  const [customTourStepIds, setCustomTourStepIds] = useState<string[] | null>(null);
+  const [tourSnapshot, setTourSnapshot] = useState<{
+    fields: GradingScaleField[];
+    students: Student[];
+    targetScale?: number | null;
+  } | null>(null);
+
+  const handleStartTour = (stepIds?: string[]) => {
+    try {
+      sessionStorage.setItem('peer_tour_classes_backup', JSON.stringify(classes));
+    } catch (e) {
+      console.warn('Failed to snapshot classrooms before tour', e);
+    }
+    setCustomTourStepIds(stepIds || null);
+    setIsTourOpen(true);
+  };
+
+  const handleRestoreTourSnapshot = () => {
+    const backup = sessionStorage.getItem('peer_tour_classes_backup');
+    if (backup) {
+      try {
+        const parsed = JSON.parse(backup);
+        restoreClassesSnapshot(parsed);
+      } catch (e) {
+        console.warn('Failed to restore tour classes backup', e);
+      }
+      sessionStorage.removeItem('peer_tour_classes_backup');
+    }
+    addToast('Workspace restored back to your clean original state.', 'info');
+    setTourSnapshot(null);
+  };
+
+  const handleExecuteTourDemoStep = (stepId: string) => {
+    if (!activeClass) return;
+    switch (stepId) {
+      case 'workspace_switcher':
+        setIsMobileProfileModalOpen(true);
+        addToast('Opened Workspace Profile Manager!', 'info');
+        break;
+      case 'class_header':
+        navigator.clipboard.writeText(activeClass.id);
+        addToast(`Classroom ID "${activeClass.id}" copied to clipboard!`, 'success');
+        break;
+      case 'command_palette':
+        setIsCommandPaletteOpen(true);
+        break;
+      case 'projector_mode':
+        setIsProjectorModalOpen(true);
+        break;
+      case 'email_dispatcher':
+        setIsLinkDispatcherOpen(true);
+        break;
+      case 'settings_hub':
+        setIsSettingsModalOpen(true);
+        break;
+      case 'self_enrollment':
+        setIsQRCodeModalOpen(true);
+        break;
+      case 'quick_actions':
+        importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+        addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+        break;
+      case 'import_wizard':
+        setIsWizardOpen(true);
+        break;
+      case 'autogroup_studio':
+        setIsAutoGroupModalOpen(true);
+        break;
+      case 'classroom_roster':
+        setSearchTerm('Sophie');
+        addToast('Filtered roster for student "Sophie"', 'info');
+        break;
+      case 'rubric_tab':
+        setActiveTab('grading');
+        break;
+      case 'rubric_builder':
+        handleApplyPreset('aacu_teamwork');
+        addToast('Applied AAC&U VALUE Teamwork preset (5 criteria × 20% = 100%)!', 'success');
+        break;
+      case 'eval_simulator':
+        addToast('Simulated peer evaluation rating (16/20 mark)!', 'info');
+        break;
+      case 'analytics_tab':
+        setActiveTab('results');
+        break;
+      case 'perception_deck':
+        setRadarTeamFilter('Alpha Team');
+        addToast('Selected Radar overlay for "Alpha Team"!', 'info');
+        break;
+      case 'gradebook_matrix':
+        setFudgeWeight(0.5);
+        addToast('WebPA Calibrator adjusted to 50% fudge weighting live!', 'success');
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Auto-prompt interactive guidance center / walkthrough for first-time instructors
+  useEffect(() => {
+    const hasSeenWelcome = localStorage.getItem('peer_has_seen_welcome');
+    if (!hasSeenWelcome) {
+      const timer = setTimeout(() => {
+        setIsGuideCenterOpen(true);
+        localStorage.setItem('peer_has_seen_welcome', 'true');
+      }, 900);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Roster Onboarding Wizard states
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -277,7 +401,7 @@ export const AdminDashboard: React.FC = () => {
     URL.revokeObjectURL(url);
     addToast('Template downloaded! Open it in Excel or Google Sheets.', 'success');
   };
-  
+
   // Single student manual add state
   const [newStudent, setNewStudent] = useState({
     id: '',
@@ -298,9 +422,17 @@ export const AdminDashboard: React.FC = () => {
     studentType: 'Normal'
   });
 
-  // UI Filtering and Searching
+  // UI Filtering, Searching & Duplicate Flagging
   const [searchTerm, setSearchTerm] = useState('');
   const [groupFilter, setGroupFilter] = useState('All Groups');
+  const [showOnlyDuplicates, setShowOnlyDuplicates] = useState(false);
+  const [ignoredDuplicatePairs, setIgnoredDuplicatePairs] = useState<Set<string>>(new Set());
+
+  // Compute potential duplicate student enrollments in real-time (Declared before any early returns)
+  const duplicateFlagsMap = useMemo(() => {
+    if (!activeClass?.students) return new Map<string, DuplicateFlag[]>();
+    return detectDuplicateEnrollments(activeClass.students, ignoredDuplicatePairs);
+  }, [activeClass?.students, ignoredDuplicatePairs]);
 
   // Firebase Config panel states
   const [fbApiKey, setFbApiKey] = useState('');
@@ -389,12 +521,151 @@ export const AdminDashboard: React.FC = () => {
     isOpen: false,
     title: 'Confirm Action',
     message: 'Are you sure you want to perform this operation?',
-    onConfirm: () => {}
+    onConfirm: () => { }
   });
 
   const [selectedStudentReport, setSelectedStudentReport] = useState<Student | null>(null);
   const [selectedTeamAnalysis, setSelectedTeamAnalysis] = useState<string | null>(null);
   const [activeAuditMetric, setActiveAuditMetric] = useState<string>('overall');
+
+  // Interactive Sandbox & Quality of Life State
+  const [isSandboxActive, setIsSandboxActive] = useState<boolean>(false);
+  const [sandboxSnapshot, setSandboxSnapshot] = useState<string | null>(null);
+  const [previewingStudent, setPreviewingStudent] = useState<Student | null>(null);
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
+  const [sandboxMissionIndex, setSandboxMissionIndex] = useState<number>(0);
+  const [showOnboardingChecklist, setShowOnboardingChecklist] = useState<boolean>(() => {
+    return localStorage.getItem('peer_onboarding_dismissed') !== 'true';
+  });
+
+  const sandboxMissions: SandboxMission[] = useMemo(() => {
+    if (!activeClass) return [];
+    return [
+      {
+        id: 1,
+        stageName: '1. Enroll Students',
+        title: 'Mission 1: Populate Your Classroom Cohort',
+        tab: 'roster',
+        instruction: 'Click the "100 Demo Sample" button in the Quick Actions card on your screen (or use "Add Member" / "Import Wizard") to load international students.',
+        targetHint: 'Quick Actions card → Click "100 Demo Sample"',
+        actionButtonLabel: 'Load 100 Demo Cohort',
+        isCompleted: activeClass.students.length > 0
+      },
+      {
+        id: 2,
+        stageName: '2. Form Teams',
+        title: 'Mission 2: Partition Balanced Teams with AutoGroup',
+        tab: 'roster',
+        instruction: 'Open the "AutoGroup Diversity Studio" button above your roster table. Select a balancing strategy (e.g. Multi-Dimensional or Gender Parity) and click "Re-Shuffle & Apply".',
+        targetHint: 'Classroom Roster Header → Click "AutoGroup Studio"',
+        actionButtonLabel: 'Auto-Partition 20 Teams',
+        isCompleted: activeClass.students.length > 0 && activeClass.students.some(s => s.groupName && s.groupName !== 'Unassigned')
+      },
+      {
+        id: 3,
+        stageName: '3. Balance Rubric',
+        title: 'Mission 3: Define 100% Weighted Evaluation Rubric',
+        tab: 'grading',
+        instruction: 'Switch to the "Evaluation Rubric" tab (Press 2). Click an accredited template like "AAC&U VALUE" or "ABET Engineering", or adjust weights to equal 100%.',
+        targetHint: 'Tab Navigation → "Evaluation Rubric" → Apply "AAC&U VALUE" preset',
+        actionButtonLabel: 'Apply 100% AAC&U Rubric',
+        isCompleted: activeClass.fields.length >= 3 && Math.abs(activeClass.fields.reduce((s, f) => s + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0) - 100) < 0.1
+      },
+      {
+        id: 4,
+        stageName: '4. Student Portal View',
+        title: 'Mission 4: Test Real Student Smartphone Evaluation',
+        tab: 'roster',
+        instruction: 'In your Classroom Roster table, click the Smartphone icon in any student\'s row to simulate their smartphone peer rating portal, adjust sliders, and submit test marks.',
+        targetHint: 'Roster Table → Actions Column → Click Smartphone icon',
+        actionButtonLabel: 'Open Smartphone Simulator',
+        isCompleted: activeClass.reviews.length > 0 || previewingStudent !== null
+      },
+      {
+        id: 5,
+        stageName: '5. Audit Analytics',
+        title: 'Mission 5: Calibrate WebPA Factor & Inspect Perception Radar',
+        tab: 'results',
+        instruction: 'Switch to "Grade Analytics" tab (Press 3). Drag the WebPA Fudge Weight slider to balance individual peer factors, and inspect Johari blind spots and radar charts.',
+        targetHint: 'Tab Navigation → "Grade Analytics" → WebPA Calibrator Slider',
+        actionButtonLabel: 'Populate Peer Review Scores',
+        isCompleted: activeClass.reviews.length > 0
+      }
+    ];
+  }, [activeClass?.students, activeClass?.fields, activeClass?.reviews, previewingStudent]);
+
+  // Memoized data structures (Declared unconditionally at the top before any early returns)
+  const stats = useMemo(() => {
+    if (!activeClass) {
+      return {
+        totalStudents: 0,
+        submittedCount: 0,
+        pendingCount: 0,
+        completionRate: 0,
+        groupCount: 0,
+        classAverage: 0
+      };
+    }
+    return calculateClassStats(activeClass);
+  }, [activeClass]);
+
+  const uniqueGroups = useMemo(() => {
+    if (!activeClass?.students) return [];
+    return Array.from(new Set(activeClass.students.map(s => s.groupName)));
+  }, [activeClass?.students]);
+
+  const filteredStudents = useMemo(() => {
+    if (!activeClass?.students) return [];
+    return activeClass.students.filter(student => {
+      if (showOnlyDuplicates && !duplicateFlagsMap.has(student.id)) {
+        return false;
+      }
+      const term = searchTerm.toLowerCase();
+      const matchesSearch = student.name.toLowerCase().includes(term) ||
+        student.email.toLowerCase().includes(term) ||
+        student.id.toLowerCase().includes(term) ||
+        (student.nationality && student.nationality.toLowerCase().includes(term)) ||
+        (student.gender && student.gender.toLowerCase().includes(term)) ||
+        (student.englishProficiency && student.englishProficiency.toLowerCase().includes(term)) ||
+        (student.university && student.university.toLowerCase().includes(term)) ||
+        (student.degree && student.degree.toLowerCase().includes(term)) ||
+        (student.studentType && student.studentType.toLowerCase().includes(term));
+      const matchesGroup = groupFilter === 'All Groups' || student.groupName === groupFilter;
+      return matchesSearch && matchesGroup;
+    }).sort((a, b) => {
+      const gA = (a.groupName && a.groupName.trim()) ? a.groupName.trim() : 'Unassigned';
+      const gB = (b.groupName && b.groupName.trim()) ? b.groupName.trim() : 'Unassigned';
+
+      const isUnassignedA = gA.toLowerCase() === 'unassigned';
+      const isUnassignedB = gB.toLowerCase() === 'unassigned';
+
+      if (isUnassignedA && !isUnassignedB) return 1;
+      if (!isUnassignedA && isUnassignedB) return -1;
+
+      const comp = gA.localeCompare(gB, undefined, { numeric: true, sensitivity: 'base' });
+      if (comp !== 0) return comp;
+
+      return a.name.localeCompare(b.name);
+    });
+  }, [activeClass?.students, showOnlyDuplicates, duplicateFlagsMap, searchTerm, groupFilter]);
+
+  const profileOptions = useMemo(() => [
+    ...adminProfiles.map(p => ({ value: p, label: `Admin: ${p.toUpperCase()}` })),
+    { value: '__new__', label: '+ New Workspace' }
+  ], [adminProfiles]);
+
+  const classOptions = useMemo(() => classes.map(c => ({ value: c.id, label: c.name })), [classes]);
+
+  const groupOptions = useMemo(() => [
+    { value: 'All Groups', label: 'All Groups' },
+    ...uniqueGroups.map(g => ({ value: g, label: g }))
+  ], [uniqueGroups]);
+
+  const emailServiceOptions = useMemo(() => [
+    { value: 'simulator', label: 'Demo Mode — No emails sent' },
+    { value: 'emailjs', label: 'EmailJS Adapter (Send live emails)' },
+    { value: 'brevo', label: 'Brevo API Service (300 Free Mails/Day)' }
+  ], []);
 
   const triggerConfirm = (
     title: string,
@@ -537,13 +808,16 @@ export const AdminDashboard: React.FC = () => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInputFocused = target && (
-        target.tagName === 'INPUT' || 
-        target.tagName === 'TEXTAREA' || 
-        target.isContentEditable || 
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
         target.tagName === 'SELECT'
       );
 
       if (e.key === 'Escape') {
+        if (isShortcutsModalOpen) { setIsShortcutsModalOpen(false); return; }
+        if (previewingStudent) { setPreviewingStudent(null); return; }
+        if (isTourOpen) { setIsTourOpen(false); return; }
         if (isCommandPaletteOpen) { setIsCommandPaletteOpen(false); return; }
         if (isSettingsModalOpen) { setIsSettingsModalOpen(false); return; }
         if (isLinkDispatcherOpen) { setIsLinkDispatcherOpen(false); return; }
@@ -566,6 +840,13 @@ export const AdminDashboard: React.FC = () => {
       }
 
       if (isInputFocused) return;
+
+      // '?' or '/' to open Keyboard Shortcuts modal
+      if (e.key === '?' || e.key === '/') {
+        e.preventDefault();
+        setIsShortcutsModalOpen(prev => !prev);
+        return;
+      }
 
       const pressedKey = e.key.toLowerCase();
       const match = shortcuts.find(s => {
@@ -713,10 +994,10 @@ export const AdminDashboard: React.FC = () => {
           <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Instructor Email</label>
-              <input 
-                type="email" 
-                placeholder="admin@university.edu" 
-                className="form-input" 
+              <input
+                type="email"
+                placeholder="admin@university.edu"
+                className="form-input"
                 value={authEmail}
                 onChange={(e) => setAuthEmail(e.target.value)}
                 required
@@ -725,10 +1006,10 @@ export const AdminDashboard: React.FC = () => {
 
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Password</label>
-              <input 
-                type="password" 
-                placeholder="••••••••" 
-                className="form-input" 
+              <input
+                type="password"
+                placeholder="••••••••"
+                className="form-input"
                 value={authPassword}
                 onChange={(e) => setAuthPassword(e.target.value)}
                 required
@@ -741,7 +1022,7 @@ export const AdminDashboard: React.FC = () => {
           </form>
 
           <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
-            <button 
+            <button
               type="button"
               className="btn-link"
               onClick={() => {
@@ -788,7 +1069,7 @@ export const AdminDashboard: React.FC = () => {
           footer={
             <>
               <button className="btn btn-secondary" onClick={() => setIsNewClassModalOpen(false)}>Cancel</button>
-              <button 
+              <button
                 className="btn btn-primary"
                 onClick={() => {
                   if (newClassName.trim()) {
@@ -807,10 +1088,10 @@ export const AdminDashboard: React.FC = () => {
         >
           <div className="form-group">
             <label className="form-label">Classroom / Course Group Title Name</label>
-            <input 
-              type="text" 
-              placeholder="e.g. Algorithms Design - Spring 2026" 
-              className="form-input" 
+            <input
+              type="text"
+              placeholder="e.g. Algorithms Design - Spring 2026"
+              className="form-input"
               value={newClassName}
               onChange={(e) => setNewClassName(e.target.value)}
             />
@@ -820,18 +1101,12 @@ export const AdminDashboard: React.FC = () => {
     );
   }
 
-  // Calculate quick stats
-  const stats = calculateClassStats(activeClass);
-
-  // Group list compilation
-  const uniqueGroups = Array.from(new Set(activeClass.students.map(s => s.groupName)));
-
   // Multi-format wizard file selector & parser
   const handleWizardFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setWizardFileName(file.name);
-    
+
     try {
       const matrix = await extractRosterMatrix(file);
       if (matrix.length < 2) {
@@ -852,7 +1127,7 @@ export const AdminDashboard: React.FC = () => {
       addToast('Please paste columns copied from Excel or Google Sheets.', 'warning');
       return;
     }
-    
+
     const matrix = parseRawPastedText(wizardPasteText);
     if (matrix.length < 2) {
       addToast('Pasted content must contain a header row and at least one data row.', 'warning');
@@ -867,7 +1142,7 @@ export const AdminDashboard: React.FC = () => {
     const headersList = matrix[0].map(h => h.trim());
     setWizardHeaders(headersList);
     setWizardRawData(matrix);
-    
+
     // Fuzzy guess mapping for all 10 standard fields
     const newMapping = {
       name: -1,
@@ -881,14 +1156,14 @@ export const AdminDashboard: React.FC = () => {
       nationality: -1,
       englishProficiency: -1
     };
-    
+
     headersList.forEach((header, idx) => {
       const norm = header.toLowerCase().replace(/[^a-z0-9]/g, '');
-      
+
       // Email
       if (['email', 'emailid', 'mail', 'emailaddress', 'useremail', 'studentemail', 'address'].some(s => norm.includes(s))) {
         if (newMapping.email === -1) newMapping.email = idx;
-      } 
+      }
       // Student ID
       else if (['studentid', 'uniqueid', 'rollno', 'roll', 'matric', 'regno', 'id', 'studentnumber', 'studid'].some(s => norm === s || norm.startsWith('id') || norm.endsWith('id') || norm.includes('studentid'))) {
         if (newMapping.id === -1) newMapping.id = idx;
@@ -926,7 +1201,7 @@ export const AdminDashboard: React.FC = () => {
         if (newMapping.studentType === -1) newMapping.studentType = idx;
       }
     });
-    
+
     setWizardMapping(newMapping);
     setWizardStep(2); // Go to Column mapping step
   };
@@ -937,7 +1212,7 @@ export const AdminDashboard: React.FC = () => {
       addToast('Full Name and Email ID columns are required. Please map them.', 'warning');
       return;
     }
-    
+
     const studentsDraft = wizardRawData.slice(1).map((row, _rIdx) => {
       const nameVal = wizardMapping.name !== -1 ? (row[wizardMapping.name] || '').trim() : '';
       const emailVal = wizardMapping.email !== -1 ? (row[wizardMapping.email] || '').trim() : '';
@@ -949,9 +1224,9 @@ export const AdminDashboard: React.FC = () => {
       const genderVal = wizardMapping.gender !== -1 ? (row[wizardMapping.gender] || '').trim() : 'Prefer not to say';
       const nationalityVal = wizardMapping.nationality !== -1 ? (row[wizardMapping.nationality] || '').trim() : '';
       const englishVal = wizardMapping.englishProficiency !== -1 ? (row[wizardMapping.englishProficiency] || '').trim() : 'Fluent (C1/C2)';
-      
+
       const rawId = idVal || 'std_' + Math.abs(hashCode(emailVal || nameVal || String(Math.random())));
-      
+
       return {
         id: String(rawId),
         name: nameVal,
@@ -966,7 +1241,7 @@ export const AdminDashboard: React.FC = () => {
         submitted: false
       };
     });
-    
+
     setWizardStudents(studentsDraft);
     validateWizardRoster(studentsDraft);
     setWizardStep(3); // Go to verification editor grid
@@ -977,7 +1252,7 @@ export const AdminDashboard: React.FC = () => {
     const errors: Record<number, string[]> = {};
     const seenEmails = new Set<string>();
     const seenIds = new Set<string>();
-    
+
     students.forEach((s, idx) => {
       const rowErrors: string[] = [];
       if (!s.name.trim()) {
@@ -992,7 +1267,7 @@ export const AdminDashboard: React.FC = () => {
       } else {
         seenEmails.add(s.email.toLowerCase());
       }
-      
+
       if (!s.id.trim()) {
         rowErrors.push('Unique ID is required.');
       } else if (seenIds.has(s.id)) {
@@ -1000,7 +1275,7 @@ export const AdminDashboard: React.FC = () => {
       } else {
         seenIds.add(s.id);
       }
-      
+
       if (rowErrors.length > 0) {
         errors[idx] = rowErrors;
       }
@@ -1054,7 +1329,7 @@ export const AdminDashboard: React.FC = () => {
       addToast('Please resolve all highlighted row errors before finalizing.', 'warning');
       return;
     }
-    
+
     importRoster(activeClass.id, wizardStudents, false);
     addToast(`Successfully imported ${wizardStudents.length} classroom members!`, 'success');
     setIsWizardOpen(false);
@@ -1091,7 +1366,7 @@ export const AdminDashboard: React.FC = () => {
       addToast('Please enter full name and email address.', 'warning');
       return;
     }
-    
+
     addStudent(activeClass.id, {
       id: newStudent.id.trim() || 'std_' + Math.floor(Math.random() * 100000),
       name: newStudent.name.trim(),
@@ -1101,7 +1376,9 @@ export const AdminDashboard: React.FC = () => {
       isInternational: newStudent.isInternational,
       isExchange: newStudent.isExchange,
       nationality: normalizeNationality(newStudent.nationality) || undefined,
-      currentCountry: normalizeNationality(newStudent.currentCountry || newStudent.nationality) || undefined,
+      currentCountry: newStudent.isInternational
+        ? (normalizeNationality(newStudent.currentCountry) || undefined)
+        : (normalizeNationality(newStudent.currentCountry || newStudent.nationality) || undefined),
       englishProficiency: newStudent.englishProficiency.trim() || 'Fluent (C1/C2)',
       university: newStudent.isExchange ? (newStudent.currentUniversity.trim() || newStudent.university.trim() || undefined) : (newStudent.university.trim() || undefined),
       degree: newStudent.degree.trim() || undefined,
@@ -1112,11 +1389,11 @@ export const AdminDashboard: React.FC = () => {
     });
 
     // Reset inputs
-    setNewStudent({ 
-      id: '', 
-      name: '', 
-      email: '', 
-      groupName: '', 
+    setNewStudent({
+      id: '',
+      name: '',
+      email: '',
+      groupName: '',
       gender: 'Female',
       isInternational: false,
       isExchange: false,
@@ -1141,7 +1418,7 @@ export const AdminDashboard: React.FC = () => {
       addToast('Please enter full name and email address.', 'warning');
       return;
     }
-    
+
     updateStudent(activeClass.id, editStudentData.id, {
       name: editStudentData.name.trim(),
       email: editStudentData.email.trim(),
@@ -1150,7 +1427,9 @@ export const AdminDashboard: React.FC = () => {
       isInternational: editStudentData.isInternational,
       isExchange: editStudentData.isExchange,
       nationality: normalizeNationality(editStudentData.nationality) || undefined,
-      currentCountry: normalizeNationality(editStudentData.currentCountry || editStudentData.nationality) || undefined,
+      currentCountry: editStudentData.isInternational
+        ? (normalizeNationality(editStudentData.currentCountry) || undefined)
+        : (normalizeNationality(editStudentData.currentCountry || editStudentData.nationality) || undefined),
       englishProficiency: editStudentData.englishProficiency.trim() || 'Fluent (C1/C2)',
       university: editStudentData.isExchange ? (editStudentData.currentUniversity.trim() || editStudentData.university.trim() || undefined) : (editStudentData.university.trim() || undefined),
       degree: editStudentData.degree.trim() || undefined,
@@ -1202,10 +1481,30 @@ export const AdminDashboard: React.FC = () => {
       description: '',
       min: 1,
       max: 20,
-      weight: 1
+      weight: 0
     };
-    updateGradingConfig(activeClass.id, [...activeClass.fields, newField]);
-    addToast(`Added Criterion ${nextNum} (Scale 1 to 20).`, 'success');
+    const allFields = [...activeClass.fields, newField];
+    const base = Math.floor(100 / allFields.length);
+    const remainder = 100 - (base * allFields.length);
+    const balanced = allFields.map((f, i) => ({
+      ...f,
+      weight: base + (i === 0 ? remainder : 0)
+    }));
+    updateGradingConfig(activeClass.id, balanced);
+    addToast(`Added Criterion ${nextNum} and balanced weights to 100% (each ~${base}%).`, 'success');
+  };
+
+  const handleAutoBalanceWeights = () => {
+    const count = activeClass.fields.length;
+    if (count === 0) return;
+    const base = Math.floor(100 / count);
+    const remainder = 100 - (base * count);
+    const updated = activeClass.fields.map((f, i) => ({
+      ...f,
+      weight: base + (i === 0 ? remainder : 0)
+    }));
+    updateGradingConfig(activeClass.id, updated, undefined, false);
+    addToast('Criterion weights automatically balanced to exactly 100%!', 'success');
   };
 
   const handleUpdateField = (id: string, updates: Partial<GradingScaleField>) => {
@@ -1222,8 +1521,14 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
     const filtered = activeClass.fields.filter(f => f.id !== id);
-    updateGradingConfig(activeClass.id, filtered);
-    addToast('Rubric criterion removed.', 'info');
+    const base = Math.floor(100 / filtered.length);
+    const remainder = 100 - (base * filtered.length);
+    const balanced = filtered.map((f, i) => ({
+      ...f,
+      weight: base + (i === 0 ? remainder : 0)
+    }));
+    updateGradingConfig(activeClass.id, balanced);
+    addToast(`Rubric criterion removed and weights re-balanced to 100% across remaining ${filtered.length} criteria.`, 'info');
   };
 
   const handleApplyPreset = (presetId: string) => {
@@ -1241,9 +1546,240 @@ export const AdminDashboard: React.FC = () => {
     addToast(`Applied "${preset.name}" (Scale out of 20) with ${newFields.length} criteria.`, 'success');
   };
 
+  // Handler for Guided Sandbox Launch & Step Auto-Completion
+  const handleLaunchSandbox = () => {
+    try {
+      const snap = JSON.stringify(classes);
+      setSandboxSnapshot(snap);
+      sessionStorage.setItem('peer_sandbox_classes_backup', snap);
+    } catch (e) {
+      console.warn('Failed to snapshot classrooms', e);
+    }
+    // Clear active classroom temporarily for clean hands-on walkthrough silently (no toast spam)
+    clearClassRoster(activeClass.id, true);
+    resetClassReviews(activeClass.id, true);
+    setIsSandboxActive(true);
+    setSandboxMissionIndex(0);
+    setActiveTab('roster');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleAutoCompleteSandboxStep = () => {
+    const teamNames = [
+      'Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon',
+      'Zeta', 'Eta', 'Theta', 'Iota', 'Kappa',
+      'Lambda', 'Mu', 'Nu', 'Xi', 'Omicron',
+      'Pi', 'Rho', 'Sigma', 'Tau', 'Upsilon'
+    ];
+
+    if (sandboxMissionIndex === 0) {
+      // Step 1: Enroll 100 demo students unassigned
+      const unassignedStudents = DIVERSE_100_STUDENTS.map(s => ({
+        ...s,
+        groupName: 'Unassigned',
+        submitted: false
+      }));
+      importRoster(activeClass.id, unassignedStudents, true);
+      addToast('Mission 1 Complete! Enrolled 100 international students into roster.', 'success');
+      setSandboxMissionIndex(1);
+    } else if (sandboxMissionIndex === 1) {
+      // Step 2: Auto-partition into 20 balanced teams
+      const studentsToPartition = activeClass.students.length > 0 ? activeClass.students : DIVERSE_100_STUDENTS;
+      const partitioned = studentsToPartition.map((s, idx) => ({
+        ...s,
+        groupName: teamNames[Math.floor(idx / 5)] || `Team ${Math.floor(idx / 5) + 1}`,
+        submitted: false
+      }));
+      importRoster(activeClass.id, partitioned, true);
+      addToast('Mission 2 Complete! Partitioned students into 20 balanced teams.', 'success');
+      setSandboxMissionIndex(2);
+      setActiveTab('grading');
+    } else if (sandboxMissionIndex === 2) {
+      // Step 3: Apply accredited 100% AAC&U VALUE preset
+      handleApplyPreset('aacu_teamwork');
+      addToast('Mission 3 Complete! Applied 100% weighted AAC&U VALUE rubric.', 'success');
+      setSandboxMissionIndex(3);
+      setActiveTab('roster');
+    } else if (sandboxMissionIndex === 3) {
+      // Step 4: Launch smartphone preview
+      if (activeClass.students.length > 0) {
+        setPreviewingStudent(activeClass.students[0]);
+      }
+      addToast('Mission 4 Active! Opened Smartphone Assessment Portal Simulator.', 'info');
+      setSandboxMissionIndex(4);
+    } else if (sandboxMissionIndex === 4) {
+      // Step 5: High-speed realistic peer reviews population across all teams
+      const fields = activeClass.fields && activeClass.fields.length > 0 ? activeClass.fields : [
+        { id: 'f1', name: 'Contribution to Team Goals', description: 'Active project involvement', min: 1, max: 20, weight: 20 },
+        { id: 'f2', name: 'Communication & Collaboration', description: 'Clear feedback & active listening', min: 1, max: 20, weight: 20 },
+        { id: 'f3', name: 'Quality of Work & Problem Solving', description: 'Critical thinking & execution', min: 1, max: 20, weight: 20 },
+        { id: 'f4', name: 'Reliability & Meeting Deadlines', description: 'Punctuality & follow-through', min: 1, max: 20, weight: 20 },
+        { id: 'f5', name: 'Fostering Team Climate', description: 'Inclusivity & respect', min: 1, max: 20, weight: 20 }
+      ];
+
+      const allReviews: Review[] = [];
+      const studentIds = activeClass.students.map(s => s.id);
+
+      // Group students by team
+      const teamMap = new Map<string, typeof activeClass.students>();
+      activeClass.students.forEach(s => {
+        const list = teamMap.get(s.groupName) || [];
+        list.push(s);
+        teamMap.set(s.groupName, list);
+      });
+
+      const teamsList = Array.from(teamMap.entries()).filter(([_, members]) => members.length >= 3);
+
+      // Designate educational anomaly test cases across distinct teams
+      const collusionTeam = teamsList[0]?.[1]; // Team with reciprocal collusion
+      const outlierTeam = teamsList[1]?.[1];   // Team with a spiteful outlier grader
+      const lazyTeam = teamsList[2]?.[1];      // Team with a lazy uniform grader
+
+      const collusionPair = collusionTeam && collusionTeam.length >= 2 ? [collusionTeam[0], collusionTeam[1]] : null;
+      const outlierPair = outlierTeam && outlierTeam.length >= 2 ? { reviewer: outlierTeam[0], victim: outlierTeam[1] } : null;
+      const lazyReviewer = lazyTeam && lazyTeam.length >= 2 ? lazyTeam[0] : null;
+
+      const praiseOptions = [
+        'High Quality Deliverables',
+        'Creative Problem Solver',
+        'Clear Communicator',
+        'Supportive Team Player',
+        'Reliable & Punctual',
+        'Technical Master',
+        'Leader & Organizer'
+      ];
+
+      const strengthsSamples = [
+        'Consistently delivered thorough, well-documented work ahead of schedule.',
+        'Outstanding technical execution and creative solutions during roadblocks.',
+        'Facilitated team alignment, kept discussions focused, and communicated clearly.',
+        'Very supportive team member who proactively helped unblock others.',
+        'Exceptional attention to detail and high standard for all deliverables.'
+      ];
+
+      const growthSamples = [
+        'Could share work-in-progress earlier in the sprint to allow faster feedback.',
+        'Encouraged to take on more lead roles during design review sessions.',
+        'Could provide more asynchronous documentation in the shared workspace.',
+        'Continue to maintain active participation in group check-ins.'
+      ];
+
+      activeClass.students.forEach((reviewer, rIdx) => {
+        const teammates = teamMap.get(reviewer.groupName) || [reviewer];
+
+        teammates.forEach((recipient, tIdx) => {
+          const isSelf = recipient.id === reviewer.id;
+          const scores: Record<string, number> = {};
+
+          // Check if this review matches one of the anomaly demonstration archetypes
+          const isCollusionForward = collusionPair && reviewer.id === collusionPair[0].id && recipient.id === collusionPair[1].id;
+          const isCollusionBackward = collusionPair && reviewer.id === collusionPair[1].id && recipient.id === collusionPair[0].id;
+          const isOtherToCollusionStudent = collusionPair && (recipient.id === collusionPair[0].id || recipient.id === collusionPair[1].id) && reviewer.id !== collusionPair[0].id && reviewer.id !== collusionPair[1].id;
+          
+          const isSpitefulReview = outlierPair && reviewer.id === outlierPair.reviewer.id && recipient.id === outlierPair.victim.id;
+          const isOtherToVictim = outlierPair && recipient.id === outlierPair.victim.id && reviewer.id !== outlierPair.reviewer.id && !isSelf;
+
+          const isLazyGrader = lazyReviewer && reviewer.id === lazyReviewer.id && !isSelf;
+
+          // Randomized natural distribution parameters
+          const randJitter = Math.floor(Math.random() * 3) - 1; // -1, 0, or +1 random variance
+          const performanceTier = (recipient.name.charCodeAt(0) + recipient.name.length) % 5; // 0=Top, 1-3=Solid, 4=Variable
+          const johariTrait = (recipient.name.charCodeAt(1) || 75) % 4; // 0=Accurate, 1=BlindSpot, 2=Imposter, 3=Accurate
+
+          fields.forEach((f, fIdx) => {
+            const max = f.max || 20;
+            const min = f.min || 1;
+
+            let calculatedScore = Math.round(max * 0.84);
+
+            // Anomaly Case 1: Reciprocal Collusion (Pair exchange max scores; others rate lower)
+            if (isCollusionForward || isCollusionBackward) {
+              calculatedScore = max; // 100% perfect collusion rating
+            } else if (isOtherToCollusionStudent) {
+              calculatedScore = Math.round(max * 0.65) + randJitter; // 65% realistic rating from other teammates
+            }
+            // Anomaly Case 2: Extreme Outlier Grader (One reviewer rates victim harshly; others rate high)
+            else if (isSpitefulReview) {
+              calculatedScore = Math.round(max * 0.35); // 35% harsh outlier rating
+            } else if (isOtherToVictim) {
+              calculatedScore = Math.round(max * 0.90) + randJitter; // 90% positive consensus from others
+            }
+            // Anomaly Case 3: Lazy Uniform Grader (Same identical score for all criteria across all peers)
+            else if (isLazyGrader) {
+              calculatedScore = Math.round(max * 0.80); // Exact 80% uniform score (stdDev = 0)
+            }
+            // Standard Natural Distribution for all other students
+            else {
+              let basePct = 0.84;
+              if (performanceTier === 0) basePct = 0.93; // Star performer (~18-20/20)
+              else if (performanceTier === 4) basePct = 0.70; // Under-contributor (~13-15/20)
+              else basePct = 0.82 + ((rIdx + fIdx) % 3) * 0.04; // Solid contributor (~16-18/20)
+
+              calculatedScore = Math.round(max * basePct) + randJitter;
+
+              // Self evaluation perception (Johari Window)
+              if (isSelf) {
+                if (johariTrait === 1) calculatedScore = Math.min(max, calculatedScore + 3); // Blind Spot (overestimates)
+                else if (johariTrait === 2) calculatedScore = Math.max(min, calculatedScore - 3); // Imposter (underestimates)
+              } else {
+                const noise = ((reviewer.name.charCodeAt(0) + fIdx) % 3) - 1;
+                calculatedScore = calculatedScore + noise;
+              }
+            }
+
+            scores[f.id] = Math.max(min, Math.min(max, calculatedScore));
+          });
+
+          const tagIdx = (recipient.name.length + rIdx + tIdx + Math.floor(Math.random() * 3)) % praiseOptions.length;
+          const strengthIdx = (recipient.name.charCodeAt(0) + tIdx + Math.floor(Math.random() * 2)) % strengthsSamples.length;
+          const growthIdx = (recipient.name.charCodeAt(1) + rIdx + Math.floor(Math.random() * 2)) % growthSamples.length;
+
+          allReviews.push({
+            reviewerId: reviewer.id,
+            recipientId: recipient.id,
+            scores,
+            praiseTags: isSelf ? undefined : [praiseOptions[tagIdx]],
+            strengthsText: isSelf ? undefined : strengthsSamples[strengthIdx],
+            growthText: isSelf ? undefined : growthSamples[growthIdx]
+          });
+        });
+      });
+
+      // 1-step instant atomic commit
+      batchSubmitClassReviews(activeClass.id, allReviews, studentIds, true);
+      setActiveTab('results');
+      addToast(`Mission 5 Complete! Instantly populated ${allReviews.length} evaluations with Anomaly & Collusion audit diagnostics.`, 'success');
+    }
+  };
+
+  const handleExitSandbox = () => {
+    const snap = sandboxSnapshot || sessionStorage.getItem('peer_sandbox_classes_backup');
+    if (snap) {
+      try {
+        const restored = JSON.parse(snap);
+        restoreClassesSnapshot(restored);
+        sessionStorage.removeItem('peer_sandbox_classes_backup');
+      } catch (e) {
+        console.warn('Failed to restore sandbox snapshot', e);
+      }
+    }
+    setIsSandboxActive(false);
+    setSandboxSnapshot(null);
+    setActiveTab('roster');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    addToast('Sandbox exited. Original workspace restored with 100% data integrity.', 'info');
+  };
+
+  const handleKeepSandboxData = () => {
+    sessionStorage.removeItem('peer_sandbox_classes_backup');
+    setIsSandboxActive(false);
+    setSandboxSnapshot(null);
+    addToast('Sandbox data saved to your active course workspace.', 'success');
+  };
+
   // Send secure grading links
   const triggerEmailAutomation = async (reminderOnly: boolean = false) => {
-    const targetStudents = reminderOnly 
+    const targetStudents = reminderOnly
       ? activeClass.students.filter(s => !s.submitted)
       : activeClass.students;
 
@@ -1288,7 +1824,7 @@ export const AdminDashboard: React.FC = () => {
         const encoded = btoa(JSON.stringify(payload));
         link += `&fb=${encoded}`;
       }
-      
+
       if (emailService === 'emailjs') {
         try {
           const templateParams = {
@@ -1327,13 +1863,13 @@ export const AdminDashboard: React.FC = () => {
               'content-type': 'application/json'
             },
             body: JSON.stringify({
-              sender: { 
-                name: brevoSenderName.trim() || 'Professor', 
-                email: brevoSenderEmail.trim() 
+              sender: {
+                name: brevoSenderName.trim() || 'Professor',
+                email: brevoSenderEmail.trim()
               },
-              to: [{ 
-                email: student.email, 
-                name: student.name 
+              to: [{
+                email: student.email,
+                name: student.name
               }],
               subject: substitutePlaceholders(customEmailSubject, student.name, activeClass.name, link),
               htmlContent: `
@@ -1378,12 +1914,12 @@ export const AdminDashboard: React.FC = () => {
         const logMsg = `[${i + 1}/${total}] Simulated secure link email to ${student.name} (${student.email}) -> ${link}`;
         setEmailLogs(prev => [...prev, logMsg]);
       }
-      
+
       setEmailProgress(Math.round(((i + 1) / total) * 100));
     }
 
     setIsSendingEmails(false);
-    
+
     if (emailService === 'emailjs' || emailService === 'brevo') {
       if (successCount > 0) {
         addToast(`Mailing campaign finished. successfully sent: ${successCount}, failed: ${failCount}`, 'success');
@@ -1413,237 +1949,276 @@ export const AdminDashboard: React.FC = () => {
     saveFirebaseConfig(config);
   };
 
-  // Filter and sort roster list by groups (Group 1, Group 2, ..., Unassigned)
-  const filteredStudents = activeClass.students.filter(student => {
-    const term = searchTerm.toLowerCase();
-    const matchesSearch = student.name.toLowerCase().includes(term) || 
-                          student.email.toLowerCase().includes(term) || 
-                          student.id.toLowerCase().includes(term) ||
-                          (student.nationality && student.nationality.toLowerCase().includes(term)) ||
-                          (student.gender && student.gender.toLowerCase().includes(term)) ||
-                          (student.englishProficiency && student.englishProficiency.toLowerCase().includes(term)) ||
-                          (student.university && student.university.toLowerCase().includes(term)) ||
-                          (student.degree && student.degree.toLowerCase().includes(term)) ||
-                          (student.studentType && student.studentType.toLowerCase().includes(term));
-    const matchesGroup = groupFilter === 'All Groups' || student.groupName === groupFilter;
-    return matchesSearch && matchesGroup;
-  }).sort((a, b) => {
-    const gA = (a.groupName && a.groupName.trim()) ? a.groupName.trim() : 'Unassigned';
-    const gB = (b.groupName && b.groupName.trim()) ? b.groupName.trim() : 'Unassigned';
-
-    const isUnassignedA = gA.toLowerCase() === 'unassigned';
-    const isUnassignedB = gB.toLowerCase() === 'unassigned';
-
-    if (isUnassignedA && !isUnassignedB) return 1;
-    if (!isUnassignedA && isUnassignedB) return -1;
-
-    // Natural alphanumeric comparison e.g. "Team 1", "Team 2", ..., "Team 9", "Team 10"
-    const comp = gA.localeCompare(gB, undefined, { numeric: true, sensitivity: 'base' });
-    if (comp !== 0) return comp;
-
-    return a.name.localeCompare(b.name);
-  });
-
-  const profileOptions = [
-    ...adminProfiles.map(p => ({ value: p, label: `Admin: ${p.toUpperCase()}` })),
-    { value: '__new__', label: '+ New Workspace' }
-  ];
-
-  const classOptions = classes.map(c => ({ value: c.id, label: c.name }));
-
-  const groupOptions = [
-    { value: 'All Groups', label: 'All Groups' },
-    ...uniqueGroups.map(g => ({ value: g, label: g }))
-  ];
-
-  const emailServiceOptions = [
-    { value: 'simulator', label: 'Demo Mode — No emails sent' },
-    { value: 'emailjs', label: 'EmailJS Adapter (Send live emails)' },
-    { value: 'brevo', label: 'Brevo API Service (300 Free Mails/Day)' }
-  ];
-
   return (
     <div className="main-content tab-pane">
-      {/* Sleek Minimal Dashboard Header (Smartphone-First & Desktop) */}
-      <div className="dashboard-top-header">
-        {/* Left: Classroom Identity & Selector */}
-        <div className="dashboard-class-identity">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: 1, minWidth: 0 }}>
-            <div className="class-picker-box">
-              <BookOpen size={16} className="text-indigo" style={{ flexShrink: 0 }} />
+      {/* UNIFIED STICKY GLASSMORPHIC NAVIGATION DOCK */}
+      <div className="dashboard-sticky-dock">
+        {/* Sleek Minimal Dashboard Header (Smartphone-First & Desktop) */}
+        <div className="dashboard-top-header">
+          {/* Left: Classroom Identity & Selector */}
+          <div className="dashboard-class-identity" data-tour="class-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: 1, minWidth: 0 }}>
+              <div className="class-picker-box">
+                <BookOpen size={16} className="text-indigo" style={{ flexShrink: 0 }} />
+                <CustomSelect
+                  options={classOptions}
+                  value={activeClass.id}
+                  onChange={(val) => selectClass(val)}
+                  style={{ flex: 1, minWidth: '120px' }}
+                  triggerStyle={{ border: 'none', backgroundColor: 'transparent', boxShadow: 'none', padding: '0.25rem 0.5rem', fontSize: '0.92rem', fontWeight: 800, height: '28px' }}
+                />
+                {classes.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn btn-sm text-rose"
+                    onClick={() => {
+                      triggerConfirm(
+                        'Delete Classroom Group',
+                        `Are you sure you want to permanently delete the classroom "${activeClass.name}" and all of its student rosters, evaluations, and metrics? This action cannot be undone.`,
+                        () => deleteClass(activeClass.id),
+                        'Delete Classroom',
+                        'Cancel'
+                      );
+                    }}
+                    title="Delete Current Class"
+                    style={{ padding: '0.15rem 0.35rem', backgroundColor: 'transparent', border: 'none', color: 'var(--accent-rose)', height: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="badge badge-secondary class-id-pill"
+                onClick={() => {
+                  navigator.clipboard.writeText(activeClass.id);
+                  addToast(`Class ID ${activeClass.id} copied to clipboard!`, 'info');
+                }}
+                title="Click to copy Classroom ID"
+              >
+                ID: <b>{activeClass.id}</b>
+              </button>
+
+              {/* Minimal Stat Badge showing Total Enrolled Students & Active Groups */}
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  backgroundColor: 'var(--bg-app)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  padding: '0.2rem 0.55rem',
+                  fontSize: '0.74rem',
+                  color: 'var(--text-secondary)',
+                  whiteSpace: 'nowrap',
+                  height: '28px',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  <Users size={12} className="text-primary" /> {stats.totalStudents} <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Students</span>
+                </span>
+                <span style={{ width: '1px', height: '10px', backgroundColor: 'var(--border-color)' }} />
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  <TrendingUp size={12} className="text-teal" /> {stats.groupCount} <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Groups</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Dock (Desktop Inline, Mobile 4-Column Bar) */}
+          <div className="dashboard-action-dock">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm dock-btn"
+              onClick={() => setIsGuideCenterOpen(true)}
+              title="Open Academic Guidance & Interactive Walkthrough Center"
+              style={{ gap: '0.25rem', padding: '0.15rem 0.45rem' }}
+            >
+              <Compass size={13} className="text-primary" /> <span>Guide</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm dock-btn"
+              data-tour="command-palette-btn"
+              onClick={() => setIsCommandPaletteOpen(true)}
+              title="Quick Command Palette & Student Finder (Ctrl+K)"
+              style={{ gap: '0.25rem', padding: '0.15rem 0.45rem' }}
+            >
+              <Search size={12} className="text-primary" /> <span>Search</span>
+              <kbd style={{ fontSize: '0.58rem', padding: '0.05rem 0.25rem', borderRadius: '3px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontWeight: 700 }}>⌘K</kbd>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm dock-btn"
+              onClick={() => setIsNewClassModalOpen(true)}
+              title="Create new classroom roster"
+              style={{ gap: '0.25rem', padding: '0.15rem 0.45rem' }}
+            >
+              <Plus size={13} className="text-primary" /> <span>Class</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm dock-btn"
+              data-tour="projector-mode-btn"
+              onClick={() => setIsProjectorModalOpen(true)}
+              title="Open Fullscreen Privacy-Safe Live Classroom Projector Mode"
+              style={{ gap: '0.25rem', padding: '0.15rem 0.45rem' }}
+            >
+              <Maximize2 size={13} className="text-teal" /> <span>Projector</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm dock-btn"
+              data-tour="email-dispatcher-btn"
+              onClick={() => setIsLinkDispatcherOpen(true)}
+              title="Classroom Email Center & Evaluation Links (Press E)"
+              style={{ gap: '0.25rem', padding: '0.15rem 0.45rem' }}
+            >
+              <Mail size={13} className="text-primary" /> <span>Email</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm dock-btn icon-only-btn"
+              data-tour="settings-hub-btn"
+              onClick={() => {
+                setSettingsInitialTab('email');
+                setIsSettingsModalOpen(true);
+              }}
+              title="Workspace Settings (Brevo API, Cloud Sync & Shortcuts - Press S)"
+              style={{ position: 'relative', width: '28px', minWidth: '28px', height: '28px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Settings size={14} className="text-primary" />
+                {isCloudSynced && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-2px',
+                      right: '-2px',
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      backgroundColor: '#10b981',
+                      boxShadow: '0 0 0 1.5px var(--bg-surface)'
+                    }}
+                    title="Firebase Cloud Sync Active"
+                  />
+                )}
+              </div>
+            </button>
+
+            {/* Desktop Profile Pill */}
+            <div className="desktop-profile-pill" data-tour="workspace-selector">
+              <User size={12} className="text-indigo" />
               <CustomSelect
-                options={classOptions}
-                value={activeClass.id}
-                onChange={(val) => selectClass(val)}
-                style={{ flex: 1, minWidth: '120px' }}
-                triggerStyle={{ border: 'none', backgroundColor: 'transparent', boxShadow: 'none', padding: '0.25rem 0.5rem', fontSize: '0.92rem', fontWeight: 800, height: '28px' }}
+                options={profileOptions}
+                value={activeAdminProfile}
+                onChange={(val) => {
+                  if (val === '__new__') {
+                    setIsNewProfileModalOpen(true);
+                  } else {
+                    switchAdminProfile(val);
+                  }
+                }}
+                dropdownAlign="right"
+                dropdownMinWidth="220px"
+                style={{ width: 'auto', maxWidth: '140px' }}
+                triggerStyle={{
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  padding: '0 0.35rem',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  color: 'var(--primary)',
+                  boxShadow: 'none',
+                  height: '24px'
+                }}
               />
-              {classes.length > 1 && (
-                <button 
+              {activeAdminProfile !== 'default' && (
+                <button
                   type="button"
-                  className="btn btn-sm text-rose" 
+                  style={{ padding: '0.1rem', minWidth: 'auto', background: 'transparent', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                   onClick={() => {
                     triggerConfirm(
-                      'Delete Classroom Group',
-                      `Are you sure you want to permanently delete the classroom "${activeClass.name}" and all of its student rosters, evaluations, and metrics? This action cannot be undone.`,
-                      () => deleteClass(activeClass.id),
-                      'Delete Classroom',
+                      'Delete Admin Workspace Profile',
+                      `Are you sure you want to permanently delete the admin workspace profile "${activeAdminProfile}" and ALL of its associated classroom groups? This action cannot be undone.`,
+                      () => deleteAdminProfile(activeAdminProfile),
+                      'Delete Workspace',
                       'Cancel'
                     );
                   }}
-                  title="Delete Current Class"
-                  style={{ padding: '0.15rem 0.35rem', backgroundColor: 'transparent', border: 'none', color: 'var(--accent-rose)', height: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  title="Delete Admin Profile"
                 >
-                  <Trash2 size={13} />
+                  <Trash2 size={11} />
+                </button>
+              )}
+              {isCloudSynced && user && (
+                <button
+                  type="button"
+                  style={{ padding: '0.15rem 0.25rem', minWidth: 'auto', background: 'transparent', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.7rem', fontWeight: 600 }}
+                  onClick={logoutAdmin}
+                  title={`Signed in as ${user.email}. Click to Sign Out`}
+                >
+                  <LogOut size={12} />
                 </button>
               )}
             </div>
 
-            <button 
+            {/* Mobile Profile Button */}
+            <button
               type="button"
-              className="badge badge-secondary class-id-pill" 
-              onClick={() => {
-                navigator.clipboard.writeText(activeClass.id);
-                addToast(`Class ID ${activeClass.id} copied to clipboard!`, 'info');
-              }}
-              title="Click to copy Classroom ID"
+              className="btn btn-secondary btn-sm dock-btn mobile-profile-btn"
+              onClick={() => setIsMobileProfileModalOpen(true)}
+              title="Admin Workspace Profile & Account Settings"
             >
-              ID: <b>{activeClass.id}</b>
+              <User size={14} className="text-indigo" /> <span>Profile</span>
             </button>
           </div>
         </div>
 
-        {/* Action Dock (Desktop Inline, Mobile 4-Column Bar) */}
-        <div className="dashboard-action-dock">
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm dock-btn" 
-            onClick={() => setIsCommandPaletteOpen(true)}
-            title="Quick Command Palette & Student Finder (Ctrl+K)"
-            style={{ gap: '0.4rem', padding: '0.35rem 0.65rem' }}
+        {/* Segmented Modern Tabs Navigation Dock (3 Core Academic Tabs) */}
+        <div className="tabs-navigation" role="tablist">
+          <button
+            className={`tab-btn ${activeTab === 'roster' ? 'active' : ''}`}
+            onClick={() => setActiveTab('roster')}
+            role="tab"
+            aria-selected={activeTab === 'roster'}
+            title="Student Roster, Group Manager & Enrollment (Press 1)"
           >
-            <Search size={13} className="text-primary" /> <span>Search</span>
-            <kbd style={{ fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '4px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontWeight: 700 }}>Ctrl+K</kbd>
+            <Users size={15} />
+            <span>Enrollment &amp; Teams</span>
+            <span className="tab-badge">{stats.totalStudents}</span>
           </button>
-
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm dock-btn" 
-            onClick={() => setIsNewClassModalOpen(true)}
-            title="Create new classroom roster"
+          <button
+            className={`tab-btn ${activeTab === 'grading' ? 'active' : ''}`}
+            onClick={() => setActiveTab('grading')}
+            role="tab"
+            aria-selected={activeTab === 'grading'}
+            data-tour="rubric-tab-btn"
+            title="Multi-Field Rubrics & Grading Scales (Press 2)"
           >
-            <Plus size={14} className="text-primary" /> <span>New Class</span>
+            <Sliders size={15} />
+            <span>Evaluation Rubric</span>
+            <span className="tab-badge">{activeClass.fields.length}</span>
           </button>
-
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm dock-btn" 
-            onClick={() => setIsProjectorModalOpen(true)}
-            title="Open Fullscreen Privacy-Safe Live Classroom Projector Mode"
+          <button
+            className={`tab-btn ${activeTab === 'results' ? 'active' : ''}`}
+            onClick={() => setActiveTab('results')}
+            role="tab"
+            aria-selected={activeTab === 'results'}
+            data-tour="analytics-tab-btn"
+            title="Gradebook, Perception Analytics & Matrix (Press 3)"
           >
-            <Maximize2 size={14} className="text-teal" /> <span>Projector</span>
-          </button>
-          
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm dock-btn" 
-            onClick={() => setIsLinkDispatcherOpen(true)}
-            title="Classroom Email Center & Evaluation Links (Press E)"
-          >
-            <Mail size={14} className="text-primary" /> <span>Email</span>
-          </button>
-
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm dock-btn icon-only-btn" 
-            onClick={() => {
-              setSettingsInitialTab('email');
-              setIsSettingsModalOpen(true);
-            }}
-            title="Workspace Settings (Brevo API, Cloud Sync & Shortcuts - Press S)"
-            style={{ position: 'relative', width: '36px', minWidth: '36px', height: '34px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Settings size={15} className="text-primary" />
-            {isCloudSynced && (
-              <span 
-                style={{ 
-                  position: 'absolute', 
-                  top: '5px', 
-                  right: '5px', 
-                  width: '6px', 
-                  height: '6px', 
-                  borderRadius: '50%', 
-                  backgroundColor: '#10b981' 
-                }} 
-                title="Firebase Cloud Sync Active" 
-              />
-            )}
-          </button>
-
-          {/* Desktop Profile Pill */}
-          <div className="desktop-profile-pill">
-            <User size={13} className="text-indigo" />
-            <CustomSelect
-              options={profileOptions}
-              value={activeAdminProfile}
-              onChange={(val) => {
-                if (val === '__new__') {
-                  setIsNewProfileModalOpen(true);
-                } else {
-                  switchAdminProfile(val);
-                }
-              }}
-              style={{ width: 'auto', minWidth: '130px' }}
-              triggerStyle={{
-                border: 'none',
-                backgroundColor: 'transparent',
-                padding: '0.25rem 0.5rem',
-                fontSize: '0.8rem',
-                fontWeight: 700,
-                color: 'var(--primary)',
-                boxShadow: 'none',
-                height: '28px'
-              }}
-            />
-            {activeAdminProfile !== 'default' && (
-              <button 
-                type="button"
-                style={{ padding: '0.15rem', minWidth: 'auto', background: 'transparent', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                onClick={() => {
-                  triggerConfirm(
-                    'Delete Admin Workspace Profile',
-                    `Are you sure you want to permanently delete the admin workspace profile "${activeAdminProfile}" and ALL of its associated classroom groups? This action cannot be undone.`,
-                    () => deleteAdminProfile(activeAdminProfile),
-                    'Delete Workspace',
-                    'Cancel'
-                  );
-                }}
-                title="Delete Admin Profile"
-              >
-                <Trash2 size={12} />
-              </button>
-            )}
-            {isCloudSynced && user && (
-              <button 
-                type="button"
-                className="btn btn-secondary btn-sm"
-                style={{ padding: '0.15rem 0.45rem', fontSize: '0.68rem', height: '22px', minHeight: '22px', borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', minWidth: 'auto', lineHeight: 1 }}
-                onClick={logoutAdmin}
-                title={`Signed in as ${user.email}. Click to Sign Out`}
-              >
-                Sign Out
-              </button>
-            )}
-          </div>
-
-          {/* Mobile Profile Button */}
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm dock-btn mobile-profile-btn" 
-            onClick={() => setIsMobileProfileModalOpen(true)}
-            title="Admin Workspace Profile & Account Settings"
-          >
-            <User size={14} className="text-indigo" /> <span>Profile</span>
+            <Award size={15} />
+            <span>Grade Analytics</span>
+            <span className="tab-badge">{stats.submittedCount}/{stats.totalStudents}</span>
           </button>
         </div>
       </div>
@@ -1680,8 +2255,8 @@ export const AdminDashboard: React.FC = () => {
                 <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                   <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600 }}>SIGNED IN USER</div>
                   <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-all' }}>{user.email}</div>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="btn btn-secondary btn-sm"
                     style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', width: '100%', justifyContent: 'center', height: '36px', marginTop: '0.4rem', fontWeight: 700 }}
                     onClick={() => {
@@ -1724,158 +2299,124 @@ export const AdminDashboard: React.FC = () => {
         document.body
       )}
 
-      {/* Executive KPI Stats Cards Section */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon stat-icon-primary">
-            <Users size={18} />
-          </div>
-          <div>
-            <div className="stat-val">{stats.totalStudents}</div>
-            <div className="stat-label">Enrolled Students</div>
-            <div className="stat-subtext">{stats.totalStudents > 0 ? `${stats.totalStudents} active in roster` : 'No students'}</div>
-          </div>
-        </div>
+      {/* HANDS-ON GUIDED SANDBOX MISSION HUD */}
+      {isSandboxActive && (
+        <GuidedSandboxHUD
+          currentMissionIndex={sandboxMissionIndex}
+          onSelectMission={(idx) => setSandboxMissionIndex(idx)}
+          onAutoCompleteStep={handleAutoCompleteSandboxStep}
+          onExitAndReset={handleExitSandbox}
+          onKeepData={handleKeepSandboxData}
+          missions={sandboxMissions}
+          onNavigateTab={(tab) => setActiveTab(tab)}
+        />
+      )}
 
-        <div className="stat-card">
-          <div className="stat-icon stat-icon-teal">
-            <TrendingUp size={18} />
-          </div>
-          <div>
-            <div className="stat-val">{stats.groupCount}</div>
-            <div className="stat-label">Active Groups</div>
-            <div className="stat-subtext">{stats.groupCount > 0 ? `${stats.groupCount} assigned teams` : 'No teams assigned'}</div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: 'var(--accent-teal-light)', color: 'var(--accent-teal)' }}>
-            <CheckCircle size={18} />
-          </div>
-          <div>
-            <div className="stat-val">{stats.completionRate}%</div>
-            <div className="stat-label">Submission Rate</div>
-            <div className="stat-subtext">{stats.submittedCount} of {stats.totalStudents} submitted</div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: 'var(--accent-amber-light)', color: 'var(--accent-amber)' }}>
-            <Award size={18} />
-          </div>
-          <div>
-            <div className="stat-val">{stats.averagePercentage !== null ? `${stats.averagePercentage}%` : '—'}</div>
-            <div className="stat-label">Cohort Average</div>
-            <div className="stat-subtext">{stats.averagePercentage !== null ? 'Peer review mean' : 'Awaiting submissions'}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Segmented Modern Tabs Navigation Dock (3 Core Academic Tabs) */}
-      <div className="tabs-navigation" role="tablist">
-        <button 
-          className={`tab-btn ${activeTab === 'roster' ? 'active' : ''}`} 
-          onClick={() => setActiveTab('roster')}
-          role="tab"
-          aria-selected={activeTab === 'roster'}
-          title="Student Roster, Group Manager & Enrollment (Press 1)"
-        >
-          <Users size={15} />
-          <span>Enrollment &amp; Teams</span>
-          <span className="tab-badge">{stats.totalStudents}</span>
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'grading' ? 'active' : ''}`} 
-          onClick={() => setActiveTab('grading')}
-          role="tab"
-          aria-selected={activeTab === 'grading'}
-          title="Multi-Field Rubrics & Grading Scales (Press 2)"
-        >
-          <Sliders size={15} />
-          <span>Evaluation Rubric</span>
-          <span className="tab-badge">{activeClass.fields.length}</span>
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'results' ? 'active' : ''}`} 
-          onClick={() => setActiveTab('results')}
-          role="tab"
-          aria-selected={activeTab === 'results'}
-          title="Gradebook, Perception Analytics & Matrix (Press 3)"
-        >
-          <Award size={15} />
-          <span>Grade Analytics</span>
-          <span className="tab-badge">{stats.submittedCount}/{stats.totalStudents}</span>
-        </button>
-      </div>
+      {/* INSTRUCTOR ONBOARDING & SETUP TRACKER */}
+      {!isSandboxActive && showOnboardingChecklist && (
+        <OnboardingChecklistWidget
+          studentCount={stats.totalStudents}
+          rubricWeightSum={activeClass.fields.reduce((sum, f) => sum + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0)}
+          hasEvaluations={stats.submittedCount > 0}
+          onNavigateTab={(tab) => setActiveTab(tab)}
+          onStartTour={() => setIsTourOpen(true)}
+          onLaunchSandbox={handleLaunchSandbox}
+          onDismiss={() => {
+            setShowOnboardingChecklist(false);
+            localStorage.setItem('peer_onboarding_dismissed', 'true');
+          }}
+        />
+      )}
 
       {/* TAB CONTENT: ROSTER MANAGER */}
       {activeTab === 'roster' && (
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
-            {/* 1. Import Wizard Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
+            {/* 1. Student Self-Enrollment QR & Link Card */}
+            <div className="card" data-tour="self-enrollment-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
               <div>
                 <div className="card-header" style={{ marginBottom: '0.45rem' }}>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
-                    <Upload size={18} className="text-teal" /> Import Wizard
-                    <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import Wizard Guide" />
+                    <QrCode size={18} className="text-primary" /> Self-Enrollment
+                    <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Self-Enrollment QR Guide" />
                   </h3>
-                  <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                    Smart Mapper
+                  <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
+                    QR &amp; Link
                   </span>
                 </div>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                  Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema header mapping.
+                  Share class QR code or direct join link with students for mobile self-registration.
                 </p>
 
-                {/* Interactive Dropzone / Format Trigger */}
-                <div 
-                  onClick={() => {
-                    setWizardStep(1);
-                    setIsWizardOpen(true);
-                  }}
-                  style={{
-                    padding: '0.75rem 0.65rem',
-                    borderRadius: '8px',
-                    border: '1.5px dashed var(--accent-teal)',
-                    backgroundColor: 'rgba(20, 184, 166, 0.04)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.45rem',
-                    textAlign: 'center',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title="Click to launch Roster Onboarding Wizard"
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-teal)' }}>
-                    <Upload size={14} /> Click to Upload or Paste File
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem', width: '100%' }}>
-                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-teal)' }}>XLSX</span>
-                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-rose)' }}>PDF</span>
-                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}>CSV</span>
-                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-amber)' }}>PASTE</span>
+                {/* QR Code preview & URL copy box */}
+                <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.55rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  {miniQrUrl ? (
+                    <div
+                      onClick={() => setIsQRCodeModalOpen(true)}
+                      style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      title="Click to expand QR Presentation Mode"
+                    >
+                      <img src={miniQrUrl} alt="Classroom QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => setIsQRCodeModalOpen(true)}
+                      style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}
+                      title="Click to expand QR Presentation Mode"
+                    >
+                      <QrCode size={26} />
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', gap: '0.3rem' }}>
+                      <input
+                        type="text"
+                        readOnly
+                        className="form-input"
+                        value={getClassEnrollmentUrl(activeClass.id)}
+                        style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '0.3rem 0.5rem', height: '32px', flex: 1 }}
+                        onClick={(e) => (e.target as HTMLInputElement).select()}
+                      />
+                      <button
+                        type="button"
+                        className={`btn ${copiedEnrollLink ? 'btn-teal' : 'btn-secondary'} btn-sm`}
+                        style={{ flexShrink: 0, padding: '0.25rem 0.55rem', height: '32px' }}
+                        onClick={() => {
+                          navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
+                          setCopiedEnrollLink(true);
+                          addToast('Classroom enrollment link copied to clipboard!', 'success');
+                          setTimeout(() => setCopiedEnrollLink(false), 2500);
+                        }}
+                        title="Copy enrollment link to clipboard"
+                      >
+                        {copiedEnrollLink ? <Check size={13} /> : <Copy size={13} />}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <ShieldCheck size={11} className="text-teal" /> Cloud Sync Active
+                      </span>
+                      <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
+                        {activeClass.students.length} Enrolled
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-              
-              <button 
+
+              <button
+                type="button"
                 className="btn btn-primary"
-                onClick={() => {
-                  setWizardStep(1);
-                  setIsWizardOpen(true);
-                }}
-                style={{ width: '100%', justifyContent: 'center', padding: '0.55rem', gap: '0.45rem', fontWeight: 700, fontSize: '0.84rem' }}
+                style={{ width: '100%', justifyContent: 'center', gap: '0.45rem', padding: '0.55rem', fontSize: '0.84rem', fontWeight: 700 }}
+                onClick={() => setIsQRCodeModalOpen(true)}
               >
-                <Sparkles size={15} /> Open Onboarding Wizard
+                <QrCode size={14} /> Open QR Presentation Mode
               </button>
             </div>
 
             {/* 2. Quick Actions Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
+            <div className="card" data-tour="quick-actions-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
               <div>
                 <div className="card-header" style={{ marginBottom: '0.45rem' }}>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
@@ -1891,16 +2432,16 @@ export const AdminDashboard: React.FC = () => {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-                    <button 
-                      className="btn btn-primary btn-sm" 
+                    <button
+                      className="btn btn-primary btn-sm"
                       onClick={() => setIsAddStudentModalOpen(true)}
                       style={{ justifyContent: 'center', gap: '0.35rem', padding: '0.45rem 0.35rem', fontSize: '0.78rem' }}
                     >
                       <Plus size={13} /> Add Member
                     </button>
-                    <button 
+                    <button
                       type="button"
-                      className="btn btn-teal btn-sm" 
+                      className="btn btn-teal btn-sm"
                       onClick={() => {
                         importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
                         addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
@@ -1959,17 +2500,16 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               {/* Clear Roster Action */}
-              <button 
+              <button
                 type="button"
-                className="btn btn-secondary text-rose btn-sm" 
+                className="btn btn-secondary text-rose btn-sm"
                 style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', fontSize: '0.72rem', padding: '0.4rem', justifyContent: 'center', gap: '0.3rem', width: '100%' }}
                 onClick={() => {
                   triggerConfirm(
                     'Clear Class Roster',
                     'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
                     () => {
-                      importRoster(activeClass.id, [], true);
-                      resetClassReviews(activeClass.id);
+                      clearClassRoster(activeClass.id);
                     },
                     'Clear Roster',
                     'Cancel'
@@ -1981,107 +2521,88 @@ export const AdminDashboard: React.FC = () => {
               </button>
             </div>
 
-            {/* 3. Student Self-Enrollment QR & Link Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
+            {/* 3. Import Wizard Card */}
+            <div className="card" data-tour="import-wizard-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
               <div>
                 <div className="card-header" style={{ marginBottom: '0.45rem' }}>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
-                    <QrCode size={18} className="text-primary" /> Self-Enrollment
-                    <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Self-Enrollment QR Guide" />
+                    <Upload size={18} className="text-teal" /> Import Wizard
+                    <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import Wizard Guide" />
                   </h3>
-                  <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
-                    QR &amp; Link
+                  <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                    Smart Mapper
                   </span>
                 </div>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                  Share class QR code or direct join link with students for mobile self-registration.
+                  Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema header mapping.
                 </p>
 
-                {/* QR Code preview & URL copy box */}
-                <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.55rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  {miniQrUrl ? (
-                    <div 
-                      onClick={() => setIsQRCodeModalOpen(true)}
-                      style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      title="Click to expand QR Presentation Mode"
-                    >
-                      <img src={miniQrUrl} alt="Classroom QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                    </div>
-                  ) : (
-                    <div 
-                      onClick={() => setIsQRCodeModalOpen(true)}
-                      style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}
-                      title="Click to expand QR Presentation Mode"
-                    >
-                      <QrCode size={26} />
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: '0.3rem' }}>
-                      <input 
-                        type="text" 
-                        readOnly 
-                        className="form-input" 
-                        value={getClassEnrollmentUrl(activeClass.id)} 
-                        style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '0.3rem 0.5rem', height: '32px', flex: 1 }}
-                        onClick={(e) => (e.target as HTMLInputElement).select()}
-                      />
-                      <button 
-                        type="button" 
-                        className={`btn ${copiedEnrollLink ? 'btn-teal' : 'btn-secondary'} btn-sm`} 
-                        style={{ flexShrink: 0, padding: '0.25rem 0.55rem', height: '32px' }}
-                        onClick={() => {
-                          navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
-                          setCopiedEnrollLink(true);
-                          addToast('Classroom enrollment link copied to clipboard!', 'success');
-                          setTimeout(() => setCopiedEnrollLink(false), 2500);
-                        }}
-                        title="Copy enrollment link to clipboard"
-                      >
-                        {copiedEnrollLink ? <Check size={13} /> : <Copy size={13} />}
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <ShieldCheck size={11} className="text-teal" /> Cloud Sync Active
-                      </span>
-                      <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
-                        {activeClass.students.length} Enrolled
-                      </span>
-                    </div>
+                {/* Interactive Dropzone / Format Trigger */}
+                <div
+                  onClick={() => {
+                    setWizardStep(1);
+                    setIsWizardOpen(true);
+                  }}
+                  style={{
+                    padding: '0.75rem 0.65rem',
+                    borderRadius: '8px',
+                    border: '1.5px dashed var(--accent-teal)',
+                    backgroundColor: 'rgba(20, 184, 166, 0.04)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.45rem',
+                    textAlign: 'center',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title="Click to launch Roster Onboarding Wizard"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-teal)' }}>
+                    <Upload size={14} /> Click to Upload or Paste File
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem', width: '100%' }}>
+                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-teal)' }}>XLSX</span>
+                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-rose)' }}>PDF</span>
+                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}>CSV</span>
+                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-amber)' }}>PASTE</span>
                   </div>
                 </div>
               </div>
 
-              <button 
-                type="button" 
+              <button
                 className="btn btn-primary"
-                style={{ width: '100%', justifyContent: 'center', gap: '0.45rem', padding: '0.55rem', fontSize: '0.84rem', fontWeight: 700 }}
-                onClick={() => setIsQRCodeModalOpen(true)}
+                onClick={() => {
+                  setWizardStep(1);
+                  setIsWizardOpen(true);
+                }}
+                style={{ width: '100%', justifyContent: 'center', padding: '0.55rem', gap: '0.45rem', fontWeight: 700, fontSize: '0.84rem' }}
               >
-                <QrCode size={14} /> Open QR Presentation Mode
+                <Sparkles size={15} /> Open Onboarding Wizard
               </button>
             </div>
 
           </div>
 
           {/* Intelligent Auto-Group & Diversity Studio */}
-          <AutoGroupStudio
-            students={activeClass.students}
-            onApplyGroups={(updatedStudents) => {
-              importRoster(activeClass.id, updatedStudents, true);
-              const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
-              addToast(`Successfully partitioned ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
-            }}
-            onLoadSampleStudents={() => {
-              importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
-              addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
-            }}
-          />
+          <div data-tour="autogroup-studio">
+            <AutoGroupStudio
+              students={activeClass.students}
+              onApplyGroups={(updatedStudents) => {
+                importRoster(activeClass.id, updatedStudents, true);
+                const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
+                addToast(`Successfully partitioned ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
+              }}
+              onLoadSampleStudents={() => {
+                importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+                addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+              }}
+            />
+          </div>
 
           {/* Roster Filter & List Table */}
-          <div className="card" style={{ padding: '1.25rem' }}>
+          <div className="card" data-tour="classroom-roster-table" style={{ padding: '1.25rem' }}>
             <div className="card-header" style={{ flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1.05rem', fontWeight: 800 }}>
@@ -2095,10 +2616,10 @@ export const AdminDashboard: React.FC = () => {
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: '100%', maxWidth: '620px', alignItems: 'center' }}>
                 <div style={{ position: 'relative', flex: 1, minWidth: '190px' }}>
                   <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  <input 
-                    type="text" 
-                    placeholder="Search by ID, Name, Country, Email..." 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    placeholder="Search by ID, Name, Country, Email..."
+                    className="form-input"
                     style={{ paddingLeft: '2.25rem', paddingRight: searchTerm ? '2rem' : '0.75rem', height: '38px', fontSize: '0.82rem' }}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -2156,6 +2677,75 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* Intelligent Duplicate Enrollment Detection Banner */}
+            {duplicateFlagsMap.size > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: '#fffbeb',
+                  border: '1.5px solid #f59e0b',
+                  borderRadius: '10px',
+                  padding: '0.75rem 1rem',
+                  marginBottom: '1rem',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <AlertTriangle size={18} />
+                  </div>
+                  <div>
+                    <strong style={{ color: '#b45309', fontSize: '0.88rem', display: 'block' }}>
+                      {duplicateFlagsMap.size} Suspected Repeating / Duplicate Registrations Detected
+                    </strong>
+                    <span style={{ fontSize: '0.75rem', color: '#92400e' }}>
+                      Found potential duplicate entries with identical full names, reversed name orders, or repeating emails.
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setShowOnlyDuplicates(prev => !prev)}
+                    style={{
+                      backgroundColor: showOnlyDuplicates ? '#f59e0b' : '#ffffff',
+                      color: showOnlyDuplicates ? '#ffffff' : '#b45309',
+                      border: '1px solid #f59e0b',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      height: '32px',
+                      padding: '0 0.75rem'
+                    }}
+                  >
+                    {showOnlyDuplicates ? 'Show All Students' : 'Filter Suspected Duplicates'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      const allPairs = new Set<string>();
+                      activeClass.students.forEach(s => {
+                        const flags = duplicateFlagsMap.get(s.id) || [];
+                        flags.forEach(f => allPairs.add([s.id, f.matchedStudentId].sort().join(':::')));
+                      });
+                      setIgnoredDuplicatePairs(allPairs);
+                      setShowOnlyDuplicates(false);
+                      addToast('Dismissed all current duplicate warning flags.', 'info');
+                    }}
+                    style={{ height: '32px', fontSize: '0.74rem', padding: '0 0.6rem' }}
+                    title="Dismiss all current duplicate flags"
+                  >
+                    Dismiss All Flags
+                  </button>
+                </div>
+              </div>
+            )}
 
             {activeClass.students.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
@@ -2223,16 +2813,12 @@ export const AdminDashboard: React.FC = () => {
                           aria-label="Select all students"
                         />
                       </th>
-                      <th style={{ whiteSpace: 'nowrap', width: '110px' }}>Unique ID</th>
-                      <th style={{ whiteSpace: 'nowrap' }}>Name</th>
-                      <th style={{ whiteSpace: 'nowrap' }}>Email ID</th>
-                      <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>Demographics</th>
-                      <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>English Level</th>
-                      <th style={{ whiteSpace: 'nowrap', minWidth: '150px' }}>University / Degree</th>
-                      <th style={{ whiteSpace: 'nowrap', width: '90px' }}>Student Type</th>
-                      <th style={{ whiteSpace: 'nowrap', width: '110px' }}>Roster Group</th>
-                      <th style={{ whiteSpace: 'nowrap', width: '130px' }}>Evaluation Link</th>
-                      <th style={{ whiteSpace: 'nowrap', width: '120px', textAlign: 'right' }}>Actions</th>
+                      <th style={{ minWidth: '180px' }}>Participant</th>
+                      <th style={{ minWidth: '150px' }}>Academic Info</th>
+                      <th style={{ minWidth: '130px' }}>Origin &amp; Type</th>
+                      <th style={{ minWidth: '140px' }}>Group &amp; English</th>
+                      <th style={{ minWidth: '110px' }}>Portal Status</th>
+                      <th style={{ width: '130px', textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2253,6 +2839,7 @@ export const AdminDashboard: React.FC = () => {
 
                       return (
                         <tr key={s.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : undefined }}>
+                          {/* Checkbox */}
                           <td style={{ textAlign: 'center' }}>
                             <input
                               type="checkbox"
@@ -2268,81 +2855,143 @@ export const AdminDashboard: React.FC = () => {
                               aria-label={`Select ${s.name}`}
                             />
                           </td>
-                          <td style={{ whiteSpace: 'nowrap', fontWeight: 600, fontSize: '0.82rem' }}>
-                            <code>{s.id}</code>
-                          </td>
-                          <td style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{s.name}</td>
-                          <td style={{ whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>{s.email}</td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.8rem' }}>
-                              {s.nationality ? (
-                                <span style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                                  <Globe size={11} className="text-teal" /> {s.nationality}
-                                </span>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)' }}>—</span>
-                              )}
-                              {s.gender && s.gender !== 'Prefer not to say' && (
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{s.gender}</span>
-                              )}
-                            </div>
-                          </td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            {s.englishProficiency ? (
-                              <span className="badge badge-primary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', whiteSpace: 'nowrap', display: 'inline-flex' }}>
-                                {s.englishProficiency}
-                              </span>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
-                            )}
-                          </td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
+
+                          {/* Participant Identity (Name + Email + ID + Duplicate Flag) */}
+                          <td>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                              {s.university ? (
-                                <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>{s.university}</span>
-                              ) : null}
-                              {s.degree ? (
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{s.degree}</span>
-                              ) : null}
-                              {!s.university && !s.degree && (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.88rem' }}>{s.name}</span>
+                                <code style={{ fontSize: '0.68rem', padding: '0.05rem 0.25rem', borderRadius: '4px', backgroundColor: 'var(--bg-app)', color: 'var(--text-muted)' }}>
+                                  #{s.id}
+                                </code>
+                                {duplicateFlagsMap.has(s.id) && (
+                                  <span
+                                    className="badge"
+                                    style={{
+                                      backgroundColor: '#fef3c7',
+                                      color: '#b45309',
+                                      border: '1px solid #fde68a',
+                                      fontSize: '0.65rem',
+                                      padding: '0.05rem 0.35rem',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.2rem',
+                                      fontWeight: 700,
+                                      cursor: 'help'
+                                    }}
+                                    title={(duplicateFlagsMap.get(s.id) || []).map(f => f.reason).join('\n')}
+                                  >
+                                    <AlertTriangle size={9} /> Duplicate
+                                  </span>
+                                )}
+                              </div>
+                              <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                                {s.email}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Academic Info (University + Degree) */}
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                              <span style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                                {s.university || '—'}
+                              </span>
+                              {s.degree && (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                  {s.degree}
+                                </span>
                               )}
                             </div>
                           </td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            {s.studentType === 'Erasmus' ? (
-                              <span className="badge badge-secondary" style={{ background: 'linear-gradient(135deg, #FF007F, #7F00FF)', color: '#fff', border: 'none', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'inline-flex' }}>Erasmus</span>
-                            ) : (
-                              <span className="badge badge-secondary" style={{ opacity: 0.85, whiteSpace: 'nowrap', display: 'inline-flex' }}>{s.studentType || 'Normal'}</span>
-                            )}
+
+                          {/* Origin & Demographics (Nationality + Gender + Student Type) */}
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                {s.nationality ? (
+                                  <span style={{ fontWeight: 600, fontSize: '0.78rem', color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    <Globe size={11} className="text-teal" /> {s.nationality}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>
+                                )}
+                                {s.gender && s.gender !== 'Prefer not to say' && (
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>&bull; {s.gender}</span>
+                                )}
+                              </div>
+                              <div>
+                                {s.studentType === 'Erasmus' ? (
+                                  <span className="badge badge-secondary" style={{ background: 'linear-gradient(135deg, #FF007F, #7F00FF)', color: '#fff', border: 'none', fontWeight: 'bold', fontSize: '0.66rem', padding: '0.1rem 0.4rem' }}>Erasmus</span>
+                                ) : (
+                                  <span className="badge badge-secondary" style={{ opacity: 0.85, fontSize: '0.66rem', padding: '0.1rem 0.4rem' }}>{s.studentType || 'Normal'}</span>
+                                )}
+                              </div>
+                            </div>
                           </td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            {s.groupName && s.groupName !== 'Unassigned' ? (
-                              <span className="badge badge-teal" style={{ fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex' }}>
-                                {s.groupName}
-                              </span>
-                            ) : (
-                              <span className="badge" style={{ backgroundColor: 'var(--accent-amber-light)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex' }}>
-                                Unassigned
-                              </span>
-                            )}
+
+                          {/* Group & Language (Team + English Level) */}
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                              <div>
+                                {s.groupName && s.groupName !== 'Unassigned' ? (
+                                  <span className="badge badge-teal" style={{ fontWeight: 700, fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}>
+                                    {s.groupName}
+                                  </span>
+                                ) : (
+                                  <span className="badge" style={{ backgroundColor: 'var(--accent-amber-light)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)', fontWeight: 600, fontSize: '0.68rem', padding: '0.15rem 0.4rem' }}>
+                                    Unassigned
+                                  </span>
+                                )}
+                              </div>
+                              {s.englishProficiency && (
+                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                  {s.englishProficiency}
+                                </span>
+                              )}
+                            </div>
                           </td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            <a 
-                               href={gradingUrl} 
-                               target="_blank" 
-                               rel="noreferrer"
-                               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}
-                            >
-                              <Eye size={13} /> Open Portal
-                            </a>
+
+                          {/* Portal Status & Direct Link */}
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <a
+                                href={gradingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}
+                                title="Open Student Portal"
+                              >
+                                <Eye size={12} /> Open Portal
+                              </a>
+                              <div>
+                                {s.submitted ? (
+                                  <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', gap: '0.2rem' }}>
+                                    <CheckCircle size={9} /> Done
+                                  </span>
+                                ) : (
+                                  <span className="badge badge-amber" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', gap: '0.2rem' }}>
+                                    <Clock size={9} /> Pending
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </td>
-                          <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', justifyContent: 'flex-end' }}>
-                              <button 
+
+                          {/* 1-Click Minimal Segmented Action Dock */}
+                          <td style={{ textAlign: 'right' }}>
+                            <div className="table-action-dock">
+                              <button
                                 type="button"
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px' }}
+                                className="table-action-btn action-simulator"
+                                onClick={() => setPreviewingStudent(s)}
+                                title="Simulate smartphone student portal"
+                              >
+                                <Smartphone size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                className="table-action-btn action-copy"
                                 onClick={() => {
                                   navigator.clipboard.writeText(gradingUrl);
                                   addToast(`Copied evaluation link for ${s.name}!`, 'success');
@@ -2351,39 +3000,29 @@ export const AdminDashboard: React.FC = () => {
                               >
                                 <Copy size={13} />
                               </button>
-                              <a 
-                                href={gradingUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', color: 'var(--primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-                                title="Preview / Test Student Portal in new tab"
-                              >
-                                <ExternalLink size={13} />
-                              </a>
-                              <button 
+                              <button
                                 type="button"
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', color: 'var(--accent-teal)', borderColor: 'var(--accent-teal)' }}
+                                className="table-action-btn action-report"
                                 onClick={() => openReportModal(s.id)}
-                                title="View & Download Individual Student PDF Report Card"
+                                title="View & Download PDF Report Card"
                               >
                                 <FileText size={13} />
                               </button>
-                              <button 
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px' }}
+                              <button
+                                type="button"
+                                className="table-action-btn action-edit"
                                 onClick={() => {
+                                  const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
                                   setEditStudentData({
                                     id: s.id,
                                     name: s.name,
                                     email: s.email,
                                     groupName: s.groupName,
                                     gender: s.gender || 'Prefer not to say',
-                                    isInternational: s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus'),
+                                    isInternational: isIntl,
                                     isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
                                     nationality: s.nationality || '',
-                                    currentCountry: s.currentCountry || s.nationality || '',
+                                    currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
                                     englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
                                     university: s.university || '',
                                     degree: s.degree || '',
@@ -2398,9 +3037,27 @@ export const AdminDashboard: React.FC = () => {
                               >
                                 <Edit2 size={13} />
                               </button>
-                              <button 
-                                className="btn btn-rose btn-sm"
-                                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px' }}
+                              {duplicateFlagsMap.has(s.id) && (
+                                <button
+                                  type="button"
+                                  className="table-action-btn action-dismiss"
+                                  onClick={() => {
+                                    const flags = duplicateFlagsMap.get(s.id) || [];
+                                    setIgnoredDuplicatePairs(prev => {
+                                      const next = new Set(prev);
+                                      flags.forEach(f => next.add([s.id, f.matchedStudentId].sort().join(':::')));
+                                      return next;
+                                    });
+                                    addToast(`Dismissed duplicate flag for ${s.name}.`, 'info');
+                                  }}
+                                  title="Dismiss / Ignore duplicate flag"
+                                >
+                                  <EyeOff size={13} />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="table-action-btn action-delete"
                                 onClick={() => {
                                   triggerConfirm(
                                     'Remove Student Record',
@@ -2493,8 +3150,7 @@ export const AdminDashboard: React.FC = () => {
                         'Delete Selected Students',
                         `Are you sure you want to delete ${selectedStudentIds.size} selected students and ALL associated peer evaluations? This action cannot be undone.`,
                         () => {
-                          selectedStudentIds.forEach(id => deleteStudent(activeClass.id, id));
-                          addToast(`Deleted ${selectedStudentIds.size} students.`, 'info');
+                          deleteStudents(activeClass.id, Array.from(selectedStudentIds));
                           setSelectedStudentIds(new Set());
                         },
                         'Delete Selected',
@@ -2526,7 +3182,7 @@ export const AdminDashboard: React.FC = () => {
       {/* TAB CONTENT: GRADING SCALE CONFIG */}
       {activeTab === 'grading' && (
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div className="card">
+          <div className="card" data-tour="rubric-builder-card">
             {/* Header & Presets Bar */}
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.85rem' }}>
               <div style={{ flex: '1 1 280px', minWidth: 0 }}>
@@ -2538,7 +3194,7 @@ export const AdminDashboard: React.FC = () => {
                   Configure multi-criteria rubrics with behavioral guidance. Define custom scales and load accredited academic presets.
                 </p>
               </div>
-              
+
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <button className="btn btn-primary btn-sm" onClick={handleAddField} style={{ height: '36px', gap: '0.35rem' }}>
                   <Plus size={15} /> Add Custom Criterion
@@ -2547,18 +3203,18 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             {/* Rubric Presets Library Banner */}
-            <div 
-              style={{ 
-                backgroundColor: 'var(--bg-app)', 
-                border: '1px solid var(--border-color)', 
-                borderRadius: 'var(--radius-lg)', 
-                padding: '0.85rem 1.15rem', 
-                marginBottom: '1.25rem', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between', 
-                flexWrap: 'wrap', 
-                gap: '0.85rem' 
+            <div
+              style={{
+                backgroundColor: 'var(--bg-app)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '0.85rem 1.15rem',
+                marginBottom: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.85rem'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
@@ -2602,10 +3258,10 @@ export const AdminDashboard: React.FC = () => {
                     title={`${preset.name}: ${preset.description}`}
                   >
                     <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
-                      {preset.id === 'aacu_teamwork' ? 'AAC&U VALUE' : 
-                       preset.id === 'abet_engineering' ? 'ABET Engineering' : 
-                       preset.id === 'agile_scrum' ? 'Agile Scrum' : 
-                       preset.id === 'creative_design' ? 'Design Studio' : 'Standard 4-D Core'}
+                      {preset.id === 'aacu_teamwork' ? 'AAC&U VALUE' :
+                        preset.id === 'abet_engineering' ? 'ABET Engineering' :
+                          preset.id === 'agile_scrum' ? 'Agile Scrum' :
+                            preset.id === 'creative_design' ? 'Design Studio' : 'Standard 4-D Core'}
                     </span>
                     <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '1px 5px', height: '16px', lineHeight: '14px' }}>
                       {preset.fields.length} criteria
@@ -2688,10 +3344,8 @@ export const AdminDashboard: React.FC = () => {
                       if (e.target.value) {
                         const iso = new Date(e.target.value).toISOString();
                         saveClassDeadline(activeClass.id, iso);
-                        addToast('Classroom deadline updated successfully!', 'success');
                       } else {
                         saveClassDeadline(activeClass.id, null);
-                        addToast('Classroom deadline cleared.', 'info');
                       }
                     }}
                     style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', height: '36px' }}
@@ -2702,7 +3356,6 @@ export const AdminDashboard: React.FC = () => {
                       className="btn btn-secondary btn-sm text-rose"
                       onClick={() => {
                         saveClassDeadline(activeClass.id, null);
-                        addToast('Deadline cleared.', 'info');
                       }}
                       style={{ height: '36px', padding: '0.4rem 0.6rem' }}
                       title="Clear Deadline"
@@ -2714,30 +3367,88 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
 
+            {/* Weightage Validation & Auto-Balance Bar */}
+            {(() => {
+              const totalWeight = activeClass.fields.reduce((sum, f) => sum + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0);
+              const isBalanced = totalWeight === 100;
+              return (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '0.75rem',
+                    padding: '0.75rem 1.15rem',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: isBalanced ? 'rgba(20, 184, 166, 0.08)' : 'rgba(245, 158, 11, 0.1)',
+                    border: `1px solid ${isBalanced ? 'rgba(20, 184, 166, 0.25)' : 'rgba(245, 158, 11, 0.3)'}`,
+                    marginBottom: '1.25rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {isBalanced ? (
+                      <CheckCircle size={16} className="text-teal" />
+                    ) : (
+                      <AlertTriangle size={16} className="text-amber" />
+                    )}
+                    <div>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 800, color: isBalanced ? 'var(--accent-teal)' : 'var(--accent-amber)' }}>
+                        {isBalanced
+                          ? `Total Weightage: 100% (Balanced & Valid)`
+                          : `Total Weightage: ${totalWeight}% (${totalWeight > 100 ? `${totalWeight - 100}% over 100%` : `${100 - totalWeight}% remaining`})`}
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                        {isBalanced
+                          ? `All criteria weights add up to exactly 100%. Scores will calculate weighted contribution averages correctly.`
+                          : `Individual criteria weights must sum up to exactly 100% for proper weighted grading calculations.`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleAutoBalanceWeights}
+                    style={{
+                      fontSize: '0.76rem',
+                      height: '32px',
+                      fontWeight: 700,
+                      gap: '0.35rem',
+                      backgroundColor: 'var(--bg-surface)'
+                    }}
+                    title="Distribute 100% weight evenly across all criteria"
+                  >
+                    <Sparkles size={13} className="text-primary" /> Auto-Distribute Evenly (100%)
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* Criteria List Cards */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {activeClass.fields.map((field, idx) => (
-                <div 
-                  key={field.id} 
-                  style={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    gap: '0.75rem', 
-                    backgroundColor: 'var(--bg-app)', 
-                    padding: '1rem 1.25rem', 
-                    borderRadius: 'var(--radius-md)', 
-                    border: '1px solid var(--border-color)' 
+                <div
+                  key={field.id}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                    backgroundColor: 'var(--bg-app)',
+                    padding: '1rem 1.25rem',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-color)'
                   }}
                 >
-                  {/* Top Row: Name, Scale, Relative Weight, and Delete */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(100px, 1fr) minmax(100px, 1fr) auto auto', gap: '0.85rem', alignItems: 'flex-end' }}>
+                  {/* Top Row: Name, Scale, Editable Weightage, and Delete */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(110px, 1fr) auto', gap: '0.85rem', alignItems: 'flex-end' }}>
                     <div>
                       <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                         <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '1px 5px' }}>#{idx + 1}</span> Criterion Name
                       </label>
-                      <input 
-                        type="text" 
-                        className="form-input" 
+                      <input
+                        type="text"
+                        className="form-input"
                         value={field.name}
                         placeholder="e.g. Quality of Contribution, Collaboration..."
                         onChange={(e) => handleUpdateField(field.id, { name: e.target.value })}
@@ -2746,9 +3457,9 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                     <div>
                       <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Min Scale</label>
-                      <input 
-                        type="number" 
-                        className="form-input" 
+                      <input
+                        type="number"
+                        className="form-input"
                         value={field.min}
                         onChange={(e) => handleUpdateField(field.id, { min: Number(e.target.value) })}
                         style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
@@ -2756,25 +3467,35 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                     <div>
                       <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Max Scale</label>
-                      <input 
-                        type="number" 
-                        className="form-input" 
+                      <input
+                        type="number"
+                        className="form-input"
                         value={field.max}
                         onChange={(e) => handleUpdateField(field.id, { max: Number(e.target.value) })}
                         style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
                       />
                     </div>
                     <div>
-                      <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Relative Weight</label>
-                      <div style={{ height: '36px', display: 'flex', alignItems: 'center' }}>
-                        <span className="badge badge-teal" style={{ fontSize: '0.74rem', height: '34px', display: 'inline-flex', alignItems: 'center' }}>
-                          {Math.round((1 / activeClass.fields.length) * 100)}% Weight
-                        </span>
+                      <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Weightage (%)</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', height: '36px' }}>
+                        <input
+                          type="number"
+                          className="form-input"
+                          value={field.weight !== undefined ? field.weight : Math.round(100 / activeClass.fields.length)}
+                          min={0}
+                          max={100}
+                          onChange={(e) => {
+                            const val = Math.max(0, Math.min(100, Number(e.target.value)));
+                            handleUpdateField(field.id, { weight: val });
+                          }}
+                          style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center', width: '70px', fontWeight: 700 }}
+                        />
+                        <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-secondary)' }}>%</span>
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
-                      <button 
-                        className="btn btn-rose btn-sm" 
+                      <button
+                        className="btn btn-rose btn-sm"
                         onClick={() => handleDeleteField(field.id)}
                         title="Delete rubric scale"
                         style={{ height: '34px', padding: '0 0.6rem' }}
@@ -2789,9 +3510,9 @@ export const AdminDashboard: React.FC = () => {
                     <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', margin: 0, marginBottom: '0.25rem' }}>
                       Guidance &amp; Behavioral Indicator (Shown to students while grading):
                     </label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
+                    <input
+                      type="text"
+                      className="form-input"
                       value={field.description || ''}
                       placeholder="e.g. Produces thorough, accurate deliverables on schedule with high attention to detail..."
                       onChange={(e) => handleUpdateField(field.id, { description: e.target.value })}
@@ -2803,14 +3524,14 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             {/* Scale visual simulation */}
-            <div style={{ marginTop: '2rem', backgroundColor: 'var(--primary-light)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--primary)' }}>
+            <div data-tour="eval-simulator-card" style={{ marginTop: '2rem', backgroundColor: 'var(--primary-light)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--primary)' }}>
               <h4 style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                 <Sparkles size={18} /> Student Interface Experience Preview
               </h4>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
                 Students see an engaging, professional tier evaluation selector. Selecting a contribution tier snaps the score, which can then be fine-tuned:
               </p>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                 {activeClass.fields.slice(0, 1).map(field => {
                   const range = field.max - field.min;
@@ -2820,7 +3541,7 @@ export const AdminDashboard: React.FC = () => {
                   for (let val = field.min; val <= field.max; val++) {
                     scoreNodes.push(val);
                   }
-                  
+
                   return (
                     <div key={field.id} style={{ backgroundColor: 'var(--bg-surface)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
@@ -2829,18 +3550,18 @@ export const AdminDashboard: React.FC = () => {
                           {previewVal} / {field.max}
                         </span>
                       </div>
-                      
+
                       {/* Unified Single Scale Simulator Preview */}
                       <div className="score-fine-tuner" style={{ margin: 0, padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-app)' }}>
                         {/* Dynamic Qualitative Tier Indicator Simulation */}
-                        <div 
-                          style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '0.75rem', 
-                            padding: '0.65rem 0.85rem', 
-                            borderRadius: 'var(--radius-sm)', 
-                            backgroundColor: 'var(--primary-light)', 
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem',
+                            padding: '0.65rem 0.85rem',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: 'var(--primary-light)',
                             color: 'var(--primary)',
                             border: '1px solid hsla(243, 75%, 59%, 0.12)',
                             marginBottom: '0.75rem'
@@ -2876,14 +3597,14 @@ export const AdminDashboard: React.FC = () => {
                               <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
                                 <Minus size={14} />
                               </button>
-                              
+
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '45px' }}>
                                 <span className="score-stepper-value" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{previewVal}</span>
                                 <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>
                                   63%
                                 </span>
                               </div>
-                              
+
                               <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
                                 <Plus size={14} />
                               </button>
@@ -2909,7 +3630,7 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   );
                 })}
-                
+
                 {activeClass.fields.length > 1 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -2935,7 +3656,7 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'results' && (
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Action Header Card */}
-          <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div className="card" data-tour="gradebook-matrix-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
               <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                 <Award size={18} className="text-teal" /> Real-time Calculation Matrix
@@ -2943,9 +3664,9 @@ export const AdminDashboard: React.FC = () => {
               </h3>
               <p className="card-subtitle">Self-excluded student averages recalculate instantly as submissions arrive. Calculations do not count self-grading reviews.</p>
             </div>
-            
+
             <div className="responsive-btn-group">
-              <button 
+              <button
                 type="button"
                 className="btn btn-teal"
                 onClick={() => openReportModal()}
@@ -2955,7 +3676,7 @@ export const AdminDashboard: React.FC = () => {
                 <FileText size={16} /> Student PDF Reports
               </button>
 
-              <button 
+              <button
                 className="btn btn-secondary text-amber"
                 style={{ borderColor: 'var(--accent-amber)' }}
                 onClick={() => {
@@ -2970,9 +3691,9 @@ export const AdminDashboard: React.FC = () => {
               >
                 <RefreshCw size={16} /> Reset Submissions
               </button>
-              
-              <button 
-                className="btn btn-primary" 
+
+              <button
+                className="btn btn-primary"
                 onClick={handleExportExcel}
                 title="Download comprehensive multi-sheet Excel workbook with grades and written reviews"
               >
@@ -2983,10 +3704,10 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Advanced Analytics & Grading Engine Grid */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            
+
             {/* Tier 1: Competency Radar, Johari Matrix & Qualitative Themes */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
-              
+            <div data-tour="perception-deck-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
+
               {/* Card 1: Multi-Axis Competency Spider Radar */}
               {activeClass.fields.length >= 3 && (
                 <div className="card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
@@ -3067,7 +3788,7 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Column 2: Johari Alignment & Qualitative Feedback Insights */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                
+
                 {/* Card 2: Johari Alignment */}
                 {(() => {
                   const johariList = activeClass.students.map(s => calculateJohariWindowMetric(s.id, activeClass));
@@ -3082,6 +3803,7 @@ export const AdminDashboard: React.FC = () => {
                         <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                           <UserCheck size={17} className="text-teal" /> Self-Awareness &amp; Johari Alignment
                           <FeatureInfoButton featureId="johari-window" size="sm" tooltipText="Johari Alignment Guide" />
+                          <ContextHelpPopover topicKey="johari" />
                         </h3>
                         <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                           Self-evaluation alignment vs anonymous peer consensus (±7.5% threshold).
@@ -3182,13 +3904,14 @@ export const AdminDashboard: React.FC = () => {
 
             {/* Tier 2: WebPA Calibration, Anomaly Audit & Milestones (3 Equal Columns) */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
-              
+
               {/* Card 4: WebPA Grade Calibration */}
               <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
                 <div>
                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                     <Sliders size={17} className="text-teal" /> WebPA Grade Calibration
                     <FeatureInfoButton featureId="webpa-calibration" size="sm" tooltipText="WebPA Calibration & Fudge Weight Guide" />
+                    <ContextHelpPopover topicKey="webpa" />
                   </h3>
                   <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
                     Compare peer vs team averages to calculate individual multipliers.
@@ -3198,9 +3921,9 @@ export const AdminDashboard: React.FC = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" style={{ fontWeight: 700, fontSize: '0.78rem' }}>Project Base Mark (Base Grade)</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
+                    <input
+                      type="number"
+                      className="form-input"
                       min={0}
                       max={1000}
                       value={baseGroupGrade}
@@ -3208,15 +3931,15 @@ export const AdminDashboard: React.FC = () => {
                       style={{ height: '36px', fontSize: '0.85rem', fontWeight: 700 }}
                     />
                   </div>
-                  
+
                   <div className="form-group" style={{ margin: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
                       <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem' }}>Calibrator Fudge Weight</label>
                       <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>{Math.round(fudgeWeight * 100)}%</span>
                     </div>
-                    <input 
-                      type="range" 
-                      className="custom-slider" 
+                    <input
+                      type="range"
+                      className="custom-slider"
                       min={0}
                       max={1}
                       step={0.05}
@@ -3249,12 +3972,12 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   ) : (
                     detectClassAnomalies(activeClass).map((anomaly) => (
-                      <div 
-                        key={anomaly.id} 
-                        style={{ 
-                          backgroundColor: anomaly.severity === 'high' ? 'var(--accent-rose-light)' : 'var(--accent-amber-light)', 
-                          border: `1px solid ${anomaly.severity === 'high' ? 'hsl(346, 84%, 90%)' : 'hsl(45, 90%, 90%)'}`, 
-                          padding: '0.4rem 0.6rem', 
+                      <div
+                        key={anomaly.id}
+                        style={{
+                          backgroundColor: anomaly.severity === 'high' ? 'var(--accent-rose-light)' : 'var(--accent-amber-light)',
+                          border: `1px solid ${anomaly.severity === 'high' ? 'hsl(346, 84%, 90%)' : 'hsl(45, 90%, 90%)'}`,
+                          padding: '0.4rem 0.6rem',
                           borderRadius: '6px',
                           fontSize: '0.72rem'
                         }}
@@ -3283,8 +4006,8 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <button 
-                    className="btn btn-secondary btn-sm" 
+                  <button
+                    className="btn btn-secondary btn-sm"
                     style={{ width: '100%', borderColor: 'var(--primary)', color: 'var(--primary)', height: '34px', fontSize: '0.78rem' }}
                     onClick={() => setIsArchiveModalOpen(true)}
                   >
@@ -3295,13 +4018,13 @@ export const AdminDashboard: React.FC = () => {
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No archived sprint records.</span>
                     ) : (
                       (activeClass.milestones || []).map((m) => (
-                        <div 
-                          key={m.id} 
+                        <div
+                          key={m.id}
                           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.72rem' }}
                         >
                           <span style={{ fontWeight: 600 }}>{m.name}</span>
-                          <button 
-                            className="btn btn-sm text-rose" 
+                          <button
+                            className="btn btn-sm text-rose"
                             style={{ padding: '2px', border: 'none', background: 'transparent' }}
                             onClick={() => {
                               triggerConfirm(
@@ -3334,7 +4057,7 @@ export const AdminDashboard: React.FC = () => {
                 </h3>
                 <FeatureInfoButton featureId="results-summary-sheet" size="sm" tooltipText="Gradebook & Results Matrix Guide" />
               </div>
-              
+
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <CustomSelect
                   options={groupOptions}
@@ -3388,32 +4111,27 @@ export const AdminDashboard: React.FC = () => {
                 <table className="custom-table" style={{ whiteSpace: 'nowrap' }}>
                   <thead>
                     <tr>
-                      <th className="freeze-col-1">Participant Name</th>
-                      <th>University</th>
-                      <th>Degree</th>
-                      <th>Student Type</th>
-                      <th>Team Group</th>
-                      <th>State</th>
-                      <th>Reviews Received</th>
+                      <th className="freeze-col-1" style={{ minWidth: '180px' }}>Participant &amp; Team</th>
+                      <th style={{ minWidth: '110px' }}>Review Status</th>
                       {activeClass.fields.map(f => (
-                        <th key={f.id} style={{ fontSize: '0.75rem' }}>Avg: {f.name}</th>
+                        <th key={f.id} style={{ minWidth: '120px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.78rem', textTransform: 'none', fontWeight: 700 }}>{f.name}</span>
+                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'none', fontWeight: 500 }}>Mean &amp; StdDev</span>
+                          </div>
+                        </th>
                       ))}
-                      {activeClass.fields.map(f => (
-                        <th key={f.id} style={{ fontSize: '0.75rem' }}>StdDev: {f.name}</th>
-                      ))}
-                      <th>Received Praise &amp; Strengths</th>
-                      <th>WebPA Ratio</th>
-                      <th>Calibrated Mark</th>
-                      <th>Overall Weighted Avg %</th>
-                      <th>Subjective Scaled Score</th>
-                      <th>Self-Awareness (Johari)</th>
-                      <th>Actions</th>
+                      <th style={{ minWidth: '160px' }}>Strengths &amp; Praise</th>
+                      <th style={{ minWidth: '120px' }}>WebPA Mark</th>
+                      <th style={{ minWidth: '110px' }}>Weighted Score</th>
+                      <th style={{ minWidth: '130px' }}>Johari Alignment</th>
+                      <th style={{ textAlign: 'right', minWidth: '180px' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredStudents.map((s) => {
                       const metrics = calculateStudentMetrics(s, activeClass);
-                      
+
                       // Calculate anonymized praise tags
                       const teammates = activeClass.students
                         .filter((stud) => stud.groupName === s.groupName && stud.id !== s.id)
@@ -3441,104 +4159,125 @@ export const AdminDashboard: React.FC = () => {
 
                       return (
                         <tr key={s.id}>
-                          <td className="freeze-col-1" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{s.name}</td>
-                          <td>
-                            {s.university ? (
-                              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{s.university}</span>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
-                            )}
-                          </td>
-                          <td>
-                            {s.degree ? (
-                              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{s.degree}</span>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
-                            )}
-                          </td>
-                          <td>
-                            {s.studentType === 'Erasmus' ? (
-                              <span className="badge badge-secondary" style={{ background: 'linear-gradient(135deg, #FF007F, #7F00FF)', color: '#fff', border: 'none', fontWeight: 'bold' }}>Erasmus</span>
-                            ) : (
-                              <span className="badge badge-secondary" style={{ opacity: 0.85 }}>Normal</span>
-                            )}
-                          </td>
-                          <td>
-                            <span className="badge badge-primary">{s.groupName}</span>
-                          </td>
-                          <td>
-                            {s.submitted ? (
-                              <span className="badge badge-teal" style={{ gap: '0.25rem' }}><CheckCircle size={10} /> Completed</span>
-                            ) : (
-                              <span className="badge badge-amber" style={{ gap: '0.25rem' }}><Clock size={10} /> Pending</span>
-                            )}
-                          </td>
-                          <td style={{ fontWeight: 500 }}>
-                            {metrics.reviewsReceived} / {metrics.expectedReviewsCount}
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '0.25rem' }}>
-                              ({metrics.gradeProgress}%)
-                            </span>
-                          </td>
-                          {activeClass.fields.map(f => {
-                            const val = metrics.fieldAverages[f.id];
-                            return (
-                              <td key={f.id} style={{ fontWeight: 600, color: val !== null ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                                {val !== null ? `${val} / ${f.max}` : '-'}
-                              </td>
-                            );
-                          })}
-                          {activeClass.fields.map(f => {
-                            const val = metrics.fieldStdDevs[f.id];
-                            return (
-                              <td key={f.id} style={{ fontStyle: val !== null ? 'normal' : 'italic', color: 'var(--text-muted)' }}>
-                                {val !== null ? val : '-'}
-                              </td>
-                            );
-                          })}
-                          <td>
-                            <div className="praise-badge-list">
-                                {tagEntries.length === 0 ? (
-                                  <span className="praise-badge-pill empty">No feedback yet</span>
-                                ) : (
-                                  tagEntries.map(([tagText, count]) => {
-                                    const tagInfo = getPraiseTagInfo(tagText);
-                                    const TagIcon = tagInfo.icon;
-                                    return (
-                                      <span 
-                                        key={tagText} 
-                                        className="praise-badge-pill"
-                                        style={{ 
-                                          backgroundColor: tagInfo.bg, 
-                                          color: tagInfo.color, 
-                                          borderColor: tagInfo.border 
-                                        }}
-                                      >
-                                        <TagIcon size={10} />
-                                        <span>{tagInfo.text}</span>
-                                        <span style={{ opacity: 0.8, marginLeft: '0.15rem' }}>x{count}</span>
-                                      </span>
-                                    );
-                                  })
+                          {/* Participant & Team */}
+                          <td className="freeze-col-1">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                              <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.88rem' }}>{s.name}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <span className="badge badge-teal" style={{ fontSize: '0.66rem', padding: '0.1rem 0.35rem', fontWeight: 700 }}>
+                                  {s.groupName}
+                                </span>
+                                {s.university && (
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                    &bull; {s.university}
+                                  </span>
                                 )}
                               </div>
+                            </div>
                           </td>
-                          <td style={{ fontWeight: 700, color: 'var(--primary)' }}>
-                            {metrics.reviewsReceived > 0 ? `${ratio.toFixed(2)}x` : '—'}
+
+                          {/* Review Status & Submission */}
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <span style={{ fontWeight: 600, fontSize: '0.82rem' }}>
+                                {metrics.reviewsReceived} / {metrics.expectedReviewsCount}
+                                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '0.25rem' }}>
+                                  ({metrics.gradeProgress}%)
+                                </span>
+                              </span>
+                              <div>
+                                {s.submitted ? (
+                                  <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', gap: '0.2rem' }}>
+                                    <CheckCircle size={9} /> Completed
+                                  </span>
+                                ) : (
+                                  <span className="badge badge-amber" style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', gap: '0.2rem' }}>
+                                    <Clock size={9} /> Pending
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </td>
-                          <td style={{ fontWeight: 800, color: adjustedGrade < (baseGroupGrade * 0.7) ? 'var(--accent-rose)' : 'hsl(142, 70%, 35%)' }}>
-                            {metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${baseGroupGrade}` : '—'}
+
+                          {/* Rubric Criteria Columns (Unified Mean + StdDev) */}
+                          {activeClass.fields.map(f => {
+                            const val = metrics.fieldAverages[f.id];
+                            const std = metrics.fieldStdDevs[f.id];
+                            return (
+                              <td key={f.id}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                                  <span style={{ fontWeight: 700, fontSize: '0.84rem', color: val !== null ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                    {val !== null ? `${val} / ${f.max}` : '—'}
+                                  </span>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                    {std !== null ? `±${std} dev` : '±0.0'}
+                                  </span>
+                                </div>
+                              </td>
+                            );
+                          })}
+
+                          {/* Received Praise & Strengths */}
+                          <td>
+                            <div className="praise-badge-list">
+                              {tagEntries.length === 0 ? (
+                                <span className="praise-badge-pill empty">No feedback yet</span>
+                              ) : (
+                                tagEntries.map(([tagText, count]) => {
+                                  const tagInfo = getPraiseTagInfo(tagText);
+                                  const TagIcon = tagInfo.icon;
+                                  return (
+                                    <span
+                                      key={tagText}
+                                      className="praise-badge-pill"
+                                      style={{
+                                        backgroundColor: tagInfo.bg,
+                                        color: tagInfo.color,
+                                        borderColor: tagInfo.border,
+                                        fontSize: '0.7rem',
+                                        padding: '0.15rem 0.4rem'
+                                      }}
+                                    >
+                                      <TagIcon size={10} />
+                                      <span>{tagInfo.text}</span>
+                                      <span style={{ opacity: 0.8, marginLeft: '0.15rem' }}>x{count}</span>
+                                    </span>
+                                  );
+                                })
+                              )}
+                            </div>
                           </td>
-                          <td style={{ fontWeight: 700, fontSize: '0.95rem', color: metrics.overallPercentage !== null ? 'var(--primary)' : 'var(--text-muted)' }}>
-                            {metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A'}
+
+                          {/* WebPA Calibrated Mark */}
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                              <span style={{ fontWeight: 800, fontSize: '0.9rem', color: adjustedGrade < (baseGroupGrade * 0.7) ? 'var(--accent-rose)' : 'hsl(142, 70%, 35%)' }}>
+                                {metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${baseGroupGrade}` : '—'}
+                              </span>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--primary)' }}>
+                                {metrics.reviewsReceived > 0 ? `WebPA: ${ratio.toFixed(2)}x` : 'WebPA: 1.00x'}
+                              </span>
+                            </div>
                           </td>
-                          <td style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--accent-teal)' }}>
-                            {metrics.overallPercentage !== null ? `${((metrics.overallPercentage / 100) * activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)).toFixed(1)} / ${activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)}` : 'N/A'}
+
+                          {/* Overall Weighted Score */}
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.88rem', color: metrics.overallPercentage !== null ? 'var(--primary)' : 'var(--text-muted)' }}>
+                                {metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A'}
+                              </span>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 600 }}>
+                                {metrics.overallPercentage !== null ? `${((metrics.overallPercentage / 100) * activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)).toFixed(1)} / ${activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)}` : '—'}
+                              </span>
+                            </div>
                           </td>
+
+                          {/* Self-Awareness (Johari) */}
                           <td>
                             {(() => {
                               const johari = calculateJohariWindowMetric(s.id, activeClass);
                               return (
-                                <span 
+                                <span
                                   className={`badge ${johari.badgeClass}`}
                                   style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', whiteSpace: 'nowrap', display: 'inline-flex' }}
                                   title={johari.description}
@@ -3548,70 +4287,38 @@ export const AdminDashboard: React.FC = () => {
                               );
                             })()}
                           </td>
-                          <td>
-                            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                              <button 
+
+                          {/* 1-Click Minimal Segmented Action Dock */}
+                          <td style={{ textAlign: 'right' }}>
+                            <div className="table-action-dock">
+                              <button
                                 type="button"
-                                className="btn btn-secondary" 
-                                style={{ 
-                                  display: 'inline-flex', 
-                                  alignItems: 'center', 
-                                  gap: '0.3rem', 
-                                  padding: '0.35rem 0.6rem', 
-                                  fontSize: '0.8rem',
-                                  border: '1px solid var(--accent-teal)',
-                                  color: 'var(--accent-teal)',
-                                  cursor: 'pointer',
-                                  background: 'transparent',
-                                  borderRadius: 'var(--radius-sm)'
-                                }}
+                                className="table-action-btn btn-text-action action-report"
                                 onClick={() => openReportModal(s.id)}
-                                title="View & Download Individual Student PDF Report Card with Live Preview"
+                                title="View & Download PDF Report Card"
                               >
-                                <FileText size={13} />
-                                <span>PDF Report</span>
+                                <FileText size={12} />
+                                <span>PDF</span>
                               </button>
-                              <button 
-                                className="btn btn-secondary" 
-                                style={{ 
-                                  display: 'inline-flex', 
-                                  alignItems: 'center', 
-                                  gap: '0.3rem', 
-                                  padding: '0.35rem 0.6rem', 
-                                  fontSize: '0.8rem',
-                                  border: '1px solid var(--primary)',
-                                  color: 'var(--primary)',
-                                  cursor: 'pointer',
-                                  background: 'transparent',
-                                  borderRadius: 'var(--radius-sm)'
-                                }}
+                              <button
+                                type="button"
+                                className="table-action-btn btn-text-action action-details"
                                 onClick={() => setSelectedStudentReport(s)}
-                                title="View individual student self vs peer evaluation report"
+                                title="View individual evaluation details"
                               >
-                                <Eye size={13} />
+                                <Eye size={12} />
                                 <span>Details</span>
                               </button>
-                              <button 
-                                className="btn btn-secondary" 
-                                style={{ 
-                                  display: 'inline-flex', 
-                                  alignItems: 'center', 
-                                  gap: '0.3rem', 
-                                  padding: '0.35rem 0.6rem', 
-                                  fontSize: '0.8rem',
-                                  border: '1px solid var(--border-color)',
-                                  color: 'var(--text-secondary)',
-                                  cursor: 'pointer',
-                                  background: 'transparent',
-                                  borderRadius: 'var(--radius-sm)'
-                                }}
+                              <button
+                                type="button"
+                                className="table-action-btn btn-text-action action-team"
                                 onClick={() => {
                                   setSelectedTeamAnalysis(s.groupName);
                                   setActiveAuditMetric('overall');
                                 }}
-                                title="View in-depth team evaluation metrics, audit matrix, and all reviews logs"
+                                title="View team evaluation breakdown"
                               >
-                                <Users size={13} />
+                                <Users size={12} />
                                 <span>Team</span>
                               </button>
                             </div>
@@ -3636,12 +4343,12 @@ export const AdminDashboard: React.FC = () => {
 
         return (
           <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            
+
             {/* Top Status & Overview Ribbon */}
-            <div 
-              style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                 gap: '1rem',
                 backgroundColor: 'var(--bg-surface)',
                 border: '1px solid var(--border-color)',
@@ -3701,7 +4408,7 @@ export const AdminDashboard: React.FC = () => {
 
             {/* Main Command Center Deck */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-              
+
               {/* Card 1: Submission Window & Deadlines */}
               <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div>
@@ -3713,7 +4420,7 @@ export const AdminDashboard: React.FC = () => {
                       {activeClass.deadline ? (isDeadlineOpen ? 'Active Countdown' : 'Locked') : 'Open (No Limit)'}
                     </span>
                   </div>
-                  
+
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
                     Configure a strict closing date. Once passed, the student grading portal automatically displays a locked status and blocks new responses.
                   </p>
@@ -3722,10 +4429,10 @@ export const AdminDashboard: React.FC = () => {
                     <label className="form-label" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                       <Calendar size={14} className="text-indigo" /> Closing Date &amp; Time
                     </label>
-                    <input 
-                      type="datetime-local" 
-                      className="form-input" 
-                      value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset()*60000).toISOString().slice(0, 16) : ''}
+                    <input
+                      type="datetime-local"
+                      className="form-input"
+                      value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val) {
@@ -3797,7 +4504,7 @@ export const AdminDashboard: React.FC = () => {
                         {isDeadlineOpen ? <Clock size={14} /> : <Lock size={14} />}
                         {isDeadlineOpen ? 'Submission Clock Running' : 'Window Closed (Locked)'}
                       </span>
-                      <button 
+                      <button
                         className="btn btn-secondary btn-sm"
                         style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
                         onClick={() => {
@@ -3832,7 +4539,7 @@ export const AdminDashboard: React.FC = () => {
                       Direct Links
                     </span>
                   </div>
-                  
+
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
                     Send individualized evaluation links to students with unique tokens for secure anonymous submissions.
                   </p>
@@ -3848,31 +4555,31 @@ export const AdminDashboard: React.FC = () => {
 
                   {emailService === 'emailjs' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                      <input 
-                        type="text" 
-                        placeholder="EmailJS Service ID (e.g. service_xyz)" 
-                        className="form-input" 
+                      <input
+                        type="text"
+                        placeholder="EmailJS Service ID (e.g. service_xyz)"
+                        className="form-input"
                         value={emailjsServiceId}
                         onChange={(e) => setEmailjsServiceId(e.target.value)}
                       />
-                      <input 
-                        type="text" 
-                        placeholder="EmailJS Template ID (e.g. template_abc)" 
-                        className="form-input" 
+                      <input
+                        type="text"
+                        placeholder="EmailJS Template ID (e.g. template_abc)"
+                        className="form-input"
                         value={emailjsTemplateId}
                         onChange={(e) => setEmailjsTemplateId(e.target.value)}
                       />
-                      <input 
-                        type="text" 
-                        placeholder="EmailJS Public Key / User ID" 
-                        className="form-input" 
+                      <input
+                        type="text"
+                        placeholder="EmailJS Public Key / User ID"
+                        className="form-input"
                         value={emailjsUserId}
                         onChange={(e) => setEmailjsUserId(e.target.value)}
                       />
-                      <a 
-                        href="https://www.emailjs.com" 
-                        target="_blank" 
-                        rel="noreferrer" 
+                      <a
+                        href="https://www.emailjs.com"
+                        target="_blank"
+                        rel="noreferrer"
                         style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
                       >
                         How do I get these free keys?
@@ -3882,31 +4589,31 @@ export const AdminDashboard: React.FC = () => {
 
                   {emailService === 'brevo' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                      <input 
-                        type="password" 
-                        placeholder="Brevo SMTP API Key" 
-                        className="form-input" 
+                      <input
+                        type="password"
+                        placeholder="Brevo SMTP API Key"
+                        className="form-input"
                         value={brevoApiKey}
                         onChange={(e) => setBrevoApiKey(e.target.value)}
                       />
-                      <input 
-                        type="email" 
-                        placeholder="Verified Sender Email (e.g. prof@uni.edu)" 
-                        className="form-input" 
+                      <input
+                        type="email"
+                        placeholder="Verified Sender Email (e.g. prof@uni.edu)"
+                        className="form-input"
                         value={brevoSenderEmail}
                         onChange={(e) => setBrevoSenderEmail(e.target.value)}
                       />
-                      <input 
-                        type="text" 
-                        placeholder="Sender Name (Optional, e.g. Course Instructor)" 
-                        className="form-input" 
+                      <input
+                        type="text"
+                        placeholder="Sender Name (Optional, e.g. Course Instructor)"
+                        className="form-input"
                         value={brevoSenderName}
                         onChange={(e) => setBrevoSenderName(e.target.value)}
                       />
-                      <a 
-                        href="https://www.brevo.com" 
-                        target="_blank" 
-                        rel="noreferrer" 
+                      <a
+                        href="https://www.brevo.com"
+                        target="_blank"
+                        rel="noreferrer"
                         style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
                       >
                         How do I get my free Brevo API Key?
@@ -3916,7 +4623,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
-                  <button 
+                  <button
                     className={`btn btn-primary ${isSendingEmails ? 'btn-disabled' : ''}`}
                     onClick={() => triggerEmailAutomation(false)}
                     disabled={isSendingEmails}
@@ -3924,7 +4631,7 @@ export const AdminDashboard: React.FC = () => {
                   >
                     <Mail size={16} /> Send Links to All ({totalStudentsCount})
                   </button>
-                  <button 
+                  <button
                     className={`btn btn-secondary ${isSendingEmails ? 'btn-disabled' : ''}`}
                     style={{ borderColor: 'var(--accent-amber)', color: 'var(--accent-amber)', width: '100%', justifyContent: 'center', gap: '0.5rem' }}
                     onClick={() => triggerEmailAutomation(true)}
@@ -3951,26 +4658,26 @@ export const AdminDashboard: React.FC = () => {
                       <Edit2 size={12} /> Edit Template
                     </button>
                   </div>
-                  
+
                   {/* Email Client Mockup Frame */}
                   <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem', fontFamily: 'inherit', fontSize: '0.85rem' }}>
                     <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                       <div style={{ fontSize: '0.78rem' }}><b>To:</b> <span style={{ color: 'var(--text-secondary)' }}>student.name@university.edu</span></div>
                       <div style={{ fontSize: '0.78rem' }}><b>Subject:</b> <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{substitutePlaceholders(customEmailSubject, 'Student Name', activeClass.name)}</span></div>
                     </div>
-                    
+
                     <div style={{ color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.5, wordBreak: 'break-word', fontSize: '0.82rem', maxHeight: '160px', overflowY: 'auto' }}>
                       {substitutePlaceholders(customEmailBody, 'Student Name', activeClass.name)}
                     </div>
-                    
+
                     <div style={{ textAlign: 'center', margin: '1rem 0' }}>
-                      <span 
+                      <span
                         style={{ backgroundColor: 'var(--primary)', color: 'var(--text-inverse)', padding: '0.45rem 1rem', borderRadius: '6px', fontWeight: 600, cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', boxShadow: 'var(--shadow-sm)' }}
                       >
                         <Zap size={14} /> Open Grading Portal
                       </span>
                     </div>
-                    
+
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', margin: '0.75rem 0 0', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem', lineHeight: 1.4 }}>
                       <Lock size={10} style={{ display: 'inline', marginRight: '3px' }} /> Anonymous feedback guaranteed. Team members only view aggregated scores.
                     </p>
@@ -4000,12 +4707,12 @@ export const AdminDashboard: React.FC = () => {
                 <h4 style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
                   <RefreshCw size={16} className={isSendingEmails ? 'spin' : ''} /> Email Transmission Status
                 </h4>
-                
+
                 <div style={{ height: '8px', width: '100%', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden', marginBottom: '1rem' }}>
                   <div style={{ height: '100%', width: `${emailProgress}%`, backgroundColor: 'var(--accent-teal)', transition: 'width 200ms ease' }} />
                 </div>
 
-                <div 
+                <div
                   style={{ backgroundColor: '#0f172a', color: '#38bdf8', padding: '1rem', borderRadius: 'var(--radius-sm)', fontFamily: 'monospace', fontSize: '0.8rem', height: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column-reverse', gap: '0.25rem' }}
                 >
                   {[...emailLogs].reverse().map((log, i) => (
@@ -4037,7 +4744,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
-              By default, this web application stores everything in your local browser sandbox (LocalStorage). 
+              By default, this web application stores everything in your local browser sandbox (LocalStorage).
               If you want to host it online and have your students submit evaluations, simply setup a <b>Free Firebase Project</b> and paste your web application keys below.
             </p>
 
@@ -4045,40 +4752,40 @@ export const AdminDashboard: React.FC = () => {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
                 <div className="form-group">
                   <label className="form-label">Firebase API Key</label>
-                  <input 
-                    type="password" 
-                    placeholder="AIzaSyA1..." 
-                    className="form-input" 
+                  <input
+                    type="password"
+                    placeholder="AIzaSyA1..."
+                    className="form-input"
                     value={fbApiKey}
                     onChange={(e) => setFbApiKey(e.target.value)}
                   />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Project ID</label>
-                  <input 
-                    type="text" 
-                    placeholder="peer-grading-f9c32" 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    placeholder="peer-grading-f9c32"
+                    className="form-input"
                     value={fbProjectId}
                     onChange={(e) => setFbProjectId(e.target.value)}
                   />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Auth Domain (Optional)</label>
-                  <input 
-                    type="text" 
-                    placeholder="peer-grading.firebaseapp.com" 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    placeholder="peer-grading.firebaseapp.com"
+                    className="form-input"
                     value={fbAuthDomain}
                     onChange={(e) => setFbAuthDomain(e.target.value)}
                   />
                 </div>
                 <div className="form-group">
                   <label className="form-label">App ID</label>
-                  <input 
-                    type="text" 
-                    placeholder="1:84712:web:a91f..." 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    placeholder="1:84712:web:a91f..."
+                    className="form-input"
                     value={fbAppId}
                     onChange={(e) => setFbAppId(e.target.value)}
                   />
@@ -4090,8 +4797,8 @@ export const AdminDashboard: React.FC = () => {
                   <Database size={16} /> Link Firebase & Sync
                 </button>
                 {isCloudSynced && (
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="btn btn-secondary text-rose"
                     style={{ borderColor: 'var(--accent-rose)' }}
                     onClick={() => {
@@ -4126,7 +4833,7 @@ export const AdminDashboard: React.FC = () => {
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setIsNewClassModalOpen(false)}>Cancel</button>
-            <button 
+            <button
               className="btn btn-primary"
               onClick={() => {
                 if (newClassName.trim()) {
@@ -4145,10 +4852,10 @@ export const AdminDashboard: React.FC = () => {
       >
         <div className="form-group">
           <label className="form-label">Classroom / Course Group Title Name</label>
-          <input 
-            type="text" 
-            placeholder="e.g. Algorithms Design - Spring 2026" 
-            className="form-input" 
+          <input
+            type="text"
+            placeholder="e.g. Algorithms Design - Spring 2026"
+            className="form-input"
             value={newClassName}
             onChange={(e) => setNewClassName(e.target.value)}
           />
@@ -4163,7 +4870,7 @@ export const AdminDashboard: React.FC = () => {
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setIsArchiveModalOpen(false)}>Cancel</button>
-            <button 
+            <button
               className="btn btn-primary"
               onClick={() => {
                 if (newMilestoneName.trim()) {
@@ -4182,10 +4889,10 @@ export const AdminDashboard: React.FC = () => {
       >
         <div className="form-group">
           <label className="form-label">Milestone / Sprint Name</label>
-          <input 
-            type="text" 
-            placeholder="e.g. Sprint 1, Midterm Review" 
-            className="form-input" 
+          <input
+            type="text"
+            placeholder="e.g. Sprint 1, Midterm Review"
+            className="form-input"
             value={newMilestoneName}
             onChange={(e) => setNewMilestoneName(e.target.value)}
           />
@@ -4211,7 +4918,7 @@ export const AdminDashboard: React.FC = () => {
         }
       >
         <form onSubmit={handleAddStudentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          
+
           {/* SECTION 1: IDENTITY & CONTACT */}
           <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
@@ -4226,10 +4933,10 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Full Student Name <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Alice Johnson" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  placeholder="e.g. Alice Johnson"
+                  className="form-input"
                   required
                   value={newStudent.name}
                   onChange={(e) => setNewStudent(prev => ({ ...prev, name: e.target.value }))}
@@ -4241,10 +4948,10 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Institutional Email <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
-                <input 
-                  type="email" 
-                  placeholder="e.g. alice@university.edu" 
-                  className="form-input" 
+                <input
+                  type="email"
+                  placeholder="e.g. alice@university.edu"
+                  className="form-input"
                   required
                   value={newStudent.email}
                   onChange={(e) => setNewStudent(prev => ({ ...prev, email: e.target.value }))}
@@ -4258,10 +4965,10 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Student ID <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.72rem' }}>(Auto-generated if blank)</span>
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. std_8291" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  placeholder="e.g. std_8291"
+                  className="form-input"
                   value={newStudent.id}
                   onChange={(e) => setNewStudent(prev => ({ ...prev, id: e.target.value }))}
                   style={{ height: '36px', fontSize: '0.82rem' }}
@@ -4272,10 +4979,10 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Assigned Team / Group Title
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Team Alpha, Group Gamma" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  placeholder="e.g. Team Alpha, Group Gamma"
+                  className="form-input"
                   value={newStudent.groupName}
                   onChange={(e) => setNewStudent(prev => ({ ...prev, groupName: e.target.value }))}
                   style={{ height: '36px', fontSize: '0.82rem' }}
@@ -4328,23 +5035,27 @@ export const AdminDashboard: React.FC = () => {
 
             {/* Toggle Status Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-              <label 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.65rem', 
-                  padding: '0.65rem 0.85rem', 
-                  borderRadius: '8px', 
-                  backgroundColor: newStudent.isInternational ? 'rgba(99, 102, 241, 0.08)' : '#ffffff', 
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  backgroundColor: newStudent.isInternational ? 'rgba(99, 102, 241, 0.08)' : '#ffffff',
                   border: `1.5px solid ${newStudent.isInternational ? 'var(--primary)' : 'var(--border-color)'}`,
                   cursor: 'pointer',
                   transition: 'all 150ms ease'
                 }}
               >
-                <input 
+                <input
                   type="checkbox"
                   checked={newStudent.isInternational}
-                  onChange={(e) => setNewStudent(prev => ({ ...prev, isInternational: e.target.checked }))}
+                  onChange={(e) => setNewStudent(prev => ({
+                    ...prev,
+                    isInternational: e.target.checked,
+                    currentCountry: (e.target.checked && prev.currentCountry === prev.nationality) ? '' : prev.currentCountry
+                  }))}
                   style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
                 />
                 <div>
@@ -4353,20 +5064,20 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </label>
 
-              <label 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.65rem', 
-                  padding: '0.65rem 0.85rem', 
-                  borderRadius: '8px', 
-                  backgroundColor: newStudent.isExchange ? 'rgba(20, 184, 166, 0.08)' : '#ffffff', 
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  backgroundColor: newStudent.isExchange ? 'rgba(20, 184, 166, 0.08)' : '#ffffff',
                   border: `1.5px solid ${newStudent.isExchange ? 'var(--accent-teal)' : 'var(--border-color)'}`,
                   cursor: 'pointer',
                   transition: 'all 150ms ease'
                 }}
               >
-                <input 
+                <input
                   type="checkbox"
                   checked={newStudent.isExchange}
                   onChange={(e) => setNewStudent(prev => ({ ...prev, isExchange: e.target.checked }))}
@@ -4388,8 +5099,8 @@ export const AdminDashboard: React.FC = () => {
                 </label>
                 <SearchableSelect
                   value={newStudent.nationality}
-                  onChange={(val) => setNewStudent(prev => ({ 
-                    ...prev, 
+                  onChange={(val) => setNewStudent(prev => ({
+                    ...prev,
                     nationality: val,
                     currentCountry: (!prev.currentCountry && !prev.isInternational) ? val : prev.currentCountry
                   }))}
@@ -4464,10 +5175,10 @@ export const AdminDashboard: React.FC = () => {
               <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                 Degree / Field of Study
               </label>
-              <input 
-                type="text" 
-                placeholder="e.g. Computer Science, Mechanical Engineering, MBA" 
-                className="form-input" 
+              <input
+                type="text"
+                placeholder="e.g. Computer Science, Mechanical Engineering, MBA"
+                className="form-input"
                 value={newStudent.degree}
                 onChange={(e) => setNewStudent(prev => ({ ...prev, degree: e.target.value }))}
                 style={{ height: '36px', fontSize: '0.82rem', marginBottom: '0.35rem' }}
@@ -4501,10 +5212,10 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   University / Institution Name
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Stanford University, TU Munich" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  placeholder="e.g. Stanford University, TU Munich"
+                  className="form-input"
                   value={newStudent.university}
                   onChange={(e) => setNewStudent(prev => ({ ...prev, university: e.target.value }))}
                   style={{ height: '36px', fontSize: '0.82rem' }}
@@ -4517,10 +5228,10 @@ export const AdminDashboard: React.FC = () => {
                     <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                       Home Sending University (in English) <span style={{ color: 'var(--accent-rose)' }}>*</span>
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Sorbonne University, TU Munich" 
-                      className="form-input" 
+                    <input
+                      type="text"
+                      placeholder="e.g. Sorbonne University, TU Munich"
+                      className="form-input"
                       value={newStudent.originalUniversity}
                       onChange={(e) => setNewStudent(prev => ({ ...prev, originalUniversity: e.target.value }))}
                       style={{ height: '34px', fontSize: '0.8rem' }}
@@ -4545,10 +5256,10 @@ export const AdminDashboard: React.FC = () => {
                     <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                       Host / Destination University <span style={{ color: 'var(--accent-rose)' }}>*</span>
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Stanford University, Oxford" 
-                      className="form-input" 
+                    <input
+                      type="text"
+                      placeholder="e.g. Stanford University, Oxford"
+                      className="form-input"
                       value={newStudent.currentUniversity}
                       onChange={(e) => setNewStudent(prev => ({ ...prev, currentUniversity: e.target.value }))}
                       style={{ height: '34px', fontSize: '0.8rem' }}
@@ -4590,7 +5301,7 @@ export const AdminDashboard: React.FC = () => {
         }
       >
         <form onSubmit={handleEditStudentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          
+
           {/* SECTION 1: IDENTITY & CONTACT */}
           <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
@@ -4605,10 +5316,10 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Full Student Name <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Alice Johnson" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  placeholder="e.g. Alice Johnson"
+                  className="form-input"
                   required
                   value={editStudentData.name}
                   onChange={(e) => setEditStudentData(prev => ({ ...prev, name: e.target.value }))}
@@ -4620,10 +5331,10 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Institutional Email <span style={{ color: 'var(--accent-rose)' }}>*</span>
                 </label>
-                <input 
-                  type="email" 
-                  placeholder="e.g. alice@university.edu" 
-                  className="form-input" 
+                <input
+                  type="email"
+                  placeholder="e.g. alice@university.edu"
+                  className="form-input"
                   required
                   value={editStudentData.email}
                   onChange={(e) => setEditStudentData(prev => ({ ...prev, email: e.target.value }))}
@@ -4637,9 +5348,9 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Student ID <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.72rem' }}>(Read-only)</span>
                 </label>
-                <input 
-                  type="text" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  className="form-input"
                   disabled
                   value={editStudentData.id}
                   style={{ height: '36px', fontSize: '0.82rem', backgroundColor: '#ffffff', opacity: 0.7, cursor: 'not-allowed' }}
@@ -4650,10 +5361,10 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Assigned Team / Group Title
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Team Alpha, Group Gamma" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  placeholder="e.g. Team Alpha, Group Gamma"
+                  className="form-input"
                   value={editStudentData.groupName}
                   onChange={(e) => setEditStudentData(prev => ({ ...prev, groupName: e.target.value }))}
                   style={{ height: '36px', fontSize: '0.82rem' }}
@@ -4706,23 +5417,27 @@ export const AdminDashboard: React.FC = () => {
 
             {/* Toggle Status Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-              <label 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.65rem', 
-                  padding: '0.65rem 0.85rem', 
-                  borderRadius: '8px', 
-                  backgroundColor: editStudentData.isInternational ? 'rgba(99, 102, 241, 0.08)' : '#ffffff', 
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  backgroundColor: editStudentData.isInternational ? 'rgba(99, 102, 241, 0.08)' : '#ffffff',
                   border: `1.5px solid ${editStudentData.isInternational ? 'var(--primary)' : 'var(--border-color)'}`,
                   cursor: 'pointer',
                   transition: 'all 150ms ease'
                 }}
               >
-                <input 
+                <input
                   type="checkbox"
                   checked={editStudentData.isInternational}
-                  onChange={(e) => setEditStudentData(prev => ({ ...prev, isInternational: e.target.checked }))}
+                  onChange={(e) => setEditStudentData(prev => ({
+                    ...prev,
+                    isInternational: e.target.checked,
+                    currentCountry: (e.target.checked && prev.currentCountry === prev.nationality) ? '' : prev.currentCountry
+                  }))}
                   style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
                 />
                 <div>
@@ -4731,20 +5446,20 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </label>
 
-              <label 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.65rem', 
-                  padding: '0.65rem 0.85rem', 
-                  borderRadius: '8px', 
-                  backgroundColor: editStudentData.isExchange ? 'rgba(20, 184, 166, 0.08)' : '#ffffff', 
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  backgroundColor: editStudentData.isExchange ? 'rgba(20, 184, 166, 0.08)' : '#ffffff',
                   border: `1.5px solid ${editStudentData.isExchange ? 'var(--accent-teal)' : 'var(--border-color)'}`,
                   cursor: 'pointer',
                   transition: 'all 150ms ease'
                 }}
               >
-                <input 
+                <input
                   type="checkbox"
                   checked={editStudentData.isExchange}
                   onChange={(e) => setEditStudentData(prev => ({ ...prev, isExchange: e.target.checked }))}
@@ -4766,8 +5481,8 @@ export const AdminDashboard: React.FC = () => {
                 </label>
                 <SearchableSelect
                   value={editStudentData.nationality || ''}
-                  onChange={(val) => setEditStudentData(prev => ({ 
-                    ...prev, 
+                  onChange={(val) => setEditStudentData(prev => ({
+                    ...prev,
                     nationality: val,
                     currentCountry: (!prev.currentCountry && !prev.isInternational) ? val : prev.currentCountry
                   }))}
@@ -4842,10 +5557,10 @@ export const AdminDashboard: React.FC = () => {
               <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                 Degree / Field of Study
               </label>
-              <input 
-                type="text" 
-                placeholder="e.g. Computer Science, Mechanical Engineering, MBA" 
-                className="form-input" 
+              <input
+                type="text"
+                placeholder="e.g. Computer Science, Mechanical Engineering, MBA"
+                className="form-input"
                 value={editStudentData.degree || ''}
                 onChange={(e) => setEditStudentData(prev => ({ ...prev, degree: e.target.value }))}
                 style={{ height: '36px', fontSize: '0.82rem', marginBottom: '0.35rem' }}
@@ -4879,10 +5594,10 @@ export const AdminDashboard: React.FC = () => {
                 <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   University / Institution Name
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Stanford University, TU Munich" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  placeholder="e.g. Stanford University, TU Munich"
+                  className="form-input"
                   value={editStudentData.university || ''}
                   onChange={(e) => setEditStudentData(prev => ({ ...prev, university: e.target.value }))}
                   style={{ height: '36px', fontSize: '0.82rem' }}
@@ -4895,10 +5610,10 @@ export const AdminDashboard: React.FC = () => {
                     <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                       Home Sending University (in English) <span style={{ color: 'var(--accent-rose)' }}>*</span>
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Sorbonne University, TU Munich" 
-                      className="form-input" 
+                    <input
+                      type="text"
+                      placeholder="e.g. Sorbonne University, TU Munich"
+                      className="form-input"
                       value={editStudentData.originalUniversity || ''}
                       onChange={(e) => setEditStudentData(prev => ({ ...prev, originalUniversity: e.target.value }))}
                       style={{ height: '34px', fontSize: '0.8rem' }}
@@ -4923,10 +5638,10 @@ export const AdminDashboard: React.FC = () => {
                     <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                       Host / Destination University <span style={{ color: 'var(--accent-rose)' }}>*</span>
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Stanford University, Oxford" 
-                      className="form-input" 
+                    <input
+                      type="text"
+                      placeholder="e.g. Stanford University, Oxford"
+                      className="form-input"
                       value={editStudentData.currentUniversity || editStudentData.university || ''}
                       onChange={(e) => setEditStudentData(prev => ({ ...prev, currentUniversity: e.target.value }))}
                       style={{ height: '34px', fontSize: '0.8rem' }}
@@ -4959,9 +5674,9 @@ export const AdminDashboard: React.FC = () => {
         title="Edit Email Template"
         footer={
           <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
-            <button 
+            <button
               type="button"
-              className="btn btn-secondary" 
+              className="btn btn-secondary"
               onClick={() => {
                 if (window.confirm("Are you sure you want to reset the template to the professional default? Your current customizations will be overwritten.")) {
                   setCustomEmailSubject('Evaluation Invitation: Anonymous Peer Assessment - {{courseName}}');
@@ -4994,8 +5709,8 @@ export const AdminDashboard: React.FC = () => {
 
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 600 }}>Email Subject</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className="form-input"
               value={customEmailSubject}
               onChange={(e) => setCustomEmailSubject(e.target.value)}
@@ -5025,7 +5740,7 @@ export const AdminDashboard: React.FC = () => {
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setIsNewProfileModalOpen(false)}>Cancel</button>
-            <button 
+            <button
               className="btn btn-primary"
               onClick={() => {
                 if (newProfileName.trim()) {
@@ -5044,10 +5759,10 @@ export const AdminDashboard: React.FC = () => {
       >
         <div className="form-group">
           <label className="form-label">Admin Profile Name / Title</label>
-          <input 
-            type="text" 
-            placeholder="e.g. Prof. Miller, CS-102 Admin" 
-            className="form-input" 
+          <input
+            type="text"
+            placeholder="e.g. Prof. Miller, CS-102 Admin"
+            className="form-input"
             value={newProfileName}
             onChange={(e) => setNewProfileName(e.target.value)}
           />
@@ -5064,14 +5779,14 @@ export const AdminDashboard: React.FC = () => {
         title={confirmModal.title}
         footer={
           <>
-            <button 
-              className="btn btn-secondary" 
+            <button
+              className="btn btn-secondary"
               onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
             >
               {confirmModal.cancelText || 'Cancel'}
             </button>
-            <button 
-              className="btn btn-rose" 
+            <button
+              className="btn btn-rose"
               onClick={confirmModal.onConfirm}
             >
               {confirmModal.confirmText || 'Confirm'}
@@ -5080,15 +5795,15 @@ export const AdminDashboard: React.FC = () => {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', textAlign: 'center', padding: '1rem 0' }}>
-          <div 
-            style={{ 
-              width: '56px', 
-              height: '56px', 
-              backgroundColor: 'var(--accent-rose-light)', 
-              color: 'var(--accent-rose)', 
-              borderRadius: '50%', 
-              display: 'flex', 
-              alignItems: 'center', 
+          <div
+            style={{
+              width: '56px',
+              height: '56px',
+              backgroundColor: 'var(--accent-rose-light)',
+              color: 'var(--accent-rose)',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
               justifyContent: 'center',
               boxShadow: '0 0 0 6px hsl(346, 84%, 97%)',
               marginBottom: '0.5rem'
@@ -5118,8 +5833,8 @@ export const AdminDashboard: React.FC = () => {
         title="Roster Onboarding Wizard"
         footer={
           <>
-            <button 
-              className="btn btn-secondary" 
+            <button
+              className="btn btn-secondary"
               onClick={() => {
                 setIsWizardOpen(false);
                 resetWizardState();
@@ -5127,19 +5842,19 @@ export const AdminDashboard: React.FC = () => {
             >
               Cancel
             </button>
-            
+
             {wizardStep === 2 && (
               <>
                 <button className="btn btn-secondary" onClick={() => setWizardStep(1)}>Back</button>
                 <button className="btn btn-primary" onClick={handleWizardVerifyClick}>Verify Column Map</button>
               </>
             )}
-            
+
             {wizardStep === 3 && (
               <>
                 <button className="btn btn-secondary" onClick={() => setWizardStep(2)}>Back</button>
-                <button 
-                  className="btn btn-primary" 
+                <button
+                  className="btn btn-primary"
                   onClick={handleWizardFinalize}
                   disabled={Object.keys(wizardErrors).length > 0}
                   style={Object.keys(wizardErrors).length > 0 ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
@@ -5170,7 +5885,7 @@ export const AdminDashboard: React.FC = () => {
 
         {wizardStep === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            
+
             {/* ── Format Guide (collapsible) ─────────────────────────────── */}
             <div className="format-guide-wrapper">
               <button
@@ -5303,10 +6018,10 @@ export const AdminDashboard: React.FC = () => {
                   <Upload size={28} className="text-teal" />
                   <span style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: '0.35rem' }}>Select Spreadsheet / PDF</span>
                   <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>Accepts XLSX, XLS, PDF, or CSV formats</span>
-                  <input 
-                    type="file" 
-                    accept=".csv,.xlsx,.xls,.pdf" 
-                    onChange={handleWizardFileChange} 
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx,.xls,.pdf"
+                    onChange={handleWizardFileChange}
                     style={{ display: 'none' }}
                   />
                 </label>
@@ -5405,7 +6120,7 @@ export const AdminDashboard: React.FC = () => {
                 {wizardHeaders.length} Columns Detected
               </span>
             </div>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', padding: '0.75rem 1rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', gap: '0.35rem' }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.35rem', marginBottom: '0.25rem' }}>
                 Profile Fields Mapping
@@ -5466,7 +6181,7 @@ export const AdminDashboard: React.FC = () => {
                 <Plus size={12} /> Add Participant
               </button>
             </div>
-            
+
             <div className="verify-grid-container">
               <table className="verify-table">
                 <thead>
@@ -5490,7 +6205,7 @@ export const AdminDashboard: React.FC = () => {
                     const hasIdErr = rowErrs.some(e => e.includes('ID'));
                     const hasNameErr = rowErrs.some(e => e.includes('Name'));
                     const hasEmailErr = rowErrs.some(e => e.includes('email') || e.includes('Email'));
-                    
+
                     return (
                       <tr key={idx}>
                         <td>
@@ -5629,14 +6344,14 @@ export const AdminDashboard: React.FC = () => {
         title={`Student Performance Report: ${selectedStudentReport?.name || ''}`}
         footer={
           <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', gap: '1rem' }} className="hide-on-print">
-            <button 
-              className="btn btn-secondary" 
+            <button
+              className="btn btn-secondary"
               onClick={() => setSelectedStudentReport(null)}
             >
               Close Report
             </button>
-            <button 
-              className="btn btn-primary" 
+            <button
+              className="btn btn-primary"
               onClick={() => window.print()}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
             >
@@ -5649,7 +6364,7 @@ export const AdminDashboard: React.FC = () => {
         {selectedStudentReport && (() => {
           const s = selectedStudentReport;
           const metrics = calculateStudentMetrics(s, activeClass);
-          
+
           // Compile teammates
           const teammates = activeClass.students.filter(
             (stud) => stud.groupName === s.groupName && stud.id !== s.id
@@ -5686,7 +6401,7 @@ export const AdminDashboard: React.FC = () => {
           );
 
           const maxScale = getTargetScale(activeClass);
-          const scaledScoreVal = metrics.overallPercentage !== null 
+          const scaledScoreVal = metrics.overallPercentage !== null
             ? ((metrics.overallPercentage / 100) * maxScale).toFixed(1)
             : 'N/A';
 
@@ -5695,7 +6410,8 @@ export const AdminDashboard: React.FC = () => {
 
           return (
             <div id="print-report-modal" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', padding: '0.5rem' }}>
-              <style dangerouslySetInnerHTML={{ __html: `
+              <style dangerouslySetInnerHTML={{
+                __html: `
                 @media print {
                   html, body {
                     overflow: visible !important;
@@ -5811,33 +6527,33 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Analytics Core Dashboard */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
-                
+
                 {/* Left Panel: Circular Dial and Praise Badges */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                  
+
                   {/* Rating Dial */}
                   <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '1.5rem' }}>
                     <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '1rem' }}>Overall Teammate Rating</h3>
-                    
+
                     <div style={{ position: 'relative', width: '150px', height: '150px', marginBottom: '1rem' }}>
                       <svg width="150" height="150" style={{ transform: 'rotate(-90deg)' }}>
-                        <circle 
-                          cx="75" 
-                          cy="75" 
-                          r="50" 
-                          stroke="var(--border-color)" 
-                          strokeWidth="10" 
-                          fill="transparent" 
+                        <circle
+                          cx="75"
+                          cy="75"
+                          r="50"
+                          stroke="var(--border-color)"
+                          strokeWidth="10"
+                          fill="transparent"
                         />
-                        <circle 
-                          cx="75" 
-                          cy="75" 
-                          r="50" 
-                          stroke={activeTier.color} 
-                          strokeWidth="10" 
-                          fill="transparent" 
-                          strokeDasharray="314.16" 
-                          strokeDashoffset={314.16 - (314.16 * (metrics.overallPercentage ?? 0)) / 100} 
+                        <circle
+                          cx="75"
+                          cy="75"
+                          r="50"
+                          stroke={activeTier.color}
+                          strokeWidth="10"
+                          fill="transparent"
+                          strokeDasharray="314.16"
+                          strokeDashoffset={314.16 - (314.16 * (metrics.overallPercentage ?? 0)) / 100}
                           strokeLinecap="round"
                           style={{ transition: 'stroke-dashoffset 0.8s ease-in-out' }}
                         />
@@ -5881,12 +6597,12 @@ export const AdminDashboard: React.FC = () => {
                           const tagInfo = getPraiseTagInfo(tagText);
                           const TagIcon = tagInfo.icon;
                           return (
-                            <span 
-                              key={tagText} 
+                            <span
+                              key={tagText}
                               className="praise-badge-pill"
-                              style={{ 
-                                backgroundColor: tagInfo.bg, 
-                                color: tagInfo.color, 
+                              style={{
+                                backgroundColor: tagInfo.bg,
+                                color: tagInfo.color,
                                 borderColor: tagInfo.border,
                                 padding: '0.3rem 0.5rem',
                                 fontSize: '0.7rem'
@@ -5917,7 +6633,7 @@ export const AdminDashboard: React.FC = () => {
                     {activeClass.fields.map(field => {
                       const fieldAvg = metrics.fieldAverages[field.id] ?? field.min;
                       const selfVal = selfScores[field.id] ?? field.min;
-                      
+
                       const peerPct = ((fieldAvg - field.min) / (field.max - field.min || 1)) * 100;
                       const selfPct = ((selfVal - field.min) / (field.max - field.min || 1)) * 100;
 
@@ -5925,7 +6641,7 @@ export const AdminDashboard: React.FC = () => {
                         <div key={field.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                           <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>{field.name}</span>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', backgroundColor: 'var(--bg-app)', padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
-                            
+
                             {/* Teammates */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', width: '80px', flexShrink: 0 }}>Teammates:</span>
@@ -5955,7 +6671,7 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Written Comments Section */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginTop: '0.5rem' }}>
-                
+
                 {/* Strengths Comments */}
                 <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid var(--accent-teal)' }}>
                   <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -6010,14 +6726,14 @@ export const AdminDashboard: React.FC = () => {
         title={`Team Evaluation Analysis & Audit: ${selectedTeamAnalysis || ''}`}
         footer={
           <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', gap: '1rem' }} className="hide-on-print">
-            <button 
-              className="btn btn-secondary" 
+            <button
+              className="btn btn-secondary"
               onClick={() => setSelectedTeamAnalysis(null)}
             >
               Close Analysis
             </button>
-            <button 
-              className="btn btn-primary" 
+            <button
+              className="btn btn-primary"
               onClick={() => window.print()}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
             >
@@ -6034,7 +6750,8 @@ export const AdminDashboard: React.FC = () => {
 
           return (
             <div id="print-team-modal" style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem', width: '100%', padding: '0.5rem' }}>
-              <style dangerouslySetInnerHTML={{ __html: `
+              <style dangerouslySetInnerHTML={{
+                __html: `
                 @media print {
                   html, body {
                     overflow: visible !important;
@@ -6144,7 +6861,7 @@ export const AdminDashboard: React.FC = () => {
                       {teamStudents.map(ts => {
                         const m = calculateStudentMetrics(ts, activeClass);
                         const { ratio } = calculateStudentWebPAScore(ts.id, ts.groupName, activeClass, baseGroupGrade, fudgeWeight);
-                        const scaled = m.overallPercentage !== null 
+                        const scaled = m.overallPercentage !== null
                           ? `${((m.overallPercentage / 100) * maxScale).toFixed(1)} / ${maxScale}`
                           : 'N/A';
                         return (
@@ -6188,14 +6905,14 @@ export const AdminDashboard: React.FC = () => {
                           {ts.name}
                         </span>
                         <div style={{ flex: 1, height: '12px', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden' }}>
-                          <div 
-                            style={{ 
-                              height: '100%', 
-                              width: `${peerPct}%`, 
-                              backgroundColor: peerPct >= 80 ? 'var(--accent-teal)' : peerPct >= 50 ? 'var(--primary)' : 'var(--accent-rose)', 
+                          <div
+                            style={{
+                              height: '100%',
+                              width: `${peerPct}%`,
+                              backgroundColor: peerPct >= 80 ? 'var(--accent-teal)' : peerPct >= 50 ? 'var(--primary)' : 'var(--accent-rose)',
                               borderRadius: '9999px',
                               transition: 'width 0.4s ease'
-                            }} 
+                            }}
                           />
                         </div>
                         <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', width: '50px', textAlign: 'right', flexShrink: 0 }}>
@@ -6272,10 +6989,10 @@ export const AdminDashboard: React.FC = () => {
                               }
 
                               return (
-                                <td 
-                                  key={recipient.id} 
-                                  style={{ 
-                                    fontWeight: 600, 
+                                <td
+                                  key={recipient.id}
+                                  style={{
+                                    fontWeight: 600,
                                     backgroundColor: isSelf ? 'hsla(173, 80%, 50%, 0.05)' : 'transparent',
                                     border: isSelf ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
                                     color: isSelf ? 'var(--accent-teal)' : 'var(--text-primary)',
@@ -6311,12 +7028,12 @@ export const AdminDashboard: React.FC = () => {
                   const written = activeClass.reviews.filter(r => r.reviewerId === reviewer.id);
 
                   return (
-                    <div 
-                      key={reviewer.id} 
-                      className="card" 
-                      style={{ 
-                        padding: '1.5rem', 
-                        borderLeft: '4px solid var(--primary)', 
+                    <div
+                      key={reviewer.id}
+                      className="card"
+                      style={{
+                        padding: '1.5rem',
+                        borderLeft: '4px solid var(--primary)',
                         backgroundColor: 'var(--bg-surface)',
                         pageBreakInside: 'avoid'
                       }}
@@ -6355,13 +7072,13 @@ export const AdminDashboard: React.FC = () => {
                             const scorePct = rMax > 0 ? ((rSum / rMax) * 100).toFixed(0) : 0;
 
                             return (
-                              <div 
-                                key={rev.recipientId} 
-                                style={{ 
-                                  backgroundColor: 'var(--bg-app)', 
-                                  border: '1px solid var(--border-color)', 
-                                  borderRadius: 'var(--radius-sm)', 
-                                  padding: '1rem' 
+                              <div
+                                key={rev.recipientId}
+                                style={{
+                                  backgroundColor: 'var(--bg-app)',
+                                  border: '1px solid var(--border-color)',
+                                  borderRadius: 'var(--radius-sm)',
+                                  padding: '1rem'
                                 }}
                               >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
@@ -6389,12 +7106,12 @@ export const AdminDashboard: React.FC = () => {
                                       const tagInfo = getPraiseTagInfo(tagText);
                                       const TagIcon = tagInfo.icon;
                                       return (
-                                        <span 
-                                          key={tagText} 
-                                          className="praise-badge-pill" 
-                                          style={{ 
-                                            backgroundColor: tagInfo.bg, 
-                                            color: tagInfo.color, 
+                                        <span
+                                          key={tagText}
+                                          className="praise-badge-pill"
+                                          style={{
+                                            backgroundColor: tagInfo.bg,
+                                            color: tagInfo.color,
                                             borderColor: tagInfo.border,
                                             padding: '0.15rem 0.4rem',
                                             fontSize: '0.68rem'
@@ -6487,7 +7204,7 @@ export const AdminDashboard: React.FC = () => {
         onToast={addToast}
       />
 
-      {/* MODAL: UNIFIED SETTINGS HUB (EMAIL, CLOUD & SHORTCUTS) */}
+      {/* MODAL: UNIFIED SETTINGS HUB (EMAIL, CLOUD, SHORTCUTS & PREFERENCES) */}
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
@@ -6495,6 +7212,8 @@ export const AdminDashboard: React.FC = () => {
         shortcuts={shortcuts}
         onUpdateShortcuts={handleUpdateShortcuts}
         onResetShortcuts={handleResetShortcuts}
+        showChecklist={showOnboardingChecklist}
+        onToggleChecklist={(show) => setShowOnboardingChecklist(show)}
       />
 
       {/* MODAL: QUICK COMMAND PALETTE & FINDER (CTRL/CMD + K) */}
@@ -6516,11 +7235,51 @@ export const AdminDashboard: React.FC = () => {
         onOpenAddStudent={() => setIsAddStudentModalOpen(true)}
         onOpenReportModal={(studentId) => openReportModal(studentId)}
         onExportExcel={handleExportExcel}
+        onOpenTour={() => setIsTourOpen(true)}
+        onOpenGuideCenter={() => setIsGuideCenterOpen(true)}
         onSelectTeamFilter={(teamName) => {
           setGroupFilter(teamName);
           setSearchTerm('');
         }}
         onToast={addToast}
+      />
+
+      {/* ACADEMIC GUIDANCE & INTERACTIVE TUTORIAL CENTER */}
+      <GuideCenterModal
+        isOpen={isGuideCenterOpen}
+        onClose={() => setIsGuideCenterOpen(false)}
+        onStartTour={handleStartTour}
+      />
+
+      {/* INTERACTIVE STEP-BY-STEP PRODUCT WALKTHROUGH & SPOTLIGHT TOUR */}
+      <InteractiveTour
+        isOpen={isTourOpen}
+        onClose={() => {
+          setIsTourOpen(false);
+          setCustomTourStepIds(null);
+          setActiveTab('roster');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onNavigateTab={(tab) => setActiveTab(tab as any)}
+        activeTab={activeTab}
+        customStepIds={customTourStepIds}
+        onRestoreSnapshot={handleRestoreTourSnapshot}
+        hasSnapshot={!!tourSnapshot}
+        onExecuteDemoStep={handleExecuteTourDemoStep}
+      />
+
+      {/* INTERACTIVE STUDENT SMARTPHONE PORTAL SIMULATOR */}
+      <StudentPortalPreviewModal
+        isOpen={!!previewingStudent}
+        onClose={() => setPreviewingStudent(null)}
+        student={previewingStudent}
+        classroom={activeClass}
+      />
+
+      {/* GLOBAL KEYBOARD SHORTCUTS CHEAT SHEET MODAL (? or / key) */}
+      <KeyboardShortcutsModal
+        isOpen={isShortcutsModalOpen}
+        onClose={() => setIsShortcutsModalOpen(false)}
       />
     </div>
   );

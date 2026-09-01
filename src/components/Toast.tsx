@@ -11,13 +11,13 @@ export const ToastContainer: React.FC = () => {
   const getIcon = (type: ToastMessage['type']) => {
     switch (type) {
       case 'success':
-        return <CheckCircle2 size={18} className="text-teal" />;
+        return <CheckCircle2 size={13} className="text-teal" style={{ flexShrink: 0 }} />;
       case 'error':
-        return <XCircle size={18} className="text-rose" />;
+        return <XCircle size={13} className="text-rose" style={{ flexShrink: 0 }} />;
       case 'warning':
-        return <AlertTriangle size={18} className="text-amber" />;
+        return <AlertTriangle size={13} className="text-amber" style={{ flexShrink: 0 }} />;
       default:
-        return <Info size={18} className="text-indigo" />;
+        return <Info size={13} className="text-indigo" style={{ flexShrink: 0 }} />;
     }
   };
 
@@ -29,9 +29,11 @@ export const ToastContainer: React.FC = () => {
           className={`toast toast-${t.type}`}
           role="alert"
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
             {getIcon(t.type)}
-            <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{t.message}</span>
+            <span style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {t.message}
+            </span>
           </div>
           <button
             onClick={() => removeToast(t.id)}
@@ -41,10 +43,14 @@ export const ToastContainer: React.FC = () => {
               cursor: 'pointer',
               color: 'var(--text-muted)',
               display: 'flex',
-              padding: '2px'
+              alignItems: 'center',
+              padding: '2px',
+              marginLeft: '0.25rem',
+              borderRadius: '50%'
             }}
+            title="Dismiss"
           >
-            <X size={14} />
+            <X size={11} />
           </button>
         </div>
       ))}
