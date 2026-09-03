@@ -94,7 +94,7 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
         overflow: 'hidden'
       }}
     >
-      {/* Top Simulator Control Bar — Clean Light Theme */}
+      {/* Top Simulator Control Bar */}
       <div
         onClick={e => e.stopPropagation()}
         style={{
@@ -104,14 +104,14 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
           width: '100%',
           maxWidth: '385px',
           marginBottom: '0.65rem',
-          backgroundColor: 'rgba(255, 255, 255, 0.94)',
+          backgroundColor: 'var(--bg-surface)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
-          border: '1px solid rgba(226, 232, 240, 0.95)',
+          border: '1px solid var(--border-color)',
           borderRadius: '14px',
           padding: '0.4rem 0.75rem',
-          boxShadow: '0 8px 24px -4px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.03)',
-          color: '#0f172a',
+          boxShadow: 'var(--shadow-md)',
+          color: 'var(--text-primary)',
           flexShrink: 0
         }}
       >
@@ -120,10 +120,10 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
             <Smartphone size={14} />
           </div>
           <div>
-            <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.1 }}>
+            <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>
               Student Mobile Preview
             </div>
-            <div style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: 500 }}>
+            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 500 }}>
               Live 1:1 Smartphone View
             </div>
           </div>
@@ -137,10 +137,10 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
               onChange={(e) => setSelectedStudentId(e.target.value)}
               style={{
                 appearance: 'none',
-                backgroundColor: '#f8fafc',
-                border: '1px solid #cbd5e1',
+                backgroundColor: 'var(--bg-surface-hover)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
                 borderRadius: '7px',
-                color: '#1e293b',
                 fontSize: '0.72rem',
                 fontWeight: 700,
                 padding: '0.25rem 1.3rem 0.25rem 0.5rem',
@@ -210,21 +210,21 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
           maxWidth: '94vw',
           height: '740px',
           maxHeight: 'calc(88vh - 55px)',
-          backgroundColor: '#f8fafc',
+          backgroundColor: 'var(--bg-surface)',
           borderRadius: '46px',
-          border: '3.5px solid #cbd5e1',
-          boxShadow: '0 25px 65px -10px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.8), inset 0 0 0 2px #e2e8f0',
+          border: '3.5px solid var(--border-color)',
+          boxShadow: 'var(--shadow-xl), 0 0 0 1px var(--border-color)',
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
           overflow: 'hidden'
         }}
       >
-        {/* Phone Status Bar & Dynamic Island (Light Theme) */}
+        {/* Phone Status Bar & Dynamic Island */}
         <div
           style={{
-            backgroundColor: '#ffffff',
-            borderBottom: '1px solid #f1f5f9',
+            backgroundColor: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border-color)',
             padding: '0.55rem 1.25rem 0.35rem 1.25rem',
             display: 'flex',
             justifyContent: 'space-between',
@@ -234,7 +234,7 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
           }}
         >
           {/* Time */}
-          <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em', width: '40px' }}>
+          <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em', width: '40px' }}>
             9:41
           </span>
 
@@ -259,7 +259,7 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
           </div>
 
           {/* Status Icons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#0f172a', width: '40px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)', width: '40px', justifyContent: 'flex-end' }}>
             <Wifi size={12} />
             <BatteryCharging size={13} style={{ color: '#10b981' }} />
           </div>
@@ -271,7 +271,7 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
           style={{
             flex: 1,
             overflowY: 'auto',
-            backgroundColor: '#f8fafc',
+            backgroundColor: 'var(--bg-app)',
             position: 'relative',
             display: 'flex',
             flexDirection: 'column',
@@ -292,12 +292,12 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
               border-top: none !important;
               border-left: none !important;
               border-right: none !important;
-              border-bottom: 1px solid #e2e8f0 !important;
-              background: rgba(255, 255, 255, 0.98) !important;
+              border-bottom: 1px solid var(--border-color) !important;
+              background: var(--bg-surface) !important;
               backdrop-filter: blur(16px) !important;
               -webkit-backdrop-filter: blur(16px) !important;
               padding: 0.45rem 0.75rem !important;
-              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+              box-shadow: var(--shadow-sm) !important;
               z-index: 100 !important;
             }
             .smartphone-simulator-screen .card,
@@ -306,6 +306,9 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
               border-radius: 12px !important;
               margin-bottom: 0.85rem !important;
               scroll-margin-top: 80px !important;
+            }
+            .smartphone-simulator-screen .score-fine-tuner {
+              padding: 0.65rem !important;
             }
           ` }} />
 
@@ -319,13 +322,13 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
         {/* Smartphone Bottom Home Bar */}
         <div
           style={{
-            backgroundColor: '#ffffff',
+            backgroundColor: 'var(--bg-surface)',
             height: '18px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            borderTop: '1px solid #f1f5f9'
+            borderTop: '1px solid var(--border-color)'
           }}
         >
           <div style={{ width: '100px', height: '4px', backgroundColor: '#94a3b8', borderRadius: '10px', opacity: 0.7 }} />

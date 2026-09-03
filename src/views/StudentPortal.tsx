@@ -63,8 +63,8 @@ const getTierInfo = (pct: number) => {
       icon: Trophy,
       title: 'Distinguished Leadership',
       desc: 'Exceptional technical rigor and leadership; drove significant team outcomes.',
-      color: 'hsl(142, 70%, 45%)',
-      bgColor: 'hsl(142, 70%, 96%)',
+      color: 'var(--accent-teal)',
+      bgColor: 'var(--accent-teal-light)',
       className: 'active-emerald',
       index: 4
     };
@@ -75,12 +75,12 @@ const getPraiseTagInfo = (tagText: string) => {
   // Strip historical emojis if any
   const cleanText = tagText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
   
-  if (cleanText.includes('Creative') || cleanText.includes('Problem')) return { icon: Lightbulb, color: 'hsl(45, 90%, 45%)', bg: 'hsl(45, 90%, 96%)', border: 'hsl(45, 90%, 90%)', text: 'Creative Problem Solver' };
-  if (cleanText.includes('Punctual') || cleanText.includes('Reliable')) return { icon: Clock, color: 'hsl(14, 90%, 50%)', bg: 'hsl(14, 90%, 96%)', border: 'hsl(14, 90%, 90%)', text: 'Reliable & Punctual' };
-  if (cleanText.includes('Supportive') || cleanText.includes('Player')) return { icon: Heart, color: 'var(--accent-rose)', bg: 'var(--accent-rose-light)', border: 'hsl(346, 84%, 90%)', text: 'Supportive Team Player' };
-  if (cleanText.includes('Quality') || cleanText.includes('Deliverables')) return { icon: Award, color: 'var(--primary)', bg: 'var(--primary-light)', border: 'hsl(243, 75%, 92%)', text: 'High Quality Deliverables' };
-  if (cleanText.includes('Communicat')) return { icon: MessageSquare, color: 'hsl(199, 89%, 40%)', bg: 'hsl(199, 89%, 95%)', border: 'hsl(199, 89%, 90%)', text: 'Clear Communicator' };
-  return { icon: Target, color: 'var(--accent-teal)', bg: 'var(--accent-teal-light)', border: 'hsl(173, 80%, 90%)', text: 'Detail Oriented' };
+  if (cleanText.includes('Creative') || cleanText.includes('Problem')) return { icon: Lightbulb, color: 'var(--accent-amber)', bg: 'var(--accent-amber-light)', border: 'var(--border-color)', text: 'Creative Problem Solver' };
+  if (cleanText.includes('Punctual') || cleanText.includes('Reliable')) return { icon: Clock, color: 'var(--accent-amber)', bg: 'var(--accent-amber-light)', border: 'var(--border-color)', text: 'Reliable & Punctual' };
+  if (cleanText.includes('Supportive') || cleanText.includes('Player')) return { icon: Heart, color: 'var(--accent-rose)', bg: 'var(--accent-rose-light)', border: 'var(--border-color)', text: 'Supportive Team Player' };
+  if (cleanText.includes('Quality') || cleanText.includes('Deliverables')) return { icon: Award, color: 'var(--primary)', bg: 'var(--primary-light)', border: 'var(--border-color)', text: 'High Quality Deliverables' };
+  if (cleanText.includes('Communicat')) return { icon: MessageSquare, color: 'var(--primary)', bg: 'var(--primary-light)', border: 'var(--border-color)', text: 'Clear Communicator' };
+  return { icon: Target, color: 'var(--accent-teal)', bg: 'var(--accent-teal-light)', border: 'var(--border-color)', text: 'Detail Oriented' };
 };
 
 const AVAILABLE_TAGS = [
@@ -431,8 +431,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
         desc: 'Supplied outstanding creative strategies.',
         icon: Lightbulb,
         unlocked: creativeCount >= 1,
-        color: 'hsl(45, 90%, 45%)',
-        bg: 'hsl(45, 90%, 96%)'
+        color: 'var(--accent-amber)',
+        bg: 'var(--accent-amber-light)'
       });
 
       // 3. Super Supportive
@@ -455,8 +455,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
         desc: 'Completed project milestones with premium quality.',
         icon: Award,
         unlocked: qualityCount >= 1 || (qualityAvg >= 8.5),
-        color: 'hsl(142, 70%, 45%)',
-        bg: 'hsl(142, 70%, 96%)'
+        color: 'var(--accent-teal)',
+        bg: 'var(--accent-teal-light)'
       });
 
       // 5. Great Communicator
@@ -467,8 +467,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
         desc: 'Helped align group standing with robust communication.',
         icon: MessageSquare,
         unlocked: commCount >= 1 || (collaborationAvg >= 8.5),
-        color: 'hsl(199, 89%, 40%)',
-        bg: 'hsl(199, 89%, 95%)'
+        color: 'var(--primary)',
+        bg: 'var(--primary-light)'
       });
 
       // 6. Stellar Drive
@@ -1143,7 +1143,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
             position: 'sticky',
             top: 0,
             zIndex: 90,
-            background: 'rgba(255, 255, 255, 0.95)',
+            background: 'var(--bg-surface)',
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
             border: '1px solid var(--border-color)',
@@ -1152,7 +1152,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
             display: 'flex',
             flexDirection: 'column',
             gap: '0.4rem',
-            boxShadow: '0 4px 16px -4px rgba(0, 0, 0, 0.06)',
+            boxShadow: 'var(--shadow-sm)',
             borderRadius: '12px'
           }}
         >
@@ -1415,16 +1415,27 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
 
                         {/* Consolidated Single Scale: Unified Numeric Selector with Dynamic Expectation Feedback */}
                         <div className="score-fine-tuner" style={{ marginTop: '0.2rem' }}>
-                          {/* Quick Expectation Tier Snapping Buttons — Swipeable on small screens */}
-                          <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.5rem', overflowX: 'auto', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: '2px' }}>
+                          {/* Quick Expectation Tier Snapping Grid — Adaptive 2x2 on mobile, 4-col on desktop */}
+                          <div 
+                            style={{ 
+                              display: 'grid', 
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', 
+                              gap: '0.35rem', 
+                              marginBottom: '0.6rem' 
+                            }}
+                          >
                             {[
-                              { label: 'Exemplary (100%)', pct: 1.0, color: 'var(--accent-teal)', icon: Trophy },
-                              { label: 'Proficient (75%)', pct: 0.75, color: 'var(--primary)', icon: ThumbsUp },
-                              { label: 'Developing (50%)', pct: 0.5, color: 'var(--accent-amber)', icon: TrendingUp },
-                              { label: 'Needs Work (25%)', pct: 0.25, color: 'var(--accent-rose)', icon: AlertCircle }
+                              { label: 'Exemplary', sub: '100%', pct: 1.0, color: 'var(--accent-teal)', icon: Trophy },
+                              { label: 'Proficient', sub: '75%', pct: 0.75, color: 'var(--primary)', icon: ThumbsUp },
+                              { label: 'Developing', sub: '50%', pct: 0.5, color: 'var(--accent-amber)', icon: TrendingUp },
+                              { label: 'Needs Work', sub: '25%', pct: 0.25, color: 'var(--accent-rose)', icon: AlertCircle }
                             ].map((t) => {
                               const targetVal = Math.round(field.min + t.pct * (field.max - field.min));
-                              const isCurrent = currentVal === targetVal;
+                              const isCurrent = 
+                                (t.pct === 0.25 && pct <= 25) ||
+                                (t.pct === 0.5 && pct > 25 && pct <= 50) ||
+                                (t.pct === 0.75 && pct > 50 && pct <= 75) ||
+                                (t.pct === 1.0 && pct > 75);
                               const TierIcon = t.icon;
                               return (
                                 <button
@@ -1433,23 +1444,43 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                                   className="btn btn-secondary btn-sm"
                                   onClick={() => handleSliderChange(peer.id, field.id, targetVal)}
                                   style={{
-                                    fontSize: '0.68rem',
-                                    padding: '0.15rem 0.5rem',
-                                    height: '24px',
-                                    borderRadius: '12px',
-                                    fontWeight: isCurrent ? 800 : 500,
-                                    backgroundColor: isCurrent ? `${t.color}18` : 'var(--bg-surface)',
+                                    fontSize: '0.72rem',
+                                    padding: '0.35rem 0.55rem',
+                                    minHeight: '32px',
+                                    borderRadius: '8px',
+                                    fontWeight: isCurrent ? 800 : 600,
+                                    backgroundColor: isCurrent ? `${t.color}1c` : 'var(--bg-surface)',
                                     borderColor: isCurrent ? t.color : 'var(--border-color)',
                                     color: isCurrent ? t.color : 'var(--text-secondary)',
-                                    display: 'inline-flex',
+                                    display: 'flex',
                                     alignItems: 'center',
-                                    gap: '0.2rem',
-                                    whiteSpace: 'nowrap',
-                                    flexShrink: 0
+                                    justifyContent: 'space-between',
+                                    gap: '0.35rem',
+                                    width: '100%',
+                                    boxSizing: 'border-box',
+                                    boxShadow: isCurrent ? `0 0 0 1px ${t.color}` : 'none',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease'
                                   }}
+                                  title={`Set to ${t.label} (${t.sub} = ${targetVal} pts)`}
                                 >
-                                  <TierIcon size={10} />
-                                  <span>{t.label}</span>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <TierIcon size={12} style={{ flexShrink: 0, color: t.color }} />
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</span>
+                                  </span>
+                                  <span 
+                                    style={{ 
+                                      fontSize: '0.62rem', 
+                                      fontWeight: 800, 
+                                      color: isCurrent ? t.color : 'var(--text-muted)', 
+                                      backgroundColor: isCurrent ? `${t.color}25` : 'var(--bg-surface-hover)', 
+                                      padding: '0.08rem 0.3rem', 
+                                      borderRadius: '4px',
+                                      flexShrink: 0 
+                                    }}
+                                  >
+                                    {t.sub}
+                                  </span>
                                 </button>
                               );
                             })}
@@ -1661,7 +1692,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
               <FeatureInfoButton featureId="webpa-scoring" size="sm" tooltipText="Why Self-Calibration Matters" />
             </div>
 
-            <details style={{ backgroundColor: 'var(--primary-light)', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--primary)', fontSize: '0.76rem', color: 'hsl(243, 75%, 25%)', marginBottom: '1rem', cursor: 'pointer' }}>
+            <details style={{ backgroundColor: 'var(--primary-light)', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.76rem', color: 'var(--text-primary)', marginBottom: '1rem', cursor: 'pointer' }}>
               <summary style={{ fontWeight: 700, outline: 'none', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.3rem', userSelect: 'none' }}>
                 <Lightbulb size={13} className="text-primary" /> <span>Why evaluate myself? (Tap to expand)</span>
               </summary>
@@ -1704,16 +1735,27 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
 
                     {/* Consolidated Single Scale: Unified Numeric Selector with Dynamic Expectation Feedback */}
                     <div className="score-fine-tuner" style={{ marginTop: '0.2rem' }}>
-                      {/* Quick Expectation Tier Snapping Buttons */}
-                      <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.5rem', overflowX: 'auto', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: '2px' }}>
+                      {/* Quick Expectation Tier Snapping Grid — Adaptive 2x2 on mobile, 4-col on desktop */}
+                      <div 
+                        style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', 
+                          gap: '0.35rem', 
+                          marginBottom: '0.6rem' 
+                        }}
+                      >
                         {[
-                          { label: 'Exemplary (100%)', pct: 1.0, color: 'var(--accent-teal)', icon: Trophy },
-                          { label: 'Proficient (75%)', pct: 0.75, color: 'var(--primary)', icon: ThumbsUp },
-                          { label: 'Developing (50%)', pct: 0.5, color: 'var(--accent-amber)', icon: TrendingUp },
-                          { label: 'Needs Work (25%)', pct: 0.25, color: 'var(--accent-rose)', icon: AlertCircle }
+                          { label: 'Exemplary', sub: '100%', pct: 1.0, color: 'var(--accent-teal)', icon: Trophy },
+                          { label: 'Proficient', sub: '75%', pct: 0.75, color: 'var(--primary)', icon: ThumbsUp },
+                          { label: 'Developing', sub: '50%', pct: 0.5, color: 'var(--accent-amber)', icon: TrendingUp },
+                          { label: 'Needs Work', sub: '25%', pct: 0.25, color: 'var(--accent-rose)', icon: AlertCircle }
                         ].map((t) => {
                           const targetVal = Math.round(field.min + t.pct * (field.max - field.min));
-                          const isCurrent = currentVal === targetVal;
+                          const isCurrent = 
+                            (t.pct === 0.25 && pct <= 25) ||
+                            (t.pct === 0.5 && pct > 25 && pct <= 50) ||
+                            (t.pct === 0.75 && pct > 50 && pct <= 75) ||
+                            (t.pct === 1.0 && pct > 75);
                           const TierIcon = t.icon;
                           return (
                             <button
@@ -1722,23 +1764,43 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
                               className="btn btn-secondary btn-sm"
                               onClick={() => handleSliderChange(student.id, field.id, targetVal)}
                               style={{
-                                fontSize: '0.68rem',
-                                padding: '0.15rem 0.5rem',
-                                height: '24px',
-                                borderRadius: '12px',
-                                fontWeight: isCurrent ? 800 : 500,
-                                backgroundColor: isCurrent ? `${t.color}18` : 'var(--bg-surface)',
+                                fontSize: '0.72rem',
+                                padding: '0.35rem 0.55rem',
+                                minHeight: '32px',
+                                borderRadius: '8px',
+                                fontWeight: isCurrent ? 800 : 600,
+                                backgroundColor: isCurrent ? `${t.color}1c` : 'var(--bg-surface)',
                                 borderColor: isCurrent ? t.color : 'var(--border-color)',
                                 color: isCurrent ? t.color : 'var(--text-secondary)',
-                                display: 'inline-flex',
+                                display: 'flex',
                                 alignItems: 'center',
-                                gap: '0.2rem',
-                                whiteSpace: 'nowrap',
-                                flexShrink: 0
+                                justifyContent: 'space-between',
+                                gap: '0.35rem',
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                boxShadow: isCurrent ? `0 0 0 1px ${t.color}` : 'none',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
                               }}
+                              title={`Set to ${t.label} (${t.sub} = ${targetVal} pts)`}
                             >
-                              <TierIcon size={10} />
-                              <span>{t.label}</span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <TierIcon size={12} style={{ flexShrink: 0, color: t.color }} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</span>
+                              </span>
+                              <span 
+                                style={{ 
+                                  fontSize: '0.62rem', 
+                                  fontWeight: 800, 
+                                  color: isCurrent ? t.color : 'var(--text-muted)', 
+                                  backgroundColor: isCurrent ? `${t.color}25` : 'var(--bg-surface-hover)', 
+                                  padding: '0.08rem 0.3rem', 
+                                  borderRadius: '4px',
+                                  flexShrink: 0 
+                                }}
+                              >
+                                {t.sub}
+                              </span>
                             </button>
                           );
                         })}
@@ -1854,7 +1916,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
               type="submit"
               className={`btn btn-primary ${isSubmitting ? 'btn-disabled' : ''}`}
               disabled={isSubmitting}
-              style={{ width: '100%', height: '44px', fontSize: '0.92rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderRadius: '10px', boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)' }}
+              style={{ width: '100%', height: '44px', fontSize: '0.92rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderRadius: '10px', boxShadow: '0 4px 14px var(--primary-glow)' }}
             >
               {isSubmitting ? 'Submitting Evaluations...' : 'Submit Anonymous Feedback'} <Send size={15} />
             </button>

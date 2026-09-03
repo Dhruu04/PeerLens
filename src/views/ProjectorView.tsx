@@ -433,7 +433,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     if (student.isExchange && student.originalUniversity && student.currentUniversity) {
       return (
         <span
-          style={{ fontSize: '0.72rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           title={`Exchange: ${student.originalUniversity} ➔ ${student.currentUniversity}`}
         >
           <Plane size={11} className="text-teal" style={{ flexShrink: 0 }} />
@@ -445,7 +445,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
     if (uni) {
       return (
         <span
-          style={{ fontSize: '0.72rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           title={uni}
         >
           <GraduationCap size={11} style={{ flexShrink: 0, opacity: 0.75 }} />
@@ -466,8 +466,8 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
         minHeight: '100vh',
         width: '100%',
         maxWidth: '100%',
-        background: '#f8fafc',
-        color: '#0f172a',
+        background: 'var(--bg-app)',
+        color: 'var(--text-primary)',
         display: 'flex',
         flexDirection: 'column',
         padding: '1.25rem 2rem',
@@ -484,7 +484,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
-              <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.025em' }}>
+              <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.025em' }}>
                 {currentClass.name}
               </h1>
               <span style={{ backgroundColor: 'rgba(6, 182, 212, 0.12)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#0891b2', fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.65rem', borderRadius: '20px', letterSpacing: '0.05em' }}>
@@ -492,7 +492,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               </span>
               <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Live Projector & QR Guide" />
             </div>
-            <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+            <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
               Real-Time Peer Assessment Tracker • {totalStudents} Students Enrolled
             </p>
           </div>
@@ -500,7 +500,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
 
         {/* Essential Action Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.45rem 0.85rem', fontSize: '0.85rem', fontWeight: 800, color: '#475569', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.45rem 0.85rem', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-secondary)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
             {currentTime.toLocaleTimeString()}
           </div>
 
@@ -543,7 +543,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
             type="button"
             className="btn btn-secondary btn-sm"
             onClick={() => setIsAddTeamModalOpen(true)}
-            style={{ gap: '0.35rem', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', color: '#0f172a', padding: '0.45rem 0.85rem' }}
+            style={{ gap: '0.35rem', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '0.45rem 0.85rem' }}
           >
             <Plus size={14} className="text-primary" /> Add Team
           </button>
@@ -566,7 +566,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={handleOpenInNewWindow}
-              style={{ gap: '0.35rem', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', color: '#0f172a', padding: '0.45rem 0.85rem' }}
+              style={{ gap: '0.35rem', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '0.45rem 0.85rem' }}
               title="Pop out to an external projector display"
             >
               <ExternalLink size={14} /> Pop Out
@@ -577,7 +577,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
             type="button"
             className="btn btn-secondary btn-sm"
             onClick={toggleFullscreen}
-            style={{ gap: '0.35rem', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', color: '#0f172a', padding: '0.45rem 0.85rem' }}
+            style={{ gap: '0.35rem', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '0.45rem 0.85rem' }}
           >
             {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             <span>{isFullscreen ? 'Exit Full' : 'Fullscreen'}</span>
@@ -611,7 +611,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
 
         {/* Clean Mode Tab Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#e2e8f0', padding: '3px', borderRadius: '10px', gap: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'var(--border-color)', padding: '3px', borderRadius: '10px', gap: '2px' }}>
           <button
             type="button"
             onClick={() => setActiveTab('matrix')}
@@ -690,15 +690,15 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   padding: '0.38rem 0.6rem 0.38rem 1.8rem',
                   fontSize: '0.78rem',
                   borderRadius: '8px',
-                  border: '1px solid #e2e8f0',
-                  backgroundColor: '#ffffff',
-                  color: '#0f172a',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
                   width: '190px'
                 }}
               />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#e2e8f0', padding: '2px', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'var(--border-color)', padding: '2px', borderRadius: '8px' }}>
               <button
                 type="button"
                 onClick={() => setStatusFilter('all')}
@@ -709,7 +709,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   border: 'none',
                   borderRadius: '6px',
                   backgroundColor: statusFilter === 'all' ? '#ffffff' : 'transparent',
-                  color: '#0f172a',
+                  color: 'var(--text-primary)',
                   cursor: 'pointer'
                 }}
               >
@@ -756,7 +756,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
       {unassignedStudents.length > 0 && (
         <div
           style={{
-            backgroundColor: '#ffffff',
+            backgroundColor: 'var(--bg-surface)',
             border: '2px solid #f59e0b',
             borderRadius: '14px',
             padding: '0.85rem 1.15rem',
@@ -772,7 +772,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               <span className="badge" style={{ backgroundColor: '#f59e0b', color: '#ffffff', fontWeight: 800, fontSize: '0.76rem', padding: '0.2rem 0.55rem' }}>
                 <Users size={12} style={{ marginRight: '4px' }} /> {unassignedStudents.length} Incoming
               </span>
-              <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>
+              <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 New Incoming Students (Awaiting Team Assignment)
               </span>
             </div>
@@ -834,7 +834,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                         handleAssignStudentToTeam(s.id, e.target.value);
                       }
                     }}
-                    style={{ height: '28px', fontSize: '0.74rem', padding: '0.1rem 0.4rem', borderRadius: '6px', fontWeight: 700, backgroundColor: '#ffffff', color: '#0f172a', border: '1px solid #f59e0b', cursor: 'pointer' }}
+                    style={{ height: '28px', fontSize: '0.74rem', padding: '0.1rem 0.4rem', borderRadius: '6px', fontWeight: 700, backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid #f59e0b', cursor: 'pointer' }}
                   >
                     <option value="">Assign Team...</option>
                     {groupStats.map((g) => (
@@ -854,7 +854,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                       padding: '0 0.4rem',
                       borderRadius: '6px',
                       border: '1px solid #f59e0b',
-                      backgroundColor: '#ffffff',
+                      backgroundColor: 'var(--bg-surface)',
                       color: '#d97706',
                       cursor: 'pointer',
                       display: 'flex',
@@ -881,10 +881,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
         }}
       >
         {/* Metric 1: Circular Progress Gauge */}
-        <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', padding: '1.15rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1.25rem', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+        <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-color)', padding: '1.15rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1.25rem', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
           <div style={{ position: 'relative', width: '84px', height: '84px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="84" height="84" viewBox="0 0 90 90" style={{ transform: 'rotate(-90deg)' }}>
-              <circle cx="45" cy="45" r="38" fill="transparent" stroke="#e2e8f0" strokeWidth="8" />
+              <circle cx="45" cy="45" r="38" fill="transparent" stroke="var(--border-color)" strokeWidth="8" />
               <circle
                 cx="45"
                 cy="45"
@@ -904,17 +904,17 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                 </linearGradient>
               </defs>
             </svg>
-            <span style={{ position: 'absolute', fontSize: '1.3rem', fontWeight: 900, color: '#0f172a' }}>
+            <span style={{ position: 'absolute', fontSize: '1.3rem', fontWeight: 900, color: 'var(--text-primary)' }}>
               {submissionPct}%
             </span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Class Submissions
             </span>
-            <b style={{ fontSize: '1.3rem', color: '#0f172a', fontWeight: 900 }}>
-              {submittedStudents} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748b' }}>/ {totalStudents} completed</span>
+            <b style={{ fontSize: '1.3rem', color: 'var(--text-primary)', fontWeight: 900 }}>
+              {submittedStudents} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>/ {totalStudents} completed</span>
             </b>
             <span style={{ fontSize: '0.75rem', color: submissionPct === 100 ? '#0d9488' : '#d97706', fontWeight: 700 }}>
               {totalStudents - submittedStudents === 0 ? '✨ 100% Evaluations Complete!' : `${totalStudents - submittedStudents} evaluations pending`}
@@ -923,9 +923,9 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
         </div>
 
         {/* Metric 2: Team Breakdown Stats */}
-        <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', padding: '1.15rem 1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+        <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-color)', padding: '1.15rem 1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Teams Status
             </span>
             <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 800 }}>
@@ -936,15 +936,15 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <div>
               <b style={{ fontSize: '1.3rem', color: '#0d9488', fontWeight: 900 }}>{fullyCompletedGroups}</b>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.35rem' }}>Completed</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>Completed</span>
             </div>
             <div>
               <b style={{ fontSize: '1.3rem', color: '#d97706', fontWeight: 900 }}>{groupStats.length - fullyCompletedGroups}</b>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.35rem' }}>Active</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>Active</span>
             </div>
           </div>
 
-          <div style={{ width: '100%', height: '7px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+          <div style={{ width: '100%', height: '7px', backgroundColor: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
             <div
               style={{
                 height: '100%',
@@ -957,9 +957,9 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
         </div>
 
         {/* Metric 3: Peer Reviews & Evaluation Velocity */}
-        <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', padding: '1.15rem 1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+        <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-color)', padding: '1.15rem 1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Peer Reviews Activity
             </span>
             <span className="badge badge-primary" style={{ fontSize: '0.72rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -971,15 +971,15 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <div>
               <b style={{ fontSize: '1.3rem', color: '#4f46e5', fontWeight: 900 }}>{totalReviewsLogged}</b>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.35rem' }}>Reviews Logged</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>Reviews Logged</span>
             </div>
             <div>
               <b style={{ fontSize: '1.3rem', color: '#7c3aed', fontWeight: 900 }}>{totalPraiseGiven}</b>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.35rem' }}>Praise Given</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>Praise Given</span>
             </div>
           </div>
 
-          <div style={{ width: '100%', height: '7px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+          <div style={{ width: '100%', height: '7px', backgroundColor: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
             <div
               style={{
                 height: '100%',
@@ -994,7 +994,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
 
       {/* Accolades Ticker Banner (Displays if tags exist) */}
       {topPraiseList.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.5rem 0.85rem', marginBottom: '1rem', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '0.5rem 0.85rem', marginBottom: '1rem', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', fontWeight: 800, color: '#7c3aed', flexShrink: 0 }}>
             <Award size={14} /> Live Recognition:
           </span>
@@ -1027,11 +1027,11 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
       {activeTab === 'matrix' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {filteredGroups.length === 0 ? (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', padding: '3rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', flex: 1, justifyContent: 'center' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-color)', padding: '3rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', flex: 1, justifyContent: 'center' }}>
               <Users size={40} className="text-primary" />
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>No Matching Teams</h3>
-                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>Try adjusting your search query or status filter.</p>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Try adjusting your search query or status filter.</p>
               </div>
             </div>
           ) : (
@@ -1065,7 +1065,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   {/* Team Card Header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
-                      <b style={{ fontSize: '1rem', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <b style={{ fontSize: '1rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {grp.groupName}
                       </b>
                       <span className="badge badge-secondary" style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', flexShrink: 0 }}>
@@ -1085,7 +1085,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   </div>
 
                   {/* Progress Bar */}
-                  <div style={{ width: '100%', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
                     <div
                       style={{
                         height: '100%',
@@ -1103,23 +1103,23 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                       display: 'grid',
                       gridTemplateColumns: 'repeat(3, 1fr)',
                       gap: '0.25rem',
-                      backgroundColor: '#f8fafc',
-                      border: '1px solid #e2e8f0',
+                      backgroundColor: 'var(--bg-surface-hover)',
+                      border: '1px solid var(--border-color)',
                       borderRadius: '6px',
                       padding: '0.3rem 0.45rem',
                       fontSize: '0.68rem'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#64748b', overflow: 'hidden', whiteSpace: 'nowrap' }} title={Object.entries(grp.report.genderCounts).map(([g, c]) => `${c} ${g}`).join(', ')}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap' }} title={Object.entries(grp.report.genderCounts).map(([g, c]) => `${c} ${g}`).join(', ')}>
                       <Users size={11} className="text-primary" style={{ flexShrink: 0 }} />
-                      <span style={{ fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {Object.entries(grp.report.genderCounts).map(([g, c]) => `${c}${g[0]}`).join('/')}
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#64748b', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'center' }} title={`${grp.report.uniqueNationalityCount} Countries`}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'center' }} title={`${grp.report.uniqueNationalityCount} Countries`}>
                       <Globe size={11} className="text-teal" style={{ flexShrink: 0 }} />
-                      <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
                         {grp.report.uniqueNationalityCount} {grp.report.uniqueNationalityCount === 1 ? 'Country' : 'Countries'}
                       </span>
                     </div>
@@ -1141,8 +1141,8 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
-                          backgroundColor: '#f8fafc',
-                          border: '1px solid #e2e8f0',
+                          backgroundColor: 'var(--bg-surface-hover)',
+                          border: '1px solid var(--border-color)',
                           borderRadius: '6px',
                           padding: '0.4rem 0.55rem',
                           fontSize: '0.78rem',
@@ -1151,7 +1151,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                       >
                         {/* Student Name & University */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem', overflow: 'hidden', minWidth: 0, flex: 1 }}>
-                          <span style={{ fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {member.name}
                           </span>
                           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1166,10 +1166,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                               style={{
                                 fontSize: '0.66rem',
                                 padding: '0.1rem 0.35rem',
-                                backgroundColor: '#ffffff',
-                                border: '1px solid #e2e8f0',
+                                backgroundColor: 'var(--bg-surface)',
+                                border: '1px solid var(--border-color)',
                                 borderRadius: '4px',
-                                color: '#64748b',
+                                color: 'var(--text-secondary)',
                                 maxWidth: '75px',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
@@ -1207,7 +1207,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                       borderRadius: '6px',
                       padding: '0.35rem',
                       fontSize: '0.72rem',
-                      color: '#64748b',
+                      color: 'var(--text-secondary)',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -1231,45 +1231,45 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
 
           {/* Top Demographic Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
               <div style={{ width: '42px', height: '42px', borderRadius: '10px', backgroundColor: 'rgba(20, 184, 166, 0.12)', color: '#0d9488', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Globe size={22} />
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Countries Represented</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#0f172a' }}>{demographicStats.uniqueCountriesCount}</div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>Countries Represented</span>
+                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-primary)' }}>{demographicStats.uniqueCountriesCount}</div>
               </div>
             </div>
 
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
               <div style={{ width: '42px', height: '42px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Users size={22} />
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Gender Balance</span>
-                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>Gender Balance</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                   {demographicStats.genderMap.Female}F / {demographicStats.genderMap.Male}M {demographicStats.genderMap['Non-binary'] > 0 ? `/ ${demographicStats.genderMap['Non-binary']}NB` : ''}
                 </div>
               </div>
             </div>
 
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
               <div style={{ width: '42px', height: '42px', borderRadius: '10px', backgroundColor: 'rgba(6, 182, 212, 0.12)', color: '#0891b2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Plane size={22} />
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Exchange Students</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#0f172a' }}>{demographicStats.exchangeCount}</div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>Exchange Students</span>
+                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-primary)' }}>{demographicStats.exchangeCount}</div>
               </div>
             </div>
 
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
               <div style={{ width: '42px', height: '42px', borderRadius: '10px', backgroundColor: 'rgba(217, 119, 6, 0.12)', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Languages size={22} />
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>English Skill Spread</span>
-                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>English Skill Spread</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                   {demographicStats.sortedEnglish.length} CEFR Tiers
                 </div>
               </div>
@@ -1279,8 +1279,8 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           {/* Breakdown Grids */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1rem' }}>
             {/* Nationalities Breakdown */}
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', padding: '1.25rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-              <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.98rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#0f172a' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-color)', padding: '1.25rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.98rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)' }}>
                 <Globe size={16} className="text-teal" /> Nationality &amp; Geographic Distribution
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: '340px', overflowY: 'auto', paddingRight: '0.35rem' }}>
@@ -1289,10 +1289,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   return (
                     <div key={nat} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
-                        <span style={{ fontWeight: 700, color: '#0f172a' }}>{nat}</span>
-                        <span style={{ color: '#64748b', fontWeight: 600 }}>{count} ({pct}%)</span>
+                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{nat}</span>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{count} ({pct}%)</span>
                       </div>
-                      <div style={{ width: '100%', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
                         <div style={{ width: `${pct}%`, height: '100%', backgroundColor: '#0d9488', borderRadius: '4px' }} />
                       </div>
                     </div>
@@ -1302,8 +1302,8 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
             </div>
 
             {/* Academic Institutions Representation */}
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', padding: '1.25rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-              <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.98rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#0f172a' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-color)', padding: '1.25rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.98rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)' }}>
                 <GraduationCap size={16} className="text-indigo" /> Academic Institutions Represented
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: '340px', overflowY: 'auto', paddingRight: '0.35rem' }}>
@@ -1312,10 +1312,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   return (
                     <div key={uni} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
-                        <span style={{ fontWeight: 700, color: '#0f172a' }}>{uni}</span>
-                        <span style={{ color: '#64748b', fontWeight: 600 }}>{count} ({pct}%)</span>
+                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{uni}</span>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{count} ({pct}%)</span>
                       </div>
-                      <div style={{ width: '100%', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
                         <div style={{ width: `${pct}%`, height: '100%', backgroundColor: '#4f46e5', borderRadius: '4px' }} />
                       </div>
                     </div>
@@ -1329,21 +1329,21 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
 
       {/* --- TAB 3: BIG SCREEN QR CODE ACCESS FOCUS --- */}
       {activeTab === 'qr_focus' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '2rem', boxShadow: '0 4px 20px rgba(0,0,0,0.04)', textAlign: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-color)', padding: '2rem', boxShadow: '0 4px 20px rgba(0,0,0,0.04)', textAlign: 'center' }}>
           <div style={{ maxWidth: '520px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem' }}>
             <div style={{ backgroundColor: 'rgba(6, 182, 212, 0.12)', color: '#0891b2', padding: '0.35rem 0.85rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 800, letterSpacing: '0.05em' }}>
               CLASSROOM ACCESS PORTAL
             </div>
 
-            <h2 style={{ fontSize: '1.8rem', fontWeight: 900, color: '#0f172a', margin: 0 }}>
+            <h2 style={{ fontSize: '1.8rem', fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
               Scan from your Mobile Device
             </h2>
-            <p style={{ fontSize: '0.92rem', color: '#64748b', margin: 0 }}>
+            <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)', margin: 0 }}>
               Point your smartphone camera at the QR code below to enroll, view your group, and submit your peer evaluations.
             </p>
 
             {/* Giant QR Card */}
-            <div style={{ backgroundColor: '#ffffff', padding: '1.25rem', borderRadius: '18px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)', border: '2px solid #e2e8f0' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '1.25rem', borderRadius: '18px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)', border: '2px solid var(--border-color)' }}>
               {qrDataUrl ? (
                 <img src={qrDataUrl} alt="Classroom Access QR" style={{ width: '280px', height: '280px', display: 'block' }} />
               ) : (
@@ -1361,10 +1361,10 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   flex: 1,
                   padding: '0.6rem 0.85rem',
                   fontSize: '0.82rem',
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
+                  backgroundColor: 'var(--bg-surface-hover)',
+                  border: '1px solid var(--border-color)',
                   borderRadius: '8px',
-                  color: '#0f172a',
+                  color: 'var(--text-primary)',
                   textAlign: 'center'
                 }}
               />
@@ -1383,7 +1383,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
       )}
 
       {/* --- FOOTER PRIVACY NOTICE --- */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0', fontSize: '0.75rem', color: '#64748b' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
           <ShieldCheck size={14} color="#0d9488" /> Privacy Protected: Confidential student scores, marks, and personal feedback are strictly hidden.
         </span>
@@ -1393,9 +1393,9 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
       {/* --- MODAL: QUICK ADD TEAM --- */}
       {isAddTeamModalOpen && (
         <div className="modal-overlay" onClick={() => setIsAddTeamModalOpen(false)}>
-          <div className="modal-content" style={{ maxWidth: '440px', backgroundColor: '#ffffff', color: '#0f172a' }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" style={{ maxWidth: '440px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title" style={{ color: '#0f172a' }}>Create New Team</h3>
+              <h3 className="modal-title" style={{ color: 'var(--text-primary)' }}>Create New Team</h3>
               <button className="modal-close" onClick={() => setIsAddTeamModalOpen(false)}>
                 <X size={18} />
               </button>
@@ -1511,7 +1511,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
                   setNewStudent(prev => ({ ...prev, groupName: e.target.value }));
                   setTargetTeamForNewStudent(e.target.value);
                 }}
-                style={{ height: '38px', fontSize: '0.84rem', padding: '0 2.25rem 0 0.85rem', backgroundColor: '#ffffff', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+                style={{ height: '38px', fontSize: '0.84rem', padding: '0 2.25rem 0 0.85rem', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
               >
                 {groupStats.map(g => (
                   <option key={g.groupName} value={g.groupName}>{g.groupName}</option>
@@ -1525,7 +1525,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.3rem' }}>
                 Gender Identity
               </label>
-              <div style={{ display: 'flex', backgroundColor: '#ffffff', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', gap: '3px' }}>
+              <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', gap: '3px' }}>
                 {GENDER_OPTIONS.map((g) => {
                   const isSel = newStudent.gender === g.value;
                   return (

@@ -465,18 +465,18 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
             {/* Team Status Info */}
             <div
               style={{
-                backgroundColor: '#fffbeb',
+                backgroundColor: 'var(--accent-amber-light)',
                 padding: '0.85rem 1rem',
                 borderRadius: '10px',
                 fontSize: '0.82rem',
-                color: '#92400e',
+                color: 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: '0.65rem',
-                border: '1px solid #fde68a'
+                border: '1px solid var(--border-color)'
               }}
             >
-              <UserCheck size={18} style={{ color: '#d97706', flexShrink: 0, marginTop: '2px' }} />
+              <UserCheck size={18} style={{ color: 'var(--accent-amber)', flexShrink: 0, marginTop: '2px' }} />
               <div>
                 <b style={{ display: 'block', marginBottom: '2px' }}>Team Status &amp; Peer Evaluation</b>
                 {existingStudent?.groupName && existingStudent.groupName !== 'Unassigned'
@@ -646,8 +646,8 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                 {matchedExistingStudent && (
                   <div
                     style={{
-                      backgroundColor: '#fffbeb',
-                      border: '1.5px solid #f59e0b',
+                      backgroundColor: 'var(--accent-amber-light)',
+                      border: '1px solid var(--border-color)',
                       borderRadius: '12px',
                       padding: '1rem',
                       marginTop: '0.85rem',
@@ -658,14 +658,14 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem' }}>
-                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: 'var(--bg-surface)', color: 'var(--accent-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px', border: '1px solid var(--border-color)' }}>
                         <UserCheck size={16} />
                       </div>
                       <div>
-                        <strong style={{ color: '#b45309', fontSize: '0.88rem', display: 'block' }}>
+                        <strong style={{ color: 'var(--accent-amber)', fontSize: '0.88rem', display: 'block' }}>
                           Registered Profile Found for this Name &amp; Email
                         </strong>
-                        <span style={{ fontSize: '0.78rem', color: '#92400e', lineHeight: 1.4, display: 'block', marginTop: '2px' }}>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4, display: 'block', marginTop: '2px' }}>
                           An enrolled profile for <b>{matchedExistingStudent.name}</b> ({matchedExistingStudent.email}) already exists in this course.
                         </span>
                       </div>
@@ -897,7 +897,7 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', fontWeight: 900 }}>
+                  <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', fontWeight: 900 }}>
                     3
                   </div>
                   <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
@@ -1142,7 +1142,7 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: '#0284c7', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', fontWeight: 900 }}>
+                  <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: 'var(--accent-teal)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', fontWeight: 900 }}>
                     4
                   </div>
                   <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>

@@ -14,16 +14,21 @@ import {
   Settings,
   X,
   Sliders,
-  CheckCircle
+  CheckCircle,
+  Palette,
+  Sun,
+  Moon,
+  Monitor
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
+import { useTheme, type ThemeMode } from '../context/ThemeContext';
 import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
 import { formatShortcutDisplay } from '../utils/keyboardShortcuts';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'email' | 'cloud' | 'shortcuts' | 'preferences';
+  initialTab?: 'email' | 'cloud' | 'shortcuts' | 'preferences' | 'appearance';
   shortcuts: KeyboardShortcut[];
   onUpdateShortcuts: (updated: KeyboardShortcut[]) => void;
   onResetShortcuts: () => void;
@@ -49,7 +54,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     addToast 
   } = useClass();
 
-  const [activeTab, setActiveTab] = useState<'email' | 'cloud' | 'shortcuts' | 'preferences'>(initialTab);
+  const {
+    themeMode,
+    accentColor,
+    setThemeMode,
+    setAccentColor,
+    accentOptions
+  } = useTheme();
+
+  const [activeTab, setActiveTab] = useState<'email' | 'cloud' | 'shortcuts' | 'preferences' | 'appearance'>(initialTab);
 
   // Disable background scrolling when modal is open
   useEffect(() => {
@@ -273,9 +286,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div 
         style={{
           width: '100%',
-          maxWidth: '720px',
-          maxHeight: '86vh',
-          backgroundColor: '#ffffff',
+          maxWidth: '740px',
+          maxHeight: '88vh',
+          backgroundColor: 'var(--bg-surface)',
           borderRadius: '12px',
           border: '1px solid var(--border-color)',
           boxShadow: '0 20px 40px -15px rgba(0,0,0,0.28)',
@@ -294,7 +307,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             display: 'flex', 
             justifyContent: 'space-between', 
             alignItems: 'center',
-            backgroundColor: '#ffffff'
+            backgroundColor: 'var(--bg-surface)'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -306,7 +319,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 Workspace Settings
               </h3>
               <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.2 }}>
-                Manage Brevo email delivery, Firebase sync, and keyboard bindings.
+                Manage Brevo email delivery, Firebase cloud sync, themes &amp; shortcuts.
               </p>
             </div>
           </div>
@@ -332,7 +345,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Minimal Segmented Tab Strip */}
-        <div style={{ padding: '0.4rem 1.25rem', backgroundColor: 'var(--bg-app)', borderBottom: '1px solid var(--border-color)', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.35rem' }}>
+        <div style={{ padding: '0.4rem 1.25rem', backgroundColor: 'var(--bg-app)', borderBottom: '1px solid var(--border-color)', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.35rem' }}>
           <button
             type="button"
             onClick={() => setActiveTab('email')}
@@ -345,10 +358,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               fontSize: '0.78rem',
               fontWeight: activeTab === 'email' ? 700 : 600,
               borderRadius: '7px',
-              border: activeTab === 'email' ? '1px solid rgba(0,0,0,0.08)' : '1px solid transparent',
-              backgroundColor: activeTab === 'email' ? '#ffffff' : 'transparent',
+              border: activeTab === 'email' ? '1px solid var(--border-color)' : '1px solid transparent',
+              backgroundColor: activeTab === 'email' ? 'var(--bg-surface)' : 'transparent',
               color: activeTab === 'email' ? 'var(--primary)' : 'var(--text-secondary)',
-              boxShadow: activeTab === 'email' ? '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+              boxShadow: activeTab === 'email' ? 'var(--shadow-sm)' : 'none',
               cursor: 'pointer',
               transition: 'all 150ms ease'
             }}
@@ -367,16 +380,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               fontSize: '0.78rem',
               fontWeight: activeTab === 'cloud' ? 700 : 600,
               borderRadius: '7px',
-              border: activeTab === 'cloud' ? '1px solid rgba(0,0,0,0.08)' : '1px solid transparent',
-              backgroundColor: activeTab === 'cloud' ? '#ffffff' : 'transparent',
+              border: activeTab === 'cloud' ? '1px solid var(--border-color)' : '1px solid transparent',
+              backgroundColor: activeTab === 'cloud' ? 'var(--bg-surface)' : 'transparent',
               color: activeTab === 'cloud' ? 'var(--primary)' : 'var(--text-secondary)',
-              boxShadow: activeTab === 'cloud' ? '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+              boxShadow: activeTab === 'cloud' ? 'var(--shadow-sm)' : 'none',
               cursor: 'pointer',
               transition: 'all 150ms ease'
             }}
           >
             <Cloud size={13} /> Cloud
             {isCloudSynced && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('appearance')}
+            style={{
+              height: '34px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.35rem',
+              fontSize: '0.78rem',
+              fontWeight: activeTab === 'appearance' ? 700 : 600,
+              borderRadius: '7px',
+              border: activeTab === 'appearance' ? '1px solid var(--border-color)' : '1px solid transparent',
+              backgroundColor: activeTab === 'appearance' ? 'var(--bg-surface)' : 'transparent',
+              color: activeTab === 'appearance' ? 'var(--primary)' : 'var(--text-secondary)',
+              boxShadow: activeTab === 'appearance' ? 'var(--shadow-sm)' : 'none',
+              cursor: 'pointer',
+              transition: 'all 150ms ease'
+            }}
+          >
+            <Palette size={13} /> Theme
           </button>
           <button
             type="button"
@@ -390,10 +425,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               fontSize: '0.78rem',
               fontWeight: activeTab === 'shortcuts' ? 700 : 600,
               borderRadius: '7px',
-              border: activeTab === 'shortcuts' ? '1px solid rgba(0,0,0,0.08)' : '1px solid transparent',
-              backgroundColor: activeTab === 'shortcuts' ? '#ffffff' : 'transparent',
+              border: activeTab === 'shortcuts' ? '1px solid var(--border-color)' : '1px solid transparent',
+              backgroundColor: activeTab === 'shortcuts' ? 'var(--bg-surface)' : 'transparent',
               color: activeTab === 'shortcuts' ? 'var(--primary)' : 'var(--text-secondary)',
-              boxShadow: activeTab === 'shortcuts' ? '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+              boxShadow: activeTab === 'shortcuts' ? 'var(--shadow-sm)' : 'none',
               cursor: 'pointer',
               transition: 'all 150ms ease'
             }}
@@ -412,10 +447,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               fontSize: '0.78rem',
               fontWeight: activeTab === 'preferences' ? 700 : 600,
               borderRadius: '7px',
-              border: activeTab === 'preferences' ? '1px solid rgba(0,0,0,0.08)' : '1px solid transparent',
-              backgroundColor: activeTab === 'preferences' ? '#ffffff' : 'transparent',
+              border: activeTab === 'preferences' ? '1px solid var(--border-color)' : '1px solid transparent',
+              backgroundColor: activeTab === 'preferences' ? 'var(--bg-surface)' : 'transparent',
               color: activeTab === 'preferences' ? 'var(--primary)' : 'var(--text-secondary)',
-              boxShadow: activeTab === 'preferences' ? '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+              boxShadow: activeTab === 'preferences' ? 'var(--shadow-sm)' : 'none',
               cursor: 'pointer',
               transition: 'all 150ms ease'
             }}
@@ -425,7 +460,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Body Content */}
-        <div style={{ padding: '1rem 1.25rem', overflowY: 'auto', flex: 1, backgroundColor: '#ffffff' }}>
+        <div style={{ padding: '1.15rem 1.35rem', overflowY: 'auto', flex: 1, backgroundColor: 'var(--bg-surface)' }}>
           
           {/* TAB 4: PREFERENCES & ONBOARDING */}
           {activeTab === 'preferences' && (
@@ -497,6 +532,119 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <Download size={13} /> Download JSON Backup
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: APPEARANCE & THEMES */}
+          {activeTab === 'appearance' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Theme Mode Section */}
+              <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1.15rem' }}>
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Sun size={15} style={{ color: 'var(--primary)' }} /> Theme Mode
+                  </h4>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Choose between high-clarity Light mode, deep eye-friendly Dark mode, or automatic sync with your operating system.
+                  </p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.65rem' }}>
+                  {[
+                    { id: 'light' as ThemeMode, name: 'Light Mode', desc: 'Crisp, high-contrast surfaces', icon: Sun },
+                    { id: 'dark' as ThemeMode, name: 'Dark Mode', desc: 'Deep obsidian & slate tones', icon: Moon },
+                    { id: 'system' as ThemeMode, name: 'System Auto', desc: 'Syncs with device settings', icon: Monitor }
+                  ].map((item) => {
+                    const isSelected = themeMode === item.id;
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setThemeMode(item.id)}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          textAlign: 'center',
+                          gap: '0.35rem',
+                          padding: '0.85rem 0.65rem',
+                          borderRadius: '8px',
+                          border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                          backgroundColor: isSelected ? 'var(--primary-light)' : 'var(--bg-surface)',
+                          color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
+                          cursor: 'pointer',
+                          boxShadow: isSelected ? 'var(--shadow-sm)' : 'none',
+                          transition: 'all var(--transition-fast)'
+                        }}
+                      >
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: isSelected ? 'var(--primary)' : 'var(--bg-surface-hover)', color: isSelected ? '#ffffff' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Icon size={16} />
+                        </div>
+                        <span style={{ fontSize: '0.82rem', fontWeight: isSelected ? 800 : 600 }}>{item.name}</span>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>{item.desc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Accent Colorway Section */}
+              <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1.15rem' }}>
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Palette size={15} style={{ color: 'var(--primary)' }} /> Brand Accent Colorway
+                  </h4>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Select your institutional or preferred colorway. All buttons, active indicators, chart data points, and badges dynamically calibrate to your choice.
+                  </p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.65rem' }}>
+                  {accentOptions.map((opt) => {
+                    const isSelected = accentColor === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setAccentColor(opt.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.65rem',
+                          padding: '0.75rem 0.85rem',
+                          borderRadius: '8px',
+                          border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                          backgroundColor: isSelected ? 'var(--primary-light)' : 'var(--bg-surface)',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          transition: 'all var(--transition-fast)'
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            background: `linear-gradient(135deg, ${opt.previewColor} 0%, ${opt.secondaryColor} 100%)`,
+                            boxShadow: isSelected ? `0 0 0 2px var(--bg-surface), 0 0 10px ${opt.previewColor}99` : 'none',
+                            flexShrink: 0
+                          }}
+                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: isSelected ? 800 : 700, color: 'var(--text-primary)' }}>
+                            {opt.name}
+                          </span>
+                          <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', lineHeight: 1.15, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                            {opt.description}
+                          </span>
+                        </div>
+                        {isSelected && <Check size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -849,7 +997,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '0.65rem 1.25rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#ffffff' }}>
+        <div style={{ padding: '0.65rem 1.25rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', backgroundColor: 'var(--bg-surface)' }}>
           <button type="button" className="btn btn-secondary" onClick={onClose} style={{ height: '32px', padding: '0 1.15rem', fontWeight: 700, fontSize: '0.8rem' }}>
             Done
           </button>

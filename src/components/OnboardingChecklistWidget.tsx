@@ -79,10 +79,10 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
   return (
     <div
       style={{
-        backgroundColor: '#ffffff',
+        backgroundColor: 'var(--bg-surface)',
         borderRadius: '10px',
-        border: '1px solid #e2e8f0',
-        boxShadow: '0 2px 8px -2px rgba(0, 0, 0, 0.05)',
+        border: '1px solid var(--border-color)',
+        boxShadow: 'var(--shadow-sm)',
         overflow: 'hidden',
         marginBottom: '1rem',
         transition: 'all 0.15s ease'
@@ -92,13 +92,13 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
       <div
         style={{
           padding: '0.55rem 0.95rem',
-          backgroundColor: '#f8fafc',
+          backgroundColor: 'var(--bg-surface-hover)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           flexWrap: 'wrap',
           gap: '0.5rem',
-          borderBottom: isCollapsed ? 'none' : '1px solid #f1f5f9'
+          borderBottom: isCollapsed ? 'none' : '1px solid var(--border-color)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
@@ -107,23 +107,24 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
               width: '22px',
               height: '22px',
               borderRadius: '50%',
-              backgroundColor: completedCount === steps.length ? '#dcfce7' : '#eef2ff',
-              color: completedCount === steps.length ? '#16a34a' : '#4f46e5',
+              backgroundColor: completedCount === steps.length ? 'var(--accent-teal-light)' : 'var(--primary-light)',
+              color: completedCount === steps.length ? 'var(--accent-teal)' : 'var(--primary)',
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: '0.7rem',
-              fontWeight: 800
+              fontWeight: 800,
+              border: '1px solid var(--border-color)'
             }}
           >
             {completedCount === steps.length ? <CheckCircle size={13} /> : `${completedCount}/${steps.length}`}
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0f172a' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 Course Setup Checklist
               </span>
-              <span style={{ fontSize: '0.66rem', fontWeight: 700, color: completedCount === steps.length ? '#16a34a' : '#64748b', backgroundColor: completedCount === steps.length ? '#f0fdf4' : '#f1f5f9', padding: '1px 5px', borderRadius: '4px' }}>
+              <span style={{ fontSize: '0.66rem', fontWeight: 700, color: completedCount === steps.length ? 'var(--accent-teal)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', padding: '1px 6px', borderRadius: '4px' }}>
                 {progressPercent}% Complete
               </span>
             </div>
@@ -139,9 +140,9 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
                 padding: '0.25rem 0.55rem',
                 fontSize: '0.7rem',
                 fontWeight: 600,
-                backgroundColor: '#ffffff',
-                color: '#4f46e5',
-                border: '1px solid #c7d2fe',
+                backgroundColor: 'var(--bg-surface)',
+                color: 'var(--primary)',
+                border: '1px solid var(--border-color)',
                 borderRadius: '5px',
                 cursor: 'pointer',
                 display: 'inline-flex',
@@ -161,9 +162,9 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
               padding: '0.25rem 0.55rem',
               fontSize: '0.7rem',
               fontWeight: 700,
-              backgroundColor: '#ecfdf5',
-              color: '#047857',
-              border: '1px solid #a7f3d0',
+              backgroundColor: 'var(--accent-teal-light)',
+              color: 'var(--accent-teal)',
+              border: '1px solid var(--accent-teal)',
               borderRadius: '5px',
               cursor: 'pointer',
               display: 'inline-flex',
@@ -180,13 +181,13 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
             onClick={toggleCollapse}
             style={{
               background: 'transparent',
-              border: '1px solid #e2e8f0',
+              border: '1px solid var(--border-color)',
               borderRadius: '5px',
               padding: '0.2rem 0.35rem',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              color: '#64748b'
+              color: 'var(--text-secondary)'
             }}
             title={isCollapsed ? 'Expand Checklist' : 'Collapse Checklist'}
           >
@@ -204,7 +205,7 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                color: '#94a3b8'
+                color: 'var(--text-muted)'
               }}
               title="Hide Checklist (Can be re-enabled in Settings anytime)"
             >
@@ -216,7 +217,7 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
 
       {/* Expanded Minimal Cards */}
       {!isCollapsed && (
-        <div style={{ padding: '0.65rem 0.85rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.5rem', backgroundColor: '#ffffff' }}>
+        <div style={{ padding: '0.65rem 0.85rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.5rem', backgroundColor: 'var(--bg-surface)' }}>
           {steps.map(step => (
             <div
               key={step.id}
@@ -224,8 +225,8 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
               style={{
                 padding: '0.55rem 0.7rem',
                 borderRadius: '7px',
-                backgroundColor: step.isCompleted ? '#f0fdf4' : '#fafafa',
-                border: step.isCompleted ? '1px solid #dcfce7' : '1px solid #f1f5f9',
+                backgroundColor: step.isCompleted ? 'var(--accent-teal-light)' : 'var(--bg-app)',
+                border: step.isCompleted ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -236,21 +237,21 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
                 {step.isCompleted ? (
-                  <CheckCircle size={14} style={{ color: '#16a34a', flexShrink: 0 }} />
+                  <CheckCircle size={14} style={{ color: 'var(--accent-teal)', flexShrink: 0 }} />
                 ) : (
-                  <Circle size={14} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+                  <Circle size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                 )}
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '0.74rem', fontWeight: 700, color: step.isCompleted ? '#166534' : '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {step.title}
                   </div>
-                  <div style={{ fontSize: '0.66rem', color: step.isCompleted ? '#15803d' : '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {step.hint}
                   </div>
                 </div>
               </div>
 
-              <span style={{ fontSize: '0.66rem', fontWeight: 700, color: '#4f46e5', flexShrink: 0 }}>
+              <span style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--primary)', flexShrink: 0 }}>
                 {step.actionLabel} &rarr;
               </span>
             </div>

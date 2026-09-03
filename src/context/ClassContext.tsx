@@ -489,6 +489,7 @@ import {
         fields: Array.isArray(c.fields) ? c.fields.map(f => ({
           id: f.id,
           name: f.name || '',
+          description: f.description || '',
           min: typeof f.min === 'number' ? f.min : 1,
           max: typeof f.max === 'number' ? f.max : 10,
           weight: typeof f.weight === 'number' ? f.weight : 1

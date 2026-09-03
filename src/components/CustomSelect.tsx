@@ -65,10 +65,11 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           backgroundImage: 'none',
           cursor: 'pointer',
           boxSizing: 'border-box',
+          color: 'var(--text-primary)',
           ...triggerStyle
         }}
       >
-        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', paddingRight: '0.25rem' }}>
+        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', paddingRight: '0.25rem', color: 'inherit' }}>
           {selectedOption?.label}
         </span>
         <ChevronDown

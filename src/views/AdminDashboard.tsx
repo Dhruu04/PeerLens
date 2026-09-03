@@ -43,6 +43,7 @@ import ProjectorView from './ProjectorView';
 import { LinkDispatcherModal } from '../components/LinkDispatcherModal';
 import { calculateJohariWindowMetric, extractClassFeedbackInsights } from '../utils/feedbackAnalytics';
 import { DIVERSE_100_STUDENTS, getSampleStudentsCSV, downloadSampleStudentsFile } from '../data/sampleStudents';
+import ThemeSwitcher from '../components/ThemeSwitcher';
 import { RUBRIC_PRESETS } from '../utils/rubricPresets';
 import { SettingsModal } from '../components/SettingsModal';
 import FeatureInfoButton from '../components/FeatureInfoButton';
@@ -325,8 +326,8 @@ export const AdminDashboard: React.FC = () => {
         setActiveTab('grading');
         break;
       case 'rubric_builder':
-        handleApplyPreset('aacu_teamwork');
-        addToast('Applied AAC&U VALUE Teamwork preset (5 criteria × 20% = 100%)!', 'success');
+        handleApplyPreset('ipaf_research_synthesized');
+        addToast('Applied IPAF Research-Synthesized preset (6 criteria, weighted 100%)!', 'success');
         break;
       case 'eval_simulator':
         addToast('Simulated peer evaluation rating (16/20 mark)!', 'info');
@@ -1595,9 +1596,9 @@ export const AdminDashboard: React.FC = () => {
       setSandboxMissionIndex(2);
       setActiveTab('grading');
     } else if (sandboxMissionIndex === 2) {
-      // Step 3: Apply accredited 100% AAC&U VALUE preset
-      handleApplyPreset('aacu_teamwork');
-      addToast('Mission 3 Complete! Applied 100% weighted AAC&U VALUE rubric.', 'success');
+      // Step 3: Apply research-synthesized IPAF preset
+      handleApplyPreset('ipaf_research_synthesized');
+      addToast('Mission 3 Complete! Applied IPAF research-synthesized rubric.', 'success');
       setSandboxMissionIndex(3);
       setActiveTab('roster');
     } else if (sandboxMissionIndex === 3) {
@@ -1965,7 +1966,7 @@ export const AdminDashboard: React.FC = () => {
                   value={activeClass.id}
                   onChange={(val) => selectClass(val)}
                   style={{ flex: 1, minWidth: '120px' }}
-                  triggerStyle={{ border: 'none', backgroundColor: 'transparent', boxShadow: 'none', padding: '0.25rem 0.5rem', fontSize: '0.92rem', fontWeight: 800, height: '28px' }}
+                  triggerStyle={{ border: 'none', backgroundColor: 'transparent', boxShadow: 'none', padding: '0.25rem 0.5rem', fontSize: '0.92rem', fontWeight: 800, height: '28px', color: 'var(--text-primary)' }}
                 />
                 {classes.length > 1 && (
                   <button
@@ -2006,7 +2007,7 @@ export const AdminDashboard: React.FC = () => {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '0.45rem',
-                  backgroundColor: 'var(--bg-app)',
+                  backgroundColor: 'var(--bg-surface-hover)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '6px',
                   padding: '0.2rem 0.55rem',
@@ -2113,6 +2114,9 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </div>
             </button>
+
+            {/* Quick 1-Click Theme Toggle */}
+            <ThemeSwitcher compact={true} />
 
             {/* Desktop Profile Pill */}
             <div className="desktop-profile-pill" data-tour="workspace-selector">
@@ -3258,10 +3262,7 @@ export const AdminDashboard: React.FC = () => {
                     title={`${preset.name}: ${preset.description}`}
                   >
                     <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
-                      {preset.id === 'aacu_teamwork' ? 'AAC&U VALUE' :
-                        preset.id === 'abet_engineering' ? 'ABET Engineering' :
-                          preset.id === 'agile_scrum' ? 'Agile Scrum' :
-                            preset.id === 'creative_design' ? 'Design Studio' : 'Standard 4-D Core'}
+                      {preset.id === 'ipaf_research_synthesized' ? 'IPAF Standard' : preset.name}
                     </span>
                     <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '1px 5px', height: '16px', lineHeight: '14px' }}>
                       {preset.fields.length} criteria
@@ -3745,7 +3746,7 @@ export const AdminDashboard: React.FC = () => {
                         {
                           id: 'class_avg',
                           name: 'Class Average',
-                          color: '#6366f1',
+                          color: 'var(--primary)',
                           values: (() => {
                             const res: Record<string, number | null> = {};
                             activeClass.fields.forEach(f => {
@@ -3763,7 +3764,7 @@ export const AdminDashboard: React.FC = () => {
                         ...(radarTeamFilter !== 'All' ? [{
                           id: 'team_avg',
                           name: `${radarTeamFilter} Average`,
-                          color: '#14b8a6',
+                          color: 'var(--accent-teal)',
                           values: (() => {
                             const res: Record<string, number | null> = {};
                             const teamStudents = activeClass.students.filter(s => s.groupName === radarTeamFilter);
