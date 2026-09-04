@@ -1,9 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import type { ClassData, Student, GradingScaleField, Review, Milestone } from '../utils/math';
 import { normalizeNationality } from '../utils/math';
 import { hashCode } from '../utils/csv';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, onSnapshot, collection, deleteDoc, runTransaction } from 'firebase/firestore';
+import { getFirestore, doc, onSnapshot, collection, deleteDoc, runTransaction, setDoc } from 'firebase/firestore';
 import { 
   getAuth, 
   signInWithEmailAndPassword, 
@@ -21,11 +21,37 @@ import {
     messagingSenderId: string;
     appId: string;
   }
+
+  export interface WorkspaceSettings {
+    activeClassId?: string | null;
+    activeTab?: string;
+    shortcuts?: any[];
+    featureToggles?: any;
+    emailSettings?: {
+      service?: string;
+      brevoApiKey?: string;
+      brevoSenderEmail?: string;
+      brevoSenderName?: string;
+      emailJsServiceId?: string;
+      emailJsTemplateId?: string;
+      emailJsPublicKey?: string;
+    };
+    theme?: string;
+    updatedAt?: string;
+  }
   
+  export interface ToastAction {
+    label: string;
+    onClick: () => void;
+  }
+
   export interface ToastMessage {
     id: string;
     message: string;
     type: 'success' | 'error' | 'warning' | 'info';
+    duration?: number;
+    action?: ToastAction;
+    createdAt: number;
   }
   
   interface ClassContextType {
@@ -56,6 +82,8 @@ import {
     deleteClass: (id: string) => void;
     selectClass: (id: string | null) => void;
     updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify?: boolean) => void;
+    updateTeamBaseGrade: (classId: string, teamName: string, grade: number) => void;
+    setAllTeamBaseGrades: (classId: string, grades: Record<string, number>) => void;
     importRoster: (classId: string, students: Student[], clearExisting?: boolean) => void;
     addStudent: (classId: string, student: Omit<Student, 'submitted'>) => void;
     enrollStudent: (classId: string, student: Omit<Student, 'submitted' | 'id'> & { id?: string }) => Promise<{ success: boolean; studentId: string; message?: string }>;
@@ -73,7 +101,8 @@ import {
     // Settings / UI
     restoreClassesSnapshot: (snapshot: ClassData[]) => void;
     saveFirebaseConfig: (config: FirebaseConfig | null) => void;
-    addToast: (message: string, type: ToastMessage['type']) => void;
+    syncWorkspaceSettingsToCloud: (partial: Partial<WorkspaceSettings>) => Promise<void>;
+    addToast: (message: string, type: ToastMessage['type'], options?: { action?: ToastAction; duration?: number }) => string;
     removeToast: (id: string) => void;
   }
   
@@ -84,6 +113,7 @@ import {
       id: 'c_default',
       name: 'Intro to Web Development',
       targetScale: 20,
+      teamBaseGrades: {},
       fields: [
         { id: 'f_quality', name: 'Quality of Contribution', description: 'Produces thorough, accurate deliverables on schedule with high attention to detail.', min: 1, max: 20, weight: 34 },
         { id: 'f_collaboration', name: 'Collaboration & Communication', description: 'Active engagement, responsiveness, transparency, and constructive teamwork.', min: 1, max: 20, weight: 33 },
@@ -126,18 +156,46 @@ import {
     const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(null);
     const [isCloudSynced, setIsCloudSynced] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
+    const toastTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-    // Toast utilities — Minimal, single active toast to prevent screen obstruction
-    const addToast = (message: string, type: ToastMessage['type']) => {
-      const id = Math.random().toString(36).substring(2, 9);
-      // Replace existing toast immediately so messages NEVER stack up or block UI
-      setToasts([{ id, message, type }]);
-      setTimeout(() => removeToast(id), 2400);
-    };
-  
-    const removeToast = (id: string) => {
+    const removeToast = useCallback((id: string) => {
+      const timer = toastTimersRef.current.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        toastTimersRef.current.delete(id);
+      }
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    };
+    }, []);
+
+    const addToast = useCallback((
+      message: string,
+      type: ToastMessage['type'],
+      options?: { action?: ToastAction; duration?: number }
+    ): string => {
+      const id = 'toast_' + Math.random().toString(36).substring(2, 9);
+      const duration = options?.duration ?? (options?.action ? 30000 : 2800);
+      const newToast: ToastMessage = {
+        id,
+        message,
+        type,
+        duration,
+        action: options?.action,
+        createdAt: Date.now(),
+      };
+
+      setToasts((prev) => {
+        // Keep active undo toast alive, while limiting total toasts to 2
+        const activeUndo = prev.filter(t => t.action && t.id !== id);
+        return [...activeUndo, newToast].slice(-2);
+      });
+
+      const timer = setTimeout(() => {
+        removeToast(id);
+      }, duration);
+      toastTimersRef.current.set(id, timer);
+
+      return id;
+    }, [removeToast]);
   
     // Load config and profile lists initially
     useEffect(() => {
@@ -255,8 +313,18 @@ import {
         const profileClassesRef = collection(db, 'admins', ownerUid, 'classes');
         
         unsubscribe = onSnapshot(profileClassesRef, (snapshot) => {
+          let hasSettingsDoc = false;
           const cloudClasses: ClassData[] = [];
+
           snapshot.forEach((doc) => {
+            // Intercept special workspace configuration document
+            if (doc.id === '_settings_workspace') {
+              hasSettingsDoc = true;
+              const data = doc.data() as WorkspaceSettings;
+              handleApplyWorkspaceSettings(data);
+              return;
+            }
+
             const data = doc.data();
             cloudClasses.push({
               id: doc.id,
@@ -266,7 +334,8 @@ import {
               reviews: Array.isArray(data.reviews) ? data.reviews : [],
               deadline: data.deadline || null,
               milestones: Array.isArray(data.milestones) ? data.milestones : [],
-              targetScale: typeof data.targetScale === 'number' ? data.targetScale : null
+              targetScale: typeof data.targetScale === 'number' ? data.targetScale : null,
+              teamBaseGrades: data.teamBaseGrades && typeof data.teamBaseGrades === 'object' ? data.teamBaseGrades : {}
             });
           });
 
@@ -283,16 +352,53 @@ import {
               if (prev && cloudClasses.some(c => c.id === prev)) {
                 return prev;
               }
+              const savedActiveId = localStorage.getItem('peer_active_class_id');
+              if (savedActiveId && cloudClasses.some(c => c.id === savedActiveId)) {
+                return savedActiveId;
+              }
               return cloudClasses.length > 0 ? cloudClasses[0].id : null;
             });
           } else {
             // Firestore collection has 0 classrooms. 
-            // If the user is authenticated (user is not null), and they have classes in their memory/localStorage,
+            // If the user is authenticated, and they have classes in their memory/localStorage,
             // push them to Firestore as a first-time migration.
             if (user && classesRef.current && classesRef.current.length > 0) {
               console.log('Auto-migration: Firestore collection is empty, pushing local classes.');
               persistClasses(classesRef.current);
             }
+          }
+
+          // Initial workspace settings cloud backup if not already present
+          if (user && !hasSettingsDoc) {
+            const currentActiveClass = localStorage.getItem('peer_active_class_id');
+            const currentTab = localStorage.getItem('peer_active_tab') || 'hub';
+            const currentShortcuts = localStorage.getItem('peerlens_shortcuts_v3');
+            const currentFeatures = localStorage.getItem('peer_feature_toggles_v2');
+            const emailService = localStorage.getItem('peer_email_service') || 'brevo';
+            const brevoApiKey = localStorage.getItem('peer_brevo_api_key') || '';
+            const brevoSenderEmail = localStorage.getItem('peer_brevo_sender_email') || '';
+            const brevoSenderName = localStorage.getItem('peer_brevo_sender_name') || '';
+            const emailJsServiceId = localStorage.getItem('peer_emailjs_service_id') || '';
+            const emailJsTemplateId = localStorage.getItem('peer_emailjs_template_id') || '';
+            const emailJsPublicKey = localStorage.getItem('peer_emailjs_user_id') || '';
+            const theme = localStorage.getItem('peerlens_theme') || 'academic-navy';
+
+            syncWorkspaceSettingsToCloud({
+              activeClassId: currentActiveClass || null,
+              activeTab: currentTab,
+              shortcuts: currentShortcuts ? JSON.parse(currentShortcuts) : null,
+              featureToggles: currentFeatures ? JSON.parse(currentFeatures) : null,
+              emailSettings: {
+                service: emailService,
+                brevoApiKey,
+                brevoSenderEmail,
+                brevoSenderName,
+                emailJsServiceId,
+                emailJsTemplateId,
+                emailJsPublicKey
+              },
+              theme
+            });
           }
         }, (err) => {
           console.error('Firestore secure real-time sync error:', err);
@@ -307,6 +413,97 @@ import {
         }
       };
     }, [firebaseConfig, isCloudSynced, activeAdminProfile, user, studentOwnerUid, loading]);
+
+    // Re-hydrate workspace settings from cloud
+    const handleApplyWorkspaceSettings = (data: WorkspaceSettings) => {
+      if (!data) return;
+
+      // 1. Active class
+      if (data.activeClassId) {
+        localStorage.setItem('peer_active_class_id', data.activeClassId);
+        setActiveClassId((prev) => {
+          if (classesRef.current.some(c => c.id === data.activeClassId)) {
+            return data.activeClassId!;
+          }
+          return prev;
+        });
+      }
+
+      // 2. Active tab
+      if (data.activeTab) {
+        localStorage.setItem('peer_active_tab', data.activeTab);
+        window.dispatchEvent(new CustomEvent('peerlens_tab_synced', { detail: data.activeTab }));
+      }
+
+      // 3. Shortcuts
+      if (Array.isArray(data.shortcuts) && data.shortcuts.length > 0) {
+        localStorage.setItem('peerlens_shortcuts_v3', JSON.stringify(data.shortcuts));
+        window.dispatchEvent(new CustomEvent('peerlens_shortcuts_changed', { detail: data.shortcuts }));
+      }
+
+      // 4. Feature toggles
+      if (data.featureToggles) {
+        localStorage.setItem('peer_feature_toggles_v2', JSON.stringify(data.featureToggles));
+        window.dispatchEvent(new CustomEvent('peerlens_features_synced', { detail: data.featureToggles }));
+      }
+
+      // 5. Email settings
+      if (data.emailSettings) {
+        const es = data.emailSettings;
+        if (es.service) localStorage.setItem('peer_email_service', es.service);
+        if (es.brevoApiKey) {
+          localStorage.setItem('peer_brevo_api_key', es.brevoApiKey);
+          localStorage.setItem('peerlens_brevo_key', es.brevoApiKey);
+        }
+        if (es.brevoSenderEmail) {
+          localStorage.setItem('peer_brevo_sender_email', es.brevoSenderEmail);
+          localStorage.setItem('peerlens_brevo_sender', es.brevoSenderEmail);
+        }
+        if (es.brevoSenderName) {
+          localStorage.setItem('peer_brevo_sender_name', es.brevoSenderName);
+          localStorage.setItem('peerlens_brevo_name', es.brevoSenderName);
+        }
+        if (es.emailJsServiceId) {
+          localStorage.setItem('peer_emailjs_service_id', es.emailJsServiceId);
+          localStorage.setItem('peerlens_emailjs_service', es.emailJsServiceId);
+        }
+        if (es.emailJsTemplateId) {
+          localStorage.setItem('peer_emailjs_template_id', es.emailJsTemplateId);
+          localStorage.setItem('peerlens_emailjs_template', es.emailJsTemplateId);
+        }
+        if (es.emailJsPublicKey) {
+          localStorage.setItem('peer_emailjs_user_id', es.emailJsPublicKey);
+          localStorage.setItem('peerlens_emailjs_public', es.emailJsPublicKey);
+        }
+      }
+
+      // 6. Theme
+      if (data.theme) {
+        localStorage.setItem('peerlens_theme', data.theme);
+        window.dispatchEvent(new CustomEvent('peerlens_theme_synced', { detail: data.theme }));
+      }
+    };
+
+    // Cloud helper to sync workspace settings to cloud using existing allowed classes subcollection path
+    const syncWorkspaceSettingsToCloud = async (partial: Partial<WorkspaceSettings>) => {
+      if (!isCloudSynced || !firebaseConfig || !user) return;
+      try {
+        const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+        const db = getFirestore(app);
+        // Store in classes subcollection with system ID so it matches existing Firestore security rules
+        const settingsDocRef = doc(db, 'admins', user.uid, 'classes', '_settings_workspace');
+        
+        // Deep-clean to eliminate ANY undefined values for Firestore
+        const cleanPayload = JSON.parse(JSON.stringify({
+          ...partial,
+          updatedAt: new Date().toISOString()
+        }));
+
+        await setDoc(settingsDocRef, cleanPayload, { merge: true });
+      } catch (err) {
+        console.warn('Could not sync workspace settings to cloud:', err);
+      }
+    };
 
     // Authentication Action Handlers
     const loginAdmin = async (email: string, password: string) => {
@@ -397,12 +594,17 @@ import {
                 reviews: Array.isArray(c.reviews) ? c.reviews : [],
                 deadline: c.deadline || null,
                 milestones: Array.isArray(c.milestones) ? c.milestones : [],
-                targetScale: typeof c.targetScale === 'number' ? c.targetScale : null
+                targetScale: typeof c.targetScale === 'number' ? c.targetScale : null,
+                teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {}
               }));
               
               setClasses(validated);
-              if (validated.length > 0) {
+              const savedActiveId = localStorage.getItem('peer_active_class_id');
+              if (savedActiveId && validated.some(c => c.id === savedActiveId)) {
+                setActiveClassId(savedActiveId);
+              } else if (validated.length > 0) {
                 setActiveClassId(validated[0].id);
+                localStorage.setItem('peer_active_class_id', validated[0].id);
               } else {
                 setActiveClassId(null);
               }
@@ -468,7 +670,8 @@ import {
                 reviews: Array.isArray(c.reviews) ? c.reviews : [],
                 deadline: c.deadline || null,
                 milestones: Array.isArray(c.milestones) ? c.milestones : [],
-                targetScale: typeof c.targetScale === 'number' ? c.targetScale : null
+                targetScale: typeof c.targetScale === 'number' ? c.targetScale : null,
+                teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {}
               }));
               setClasses(validated);
             }
@@ -535,7 +738,8 @@ import {
             growthText: mr.growthText !== undefined ? mr.growthText : null
           })) : []
         })) : [],
-        targetScale: typeof c.targetScale === 'number' ? c.targetScale : null
+        targetScale: typeof c.targetScale === 'number' ? c.targetScale : null,
+        teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {}
       };
     };
 
@@ -698,12 +902,18 @@ import {
       };
       persistClasses([...getCurrentClasses(), newClass]);
       setActiveClassId(id);
+      localStorage.setItem('peer_active_class_id', id);
+      syncWorkspaceSettingsToCloud({ activeClassId: id });
       addToast(`Class "${name}" successfully created!`, 'success');
       return id;
     };
   
     const deleteClass = async (id: string) => {
-      const remainingClasses = getCurrentClasses().filter((c) => c.id !== id);
+      const current = getCurrentClasses();
+      const targetClass = current.find((c) => c.id === id);
+      const snapshot = JSON.parse(JSON.stringify(current)) as ClassData[];
+
+      const remainingClasses = current.filter((c) => c.id !== id);
       persistClasses(remainingClasses);
 
       if (isCloudSynced && firebaseConfig) {
@@ -720,14 +930,38 @@ import {
         }
       }
       
-      addToast('Class successfully deleted.', 'info');
       if (activeClassId === id) {
-        setActiveClassId(remainingClasses.length > 0 ? remainingClasses[0].id : null);
+        const nextId = remainingClasses.length > 0 ? remainingClasses[0].id : null;
+        setActiveClassId(nextId);
+        if (nextId) localStorage.setItem('peer_active_class_id', nextId);
+        else localStorage.removeItem('peer_active_class_id');
+        syncWorkspaceSettingsToCloud({ activeClassId: nextId });
       }
+
+      const className = targetClass ? targetClass.name : 'Class';
+      addToast(`Class "${className}" deleted`, 'warning', {
+        duration: 30000,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            restoreClassesSnapshot(snapshot);
+            setActiveClassId(id);
+            localStorage.setItem('peer_active_class_id', id);
+            syncWorkspaceSettingsToCloud({ activeClassId: id });
+            addToast(`Restored class "${className}"`, 'success');
+          }
+        }
+      });
     };
   
     const selectClass = (id: string | null) => {
       setActiveClassId(id);
+      if (id) {
+        localStorage.setItem('peer_active_class_id', id);
+      } else {
+        localStorage.removeItem('peer_active_class_id');
+      }
+      syncWorkspaceSettingsToCloud({ activeClassId: id });
     };
   
     const updateGradingConfig = (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify: boolean = false) => {
@@ -745,6 +979,35 @@ import {
       if (notify) {
         addToast('Grading configuration successfully updated.', 'success');
       }
+    };
+
+    const updateTeamBaseGrade = (classId: string, teamName: string, grade: number) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const newTeamGrades = { ...(c.teamBaseGrades || {}) };
+          newTeamGrades[teamName] = grade;
+          return {
+            ...c,
+            teamBaseGrades: newTeamGrades
+          };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+    };
+
+    const setAllTeamBaseGrades = (classId: string, grades: Record<string, number>) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          return {
+            ...c,
+            teamBaseGrades: { ...grades }
+          };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Updated base grades for all teams.', 'success');
     };
   
     const importRoster = (classId: string, newStudents: Student[], clearExisting = false) => {
@@ -903,7 +1166,12 @@ import {
     };
   
     const deleteStudent = (classId: string, studentId: string) => {
-      const updatedClasses = getCurrentClasses().map((c) => {
+      const current = getCurrentClasses();
+      const targetClass = current.find(c => c.id === classId);
+      const studentToDelete = targetClass?.students.find(s => s.id === studentId);
+      const snapshot = JSON.parse(JSON.stringify(current)) as ClassData[];
+
+      const updatedClasses = current.map((c) => {
         if (c.id === classId) {
           // Remove their student record AND any reviews they wrote or received
           const filteredStudents = c.students.filter((s) => s.id !== studentId);
@@ -915,12 +1183,26 @@ import {
         return c;
       });
       persistClasses(updatedClasses);
-      addToast('Student removed from class.', 'info');
+
+      const studentName = studentToDelete ? studentToDelete.name : 'Student';
+      addToast(`Removed "${studentName}" from class`, 'warning', {
+        duration: 30000,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            restoreClassesSnapshot(snapshot);
+            addToast(`Restored "${studentName}" to class`, 'success');
+          }
+        }
+      });
     };
 
     const deleteStudents = (classId: string, studentIds: string[]) => {
+      const current = getCurrentClasses();
+      const snapshot = JSON.parse(JSON.stringify(current)) as ClassData[];
       const idSet = new Set(studentIds);
-      const updatedClasses = getCurrentClasses().map((c) => {
+
+      const updatedClasses = current.map((c) => {
         if (c.id === classId) {
           const filteredStudents = c.students.filter((s) => !idSet.has(s.id));
           const filteredReviews = c.reviews.filter(
@@ -931,7 +1213,17 @@ import {
         return c;
       });
       persistClasses(updatedClasses);
-      addToast(`Deleted ${studentIds.length} students.`, 'info');
+
+      addToast(`Deleted ${studentIds.length} student${studentIds.length > 1 ? 's' : ''}`, 'warning', {
+        duration: 30000,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            restoreClassesSnapshot(snapshot);
+            addToast(`Restored ${studentIds.length} students`, 'success');
+          }
+        }
+      });
     };
   
     const submitPeerReviews = async (
@@ -1054,6 +1346,7 @@ import {
  
     const resetClassReviews = (classId: string, silent: boolean = false) => {
       const currentList = classesRef.current.length > 0 ? classesRef.current : classes;
+      const snapshot = JSON.parse(JSON.stringify(currentList)) as ClassData[];
       const updatedClasses = currentList.map((c) => {
         if (c.id === classId) {
           const resetStudents = c.students.map((s) => ({ ...s, submitted: false }));
@@ -1063,12 +1356,25 @@ import {
       });
       persistClasses(updatedClasses);
       if (!silent) {
-        addToast('All peer feedback data has been reset.', 'warning');
+        addToast('All peer feedback data has been reset', 'warning', {
+          duration: 30000,
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              restoreClassesSnapshot(snapshot);
+              addToast('Restored all peer evaluations and review statuses', 'success');
+            }
+          }
+        });
       }
     };
 
     const clearClassRoster = (classId: string, silent: boolean = false) => {
       const currentList = classesRef.current.length > 0 ? classesRef.current : classes;
+      const snapshot = JSON.parse(JSON.stringify(currentList)) as ClassData[];
+      const targetClass = currentList.find((c) => c.id === classId);
+      const studentCount = targetClass?.students.length || 0;
+
       const updatedClasses = currentList.map((c) => {
         if (c.id === classId) {
           return { ...c, students: [], reviews: [] };
@@ -1077,7 +1383,16 @@ import {
       });
       persistClasses(updatedClasses);
       if (!silent) {
-        addToast('Class roster and peer evaluations cleared completely.', 'info');
+        addToast(`Cleared class roster (${studentCount} students)`, 'warning', {
+          duration: 30000,
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              restoreClassesSnapshot(snapshot);
+              addToast('Restored class roster and evaluations', 'success');
+            }
+          }
+        });
       }
     };
   
@@ -1086,6 +1401,8 @@ import {
         setClasses(snapshot);
         classesRef.current = snapshot;
         localStorage.setItem(`peer_grading_classes_${activeAdminProfile}`, JSON.stringify(snapshot));
+        // Persist restored state to cloud database to maintain 100% sync
+        persistClasses(snapshot);
       }
     };
 
@@ -1127,6 +1444,8 @@ import {
           deleteClass,
           selectClass,
           updateGradingConfig,
+          updateTeamBaseGrade,
+          setAllTeamBaseGrades,
           importRoster,
           addStudent,
           enrollStudent,
@@ -1142,6 +1461,7 @@ import {
           deleteMilestone,
           restoreClassesSnapshot,
           saveFirebaseConfig,
+          syncWorkspaceSettingsToCloud,
           addToast,
           removeToast
         }}

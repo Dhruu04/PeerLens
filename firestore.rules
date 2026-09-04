@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdminOwner(adminId) {
+      return isAuthenticated() && request.auth.uid == adminId;
+    }
+
+    // Root admin workspaces
+    match /admins/{adminId} {
+      // Authenticated course convenors have full read/write access to their workspace
+      allow read, write: if isAdminOwner(adminId);
+
+      // Classrooms collection scoped to instructor
+      match /classes/{classId} {
+        // Instructor has complete authority
+        allow create, delete: if isAdminOwner(adminId);
+        allow read, write: if isAdminOwner(adminId);
+
+        // Public/Student access rules:
+        // Students can read individual classroom configurations for peer evaluations
+        // (Excludes internal workspace settings document)
+        allow get: if classId != '_settings_workspace';
+
+        // Students can submit peer reviews or self-enroll into active classrooms
+        allow update: if classId != '_settings_workspace';
+      }
+
+      // Recursive fallback for any nested instructor collections
+      match /{allPaths=**} {
+        allow read, write: if isAdminOwner(adminId);
+      }
+    }
+  }
+}

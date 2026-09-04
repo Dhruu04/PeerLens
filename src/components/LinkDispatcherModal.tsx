@@ -265,7 +265,7 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
         // High-Fidelity Simulator
         await new Promise(r => setTimeout(r, 450));
         successCount++;
-        setSendLogs(prev => [...prev, `⚡ [${i + 1}/${total}] [Simulator] Delivered private link to ${student.name} (${student.email})`]);
+        setSendLogs(prev => [...prev, `[Simulator] [${i + 1}/${total}] Delivered private link to ${student.name} (${student.email})`]);
       }
 
       setSendProgress(Math.round(((i + 1) / total) * 100));

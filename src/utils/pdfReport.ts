@@ -175,12 +175,12 @@ export function generateStudentReportPDF(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(...secondaryColor);
-  doc.text(`Calibrated Grade (Base ${baseGrade})`, box2X + 4, currentY + 6);
+  doc.text(`Calibrated Grade (Base ${webpaResult.teamBaseGrade})`, box2X + 4, currentY + 6);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.setTextColor(...primaryColor);
-  doc.text(`${webpaResult.adjustedGrade.toFixed(1)} / ${baseGrade}`, box2X + 4, currentY + 14);
+  doc.text(`${webpaResult.adjustedGrade.toFixed(1)} / ${webpaResult.teamBaseGrade}`, box2X + 4, currentY + 14);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);

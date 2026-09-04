@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Database, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { ClassProvider, useClass } from './context/ClassContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
@@ -10,7 +10,7 @@ import ProjectorView from './views/ProjectorView';
 import ToastContainer from './components/Toast';
 
 const AppContent: React.FC = () => {
-  const { isCloudSynced, activeClass, activeAdminProfile, classes } = useClass();
+  const { activeClass, activeAdminProfile, classes } = useClass();
   const [routeParams, setRouteParams] = useState<{
     classId: string | null;
     studentId: string | null;
@@ -52,42 +52,32 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="app-container">
-      {/* Dynamic Header */}
-      <header className="app-header">
-        <div className="brand" onClick={() => window.location.href = window.location.origin + window.location.pathname}>
-          <img src="/PeerGrading.png" alt="Logo" style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'contain' }} />
-          <span>PeerLens <span className="brand-version-tag" style={{ fontWeight: 600, fontSize: '0.78rem', color: 'var(--primary)', backgroundColor: 'var(--primary-light)', padding: '0.1rem 0.45rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>v2.4</span></span>
-        </div>
+      {/* Dynamic Header for Student/Enrollment Portals */}
+      {(isEnrollmentPortal || isStudentPortal) && (
+        <header className="app-header">
+          <div className="brand" onClick={() => window.location.href = window.location.origin + window.location.pathname}>
+            <img src="/PeerGrading.png" alt="Logo" style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'contain' }} />
+            <span>PeerLens</span>
+          </div>
 
-        <div style={{ display: 'flex', gap: '0.55rem', alignItems: 'center' }}>
-          {isEnrollmentPortal ? null : isStudentPortal ? (
-            <span className="badge badge-teal" style={{ gap: '0.25rem', height: '28px', padding: '0 0.55rem' }}>
-              <ShieldCheck size={12} /> <span className="header-status-label">Verified Session</span>
-            </span>
-          ) : (
-            <>
-              {isCloudSynced ? (
-                <span className="badge badge-teal" style={{ gap: '0.25rem', height: '28px', padding: '0 0.55rem' }}>
-                  <Database size={12} /> <span className="header-status-label">Cloud Connected</span>
-                </span>
-              ) : (
-                <span className="badge badge-primary" style={{ height: '28px', padding: '0 0.55rem' }}>
-                  <span className="header-status-label">Offline Mode</span>
-                </span>
-              )}
-            </>
-          )}
+          <div style={{ display: 'flex', gap: '0.55rem', alignItems: 'center' }}>
+            {isStudentPortal && (
+              <span className="badge badge-teal" style={{ gap: '0.25rem', height: '28px', padding: '0 0.55rem' }}>
+                <ShieldCheck size={12} /> <span className="header-status-label">Verified Session</span>
+              </span>
+            )}
 
-          {/* Subtle Separator */}
-          <span style={{ width: '1px', height: '16px', backgroundColor: 'var(--border-color)', margin: '0 0.05rem' }} />
+            {/* Subtle Separator */}
+            <span style={{ width: '1px', height: '16px', backgroundColor: 'var(--border-color)', margin: '0 0.05rem' }} />
 
-          {/* Minimal Precision Theme Toggle */}
-          <ThemeSwitcher />
-        </div>
-      </header>
+            {/* Minimal Precision Theme Toggle */}
+            <ThemeSwitcher />
+          </div>
+        </header>
+      )}
 
       {/* Main View Router */}
-      <main style={{ flex: 1 }}>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
         {isEnrollmentPortal ? (
           <StudentEnrollmentPortal classId={routeParams.enrollClassId!} />
         ) : isStudentPortal ? (

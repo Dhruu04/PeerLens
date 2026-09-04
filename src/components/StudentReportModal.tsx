@@ -312,7 +312,7 @@ export const StudentReportModal: React.FC<StudentReportModalProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ color: 'var(--text-muted)' }}>Calibrated Grade:</span>
             <span style={{ fontWeight: 800, color: 'var(--primary)' }}>
-              {webpa.adjustedGrade.toFixed(1)} / {baseGrade}
+              {webpa.adjustedGrade.toFixed(1)} / {webpa.teamBaseGrade}
             </span>
             <FeatureInfoButton featureId="webpa-calibration" size="sm" tooltipText="How WebPA grade is calculated" />
           </div>

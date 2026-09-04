@@ -4,6 +4,8 @@ import { ChevronDown } from 'lucide-react';
 export interface CustomSelectOption {
   value: string;
   label: string;
+  sublabel?: string;
+  badge?: string;
 }
 
 interface CustomSelectProps {
@@ -15,6 +17,7 @@ interface CustomSelectProps {
   triggerStyle?: React.CSSProperties;
   dropdownAlign?: 'left' | 'right';
   dropdownMinWidth?: string;
+  footer?: React.ReactNode;
 }
 
 export const CustomSelect: React.FC<CustomSelectProps> = ({
@@ -25,7 +28,8 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   className = '',
   triggerStyle,
   dropdownAlign = 'left',
-  dropdownMinWidth
+  dropdownMinWidth,
+  footer
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -116,7 +120,10 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                 type="button"
                 className={`custom-select-option ${isSelected ? 'selected' : ''}`}
                 style={{
-                  display: 'block',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.5rem',
                   width: '100%',
                   textAlign: 'left',
                   padding: '0.45rem 0.75rem',
@@ -128,20 +135,49 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                   color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
                   cursor: 'pointer',
                   transition: 'all var(--transition-fast)',
-                  lineHeight: 1.35,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
+                  lineHeight: 1.35
                 }}
                 onClick={() => {
                   onChange(option.value);
                   setIsOpen(false);
                 }}
               >
-                {option.label}
+                <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  {option.label}
+                </span>
+                {option.sublabel && (
+                  <span
+                    style={{
+                      fontSize: '0.68rem',
+                      fontFamily: 'monospace',
+                      color: isSelected ? 'var(--primary)' : 'var(--text-muted)',
+                      backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-app)',
+                      border: '1px solid var(--border-color)',
+                      padding: '0.1rem 0.35rem',
+                      borderRadius: '4px',
+                      flexShrink: 0
+                    }}
+                  >
+                    ID: {option.sublabel}
+                  </span>
+                )}
               </button>
             );
           })}
+          {footer && (
+            <div
+              style={{
+                marginTop: '4px',
+                padding: '0.45rem 0.5rem 0.2rem 0.5rem',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+            >
+              {footer}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Compass, Search, Play, BookOpen, Sparkles, X, 
-  Users, Sliders, Award, QrCode, Maximize2, 
-  CheckCircle, HelpCircle, ChevronDown, ChevronUp,
-  FileText, ArrowRight
+  Users, Sliders, Award, CheckCircle, HelpCircle,
+  ChevronDown, ChevronUp, FileText, ArrowRight,
+  LayoutGrid, Layers, Activity, Calculator,
+  ExternalLink
 } from 'lucide-react';
 import { FEATURE_INFO_REGISTRY, type FeatureInfoItem } from '../data/featureDescriptions';
 
@@ -22,96 +23,123 @@ export interface GuidedTourTrack {
 
 export const FOCUSED_TOUR_TRACKS: GuidedTourTrack[] = [
   {
-    id: 'enrollment_track',
-    title: 'Student Enrollment & QR Onboarding',
-    category: 'Roster & Setup',
-    stepCount: 4,
-    duration: '45 sec',
-    description: 'Generate classroom QR codes, share direct mobile registration links, bulk-import spreadsheets, and load realistic demo student cohorts.',
-    icon: <QrCode size={18} className="text-teal" />,
-    stepIds: ['self_enrollment', 'quick_actions', 'import_wizard', 'classroom_roster'],
-    keyTopics: ['QR Presentation', '100 Diverse Students', 'Excel/CSV Import', 'Duplicate Audit']
+    id: 'setup_density_track',
+    title: 'Top Navigation & Interface Density Presets',
+    category: 'Setup & Customization',
+    stepCount: 6,
+    duration: '40 sec',
+    description: 'Master the top navigation bar, active classroom selector with embedded ID copy pill, "Customize View" button (add & remove sections), and density presets (Minimal vs Standard).',
+    icon: <LayoutGrid size={18} className="text-primary" />,
+    stepIds: ['class_header', 'customize_view', 'command_palette', 'guide_center_btn', 'settings_hub', 'workspace_switcher'],
+    keyTopics: ['Classroom Selector & ID', 'Customize View (Add/Remove Sections)', 'Density Presets', 'Academic Guidance Center', 'Command Palette (Ctrl+K)']
   },
   {
-    id: 'diversity_track',
-    title: 'Diversity Balancing & AutoGroup Studio',
-    category: 'Team Formation',
-    stepCount: 3,
-    duration: '40 sec',
-    description: 'Master combinatorial team partitioning with automated 50/50 gender parity, cross-cultural nationality dispersion, and CEFR English balancing.',
-    icon: <Users size={18} className="text-indigo" />,
-    stepIds: ['autogroup_studio', 'classroom_roster', 'projector_mode'],
-    keyTopics: ['Combinatorial Balancing', 'Gender Parity', 'CEFR English Mix', 'Team Roster View']
+    id: 'enrollment_track',
+    title: 'Section 1: Student Enrollment & AutoGroup Studio',
+    category: 'Roster & Diversity',
+    stepCount: 6,
+    duration: '55 sec',
+    description: 'Monitor Home Hub roster status, generate high-res QR join codes, populate 100 diverse demo students across 35+ countries, import spreadsheets, and run combinatorial simulated annealing team formation.',
+    icon: <Users size={18} style={{ color: 'var(--primary)' }} />,
+    stepIds: ['hub_enrollment', 'self_enrollment', 'quick_actions', 'import_wizard', 'autogroup_studio', 'classroom_roster'],
+    keyTopics: ['Home Hub Section 1 Card', 'QR Mobile Onboarding', '100 Diverse Cohort', 'Excel/CSV Importer', 'AutoGroup Studio', 'Bulk Roster Actions']
   },
   {
     id: 'rubrics_track',
-    title: 'Weighted Rubrics & Evaluation Simulator',
-    category: 'Criteria & Scales',
-    stepCount: 3,
-    duration: '45 sec',
-    description: 'Configure multi-dimensional criteria with 100% weightage balancing, accredited templates (AAC&U, ABET), and test the student rating simulator.',
-    icon: <Sliders size={18} className="text-primary" />,
-    stepIds: ['rubric_tab', 'rubric_builder', 'eval_simulator'],
-    keyTopics: ['100% Equal Weighting', 'AAC&U VALUE Preset', 'Score Simulator', 'Qualitative Tiers']
+    title: 'Section 2: 100% Balanced Rubrics & Simulator',
+    category: 'Rubrics & Scales',
+    stepCount: 5,
+    duration: '50 sec',
+    description: 'Check Home Hub rubric health, configure multi-dimensional criteria, 100% weight auto-balancing, research-synthesized IPAF preset, target scale, and the mobile evaluation simulator.',
+    icon: <Sliders size={18} style={{ color: 'var(--accent-amber)' }} />,
+    stepIds: ['hub_review', 'rubric_tab', 'rubric_builder', 'target_scale', 'eval_simulator'],
+    keyTopics: ['Home Hub Section 2 Card', '100% Weight Auto-Balance', 'IPAF Standard Preset', 'Target Scale Normalization', 'Student Experience Simulator']
   },
   {
-    id: 'projector_email_track',
-    title: 'Classroom Projector & Email Dispatcher',
-    category: 'Live Operations',
+    id: 'webpa_calibrator_track',
+    title: 'Section 3: WebPA Calibrator & Master Gradebook',
+    category: 'Grading & Multipliers',
+    stepCount: 5,
+    duration: '50 sec',
+    description: 'Track Home Hub grade metrics, calibrate individual marks using the Loughborough WebPA algorithm with per-team base marks, tune the 0%–100% Fudge Weight slider, and export Excel workbooks or student PDF report cards.',
+    icon: <Calculator size={18} style={{ color: 'var(--accent-teal)' }} />,
+    stepIds: ['hub_analytics', 'analytics_tab', 'webpa_calibrator', 'results_summary', 'gradebook_matrix'],
+    keyTopics: ['Home Hub Section 3 Card', 'Loughborough Algorithm', 'Per-Team Base Marks', '0%–100% Fudge Slider', 'Results Summary Sheet', 'Batch PDF Reports']
+  },
+  {
+    id: 'perception_audit_track',
+    title: 'Section 3: Perception Radar & Collusion Audit',
+    category: 'Analytics & Integrity',
     stepCount: 3,
     duration: '40 sec',
-    description: 'Discover the full-screen privacy-safe auditorium display, email notification engine (Brevo/EmailJS), and submission closing countdowns.',
-    icon: <Maximize2 size={18} className="text-teal" />,
-    stepIds: ['projector_mode', 'email_dispatcher', 'settings_hub'],
-    keyTopics: ['Auditorium Projector', 'Brevo SMTP Delivery', 'Cloud Sync', 'Hotkey Shortcuts']
-  },
-  {
-    id: 'analytics_track',
-    title: 'Perception Analytics & WebPA Gradebook',
-    category: 'Grading & Reports',
-    stepCount: 3,
-    duration: '45 sec',
-    description: 'Explore Competency Spider Radars, Johari Window self-vs-peer blind spot detection, WebPA multipliers, and batch PDF report generation.',
-    icon: <Award size={18} className="text-primary" />,
-    stepIds: ['analytics_tab', 'perception_deck', 'gradebook_matrix'],
-    keyTopics: ['Spider Radar Overlay', 'Johari Blind Spots', 'WebPA Calibrator', 'Student PDF Reports']
+    description: 'Explore Competency Spider Radars, Johari Window self-vs-peer blind spot detection (±7.5% threshold), and statistical collusion / retaliatory score audits.',
+    icon: <Activity size={18} style={{ color: 'var(--accent-rose)' }} />,
+    stepIds: ['analytics_tab', 'perception_deck', 'anomaly_audit'],
+    keyTopics: ['Spider Radar Overlay', 'Johari Blind Spots', 'Reciprocal Collusion Rings', 'Outlier Grader Detection']
   }
 ];
 
 export const FULL_APP_STEP_IDS = [
-  'class_header', 'workspace_switcher', 'command_palette', 'projector_mode',
-  'email_dispatcher', 'settings_hub', 'self_enrollment', 'quick_actions',
-  'import_wizard', 'autogroup_studio', 'classroom_roster', 'rubric_tab',
-  'rubric_builder', 'eval_simulator', 'analytics_tab', 'perception_deck',
-  'gradebook_matrix'
+  'class_header', 'workspace_switcher', 'command_palette', 'guide_center_btn', 'projector_mode', 'email_dispatcher',
+  'customize_view', 'settings_hub',
+  'hub_enrollment', 'hub_review', 'hub_analytics',
+  'section_roster_tab', 'self_enrollment', 'quick_actions', 'import_wizard', 'autogroup_studio', 'classroom_roster',
+  'rubric_tab', 'rubric_builder', 'target_scale', 'eval_simulator',
+  'analytics_tab', 'perception_deck', 'webpa_calibrator', 'anomaly_audit', 'results_summary', 'gradebook_matrix'
 ];
 
 interface GuideCenterModalProps {
   isOpen: boolean;
   onClose: () => void;
   onStartTour: (stepIds?: string[]) => void;
+  initialTab?: 'system' | 'tours' | 'features';
 }
 
 export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
   isOpen,
   onClose,
-  onStartTour
+  onStartTour,
+  initialTab
 }) => {
-  const [activeTab, setActiveTab] = useState<'tours' | 'features'>('tours');
+  const [activeTab, setActiveTab] = useState<'system' | 'tours' | 'features'>(initialTab || 'system');
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [expandedFeatureId, setExpandedFeatureId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Disable background scroll when modal is open
+
+  // Disable background scroll & handle keyboard shortcuts (Esc to close, / to search)
   useEffect(() => {
-    if (isOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    const originalDocOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === '/' && document.activeElement !== searchInputRef.current) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.documentElement.style.overflow = originalDocOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
 
   const featureList: FeatureInfoItem[] = useMemo(() => {
     return Object.values(FEATURE_INFO_REGISTRY);
@@ -136,6 +164,7 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
         f.whatItDoes.toLowerCase().includes(q) ||
         f.whatToDo.some(t => t.toLowerCase().includes(q)) ||
         f.whatYouGet.some(g => g.toLowerCase().includes(q)) ||
+        (f.formula && f.formula.toLowerCase().includes(q)) ||
         (f.proTip && f.proTip.toLowerCase().includes(q))
       );
       return matchCat && matchSearch;
@@ -156,156 +185,214 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999, backgroundColor: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)' }}>
+    <div
+      className="modal-overlay"
+      onClick={onClose}
+      style={{
+        zIndex: 99999,
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+        position: 'fixed',
+        inset: 0
+      }}
+    >
       <div
-        className="modal-content"
+        className="modal-content guide-center-modal"
         onClick={e => e.stopPropagation()}
         style={{
-          maxWidth: '860px',
-          width: '94%',
-          maxHeight: '88vh',
+          maxWidth: '980px',
+          width: '96%',
+          maxHeight: '92vh',
           display: 'flex',
           flexDirection: 'column',
           padding: 0,
           overflow: 'hidden',
           borderRadius: '16px',
-          backgroundColor: '#ffffff',
-          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05)',
-          border: '1px solid #e2e8f0'
+          backgroundColor: 'var(--bg-surface)',
+          color: 'var(--text-primary)',
+          boxShadow: 'var(--shadow-premium), 0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+          border: '1px solid var(--border-color)',
+          transition: 'background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease'
         }}
       >
-        {/* Modern Minimal Light Header */}
+        {/* Modern Clean Header with Theme & Close Controls */}
         <div
           style={{
-            padding: '1.15rem 1.5rem',
-            backgroundColor: '#ffffff',
-            borderBottom: '1px solid #f1f5f9',
+            padding: '1.15rem 1.65rem',
+            backgroundColor: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border-color)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            gap: '1rem'
+            gap: '1rem',
+            transition: 'all 0.2s ease'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
             <span
               style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                color: '#4f46e5',
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                backgroundColor: 'var(--primary-light)',
+                color: 'var(--primary)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                border: '1px solid rgba(99, 102, 241, 0.18)'
+                border: '1px solid var(--border-color)',
+                flexShrink: 0
               }}
             >
-              <Compass size={18} />
+              <Compass size={22} />
             </span>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' }}>
-                  Academic Guidance &amp; Tutorial Center
-                </h2>
-                <span
-                  style={{
-                    fontSize: '0.66rem',
-                    fontWeight: 700,
-                    padding: '2px 7px',
-                    borderRadius: '999px',
-                    backgroundColor: '#f1f5f9',
-                    color: '#475569',
-                    border: '1px solid #e2e8f0'
-                  }}
-                >
-                  Interactive
-                </span>
-              </div>
-              <p style={{ margin: '0.1rem 0 0 0', fontSize: '0.78rem', color: '#64748b' }}>
-                Explore live interactive spotlight tours, learn feature workflows, and master peer evaluation.
+              <h2 style={{ margin: 0, fontSize: '1.18rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                PeerLens Academic Guidance &amp; System Manual
+              </h2>
+              <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                3-section pedagogical workflow, WebPA Loughborough formulas, per-team base marks, layout density, and interactive tours.
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            className="btn-close"
-            onClick={onClose}
-            title="Close Guide Center"
-            style={{
-              width: '30px',
-              height: '30px',
-              borderRadius: '7px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              color: '#64748b',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <X size={14} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+            {/* Operational Manual New Tab Launcher */}
+            <a
+              href="/guide.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-secondary btn-sm"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                height: '32px',
+                padding: '0 0.85rem',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                borderRadius: 'var(--radius-sm)',
+                textDecoration: 'none',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-app)',
+                transition: 'all 0.15s ease'
+              }}
+              title="Open Complete Operational Manual in a new browser tab"
+            >
+              <BookOpen size={14} style={{ color: 'var(--primary)' }} />
+              <span>Manual ↗</span>
+            </a>
+
+            {/* Sleek Close Button */}
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                width: '34px',
+                height: '32px',
+                borderRadius: 'var(--radius-sm)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: 'var(--bg-app)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Close Guide Center (Esc)"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Minimalist Segmented Navigation & Search Bar */}
         <div
           style={{
-            padding: '0.65rem 1.5rem',
-            backgroundColor: '#f8fafc',
-            borderBottom: '1px solid #e2e8f0',
+            padding: '0.65rem 1.65rem',
+            backgroundColor: 'var(--bg-app)',
+            borderBottom: '1px solid var(--border-color)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             flexWrap: 'wrap',
-            gap: '0.65rem'
+            gap: '0.75rem',
+            transition: 'background-color 0.2s ease, border-color 0.2s ease'
           }}
         >
-          {/* Minimalist Segmented Tab Switcher */}
+          {/* Segmented Tab Switcher */}
           <div
             style={{
               display: 'inline-flex',
               padding: '3px',
-              backgroundColor: '#e2e8f0',
-              borderRadius: '8px',
+              backgroundColor: 'var(--border-color)',
+              borderRadius: '9px',
               gap: '3px'
             }}
           >
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('system')}
+              style={{
+                padding: '0.35rem 0.85rem',
+                fontSize: '0.78rem',
+                fontWeight: activeTab === 'system' ? 700 : 600,
+                borderRadius: '7px',
+                border: 'none',
+                cursor: 'pointer',
+                backgroundColor: activeTab === 'system' ? 'var(--bg-surface)' : 'transparent',
+                color: activeTab === 'system' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                boxShadow: activeTab === 'system' ? 'var(--shadow-sm)' : 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Layers size={13} style={{ color: activeTab === 'system' ? 'var(--primary)' : 'var(--text-muted)' }} />
+              <span>System &amp; Architecture</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setActiveTab('tours')}
               style={{
-                padding: '0.3rem 0.8rem',
-                fontSize: '0.76rem',
+                padding: '0.35rem 0.85rem',
+                fontSize: '0.78rem',
                 fontWeight: activeTab === 'tours' ? 700 : 600,
-                borderRadius: '6px',
+                borderRadius: '7px',
                 border: 'none',
                 cursor: 'pointer',
-                backgroundColor: activeTab === 'tours' ? '#ffffff' : 'transparent',
-                color: activeTab === 'tours' ? '#0f172a' : '#64748b',
-                boxShadow: activeTab === 'tours' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                backgroundColor: activeTab === 'tours' ? 'var(--bg-surface)' : 'transparent',
+                color: activeTab === 'tours' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                boxShadow: activeTab === 'tours' ? 'var(--shadow-sm)' : 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.4rem',
+                gap: '0.45rem',
                 transition: 'all 0.15s ease'
               }}
             >
-              <Play size={12} style={{ color: activeTab === 'tours' ? '#4f46e5' : '#64748b' }} />
-              <span>Interactive Tours</span>
+              <Play size={13} style={{ color: activeTab === 'tours' ? 'var(--primary)' : 'var(--text-muted)' }} />
+              <span>Spotlight Tours</span>
               <span
                 style={{
                   fontSize: '0.66rem',
                   padding: '1px 5px',
                   borderRadius: '999px',
-                  backgroundColor: activeTab === 'tours' ? '#eef2ff' : '#f1f5f9',
-                  color: activeTab === 'tours' ? '#4f46e5' : '#64748b',
+                  backgroundColor: activeTab === 'tours' ? 'var(--primary-light)' : 'var(--bg-app)',
+                  color: activeTab === 'tours' ? 'var(--primary)' : 'var(--text-muted)',
                   fontWeight: 700
                 }}
               >
-                {FOCUSED_TOUR_TRACKS.length + 1}
+                {filteredTracks.length}
               </span>
             </button>
 
@@ -313,117 +400,141 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
               type="button"
               onClick={() => setActiveTab('features')}
               style={{
-                padding: '0.3rem 0.8rem',
-                fontSize: '0.76rem',
+                padding: '0.35rem 0.85rem',
+                fontSize: '0.78rem',
                 fontWeight: activeTab === 'features' ? 700 : 600,
-                borderRadius: '6px',
+                borderRadius: '7px',
                 border: 'none',
                 cursor: 'pointer',
-                backgroundColor: activeTab === 'features' ? '#ffffff' : 'transparent',
-                color: activeTab === 'features' ? '#0f172a' : '#64748b',
-                boxShadow: activeTab === 'features' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                backgroundColor: activeTab === 'features' ? 'var(--bg-surface)' : 'transparent',
+                color: activeTab === 'features' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                boxShadow: activeTab === 'features' ? 'var(--shadow-sm)' : 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.4rem',
+                gap: '0.45rem',
                 transition: 'all 0.15s ease'
               }}
             >
-              <BookOpen size={12} style={{ color: activeTab === 'features' ? '#4f46e5' : '#64748b' }} />
-              <span>Feature Knowledge Base</span>
+              <BookOpen size={13} style={{ color: activeTab === 'features' ? 'var(--primary)' : 'var(--text-muted)' }} />
+              <span>Feature &amp; Help Catalog</span>
               <span
                 style={{
                   fontSize: '0.66rem',
                   padding: '1px 5px',
                   borderRadius: '999px',
-                  backgroundColor: activeTab === 'features' ? '#eef2ff' : '#f1f5f9',
-                  color: activeTab === 'features' ? '#4f46e5' : '#64748b',
+                  backgroundColor: activeTab === 'features' ? 'var(--primary-light)' : 'var(--bg-app)',
+                  color: activeTab === 'features' ? 'var(--primary)' : 'var(--text-muted)',
                   fontWeight: 700
                 }}
               >
-                {featureList.length}
+                {filteredFeatures.length}
               </span>
             </button>
           </div>
 
           {/* Minimal Search Input */}
-          <div style={{ position: 'relative', width: '240px' }}>
-            <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+          <div style={{ position: 'relative', width: '270px' }}>
+            <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search guides & features..."
+              placeholder="Search guides, math, features... (/)"
               style={{
                 width: '100%',
-                height: '30px',
-                paddingLeft: '30px',
+                height: '32px',
+                paddingLeft: '32px',
                 paddingRight: '28px',
-                fontSize: '0.76rem',
-                borderRadius: '7px',
-                backgroundColor: '#ffffff',
-                border: '1px solid #cbd5e1',
-                color: '#0f172a',
+                fontSize: '0.78rem',
+                borderRadius: '8px',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-primary)',
                 outline: 'none',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                transition: 'all 0.15s ease'
               }}
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0 }}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+                title="Clear search"
               >
-                <X size={12} />
+                <X size={13} />
               </button>
             )}
           </div>
         </div>
 
         {/* Modal Scrollable Body */}
-        <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1.15rem', backgroundColor: '#ffffff' }}>
-          
-          {/* TAB 1: INTERACTIVE SCREEN TOURS */}
-          {activeTab === 'tours' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div
+          style={{
+            padding: '1.5rem 1.65rem',
+            overflowY: 'auto',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.35rem',
+            backgroundColor: 'var(--bg-app)',
+            transition: 'background-color 0.2s ease'
+          }}
+        >
+          {/* TAB 1: SYSTEM MANUAL & ARCHITECTURE */}
+          {activeTab === 'system' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.4rem' }}>
               
-              {/* Master Full Walkthrough Hero Card (Single Primary Launchpad) */}
+              {/* Introduction Banner */}
               <div
                 style={{
-                  padding: '1.15rem 1.35rem',
+                  padding: '1.25rem 1.5rem',
                   borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)',
-                  border: '1.5px solid #c7d2fe',
+                  background: 'linear-gradient(135deg, var(--bg-surface) 0%, var(--primary-light) 100%)',
+                  border: '1px solid var(--border-color)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   flexWrap: 'wrap',
-                  gap: '0.85rem'
+                  gap: '1rem',
+                  boxShadow: 'var(--shadow-sm)'
                 }}
               >
-                <div style={{ maxWidth: '500px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.3rem' }}>
-                    <span
-                      style={{
-                        backgroundColor: '#10b981',
-                        color: '#ffffff',
-                        fontSize: '0.65rem',
-                        fontWeight: 800,
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        letterSpacing: '0.03em'
-                      }}
-                    >
-                      COMPLETE MASTER TOUR
-                    </span>
-                    <span style={{ fontSize: '0.72rem', color: '#6366f1', fontWeight: 700 }}>
-                      16 Steps &bull; ~2 min &bull; 4 Academic Stages
-                    </span>
-                  </div>
-                  <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
-                    End-to-End Classroom Walkthrough
+                <div style={{ maxWidth: '640px' }}>
+                  <span
+                    style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      color: 'var(--primary)',
+                      backgroundColor: 'var(--bg-surface)',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Core Pedagogical Philosophy
+                  </span>
+                  <h3 style={{ margin: '0.35rem 0 0.2rem 0', fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    3-Section End-to-End Evaluation Architecture
                   </h3>
-                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.76rem', color: '#475569', lineHeight: 1.42 }}>
-                    Covers workspace setup, student enrollment, diversity auto-grouping, 100% weighted rubrics, grading simulator, and WebPA perception matrix.
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.48 }}>
+                    PeerLens streamlines the entire peer evaluation lifecycle into three intuitive, sequential stages: 
+                    <strong style={{ color: 'var(--text-primary)' }}> Section 1 (Enrollment &amp; Teams)</strong>, <strong style={{ color: 'var(--text-primary)' }}>Section 2 (Review System)</strong>, and <strong style={{ color: 'var(--text-primary)' }}>Section 3 (Grading &amp; Performance Analytics)</strong>.
                   </p>
                 </div>
 
@@ -433,38 +544,429 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                     onClose();
                     onStartTour(FULL_APP_STEP_IDS);
                   }}
+                  className="btn btn-primary"
                   style={{
-                    backgroundColor: '#4f46e5',
-                    color: '#ffffff',
                     fontWeight: 700,
-                    fontSize: '0.8rem',
-                    gap: '0.4rem',
-                    padding: '0.5rem 1.15rem',
+                    fontSize: '0.82rem',
+                    gap: '0.45rem',
+                    padding: '0.55rem 1.25rem',
                     borderRadius: '8px',
-                    boxShadow: '0 3px 10px rgba(79, 70, 229, 0.25)',
-                    border: 'none',
-                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px var(--primary-glow)',
                     display: 'inline-flex',
-                    alignItems: 'center',
-                    transition: 'all 0.15s ease'
+                    alignItems: 'center'
                   }}
                 >
-                  <Play size={13} style={{ fill: '#ffffff' }} /> Start Master Tour
+                  <Play size={13} style={{ fill: 'currentColor' }} /> Start Master Tour
                 </button>
               </div>
 
-              {/* Section Subheading */}
+              {/* Full Operational Manual Dedicated Callout Card */}
+              <div
+                style={{
+                  padding: '1rem 1.35rem',
+                  borderRadius: '12px',
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  flexWrap: 'wrap',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                  <div
+                    style={{
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '10px',
+                      backgroundColor: 'var(--primary-light)',
+                      color: 'var(--primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}
+                  >
+                    <BookOpen size={18} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Complete PeerLens Operational Manual &amp; Theory Guide
+                    </h4>
+                    <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      17 in-depth chapters detailing the Loughborough WebPA algorithm, Johari Window perception grids, BARS rubrics, and Canvas/Moodle LMS exports.
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href="/guide.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-primary"
+                  style={{
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    fontWeight: 700,
+                    fontSize: '0.8rem',
+                    padding: '0.5rem 1.1rem',
+                    borderRadius: '8px',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <span>Open Manual (New Tab)</span>
+                  <ExternalLink size={13} />
+                </a>
+              </div>
+
+              {/* 3 Core Workflow Stages (Visual Interactive Cards) */}
+              <div>
+                <h4 style={{ margin: '0 0 0.85rem 0', fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  The 3 Core Workflow Stages:
+                </h4>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                  {/* Stage 1 */}
+                  <div
+                    style={{
+                      padding: '1.15rem',
+                      borderRadius: '12px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-surface)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.65rem',
+                      boxShadow: 'var(--shadow-sm)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ width: '28px', height: '28px', borderRadius: '7px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Users size={15} />
+                        </span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)' }}>SECTION 1</span>
+                      </div>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, backgroundColor: 'var(--bg-app)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+                        Stage 1 of 3
+                      </span>
+                    </div>
+                    <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Student Enrollment &amp; Teams
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.42 }}>
+                      Onboard student cohorts, configure demographic profiles, generate QR codes, and partition balanced peer teams.
+                    </p>
+                    <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      <strong style={{ color: 'var(--text-primary)' }}>Key Features:</strong>
+                      <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, lineHeight: 1.45 }}>
+                        <li>Self-Enrollment QR code &amp; mobile join link</li>
+                        <li>100 Demo Cohort Generator (35+ countries)</li>
+                        <li>Smart Roster CSV/Excel Importer</li>
+                        <li>AutoGroup Combinatorial Diversity Studio</li>
+                        <li>Multi-Select Bulk Actions Toolbar</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Stage 2 */}
+                  <div
+                    style={{
+                      padding: '1.15rem',
+                      borderRadius: '12px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-surface)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.65rem',
+                      boxShadow: 'var(--shadow-sm)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ width: '28px', height: '28px', borderRadius: '7px', backgroundColor: 'var(--accent-amber-light)', color: 'var(--accent-amber)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Sliders size={15} />
+                        </span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--accent-amber)' }}>SECTION 2</span>
+                      </div>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, backgroundColor: 'var(--bg-app)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+                        Stage 2 of 3
+                      </span>
+                    </div>
+                    <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Review System &amp; Rubrics
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.42 }}>
+                      Define criteria dimensions, qualitative anchors, 100% weight auto-balancing, and preview the student mobile experience.
+                    </p>
+                    <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      <strong style={{ color: 'var(--text-primary)' }}>Key Features:</strong>
+                      <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, lineHeight: 1.45 }}>
+                        <li>100% Criteria Weight Auto-Balance bar</li>
+                        <li>Standardized Rubric (IPAF Research-Synthesized)</li>
+                        <li>Target Scale Normalization (20, 100%, Likert)</li>
+                        <li>Submission Deadline &amp; countdown timer</li>
+                        <li>Interactive Student Smartphone Simulator</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Stage 3 */}
+                  <div
+                    style={{
+                      padding: '1.15rem',
+                      borderRadius: '12px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-surface)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.65rem',
+                      boxShadow: 'var(--shadow-sm)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ width: '28px', height: '28px', borderRadius: '7px', backgroundColor: 'var(--accent-teal-light)', color: 'var(--accent-teal)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Award size={15} />
+                        </span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--accent-teal)' }}>SECTION 3</span>
+                      </div>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, backgroundColor: 'var(--bg-app)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+                        Stage 3 of 3
+                      </span>
+                    </div>
+                    <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Grading &amp; Performance Analytics
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.42 }}>
+                      Loughborough WebPA multipliers, team-specific base marks, fudge weights, spider radars, and anomaly collusion audits.
+                    </p>
+                    <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      <strong style={{ color: 'var(--text-primary)' }}>Key Features:</strong>
+                      <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, lineHeight: 1.45 }}>
+                        <li>Per-Team Base Marks + Global Calibrator</li>
+                        <li>0%–100% Calibrator Fudge Weight slider</li>
+                        <li>Multi-Axis Competency Spider Radar</li>
+                        <li>Johari Window (±7.5% Blind Spot Matrix)</li>
+                        <li>Master Gradebook &amp; Batch Student PDFs</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Interface Density Presets & Customization Guide */}
+              <div
+                style={{
+                  padding: '1.25rem',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface)',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.45rem' }}>
+                  <LayoutGrid size={16} style={{ color: 'var(--primary)' }} />
+                  <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Interface Density &amp; Customization Presets
+                  </h4>
+                </div>
+                <p style={{ margin: '0 0 0.85rem 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                  PeerLens empowers instructors to tailor their workspace density to their exact teaching preference:
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-teal)', backgroundColor: 'var(--accent-teal-light)', padding: '1px 6px', borderRadius: '4px' }}>
+                        STANDARD MODE
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      <strong style={{ color: 'var(--text-primary)' }}>Default Instructor Workflow:</strong> Displays essential navigation, hub cards with progress metrics and launch buttons, and primary grading tools with zero clutter.
+                    </p>
+                  </div>
+
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-amber)', backgroundColor: 'var(--accent-amber-light)', padding: '1px 6px', borderRadius: '4px' }}>
+                        MINIMAL MODE
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      <strong style={{ color: 'var(--text-primary)' }}>Ultra-Focused View:</strong> Hides progress meters, quick launch pills, advanced audit cards, and secondary icons. Retains core roster, rubric builder, and gradebook for pure simplicity.
+                    </p>
+                  </div>
+
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--primary)', backgroundColor: 'var(--primary-light)', padding: '1px 6px', borderRadius: '4px' }}>
+                        CUSTOMIZE VIEW
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      <strong style={{ color: 'var(--text-primary)' }}>Granular Control:</strong> Click &ldquo;Customize View&rdquo; in the top navigation at any time to toggle any of the 40+ interface elements individually to match your classroom.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mathematical Foundations & Algorithms Reference */}
+              <div
+                style={{
+                  padding: '1.25rem',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface)',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <Calculator size={16} style={{ color: 'var(--accent-teal)' }} />
+                  <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Academic Mathematical Foundations &amp; Algorithms
+                  </h4>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
+                  {/* WebPA Formula */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
+                      1. Loughborough WebPA Peer Multiplier
+                    </span>
+                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--primary)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
+                      WebPA = Received Peer Avg ÷ Team Peer Avg
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
+                      Self-evaluations are strictly excluded. A multiplier of 1.00 equals expected contribution; &gt;1.00 indicates above-average contribution.
+                    </p>
+                  </div>
+
+                  {/* Calibrated Mark Formula with Per-Team Base Marks */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
+                      2. Calibrated Final Grade (Per-Team Base Mark)
+                    </span>
+                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--accent-teal)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
+                      Grade = TeamBase × [(1 - W) + (W × WebPA)]
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
+                      Award different base marks to different teams. W is instructor Fudge Weight (0.00 to 1.00). High contributors scale above their team mark.
+                    </p>
+                  </div>
+
+                  {/* Johari Window Formula */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
+                      3. Johari Perception Alignment (±7.5% Threshold)
+                    </span>
+                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--accent-amber)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
+                      Delta = (Self Score - Peer Consensus) ÷ Max
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
+                      |Delta| ≤ 7.5% → Accurately Calibrated; Delta &gt; +7.5% → Blind Spot (Overestimating); Delta &lt; -7.5% → Imposter (Underestimating).
+                    </p>
+                  </div>
+
+                  {/* Anomaly Detection Formula */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
+                      4. Statistical Anomaly &amp; Collusion Audit
+                    </span>
+                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--accent-rose)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
+                      Flag = |Reviewer Score - Mean| &gt; 1.5 · σ
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
+                      Flags ratings deviating &gt;1.5 standard deviations from peer consensus, detecting spiteful grading and reciprocal collusion rings.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: SPOTLIGHT TOURS */}
+          {activeTab === 'tours' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              
+              {/* Master Full Walkthrough Hero Card */}
+              <div
+                style={{
+                  padding: '1.25rem 1.5rem',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, var(--bg-surface) 0%, var(--primary-light) 100%)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '1rem',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <div style={{ maxWidth: '560px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                    <span
+                      style={{
+                        backgroundColor: 'var(--accent-teal)',
+                        color: '#ffffff',
+                        fontSize: '0.66rem',
+                        fontWeight: 800,
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.03em'
+                      }}
+                    >
+                      COMPLETE MASTER WALKTHROUGH
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--primary)', fontWeight: 700 }}>
+                      16 Steps &bull; ~2 min &bull; End-to-End Pipeline
+                    </span>
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Full End-to-End Classroom Walkthrough
+                  </h3>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                    Walks through the streamlined Top Bar, Section 1 (Enrollment &amp; AutoGroup Studio), Section 2 (100% Balanced Rubrics &amp; Simulator), and Section 3 (WebPA Calibrator &amp; Spider Radars).
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onStartTour(FULL_APP_STEP_IDS);
+                  }}
+                  className="btn btn-primary"
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    gap: '0.45rem',
+                    padding: '0.55rem 1.25rem',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px var(--primary-glow)',
+                    display: 'inline-flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  <Play size={13} style={{ fill: 'currentColor' }} /> Start Master Tour
+                </button>
+              </div>
+
+              {/* Focused Topic Subheading */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   Focused Topic Spotlight Tours:
                 </span>
-                <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                  Points directly to active controls on your screen
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                  Highlights active controls on your screen
                 </span>
               </div>
 
-              {/* Grid of 5 Unique Focused Topic Cards (Zero Duplication) */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '0.75rem' }}>
+              {/* Grid of Focused Topic Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '0.85rem' }}>
                 {filteredTracks.map(track => (
                   <div
                     key={track.id}
@@ -472,51 +974,53 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
-                      padding: '1rem 1.15rem',
-                      borderRadius: '10px',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #e2e8f0',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+                      padding: '1.1rem 1.25rem',
+                      borderRadius: '11px',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-color)',
+                      boxShadow: 'var(--shadow-sm)',
                       transition: 'all 0.2s ease',
-                      gap: '0.65rem'
+                      gap: '0.75rem'
                     }}
                   >
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.35rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                           <span
                             style={{
-                              width: '30px',
-                              height: '30px',
-                              borderRadius: '7px',
-                              backgroundColor: '#f8fafc',
-                              border: '1px solid #e2e8f0',
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '8px',
+                              backgroundColor: 'var(--bg-app)',
+                              border: '1px solid var(--border-color)',
                               display: 'inline-flex',
                               alignItems: 'center',
-                              justifyContent: 'center'
+                              justifyContent: 'center',
+                              flexShrink: 0
                             }}
                           >
                             {track.icon}
                           </span>
                           <div>
-                            <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>
+                            <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                               {track.title}
                             </h4>
-                            <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 600 }}>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>
                               {track.category}
                             </span>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                           <span
                             style={{
                               fontSize: '0.66rem',
                               fontWeight: 700,
-                              padding: '2px 5px',
+                              padding: '2px 6px',
                               borderRadius: '4px',
-                              backgroundColor: '#f1f5f9',
-                              color: '#475569'
+                              backgroundColor: 'var(--bg-app)',
+                              color: 'var(--text-secondary)',
+                              border: '1px solid var(--border-color)'
                             }}
                           >
                             {track.duration}
@@ -525,10 +1029,11 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                             style={{
                               fontSize: '0.66rem',
                               fontWeight: 700,
-                              padding: '2px 5px',
+                              padding: '2px 6px',
                               borderRadius: '4px',
-                              backgroundColor: '#eef2ff',
-                              color: '#4f46e5'
+                              backgroundColor: 'var(--primary-light)',
+                              color: 'var(--primary)',
+                              border: '1px solid var(--border-color)'
                             }}
                           >
                             {track.stepCount} steps
@@ -536,7 +1041,7 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                         </div>
                       </div>
 
-                      <p style={{ margin: '0 0 0.45rem 0', fontSize: '0.76rem', color: '#475569', lineHeight: 1.4 }}>
+                      <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.42 }}>
                         {track.description}
                       </p>
 
@@ -546,12 +1051,12 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                           <span
                             key={idx}
                             style={{
-                              fontSize: '0.65rem',
+                              fontSize: '0.66rem',
                               padding: '1px 6px',
                               borderRadius: '4px',
-                              backgroundColor: '#f8fafc',
-                              border: '1px solid #e2e8f0',
-                              color: '#334155',
+                              backgroundColor: 'var(--bg-app)',
+                              border: '1px solid var(--border-color)',
+                              color: 'var(--text-secondary)',
                               fontWeight: 500
                             }}
                           >
@@ -561,43 +1066,45 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '0.5rem', borderTop: '1px solid #f8fafc' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '0.6rem', borderTop: '1px solid var(--border-color)' }}>
                       <button
                         type="button"
                         onClick={() => {
                           onClose();
                           onStartTour(track.stepIds);
                         }}
+                        className="btn btn-secondary btn-sm"
                         style={{
-                          backgroundColor: '#f8fafc',
-                          color: '#0f172a',
-                          border: '1px solid #cbd5e1',
-                          padding: '0.35rem 0.75rem',
-                          borderRadius: '6px',
-                          fontSize: '0.74rem',
+                          borderRadius: '7px',
+                          fontSize: '0.76rem',
                           fontWeight: 700,
                           cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '0.3rem',
-                          transition: 'all 0.15s ease'
+                          gap: '0.35rem'
                         }}
                       >
-                        <Play size={11} /> Start {track.duration} Tour <ArrowRight size={11} />
+                        <Play size={12} /> Start {track.duration} Tour <ArrowRight size={12} />
                       </button>
                     </div>
                   </div>
                 ))}
+
+                {filteredTracks.length === 0 && (
+                  <div style={{ gridColumn: '1 / -1', padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    No spotlight tours match &ldquo;{searchQuery}&rdquo;. <button type="button" className="btn btn-link btn-sm" onClick={() => setSearchQuery('')} style={{ fontSize: '0.78rem', textDecoration: 'underline' }}>Clear search</button>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* TAB 2: PROCESS & FEATURE KNOWLEDGE BASE */}
+          {/* TAB 3: FEATURE & HELP CATALOG */}
           {activeTab === 'features' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {/* Category Filter Pills */}
-              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', marginRight: '0.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '0.25rem' }}>
                   Category:
                 </span>
                 {categories.map(cat => (
@@ -606,13 +1113,13 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                     type="button"
                     onClick={() => setSelectedCategory(cat)}
                     style={{
-                      padding: '0.2rem 0.55rem',
+                      padding: '0.25rem 0.65rem',
                       borderRadius: '999px',
-                      fontSize: '0.72rem',
+                      fontSize: '0.74rem',
                       fontWeight: selectedCategory === cat ? 700 : 500,
-                      backgroundColor: selectedCategory === cat ? '#4f46e5' : '#f1f5f9',
-                      color: selectedCategory === cat ? '#ffffff' : '#475569',
-                      border: 'none',
+                      backgroundColor: selectedCategory === cat ? 'var(--primary)' : 'var(--bg-surface)',
+                      color: selectedCategory === cat ? '#ffffff' : 'var(--text-secondary)',
+                      border: '1px solid var(--border-color)',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease'
                     }}
@@ -623,18 +1130,18 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
               </div>
 
               {/* Feature List Cards */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                 {filteredFeatures.map(item => {
                   const isExpanded = expandedFeatureId === item.id;
                   return (
                     <div
                       key={item.id}
                       style={{
-                        borderRadius: '9px',
-                        border: '1px solid #e2e8f0',
-                        backgroundColor: '#ffffff',
+                        borderRadius: '10px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-surface)',
                         overflow: 'hidden',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                        boxShadow: 'var(--shadow-sm)',
                         transition: 'all 0.15s ease'
                       }}
                     >
@@ -642,89 +1149,92 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                       <div
                         onClick={() => setExpandedFeatureId(isExpanded ? null : item.id)}
                         style={{
-                          padding: '0.75rem 1rem',
+                          padding: '0.85rem 1.15rem',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
                           cursor: 'pointer',
-                          backgroundColor: isExpanded ? '#f8fafc' : '#ffffff',
-                          borderBottom: isExpanded ? '1px solid #e2e8f0' : 'none'
+                          backgroundColor: isExpanded ? 'var(--bg-app)' : 'var(--bg-surface)',
+                          borderBottom: isExpanded ? '1px solid var(--border-color)' : 'none',
+                          transition: 'background-color 0.15s ease'
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                           <span
                             style={{
-                              width: '24px',
-                              height: '24px',
-                              borderRadius: '5px',
-                              backgroundColor: '#eef2ff',
-                              color: '#4f46e5',
+                              width: '26px',
+                              height: '26px',
+                              borderRadius: '6px',
+                              backgroundColor: 'var(--primary-light)',
+                              color: 'var(--primary)',
                               display: 'inline-flex',
                               alignItems: 'center',
-                              justifyContent: 'center'
+                              justifyContent: 'center',
+                              flexShrink: 0
                             }}
                           >
-                            <FileText size={13} />
+                            <FileText size={14} />
                           </span>
                           <div>
-                            <span style={{ fontSize: '0.84rem', fontWeight: 800, color: '#0f172a' }}>
+                            <span style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                               {item.title}
                             </span>
-                            <span style={{ fontSize: '0.7rem', color: '#64748b', marginLeft: '0.45rem' }}>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
                               &bull; {item.summary}
                             </span>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                           <span
                             style={{
-                              fontSize: '0.66rem',
+                              fontSize: '0.68rem',
                               fontWeight: 700,
-                              padding: '2px 5px',
+                              padding: '2px 7px',
                               borderRadius: '4px',
-                              backgroundColor: '#f1f5f9',
-                              color: '#475569'
+                              backgroundColor: 'var(--bg-app)',
+                              color: 'var(--text-secondary)',
+                              border: '1px solid var(--border-color)'
                             }}
                           >
                             {item.category}
                           </span>
-                          {isExpanded ? <ChevronUp size={15} color="#64748b" /> : <ChevronDown size={15} color="#64748b" />}
+                          {isExpanded ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
                         </div>
                       </div>
 
                       {/* Accordion Expanded Body */}
                       {isExpanded && (
-                        <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: '#fafafa' }}>
+                        <div style={{ padding: '1.15rem', display: 'flex', flexDirection: 'column', gap: '0.85rem', backgroundColor: 'var(--bg-app)' }}>
                           <div>
-                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
                               Purpose &amp; What It Does:
                             </span>
-                            <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: '#334155', lineHeight: 1.42 }}>
+                            <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
                               {item.whatItDoes}
                             </p>
                           </div>
 
                           {/* 2-Column Info Grid */}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-                            <div style={{ padding: '0.65rem', backgroundColor: '#ffffff', borderRadius: '7px', border: '1px solid #e2e8f0' }}>
-                              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <CheckCircle size={12} /> What You Get From This:
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                            <div style={{ padding: '0.75rem', backgroundColor: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <CheckCircle size={13} /> What You Get From This:
                               </span>
-                              <ul style={{ margin: '0.3rem 0 0 1rem', padding: 0, fontSize: '0.74rem', color: '#334155', lineHeight: 1.38 }}>
+                              <ul style={{ margin: '0.35rem 0 0 1.1rem', padding: 0, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                                 {item.whatYouGet.map((yg, idx) => (
-                                  <li key={idx} style={{ marginBottom: '0.2rem' }}>{yg}</li>
+                                  <li key={idx} style={{ marginBottom: '0.25rem' }}>{yg}</li>
                                 ))}
                               </ul>
                             </div>
 
-                            <div style={{ padding: '0.65rem', backgroundColor: '#ffffff', borderRadius: '7px', border: '1px solid #e2e8f0' }}>
-                              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#4f46e5', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <HelpCircle size={12} /> How to Control &amp; Use:
+                            <div style={{ padding: '0.75rem', backgroundColor: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <HelpCircle size={13} /> How to Control &amp; Use:
                               </span>
-                              <ol style={{ margin: '0.3rem 0 0 1rem', padding: 0, fontSize: '0.74rem', color: '#334155', lineHeight: 1.38 }}>
+                              <ol style={{ margin: '0.35rem 0 0 1.1rem', padding: 0, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                                 {item.whatToDo.map((td, idx) => (
-                                  <li key={idx} style={{ marginBottom: '0.2rem' }}>{td}</li>
+                                  <li key={idx} style={{ marginBottom: '0.25rem' }}>{td}</li>
                                 ))}
                               </ol>
                             </div>
@@ -732,14 +1242,14 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
 
                           {/* Formula / ProTip if present */}
                           {item.formula && (
-                            <div style={{ padding: '0.45rem 0.75rem', backgroundColor: '#ffffff', borderRadius: '5px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '0.72rem', color: '#0f172a' }}>
-                              <b>Algorithm:</b> {item.formula}
+                            <div style={{ padding: '0.5rem 0.85rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', border: '1px solid var(--border-color)', fontFamily: 'monospace', fontSize: '0.74rem', color: 'var(--text-primary)' }}>
+                              <strong style={{ color: 'var(--primary)' }}>Algorithm / Formula:</strong> {item.formula}
                             </div>
                           )}
 
                           {item.proTip && (
-                            <div style={{ padding: '0.45rem 0.75rem', backgroundColor: '#f0fdf4', borderRadius: '5px', border: '1px solid #bbf7d0', fontSize: '0.74rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                              <Sparkles size={12} /> <span><b>Pro Tip:</b> {item.proTip}</span>
+                            <div style={{ padding: '0.5rem 0.85rem', backgroundColor: 'var(--accent-teal-light)', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.76rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <Sparkles size={13} style={{ color: 'var(--accent-teal)' }} /> <span><strong style={{ color: 'var(--accent-teal)' }}>Pro Tip:</strong> {item.proTip}</span>
                             </div>
                           )}
                         </div>
@@ -747,6 +1257,12 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                     </div>
                   );
                 })}
+
+                {filteredFeatures.length === 0 && (
+                  <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', backgroundColor: 'var(--bg-surface)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                    No features match &ldquo;{searchQuery}&rdquo;. <button type="button" className="btn btn-link btn-sm" onClick={() => { setSearchQuery(''); setSelectedCategory('All'); }} style={{ fontSize: '0.78rem', textDecoration: 'underline' }}>Clear search</button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -756,4 +1272,5 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
     document.body
   );
 };
+
 export default GuideCenterModal;

@@ -1,0 +1,2342 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PeerLens Documentation &amp; Institutional Operational Manual</title>
+<meta name="description" content="The definitive operational documentation manual for PeerLens. Comprehensive step-by-step instructions for instructors and students, algorithmic specifications, LMS integrations, and technical reference.">
+<link rel="icon" type="image/png" href="/PeerGrading.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Charter:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg-page: #ffffff;
+    --bg-surface: #ffffff;
+    --bg-sidebar: #f8fafc;
+    --bg-subtle: #f1f5f9;
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-subtle: #94a3b8;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --border-focus: #0f172a;
+    --code-bg: #f8fafc;
+    --code-border: #e2e8f0;
+    --callout-bg: #f8fafc;
+    --callout-border: #0f172a;
+    --table-header: #f8fafc;
+    --table-row-alt: #fafbfc;
+    --accent: #0f172a;
+    --accent-subtle: #f1f5f9;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --sidebar-w: 285px;
+    --header-h: 50px;
+    --font-serif: 'Charter', Georgia, 'Times New Roman', serif;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  [data-theme="dark"] {
+    --bg-page: #090d16;
+    --bg-surface: #0f172a;
+    --bg-sidebar: #0b1120;
+    --bg-subtle: #1e293b;
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --text-subtle: #64748b;
+    --border: #1e293b;
+    --border-strong: #334155;
+    --border-focus: #f8fafc;
+    --code-bg: #0f172a;
+    --code-border: #1e293b;
+    --callout-bg: #0f172a;
+    --callout-border: #f8fafc;
+    --table-header: #1e293b;
+    --table-row-alt: #0d1527;
+    --accent: #f8fafc;
+    --accent-subtle: #1e293b;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-size: 13.5px;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--text-secondary);
+    background-color: var(--bg-page);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Reading Progress ────────────────────────────────── */
+  #reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    width: 0%;
+    background: var(--text-primary);
+    z-index: 1000;
+  }
+
+  /* ── Sticky Documentation Header ─────────────────────── */
+  .doc-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    height: var(--header-h);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s ease;
+  }
+  .btn:hover { background: var(--border); }
+
+  .doc-badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 2px 7px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-subtle);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    text-transform: uppercase;
+  }
+
+  .doc-title-header {
+    font-family: var(--font-serif);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ── Layout ──────────────────────────────────────────── */
+  .doc-layout {
+    display: flex;
+    min-height: calc(100vh - var(--header-h));
+  }
+
+  /* ── Sidebar Navigation ──────────────────────────────── */
+  .doc-sidebar {
+    width: var(--sidebar-w);
+    position: sticky;
+    top: var(--header-h);
+    height: calc(100vh - var(--header-h));
+    overflow-y: auto;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    padding: 14px 0 32px 0;
+    overscroll-behavior: contain;
+    flex-shrink: 0;
+  }
+
+  .doc-sidebar::-webkit-scrollbar { width: 4px; }
+  .doc-sidebar::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
+
+  .sidebar-search {
+    padding: 0 12px 10px 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+  }
+
+  .sidebar-search-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .search-box {
+    width: 100%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 5px 8px;
+    font-size: 11.5px;
+    color: var(--text-primary);
+    outline: none;
+    font-family: var(--font-sans);
+  }
+  .search-box:focus { border-color: var(--border-focus); }
+
+  .sidebar-collapse-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+  .sidebar-collapse-btn:hover {
+    color: var(--text-primary);
+    background: var(--border);
+    border-color: var(--border-strong);
+  }
+
+  .floating-toc-btn {
+    display: none;
+    position: fixed;
+    top: calc(var(--header-h) + 12px);
+    left: 14px;
+    z-index: 99;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 5px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  .floating-toc-btn:hover {
+    background: var(--bg-subtle);
+    border-color: var(--text-primary);
+    transform: translateY(-1px);
+  }
+
+  body.toc-collapsed .doc-sidebar { display: none; }
+  body.toc-collapsed #floating-toc-btn { display: inline-flex; }
+  body.toc-collapsed .doc-content { max-width: 980px; }
+
+  .nav-group-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    padding: 10px 14px 4px 14px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 14px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: all 0.12s ease;
+  }
+
+  .nav-item svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+    width: 13px;
+    height: 13px;
+  }
+
+  .nav-item:hover {
+    color: var(--text-primary);
+    background: var(--bg-subtle);
+  }
+
+  .nav-item.active {
+    color: var(--text-primary);
+    font-weight: 600;
+    background: var(--bg-surface);
+    border-left-color: var(--text-primary);
+  }
+  .nav-item.active svg { opacity: 1; }
+
+  /* ── Content Body (Dense Documentation Format) ───────── */
+  .doc-content {
+    flex: 1;
+    min-width: 0;
+    padding: 24px 38px 64px 38px;
+    max-width: 940px;
+    margin: 0 auto;
+  }
+
+  /* ── Document Meta Banner ────────────────────────────── */
+  .manual-header {
+    border-bottom: 2px solid var(--text-primary);
+    padding-bottom: 18px;
+    margin-bottom: 26px;
+  }
+
+  .manual-header h1 {
+    font-family: var(--font-serif);
+    font-size: 25px;
+    color: var(--text-primary);
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 8px;
+  }
+
+  .manual-desc {
+    font-size: 13.5px;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  .manual-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .meta-cell strong { color: var(--text-primary); display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+
+  /* ── Chapter Headers ─────────────────────────────────── */
+  .chapter-block {
+    margin-bottom: 42px;
+    scroll-margin-top: calc(var(--header-h) + 14px);
+  }
+
+  .chapter-header {
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .chapter-tag {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  h2 {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    color: var(--text-primary);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  h3 {
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    color: var(--text-primary);
+    font-weight: 700;
+    margin: 18px 0 6px 0;
+  }
+
+  h4 {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 12px 0 4px 0;
+  }
+
+  p {
+    margin-bottom: 10px;
+    line-height: 1.6;
+  }
+
+  ul, ol {
+    margin: 6px 0 14px 20px;
+    padding-left: 4px;
+  }
+
+  li {
+    margin-bottom: 5px;
+    line-height: 1.55;
+  }
+
+  /* ── Step Units (Instructor & Student Workflows) ──────── */
+  .step-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    margin: 12px 0 18px 0;
+  }
+
+  .step-card {
+    display: flex;
+    gap: 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 11px 13px;
+  }
+
+  .step-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent-subtle);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .step-body { flex: 1; }
+  .step-body h4 { margin: 0 0 3px 0; font-size: 12px; }
+  .step-body p { margin-bottom: 0; font-size: 12px; line-height: 1.5; }
+  .step-meta { font-size: 10.5px; color: var(--text-subtle); display: block; margin-top: 4px; }
+
+  /* ── Card Grids ──────────────────────────────────────── */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin: 12px 0;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 12px 0;
+  }
+
+  .grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 12px 0;
+  }
+
+  .card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 11px 13px;
+  }
+
+  .card-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .card-desc {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* ── Academic Booktabs Tables ────────────────────────── */
+  .table-container {
+    margin: 14px 0 18px 0;
+    overflow-x: auto;
+    width: 100%;
+  }
+
+  table.booktabs {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    line-height: 1.5;
+    background: var(--bg-surface);
+    table-layout: fixed;
+  }
+
+  table.booktabs thead tr {
+    border-top: 2px solid var(--text-primary);
+    border-bottom: 1px solid var(--text-primary);
+  }
+
+  table.booktabs th {
+    padding: 8px 10px;
+    text-align: left;
+    font-family: var(--font-sans);
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-primary);
+    background: var(--table-header);
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+
+  table.booktabs tbody tr {
+    border-bottom: 1px solid var(--border);
+  }
+
+  table.booktabs tbody tr:nth-child(even) {
+    background: var(--table-row-alt);
+  }
+
+  table.booktabs tbody tr:last-child {
+    border-bottom: 2px solid var(--text-primary);
+  }
+
+  table.booktabs td {
+    padding: 8px 10px;
+    color: var(--text-secondary);
+    vertical-align: top;
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+
+  table.booktabs td strong {
+    color: var(--text-primary);
+  }
+
+  /* ── Callout Box ─────────────────────────────────────── */
+  .callout {
+    background: var(--callout-bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--callout-border);
+    border-radius: var(--radius-sm);
+    padding: 11px 15px;
+    margin: 14px 0;
+  }
+
+  .callout-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .callout-title svg {
+    width: 13px;
+    height: 13px;
+    stroke: currentColor;
+  }
+
+  .callout p {
+    font-size: 12px;
+    margin-bottom: 0;
+    line-height: 1.5;
+  }
+
+  .callout-warn { border-left-color: #b45309; }
+  .callout-warn .callout-title { color: #b45309; }
+
+  .callout-tip { border-left-color: #047857; }
+  .callout-tip .callout-title { color: #047857; }
+
+  /* ── Code ────────────────────────────────────────────── */
+  code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--text-primary);
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: var(--radius-sm);
+    padding: 11px 13px;
+    overflow-x: auto;
+    margin: 10px 0 14px 0;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-primary);
+  }
+
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  /* ── LaTeX / Academic Mathematical Formulas ──────────── */
+  .math-block {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    margin: 14px 0 18px 0;
+    text-align: center;
+  }
+
+  .math-block-title {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-subtle);
+    margin-bottom: 8px;
+    text-align: left;
+  }
+
+  .math-eq {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-family: var(--font-serif);
+    font-size: 13.5px;
+    color: var(--text-primary);
+  }
+
+  .math-var { font-style: italic; font-weight: 600; }
+  .math-sub { font-size: 0.72em; vertical-align: sub; }
+  .math-sup { font-size: 0.72em; vertical-align: super; }
+  .math-op { margin: 0 4px; font-weight: 400; }
+
+  .math-frac {
+    display: inline-flex;
+    flex-direction: column;
+    vertical-align: middle;
+    text-align: center;
+    padding: 0 4px;
+    font-size: 0.9em;
+  }
+
+  .math-num {
+    border-bottom: 1px solid var(--text-primary);
+    padding-bottom: 2px;
+    line-height: 1.2;
+  }
+
+  .math-den {
+    padding-top: 2px;
+    line-height: 1.2;
+  }
+
+  .math-sqrt {
+    display: inline-flex;
+    align-items: center;
+  }
+  .math-rad { font-size: 1.25em; line-height: 1; margin-right: 1px; }
+  .math-radicand { border-top: 1px solid var(--text-primary); padding-top: 1px; }
+
+  .math-block-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    font-size: 14.5px;
+    font-family: var(--font-serif);
+    flex-wrap: wrap;
+  }
+  .math-block-divider {
+    width: 1px;
+    height: 30px;
+    background: var(--border-strong);
+  }
+  .formula-note {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* ── Print Stylesheet ─────────────────────────────────── */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 14mm 14mm 14mm;
+  }
+
+  @media print {
+    body {
+      background: #ffffff !important;
+      color: #000000 !important;
+      font-size: 9pt !important;
+      line-height: 1.4 !important;
+    }
+
+    .doc-header, .doc-sidebar, #reading-progress, #floating-toc-btn, .btn, .search-box {
+      display: none !important;
+    }
+
+    .doc-layout { display: block !important; }
+    .doc-content {
+      padding: 0 !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+    }
+
+    .manual-header {
+      padding-bottom: 10pt !important;
+      margin-bottom: 12pt !important;
+    }
+
+    h1 { font-size: 18pt !important; }
+    h2 {
+      font-size: 13pt !important;
+      margin-top: 14pt !important;
+      margin-bottom: 5pt !important;
+      page-break-after: avoid !important;
+      display: block !important;
+    }
+    h2 svg, h3 svg, h4 svg {
+      display: none !important;
+    }
+
+    h3 {
+      font-size: 10.5pt !important;
+      margin-top: 9pt !important;
+      margin-bottom: 3pt !important;
+      page-break-after: avoid !important;
+    }
+
+    .table-container {
+      overflow: visible !important;
+      overflow-x: visible !important;
+      width: 100% !important;
+      margin: 8pt 0 !important;
+    }
+
+    table.booktabs {
+      width: 100% !important;
+      table-layout: fixed !important;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
+
+    table.booktabs thead {
+      display: table-header-group !important;
+    }
+
+    table.booktabs tr {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
+
+    table.booktabs th,
+    table.booktabs td {
+      padding: 5pt 6pt !important;
+      font-size: 8pt !important;
+      line-height: 1.3 !important;
+      word-break: normal !important;
+      overflow-wrap: break-word !important;
+    }
+
+    .card, .step-card, .callout, .math-block {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+      margin-bottom: 6pt !important;
+      padding: 6pt 8pt !important;
+    }
+
+    .grid-2 { grid-template-columns: 1fr 1fr !important; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr !important; }
+    .grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr !important; }
+  }
+
+  /* ── Mobile Responsive ───────────────────────────────── */
+  @media (max-width: 860px) {
+    .doc-sidebar { display: none; }
+    .doc-content { padding: 18px 14px 50px 14px; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .manual-meta-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="reading-progress"></div>
+
+<!-- Floating TOC Restorer Button (Minimal & Non-Intrusive) -->
+<button id="floating-toc-btn" class="floating-toc-btn" onclick="toggleTOC()" title="Open Table of Contents (Ctrl+B)">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+  <span>Contents</span>
+</button>
+
+<!-- Top Sticky Navbar (Minimal Header without Bulky Hide TOC Button) -->
+<header class="doc-header">
+  <div class="header-left">
+    <span class="doc-badge">Institutional Manual</span>
+    <span class="doc-title-header">PeerLens Operational Manual &amp; Pedagogical Guide</span>
+  </div>
+
+  <div class="header-actions">
+    <button class="btn" onclick="toggleTheme()" id="theme-btn" title="Toggle Dark/Light Theme (Ctrl+T)">
+      <svg id="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      <span id="theme-text">Dark</span>
+    </button>
+    <button class="btn" onclick="window.print()" title="Print Documentation to PDF">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+      <span>Print / PDF</span>
+    </button>
+  </div>
+</header>
+
+<div class="doc-layout">
+
+  <!-- Left Sidebar Navigation -->
+  <aside class="doc-sidebar" id="sidebar">
+    <div class="sidebar-search">
+      <div class="sidebar-search-row">
+        <input type="text" id="manual-search" class="search-box" placeholder="Search manual (Press /)..." onkeyup="filterSidebar()">
+        <button class="sidebar-collapse-btn" onclick="toggleTOC()" title="Collapse table of contents (Ctrl+B)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="nav-group-label">Part 1: Getting Started</div>
+    <a href="#ch1-welcome" class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+      1. Fundamentals &amp; Quickstart
+    </a>
+    <a href="#ch2-lifecycle" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+      2. 5-Phase Assessment Lifecycle
+    </a>
+
+    <div class="nav-group-label">Part 2: Instructor Manual</div>
+    <a href="#ch3-setup" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+      3. Class Setup &amp; Roster Ingestion
+    </a>
+    <a href="#ch4-rubric" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+      4. Rubric &amp; IPAF Framework
+    </a>
+    <a href="#ch5-autogroup" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"></path></svg>
+      5. AutoGroup Diversity Studio
+    </a>
+    <a href="#ch6-dispatch" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+      6. Token Dispatch &amp; Invitations
+    </a>
+    <a href="#ch7-projector" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+      7. Projector View &amp; Live Monitoring
+    </a>
+    <a href="#ch8-analytics" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+      8. Analytics, WebPA &amp; Johari Matrix
+    </a>
+    <a href="#ch9-milestones" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+      9. Milestones &amp; Archival
+    </a>
+    <a href="#ch10-command-palette" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path></svg>
+      10. Command Palette &amp; Export Suite
+    </a>
+
+    <div class="nav-group-label">Part 3: Student Manual</div>
+    <a href="#ch11-student" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+      11. Student Portal &amp; Submission
+    </a>
+
+    <div class="nav-group-label">Part 4: Mathematical Engines</div>
+    <a href="#ch12-math" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line></svg>
+      12. WebPA Scaling Derivation
+    </a>
+    <a href="#ch13-anomalies" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      13. Conflict &amp; Anomaly Auditing
+    </a>
+
+    <div class="nav-group-label">Part 5: LMS &amp; Configuration</div>
+    <a href="#ch14-lms" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+      14. LMS Gradebook Integration
+    </a>
+    <a href="#ch15-config" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+      15. Cloud Sync &amp; Action Undo
+    </a>
+    <a href="#ch16-faq" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      16. Diagnostic Troubleshooting
+    </a>
+    <a href="#ch17-governance" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+      17. Privacy &amp; Data Governance
+    </a>
+  </aside>
+
+  <!-- Main Documentation Content -->
+  <main class="doc-content" id="main-content">
+
+    <!-- Manual Header Block -->
+    <div class="manual-header">
+      <h1>PeerLens: Institutional Operational Manual &amp; Pedagogical Handbook</h1>
+      <p class="manual-desc">
+        The definitive operational and algorithmic reference for university course convenors, instructors, and students. Documents end-to-end peer evaluation workflows, WebPA non-linear grade scaling, anomaly auditing, LMS gradebook synchronization, and client-side data sovereignty.
+      </p>
+
+      <div class="manual-meta-grid">
+        <div class="meta-cell"><strong>Core Algorithm</strong>WebPA &amp; BARS Rubrics</div>
+        <div class="meta-cell"><strong>Architecture</strong>Double-Blind Tokenized</div>
+        <div class="meta-cell"><strong>Integrations</strong>Canvas, Moodle, Blackboard, D2L</div>
+        <div class="meta-cell"><strong>Data Governance</strong>Client-Side Local Sovereignty</div>
+      </div>
+    </div>
+
+    <!-- CHAPTER 1: Fundamentals & Quickstart -->
+    <section class="chapter-block" id="ch1-welcome">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 1: Getting Started</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          1. System Fundamentals &amp; Pedagogical Foundations
+        </h2>
+      </div>
+
+      <p>
+        <strong>PeerLens</strong> is an academic peer assessment system engineered specifically to resolve the persistent challenges of collaborative coursework in higher education. Group assignments foster teamwork, multidisciplinary communication, and project management skills; however, unmoderated group grading suffers from the <em>"Free-Rider Paradox"</em>—where hard-working students feel exploited by non-contributing teammates who receive the identical group mark.
+      </p>
+
+      <p>
+        Rather than relying on unweighted peer averages that introduce grade inflation or interpersonal friction, PeerLens employs the psychometrically validated <strong>WebPA algorithm</strong> (developed at Loughborough University) combined with <strong>Behaviorally Anchored Rating Scales (BARS)</strong>. This separates team-level milestone achievement from individual contribution, fairly scaling each student's final mark.
+      </p>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            Zero-Account Friction
+          </div>
+          <div class="card-desc">
+            Students access evaluation portals through deterministic cryptographic tokens. No passwords, forgotten logins, or university single-sign-on friction.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+            WebPA Non-Linear Scaling
+          </div>
+          <div class="card-desc">
+            Normalizes raw ratings into proportional contribution shares, then scales individual grades relative to the group benchmark using configurable dampening.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            Automated Collusion Auditing
+          </div>
+          <div class="card-desc">
+            Real-time heuristic scanner identifies lazy uniform grading, reciprocal inflation pacts between friends, and hyper-critical spite outliers.
+          </div>
+        </div>
+      </div>
+
+      <h3>Instructor Quickstart: First Evaluation in 5 Minutes</h3>
+      <div class="step-list">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h4>Initialize Course Workspace</h4>
+            <p>Click <strong>"+ New Class"</strong> (shortcut: <code>Cmd + C</code>) and provide your course designation (e.g. <em>Software Engineering Studio</em>). Workspaces store complete rosters, rubrics, and submission archives in isolated local or cloud stores.</p>
+            <span class="step-meta">Time required: 15 seconds &bull; Fully offline-capable</span>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h4>Select Validated Rubric Preset</h4>
+            <p>Navigate to <strong>Section 2: Review System</strong> (shortcut: <code>2</code>) and load the <strong>IPAF Standard</strong> preset. This loads 6 research-anchored dimensions (Contribution, Reliability, Problem-Solving, Communication, Initiative, Quality Drive) totaling 100%.</p>
+            <span class="step-meta">Time required: 30 seconds &bull; Research-grounded in CATME and AAC&amp;U VALUE frameworks</span>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h4>Import Roster or AutoGroup Diversity Studio</h4>
+            <p>Drag-and-drop your cohort spreadsheet (CSV or Excel) into Section 1, or use the <strong>AutoGroup Diversity Studio</strong> to automatically balance student teams by gender equity, 195+ nationalities, and language CEFR levels.</p>
+            <span class="step-meta">Time required: 45 seconds &bull; Duplicate detection and column reconciliation included</span>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <h4>Dispatch Secure Evaluation Links</h4>
+            <p>Open <strong>Link Dispatcher</strong> (shortcut: <code>Cmd + E</code>). Use <strong>"Copy All Links"</strong> for mass announcement in your LMS, or dispatch personalized HTML emails directly to students via the integrated Brevo transactional API.</p>
+            <span class="step-meta">Time required: 1 minute &bull; Zero login friction for participants</span>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">5</div>
+          <div class="step-body">
+            <h4>Monitor Live Submissions &amp; Export LMS Gradebook</h4>
+            <p>Launch <strong>Projector View</strong> (shortcut: <code>P</code>) to monitor cohort progress rings live. Once submissions close, review calibrated WebPA marks and export directly to Canvas, Moodle, Blackboard, or Excel using <code>Cmd + K &rarr; export</code>.</p>
+            <span class="step-meta">Time required: 2 minutes &bull; Instant batch-ready LMS gradebook files</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 2: 5-Phase Lifecycle -->
+    <section class="chapter-block" id="ch2-lifecycle">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 1: Getting Started</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          2. The 5-Phase Peer Assessment Lifecycle
+        </h2>
+      </div>
+
+      <p>
+        PeerLens structures peer evaluation into five sequential operational phases. This structured cadence ensures academic integrity, transparent expectations, and stress-free grade finalization:
+      </p>
+
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 22%;">
+            <col style="width: 32%;">
+            <col style="width: 23%;">
+            <col style="width: 23%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Phase</th>
+              <th>Primary Instructor Activity</th>
+              <th>System Instruments</th>
+              <th>Phase Output</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1. Setup &amp; Ingestion</strong></td>
+              <td>Establish class parameters, anchor rubric dimensions, import student list, and generate balanced teams.</td>
+              <td>Classroom Hub, AutoGroup Studio, Column Mapper</td>
+              <td>Enrolled roster with verified team allocations and calibrated rubric criteria.</td>
+            </tr>
+            <tr>
+              <td><strong>2. Token Dispatch</strong></td>
+              <td>Issue double-blind cryptographic URLs to enrolled students via direct email or LMS announcements.</td>
+              <td>Link Dispatcher, Brevo API, EmailJS</td>
+              <td>Every participant receives their private, one-click evaluation portal.</td>
+            </tr>
+            <tr>
+              <td><strong>3. Active Review Window</strong></td>
+              <td>Students submit peer and self ratings. Instructor monitors classroom submission velocity in real time.</td>
+              <td>Student Portal, Live Projector View, QR Dock</td>
+              <td>Double-blind review matrices collected without student identity exposure.</td>
+            </tr>
+            <tr>
+              <td><strong>4. Calibrated Scaling</strong></td>
+              <td>Algorithm computes WebPA fractional ratios; anomaly engine surfaces suspicious grading patterns.</td>
+              <td>WebPA Engine, Calibrator Slider, Johari Matrix</td>
+              <td>Fair individual multipliers, bias flags, and qualitative feedback summaries.</td>
+            </tr>
+            <tr>
+              <td><strong>5. Archival &amp; LMS Sync</strong></td>
+              <td>Lock milestone snapshot, download SIS-compatible gradebook files, and export individual student PDFs.</td>
+              <td>Direct LMS Exporters, Milestone Vault</td>
+              <td>Final grades uploaded to LMS (Canvas/Moodle/Blackboard) and student report dossiers.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- CHAPTER 3: Class Setup & Roster -->
+    <section class="chapter-block" id="ch3-setup">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 2: Instructor Manual</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+          3. Class Setup &amp; Roster Ingestion
+        </h2>
+      </div>
+
+      <p>
+        A <strong>Course Workspace</strong> represents a discrete academic cohort. Instructors can switch seamlessly between active semesters or historical archives via the workspace switcher in the header. All student profiles, rubric fields, and submitted reviews are scoped to their respective workspace.
+      </p>
+
+      <h3>Flexible Roster Ingestion Pathways</h3>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            Method A: Excel &amp; CSV Batch Import
+          </div>
+          <div class="card-desc">
+            Drag-and-drop your spreadsheet file (<code>.xlsx</code> or <code>.csv</code>). The heuristic Column Mapper auto-detects Name, Email, Group/Team, Student ID, Nationality, Gender, and Degree columns. Clipboard pasting is also supported.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"></rect><rect x="5" y="5" width="4" height="4"></rect><rect x="15" y="5" width="4" height="4"></rect><rect x="5" y="15" width="4" height="4"></rect></svg>
+            Method B: Live Classroom QR Self-Enrollment
+          </div>
+          <div class="card-desc">
+            Project the high-contrast enrollment QR code onto lecture screens. Students scan using mobile cameras to enter their profile details directly into the live queue, eliminating manual data entry.
+          </div>
+        </div>
+      </div>
+
+      <h4>Recommended Standard CSV / Excel Format</h4>
+      <pre><code>Name,Email,Group,Student ID,Nationality,CEFR,Gender
+Marco Rossi,m.rossi@university.edu,Team Alpha,ST-101,Italy,C1,Male
+Elena Bianchi,e.bianchi@university.edu,Team Alpha,ST-102,Italy,B2,Female
+Amina Diop,a.diop@exchange.edu,Team Alpha,ST-103,Senegal,C2,Female
+Lukas Weber,l.weber@exchange.edu,Team Alpha,ST-104,Germany,B2,Male</code></pre>
+
+      <div class="callout callout-warn">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          Automated Duplicate &amp; Collision Protection
+        </div>
+        <p>
+          During ingestion, PeerLens scans for identical emails or duplicate student IDs. When collisions are detected, an interactive reconciliation modal appears, providing single-click options to update existing records, merge profiles, or discard duplicate rows safely.
+        </p>
+      </div>
+    </section>
+
+    <!-- CHAPTER 4: Rubric & IPAF -->
+    <section class="chapter-block" id="ch4-rubric">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 2: Instructor Manual</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+          4. Rubric Engineering &amp; The IPAF Standard
+        </h2>
+      </div>
+
+      <p>
+        The <strong>Integrated Peer Assessment Framework (IPAF)</strong> is an evidence-based evaluation model synthesized from the five most widely cited teamwork research instruments: CATME (Ohland et al., 2012), Salas's Big Five of Teamwork, the AAC&amp;U Teamwork VALUE Rubric, the WebPA Loughborough Framework, and the Falchikov &amp; Goldfinch Meta-Analysis.
+      </p>
+
+      <p>
+        IPAF balances observable task output with collaborative process behaviors, preventing students from rewarding popular but unproductive teammates or penalizing quiet, diligent contributors:
+      </p>
+
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 22%;">
+            <col style="width: 15%;">
+            <col style="width: 9%;">
+            <col style="width: 9%;">
+            <col style="width: 45%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Dimension</th>
+              <th>Evaluation Focus</th>
+              <th>Weight</th>
+              <th>Scale</th>
+              <th>Behaviorally Anchored Indicator (BARS)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Contribution Quality</strong></td>
+              <td>Task Output</td>
+              <td>20%</td>
+              <td>1 – 20</td>
+              <td>Completed fair share of work accurately, thoroughly, and on schedule; high technical rigor and commitment.</td>
+            </tr>
+            <tr>
+              <td><strong>Reliability</strong></td>
+              <td>Dependability</td>
+              <td>20%</td>
+              <td>1 – 20</td>
+              <td>Punctuality in meetings, proactive follow-through on deliverables without requiring peer reminders.</td>
+            </tr>
+            <tr>
+              <td><strong>Problem-Solving</strong></td>
+              <td>Cognitive Process</td>
+              <td>15%</td>
+              <td>1 – 20</td>
+              <td>Resourcefulness under uncertainty; technical adaptability when plans shifted; unblocked struggling peers.</td>
+            </tr>
+            <tr>
+              <td><strong>Communication</strong></td>
+              <td>Interpersonal</td>
+              <td>15%</td>
+              <td>1 – 20</td>
+              <td>Clear, timely asynchronous updates; active listening; respectful and constructive receipt of peer critique.</td>
+            </tr>
+            <tr>
+              <td><strong>Initiative</strong></td>
+              <td>Leadership</td>
+              <td>15%</td>
+              <td>1 – 20</td>
+              <td>Stepped forward for challenging project modules without being asked; suggested constructive team directions.</td>
+            </tr>
+            <tr>
+              <td><strong>Quality Drive</strong></td>
+              <td>Excellence</td>
+              <td>15%</td>
+              <td>1 – 20</td>
+              <td>Refused superficial completion; motivated teammates to elevate collective standards and final polish.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Target Grading Scales &amp; Converters</h3>
+      <p>PeerLens converts rubric scores into standard institutional grading scales with full mathematical precision:</p>
+      <div class="grid-4">
+        <div class="card">
+          <div class="card-title">Percentage (0 – 100)</div>
+          <div class="card-desc">Standard North American &amp; UK university percentage scale for gradebook entry.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">European / French (0 – 20)</div>
+          <div class="card-desc">Standard 20-point scale utilized across continental European institutions.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">GPA 4.0 (0.0 – 4.0)</div>
+          <div class="card-desc">Grade Point Average conversion calibrated for US collegiate transcript reporting.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Raw Unscaled Sum</div>
+          <div class="card-desc">Displays the direct mathematical sum of raw criterion slider ratings without normalization.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 5: AutoGroup Diversity Studio -->
+    <section class="chapter-block" id="ch5-autogroup">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 2: Instructor Manual</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+          5. AutoGroup Diversity Studio
+        </h2>
+      </div>
+
+      <p>
+        Student self-selection commonly produces homogenous cliques, leaving solo international or underrepresented students isolated. The <strong>AutoGroup Diversity Studio</strong> incorporates a multi-objective heuristic solver that systematically constructs equitable, diverse teams across three simultaneous dimensions:
+      </p>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-title">Gender Balance</div>
+          <div class="card-desc">Prevents gender isolation by maintaining equitable male, female, and non-binary representation across all project groups.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Intercultural Mixing</div>
+          <div class="card-desc">Distributes 195+ nationalities, deliberately pairing domestic students with international exchange and Erasmus peers.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Language Scaffolding</div>
+          <div class="card-desc">Spreads CEFR English tiers (A1 to C2) to ensure mutual peer communication support and equitable speaking opportunities.</div>
+        </div>
+      </div>
+
+      <h3>Running the AutoGroup Studio</h3>
+      <div class="step-list">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h4>Select Cohort Target Team Size</h4>
+            <p>Specify desired team capacity (e.g. 4 or 5 students). The engine calculates the ideal team distribution to avoid single-student orphan groups.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h4>Configure Objective Weighting</h4>
+            <p>Choose between <em>Multi-Dimensional (Balanced All)</em>, <em>Gender Parity Priority</em>, <em>Intercultural Mixing First</em>, or <em>Randomized Distribution</em>.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h4>Fine-Tune in Kanban Studio</h4>
+            <p>Inspect generated teams in <strong>Kanban View</strong>. Drag and drop student cards between teams; the live Composite Diversity Score (CDS) recalculates immediately.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <h4>Commit Allocations to Roster</h4>
+            <p>Click <strong>"Apply Groups"</strong> to write team assignments to the class roster permanently, with immediate Excel/CSV export options.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 6: Token Dispatch -->
+    <section class="chapter-block" id="ch6-dispatch">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 2: Instructor Manual</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+          6. Token Dispatch &amp; Invitations
+        </h2>
+      </div>
+
+      <p>
+        PeerLens generates deterministic, cryptographic token URLs for all enrolled students. The token encodes student identity and group membership securely, allowing students to access their evaluation form without requiring accounts or credentials.
+      </p>
+
+      <div class="math-block">
+        <div style="font-family: var(--font-mono); font-size: 11.5px; color: var(--text-primary);">
+          https://peerlens.institution.edu/?classId=[CLASS_ID]&amp;studentId=[STUDENT_ID]&amp;token=[HMAC_SHA256]
+        </div>
+        <div class="formula-note" style="margin-top: 6px;">Token verified against class secret to guarantee evaluation authenticity</div>
+      </div>
+
+      <h3>Supported Dispatch Channels</h3>
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-title">Brevo API (Recommended)</div>
+          <div class="card-desc">Sends personalized HTML emails with evaluation links via your institutional Brevo API key (300 free emails daily).</div>
+        </div>
+        <div class="card">
+          <div class="card-title">EmailJS Browser Delivery</div>
+          <div class="card-desc">Dispatches client-side transactional emails using customized institutional EmailJS templates.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Bulk Clipboard Export</div>
+          <div class="card-desc">Copies formatted name and URL pairs to clipboard for broadcast through Canvas, Moodle, or Blackboard messaging.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 7: Projector View -->
+    <section class="chapter-block" id="ch7-projector">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 2: Instructor Manual</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+          7. Projector View &amp; Live Monitoring
+        </h2>
+      </div>
+
+      <p>
+        Engineered specifically for lecture halls, laboratory workshops, and interactive seminars, the <strong>Projector View</strong> (shortcut: <code>P</code>) provides real-time operational monitoring without displaying private marks:
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Live Submission Matrix</div>
+          <div class="card-desc">Real-time progress rings for every group. Green indicates 100% submission completion; amber denotes active in-progress evaluations; grey represents pending teams.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Incoming Student Live Dock</div>
+          <div class="card-desc">Detects newly self-enrolled students live during lectures. Instructors can assign students to groups with one click or trigger <strong>Auto-Balance All ⚡</strong>.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Demographics &amp; Diversity Wall</div>
+          <div class="card-desc">Displays live cohort demographic metrics, including nationality flags, gender representation percentages, and CEFR English levels.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">High-Contrast Big QR Mode</div>
+          <div class="card-desc">Full-screen high-contrast QR display readable by mobile devices from over 25 meters across amphitheaters.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 8: Analytics & WebPA -->
+    <section class="chapter-block" id="ch8-analytics">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 2: Instructor Manual</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+          8. Analytics, WebPA Scaling &amp; Johari Matrix
+        </h2>
+      </div>
+
+      <p>
+        The Analytics Dashboard aggregates peer evaluations into calibrated individual grades and qualitative feedback insights:
+      </p>
+
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 22%;">
+            <col style="width: 40%;">
+            <col style="width: 38%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Dashboard Metric</th>
+              <th>Computation Formula</th>
+              <th>Pedagogical Interpretation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Weighted Score %</strong></td>
+              <td>
+                <div class="math-eq">
+                  <span class="math-var">S̄</span><span class="math-sub">i</span>
+                  <span class="math-op">=</span>
+                  <div class="math-frac">
+                    <span class="math-num">∑<span class="math-sub">k</span> <span class="math-var">w</span><span class="math-sub">k</span> · (<span class="math-var">x̄</span><span class="math-sub">ik</span> / <span class="math-var">max</span><span class="math-sub">k</span>)</span>
+                    <span class="math-den">∑<span class="math-sub">k</span> <span class="math-var">w</span><span class="math-sub">k</span></span>
+                  </div>
+                  <span class="math-op">×</span>
+                  <span>100%</span>
+                </div>
+              </td>
+              <td>Composite score received from teammates across all rubric criteria (excluding self-score).</td>
+            </tr>
+            <tr>
+              <td><strong>WebPA Ratio</strong></td>
+              <td>
+                <div class="math-eq">
+                  <span class="math-var">R</span><span class="math-sub">i</span>
+                  <span class="math-op">=</span>
+                  <div class="math-frac">
+                    <span class="math-num"><span class="math-var">S̄</span><span class="math-sub">i</span></span>
+                    <span class="math-den"><span class="math-var">S̄</span><span class="math-sub">team</span></span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="math-eq"><span class="math-var">R</span><span class="math-sub">i</span> &gt; 1.00</span>: Above-average team contribution.<br>
+                <span class="math-eq"><span class="math-var">R</span><span class="math-sub">i</span> &lt; 1.00</span>: Below-average team contribution.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Adjusted Grade</strong></td>
+              <td>
+                <div class="math-eq">
+                  <span class="math-var">G</span><span class="math-sub">i</span>
+                  <span class="math-op">=</span>
+                  <span><span class="math-var">G</span><span class="math-sub">base</span> · [ (1 − <span class="math-var">f</span>) + <span class="math-var">f</span> · <span class="math-var">R</span><span class="math-sub">i</span> ]</span>
+                </div>
+              </td>
+              <td>Final individual grade derived from the team's project mark and fudge weight <span class="math-eq"><span class="math-var">f</span> ∈ [0.0, 1.0]</span>.</td>
+            </tr>
+            <tr>
+              <td><strong>Consensus StdDev (σ)</strong></td>
+              <td>
+                <div class="math-eq">
+                  <span class="math-var">σ</span>
+                  <span class="math-op">=</span>
+                  <span class="math-sqrt">
+                    <span class="math-rad">√</span>
+                    <span class="math-radicand">
+                      <span class="math-frac">
+                        <span class="math-num">1</span>
+                        <span class="math-den"><span class="math-var">M</span> − 1</span>
+                      </span>
+                      <span>∑ (<span class="math-var">x</span><span class="math-sub">j</span> − <span class="math-var">x̄</span>)<span class="math-sup">2</span></span>
+                    </span>
+                  </span>
+                </div>
+              </td>
+              <td>Elevated standard deviation indicates rater disagreement among peers; signals potential interpersonal friction.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Johari Perception Window &amp; Self-Reflection Matrix</h3>
+      <p>
+        Ratings and feedback comments are cross-tabulated into a 4-quadrant <strong>Johari Window</strong> comparing self-perception with peer perception:
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Open Arena (Recognized Strengths)</div>
+          <div class="card-desc">Competencies rated highly by both the student and their teammates (e.g. "Reliable &amp; Punctual", "High Technical Rigor"). Validates self-confidence.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Blind Spot (Growth Opportunities)</div>
+          <div class="card-desc">Areas where teammates rated the student significantly lower than self-ratings (e.g. poor asynchronous communication), highlighting blind spots for development.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Hidden Façade (Modest Impact)</div>
+          <div class="card-desc">Areas where teammates rated the student higher than the student rated themselves, countering impostor syndrome and confirming valued contributions.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Unknown (Latent Potential)</div>
+          <div class="card-desc">Competency dimensions underdeveloped across the group, guiding targeted instructor mentoring for subsequent assignments.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 9: Milestones -->
+    <section class="chapter-block" id="ch9-milestones">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 2: Instructor Manual</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          9. Milestones &amp; Longitudinal Archival
+        </h2>
+      </div>
+
+      <p>
+        For courses spanning multi-week project sprints (e.g. Sprint 1 at Week 4, Midterm Demo at Week 8, Final Deliverable at Week 14), <strong>Milestones</strong> allow instructors to freeze evaluations without data loss:
+      </p>
+
+      <div class="step-list">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h4>Freeze Snapshot</h4>
+            <p>Click <strong>"+ Save Milestone"</strong>. Designate an institutional label (e.g. <em>Sprint 1 Deliverable</em>). Current peer reviews and calculated WebPA marks are stored immutably.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h4>Reset Submissions for Next Sprint</h4>
+            <p>Click <strong>"Reset Reviews for Next Milestone"</strong>. All student review statuses reset to pending, enabling students to evaluate performance during the next sprint.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h4>Track Performance Trajectories</h4>
+            <p>Select past milestones from the history dropdown to examine longitudinal performance trends and determine whether struggling students improved over the term.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 10: Command Palette & Export Suite -->
+    <section class="chapter-block" id="ch10-command-palette">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 2: Instructor Manual</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path></svg>
+          10. Smart Command Palette &amp; Export Suite
+        </h2>
+      </div>
+
+      <p>
+        The <strong>Command Palette</strong> (shortcut: <code>Cmd + K</code> or <code>Ctrl + K</code>) provides a keyboard-driven workflow accelerator. Built-in NLP intent detection matches synonyms instantly.
+      </p>
+
+      <h3>1-Click Direct Gradebook Exports</h3>
+      <p>Typing <code>export</code>, <code>excel</code>, <code>canvas</code>, <code>moodle</code>, <code>blackboard</code>, <code>brightspace</code>, <code>pdf</code>, or <code>csv</code> immediately surfaces direct download commands:</p>
+
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 25%;">
+            <col style="width: 20%;">
+            <col style="width: 55%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Export Command</th>
+              <th>Target Format</th>
+              <th>Structure &amp; Compatibility</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Export: Excel Gradebook</strong></td>
+              <td><code>.xlsx</code> Workbook</td>
+              <td>2-sheet workbook: Sheet 1 contains final scaled marks and multipliers; Sheet 2 contains complete criterion-by-criterion peer rating breakdown.</td>
+            </tr>
+            <tr>
+              <td><strong>Export: Canvas LMS Gradebook</strong></td>
+              <td><code>.csv</code> (SIS User ID)</td>
+              <td>Formatted with Student Name, SIS User ID, Section, and Assignment Points for direct batch import in Canvas Gradebook.</td>
+            </tr>
+            <tr>
+              <td><strong>Export: Moodle LMS Gradebook</strong></td>
+              <td><code>.csv</code> / <code>.xml</code></td>
+              <td>Matches Moodle grade import specifications matching email or ID numbers to assignment grade items.</td>
+            </tr>
+            <tr>
+              <td><strong>Export: Blackboard Learn</strong></td>
+              <td><code>.csv</code> Gradebook</td>
+              <td>Blackboard Ultra/Original batch upload format with username mapping and calibrated scores.</td>
+            </tr>
+            <tr>
+              <td><strong>Export: Brightspace / D2L</strong></td>
+              <td><code>.csv</code> Gradebook</td>
+              <td>Desire2Learn format with <code>OrgDefinedId</code> and mandatory End-of-Line indicators.</td>
+            </tr>
+            <tr>
+              <td><strong>Export: Results Summary</strong></td>
+              <td><code>.csv</code> Tabular</td>
+              <td>Tabular comma-separated sheet of student IDs, names, teams, multipliers, and final grades.</td>
+            </tr>
+            <tr>
+              <td><strong>Export: Class Summary PDF</strong></td>
+              <td><code>.pdf</code> Document</td>
+              <td>Vectorized PDF report containing cohort grade distributions, competency radar, and executive summary.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Quick Filter Jumpers (Single-Keystroke Filtering)</h3>
+      <p>Typing team names or status keywords updates both the Roster Table (Section 1) and Gradebook (Section 3) simultaneously:</p>
+      <ul>
+        <li><code>team a</code> / <code>team b</code>: Instantly filters the active cohort to the selected team and navigates to the table view.</li>
+        <li><code>pending</code> / <code>unsubmitted</code>: Isolates students who have not yet submitted evaluations.</li>
+        <li><code>submitted</code> / <code>completed</code>: Displays students with verified submissions.</li>
+        <li><code>unassigned</code>: Flags students without an allocated team.</li>
+        <li><code>duplicate</code>: Highlights colliding email or student ID registrations.</li>
+        <li><code>reset</code>: Clears all active filters back to the complete cohort.</li>
+      </ul>
+    </section>
+
+    <!-- CHAPTER 11: Student Manual -->
+    <section class="chapter-block" id="ch11-student">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 3: Student Manual</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          11. Student Portal &amp; Submission Guide
+        </h2>
+      </div>
+
+      <p>
+        This section provides guidance for students completing their peer evaluation:
+      </p>
+
+      <div class="step-list">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h4>Access Your Private URL Token</h4>
+            <p>Click the private link sent by your instructor or provided after QR enrollment. Do not share your link; it identifies you securely without requiring a password.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h4>Score Teammates on Rubric Sliders</h4>
+            <p>Adjust score sliders for each teammate across all criteria. Consult the BARS behavioral indicators below each slider to calibrate ratings fairly.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h4>Select Recognition Praise Badges</h4>
+            <p>Choose up to 3 praise badges per teammate acknowledging specific qualities: <em>Creative Problem Solver</em>, <em>Reliable &amp; Punctual</em>, <em>Supportive Team Player</em>, <em>High Quality Deliverables</em>, <em>Clear Communicator</em>, or <em>Detail Oriented</em>.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <h4>Provide Constructive Qualitative Feedback</h4>
+            <p>Provide specific, professional comments under <strong>Strengths</strong> and <strong>Growth Areas</strong>. Comments are anonymized before being shared with peers.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">5</div>
+          <div class="step-body">
+            <h4>Submit Evaluation</h4>
+            <p>Click <strong>"Submit Evaluation"</strong>. A confirmation screen confirms receipt. Submissions are locked and cannot be edited without instructor authorization.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 12: WebPA Mathematical Engine -->
+    <section class="chapter-block" id="ch12-math">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 4: Mathematical Engines</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line></svg>
+          12. WebPA Scaling Algorithm Specification
+        </h2>
+      </div>
+
+      <p>
+        The WebPA algorithm scales individual marks based on relative peer contribution. The mathematical derivation follows:
+      </p>
+
+      <div class="math-block">
+        <div class="math-block-inner">
+          <div class="math-eq">
+            <span class="math-var">x̄</span><span class="math-sub">ik</span>
+            <span class="math-op">=</span>
+            <div class="math-frac">
+              <span class="math-num">1</span>
+              <span class="math-den"><span class="math-var">M</span><span class="math-sub">i</span></span>
+            </div>
+            <span>∑<span class="math-sub">j ≠ i</span> <span class="math-var">s</span><span class="math-sub">jik</span></span>
+          </div>
+          <div class="math-block-divider"></div>
+          <div class="math-eq">
+            <span class="math-var">R</span><span class="math-sub">i</span>
+            <span class="math-op">=</span>
+            <div class="math-frac">
+              <span class="math-num"><span class="math-var">S̄</span><span class="math-sub">i</span></span>
+              <span class="math-den"><span class="math-var">S̄</span><span class="math-sub">team</span></span>
+            </div>
+          </div>
+          <div class="math-block-divider"></div>
+          <div class="math-eq">
+            <span class="math-var">G</span><span class="math-sub">i</span>
+            <span class="math-op">=</span>
+            <span><span class="math-var">G</span><span class="math-sub">base</span> · [ (1 − <span class="math-var">f</span>) + <span class="math-var">f</span> · <span class="math-var">R</span><span class="math-sub">i</span> ]</span>
+          </div>
+        </div>
+        <div class="formula-note" style="margin-top: 8px;">
+          Where <span class="math-eq"><span class="math-var">f</span> = 0.50</span> represents the balanced WebPA fudge factor, dampening extreme peer multipliers.
+        </div>
+      </div>
+
+      <h3>Impact of WebPA Stabilization Weight (f)</h3>
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 25%;">
+            <col style="width: 25%;">
+            <col style="width: 50%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Fudge Factor (f)</th>
+              <th>Weight Description</th>
+              <th>Pedagogical Application</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="math-eq"><span class="math-var">f</span> = 0.00</span></td>
+              <td>0% Neutral (No Peer Effect)</td>
+              <td>All students receive 100% of the team base grade. Peer factor adjustments are neutralized.</td>
+            </tr>
+            <tr>
+              <td><span class="math-eq"><span class="math-var">f</span> = 0.25</span></td>
+              <td>25% Conservative</td>
+              <td>Minor adjustments (75% baseline protection); suitable for introductory coursework or first-year students.</td>
+            </tr>
+            <tr>
+              <td><span class="math-eq"><span class="math-var">f</span> = 0.50</span></td>
+              <td>50% Blended (Recommended)</td>
+              <td>Standard WebPA balance: 50% group grade security combined with 50% peer differentiation.</td>
+            </tr>
+            <tr>
+              <td><span class="math-eq"><span class="math-var">f</span> = 1.00</span></td>
+              <td>100% Pure Peer Score</td>
+              <td>Full differentiation: peer multiplier directly determines individual mark. Used in senior capstone projects.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Complete Numerical Worked Walkthrough (4-Member Cohort)</h3>
+      <p>
+        To clarify the exact computational pipeline, consider a four-member team (<strong>Student A</strong>, <strong>Student B</strong>, <strong>Student C</strong>, and <strong>Student D</strong>) whose collaborative project was awarded an instructor base mark of <strong>82.0 / 100</strong>. Each student evaluates their three peers across the rubric.
+      </p>
+
+      <h4>Step 1: Raw Rating Matrix &amp; Grader Normalization</h4>
+      <p>
+        Students exhibit natural grader variance—some rate leniently while others grade stringently. WebPA eliminates this bias by treating each reviewer's awarded scores as proportions of that reviewer's total awarded marks:
+      </p>
+
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Evaluated Student</th>
+              <th>Rated by Student A</th>
+              <th>Rated by Student B</th>
+              <th>Rated by Student C</th>
+              <th>Rated by Student D</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Student A</strong></td>
+              <td><em>(Self-Score: 18)</em></td>
+              <td>19.0 pts (37.2%)</td>
+              <td>19.5 pts (38.2%)</td>
+              <td>18.5 pts (35.6%)</td>
+            </tr>
+            <tr>
+              <td><strong>Student B</strong></td>
+              <td>18.0 pts (37.5%)</td>
+              <td><em>(Self-Score: 17)</em></td>
+              <td>17.0 pts (33.3%)</td>
+              <td>17.5 pts (33.6%)</td>
+            </tr>
+            <tr>
+              <td><strong>Student C</strong></td>
+              <td>16.0 pts (33.3%)</td>
+              <td>17.0 pts (33.3%)</td>
+              <td><em>(Self-Score: 16)</em></td>
+              <td>16.0 pts (30.8%)</td>
+            </tr>
+            <tr>
+              <td><strong>Student D</strong></td>
+              <td>14.0 pts (29.2%)</td>
+              <td>15.0 pts (29.5%)</td>
+              <td>14.5 pts (28.5%)</td>
+              <td><em>(Self-Score: 15)</em></td>
+            </tr>
+            <tr>
+              <td><strong>Grader Column Sum</strong></td>
+              <td><strong>48.0 pts (100%)</strong></td>
+              <td><strong>51.0 pts (100%)</strong></td>
+              <td><strong>51.0 pts (100%)</strong></td>
+              <td><strong>52.0 pts (100%)</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>Step 2: Fractional Share Summation &amp; Ratio Derivation</h4>
+      <p>
+        Summing each row's normalized peer percentages produces the student's fractional contribution score <span class="math-eq"><span class="math-var">S̄</span><span class="math-sub">i</span></span>. Dividing by the team average (<span class="math-eq">1.00</span>) yields the raw WebPA multiplier <span class="math-eq"><span class="math-var">R</span><span class="math-sub">i</span></span>:
+      </p>
+
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 18%;">
+            <col style="width: 26%;">
+            <col style="width: 18%;">
+            <col style="width: 18%;">
+            <col style="width: 20%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>Normalized Peer Sum (S̄)</th>
+              <th>WebPA Ratio (R)</th>
+              <th>Contribution Status</th>
+              <th>Peer Assessment Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Student A</strong></td>
+              <td>0.372 + 0.382 + 0.356 = <strong>1.110</strong></td>
+              <td><strong>1.110</strong> (+11.0%)</td>
+              <td><span class="badge badge-success">High Driver</span></td>
+              <td>Demonstrated strong leadership and delivered major core modules.</td>
+            </tr>
+            <tr>
+              <td><strong>Student B</strong></td>
+              <td>0.375 + 0.333 + 0.336 = <strong>1.044</strong></td>
+              <td><strong>1.044</strong> (+4.4%)</td>
+              <td><span class="badge badge-success">Solid Contributor</span></td>
+              <td>Consistent reliability and quality documentation support.</td>
+            </tr>
+            <tr>
+              <td><strong>Student C</strong></td>
+              <td>0.333 + 0.333 + 0.308 = <strong>0.974</strong></td>
+              <td><strong>0.974</strong> (-2.6%)</td>
+              <td><span class="badge badge-neutral">Standard Baseline</span></td>
+              <td>Completed assigned tasks as requested with average participation.</td>
+            </tr>
+            <tr>
+              <td><strong>Student D</strong></td>
+              <td>0.292 + 0.295 + 0.285 = <strong>0.872</strong></td>
+              <td><strong>0.872</strong> (-12.8%)</td>
+              <td><span class="badge badge-warn">Lagging Effort</span></td>
+              <td>Missed two checkpoint deadlines; required teammate remediation.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>Step 3: Calibrated Final Grade Comparison (Base Mark = 82.0)</h4>
+      <p>
+        The table below shows how the instructor's choice of stabilization weight <span class="math-eq"><span class="math-var">f</span></span> alters the final grade distribution:
+      </p>
+
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>f = 0.00 (Flat Group)</th>
+              <th>f = 0.30 (Mild Spread)</th>
+              <th>f = 0.50 (Standard)</th>
+              <th>f = 1.00 (Full WebPA)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Student A</strong> (R = 1.110)</td>
+              <td>82.0 / 100</td>
+              <td>84.7 / 100</td>
+              <td><strong>86.5 / 100</strong></td>
+              <td>91.0 / 100</td>
+            </tr>
+            <tr>
+              <td><strong>Student B</strong> (R = 1.044)</td>
+              <td>82.0 / 100</td>
+              <td>83.1 / 100</td>
+              <td><strong>83.8 / 100</strong></td>
+              <td>85.6 / 100</td>
+            </tr>
+            <tr>
+              <td><strong>Student C</strong> (R = 0.974)</td>
+              <td>82.0 / 100</td>
+              <td>81.4 / 100</td>
+              <td><strong>80.9 / 100</strong></td>
+              <td>79.9 / 100</td>
+            </tr>
+            <tr>
+              <td><strong>Student D</strong> (R = 0.872)</td>
+              <td>82.0 / 100</td>
+              <td>78.9 / 100</td>
+              <td><strong>76.8 / 100</strong></td>
+              <td>71.5 / 100</td>
+            </tr>
+            <tr>
+              <td><strong>Cohort Mean</strong></td>
+              <td>82.0 / 100</td>
+              <td>82.0 / 100</td>
+              <td><strong>82.0 / 100</strong></td>
+              <td>82.0 / 100</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout callout-info">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          Grade Conservation Theorem
+        </div>
+        <p>
+          Notice that across all fudge weights <span class="math-eq"><span class="math-var">f</span></span>, the arithmetic mean of individual grades remains precisely equal to the base project grade (<strong>82.0</strong>). WebPA acts as a zero-sum equitable redistributor: marks awarded to high-performing drivers are proportionally balanced by downward adjustments for under-contributing members, preventing artificial grade inflation.
+        </p>
+      </div>
+
+      <h3>Handling Missing Reviewers &amp; Non-Evaluator Penalty</h3>
+      <p>
+        In higher education environments, occasionally a student fails to submit their peer evaluations before the cutoff deadline. PeerLens handles this through Loughborough's certified non-rater protocol:
+      </p>
+      <ul style="margin: 0.5rem 0 1rem 1.4rem; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6;">
+        <li><strong>Teammate Protection:</strong> The non-submitting student's column is excluded from the denominator. Their teammates are evaluated strictly based on the peers who did submit, ensuring innocent students are never penalized because an uncooperative peer went missing.</li>
+        <li><strong>Automated Non-Rater Flag:</strong> The system tags the non-rater with an amber warning badge in the instructor gradebook.</li>
+        <li><strong>Configurable Deduction Policy:</strong> Instructors can configure an automatic deduction (e.g. -5% to -15% penalty, or multiplier capped at 1.00 maximum) for students who fail to submit peer evaluations on time.</li>
+      </ul>
+
+      <h3>Scale Ceilings &amp; Clamping Bounds</h3>
+      <p>
+        When a high-performing student in an excellent group receives a very high WebPA multiplier (e.g. <span class="math-eq"><span class="math-var">R</span> = 1.25</span> on a base mark of 88), the raw computation would yield <span class="math-eq">88 \times 1.25 = 110.0</span>. PeerLens automatically applies safe boundary clamping:
+      </p>
+      <div class="math-block">
+        <div class="math-block-inner">
+          <div class="math-eq">
+            <span class="math-var">G</span><span class="math-sub">final</span>
+            <span class="math-op">=</span>
+            <span>min( <span class="math-var">TargetScaleMax</span>, max( 0.0, <span class="math-var">G</span><span class="math-sub">calibrated</span> ) )</span>
+          </div>
+        </div>
+        <div class="formula-note" style="margin-top: 6px;">
+          Grades are clamped at the maximum allowable scale (e.g. 100.0%, 20.0/20, or 4.0 GPA) unless bonus extra-credit is explicitly authorized in workspace settings.
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 13: Anomaly & Conflict Auditing -->
+    <section class="chapter-block" id="ch13-anomalies">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 4: Mathematical Engines</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          13. Conflict &amp; Anomaly Auditing Engine
+        </h2>
+      </div>
+
+      <p>
+        PeerLens audits completed evaluation matrices to detect unfair rating behaviors:
+      </p>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-title">1. Lazy / Uniform Grading</div>
+          <div class="card-desc">
+            <strong>Condition:</strong> Reviewer rating standard deviation <span class="math-eq"><span class="math-var">σ</span> = 0.00</span>.<br>
+            <strong>Behavior:</strong> Reviewer assigned identical scores across all teammates to minimize effort.<br>
+            <strong>Severity:</strong> Medium.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">2. Outlier Rating Bias</div>
+          <div class="card-desc">
+            <strong>Condition:</strong> Reviewer rating diverges &gt; 30% from the consensus peer average.<br>
+            <strong>Behavior:</strong> Suggests interpersonal conflict (spiteful low rating) or favoritism.<br>
+            <strong>Severity:</strong> High (negative) / Low (positive).
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">3. Reciprocal Collusion</div>
+          <div class="card-desc">
+            <strong>Condition:</strong> Pair gave each other ≥ 90%, while external peer reviews average &lt; 80%.<br>
+            <strong>Behavior:</strong> Flags mutual score-inflation pacts between friends.<br>
+            <strong>Severity:</strong> High.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 14: LMS Gradebook Integration -->
+    <section class="chapter-block" id="ch14-lms">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 5: LMS &amp; Configuration</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+          14. LMS Gradebook Integration (Canvas, Moodle, Blackboard, D2L)
+        </h2>
+      </div>
+
+      <p>
+        PeerLens generates standard CSV gradebook files formatted for direct batch upload into major Learning Management Systems:
+      </p>
+
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 20%;">
+            <col style="width: 25%;">
+            <col style="width: 55%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>LMS Platform</th>
+              <th>Required Identifier</th>
+              <th>Batch Ingestion Procedure</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Canvas LMS</strong></td>
+              <td><code>SIS User ID</code> or <code>Student ID</code></td>
+              <td>Navigate to <strong>Grades &rarr; Import</strong>. Upload the exported CSV file. Canvas automatically maps student IDs to the designated assignment grade column.</td>
+            </tr>
+            <tr>
+              <td><strong>Moodle LMS</strong></td>
+              <td><code>Email address</code> or <code>ID number</code></td>
+              <td>Navigate to <strong>Grades &rarr; Import &rarr; CSV file</strong>. Map the identifier column to "User ID" and the Grade column to the corresponding Grade Item.</td>
+            </tr>
+            <tr>
+              <td><strong>Blackboard Learn</strong></td>
+              <td><code>Username</code> / <code>Student ID</code></td>
+              <td>Go to <strong>Grade Center &rarr; Work Offline &rarr; Upload</strong>. Select the exported CSV file and confirm comma delimiter mapping.</td>
+            </tr>
+            <tr>
+              <td><strong>Brightspace / D2L</strong></td>
+              <td><code>OrgDefinedId</code></td>
+              <td>Go to <strong>Grades &rarr; Enter Grades &rarr; Import</strong>. Upload the CSV file. End-of-line indicators are preserved automatically.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- CHAPTER 15: Cloud Sync & Action Undo -->
+    <section class="chapter-block" id="ch15-config">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 5: LMS &amp; Configuration</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+          15. Cloud Sync, Email &amp; Action Undo Safety Net
+        </h2>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Firebase Cloud Sync</div>
+          <div class="card-desc">
+            Configure Firebase credentials (<code>apiKey</code>, <code>projectId</code>, <code>appId</code>) in <strong>Settings &rarr; Cloud Sync</strong> to enable real-time multi-device synchronization and automatic cloud backups.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Transactional Email (Brevo / EmailJS)</div>
+          <div class="card-desc">
+            Enter your Brevo API key and verified sender address under <strong>Settings &rarr; Email</strong> to dispatch customized student links automatically.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Action Undo Safety Net (30-Second Window)</div>
+          <div class="card-desc">
+            Accidental deletions, rubric resets, or class modifications trigger an interactive toast. Press <code>Ctrl + Z</code> or click <strong>Undo</strong> within 30 seconds to restore previous states with bidirectional cloud synchronization.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">True Dark Theme (Obsidian)</div>
+          <div class="card-desc">
+            High-contrast dark mode using Zinc/Obsidian surfaces. Press <code>Ctrl + T</code> to toggle between Light and Dark themes instantly.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 16: Troubleshooting -->
+    <section class="chapter-block" id="ch16-faq">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 5: LMS &amp; Configuration</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          16. Diagnostic Troubleshooting Matrix
+        </h2>
+      </div>
+
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 25%;">
+            <col style="width: 35%;">
+            <col style="width: 40%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Issue / Symptom</th>
+              <th>Probable Cause</th>
+              <th>Immediate Corrective Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Student sees "Student Not Found"</strong></td>
+              <td>URL token corrupted or student removed from class roster.</td>
+              <td>Open Link Dispatcher &rarr; locate student row &rarr; click "Copy Link" to re-issue private URL.</td>
+            </tr>
+            <tr>
+              <td><strong>All WebPA ratios evaluate to 1.000</strong></td>
+              <td>Reviews not yet submitted, or team size equals 1.</td>
+              <td>WebPA scaling requires completed peer reviews in groups of ≥ 2 students.</td>
+            </tr>
+            <tr>
+              <td><strong>Email dispatch fails</strong></td>
+              <td>Invalid Brevo API key, or free daily limit (300) reached.</td>
+              <td>Verify API key in Settings &rarr; Email, or use "Copy All Links" for manual LMS distribution.</td>
+            </tr>
+            <tr>
+              <td><strong>Accidental deletion of a student or rubric</strong></td>
+              <td>Accidental delete button click.</td>
+              <td>Press <code>Ctrl + Z</code> immediately or click "Undo" on the 30-second safety net toast.</td>
+            </tr>
+            <tr>
+              <td><strong>Spreadsheet import missing columns</strong></td>
+              <td>Non-standard column header naming in CSV.</td>
+              <td>Use Column Mapper modal to assign columns, or rename headers to Name, Email, Group.</td>
+            </tr>
+            <tr>
+              <td><strong>Rubric weight alert (≠ 100%)</strong></td>
+              <td>Manual weight changes left total unequal to 100.</td>
+              <td>Click "Auto-Balance Weights" button in Rubric settings to normalize proportionally.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Frequently Asked Operational Scenarios</h3>
+
+      <div class="card" style="margin-bottom: 12px;">
+        <div class="card-title">Q1: How should I handle a student who dropped out or stopped attending mid-semester?</div>
+        <div class="card-desc">
+          Navigate to Section 1 (Roster), locate the inactive student, and remove them from the active team. If teammates have already evaluated this student, their evaluations of the departing student are safely preserved in audit records while the active team's WebPA denominator automatically rescales across the remaining enrolled students, ensuring remaining team members suffer zero mathematical penalty.
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 12px;">
+        <div class="card-title">Q2: What is the recommended WebPA approach for 2-person groups (dyads)?</div>
+        <div class="card-desc">
+          In a 2-person team, each student is evaluated by only one peer. A single disgruntled or biased student could disproportionately influence their partner's mark. In dyads, instructors are strongly advised to set the <strong>Fudge Weight slider to a conservative 15%–25%</strong> (<span class="math-eq"><span class="math-var">f</span> ≤ 0.25</span>) or review qualitative comments personally before releasing individual grades. For capstone projects, 3–6 students per group is the ideal psychometric cohort size.
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 12px;">
+        <div class="card-title">Q3: How do I defend scaled individual grades during student grade appeals?</div>
+        <div class="card-desc">
+          PeerLens equips instructors with an airtight audit trail. During grade consultations, open the student's <strong>Individual PDF Report Card</strong> or <strong>Johari Perception Radar</strong>. You can demonstrate that the final mark is not subjective instructor bias, but the normalized mathematical consensus of multiple teammates across five validated rubric dimensions, corroborated by time-stamped peer feedback comments.
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 12px;">
+        <div class="card-title">Q4: Are peer reviews truly confidential, and can students see who wrote what?</div>
+        <div class="card-desc">
+          PeerLens enforces a <strong>Double-Blind Confidentiality Protocol</strong> for students. When student report cards or feedback summaries are generated, all individual reviewer names and student IDs are stripped; qualitative comments are presented in randomized order. Only course convenors and authorized instructors in the Admin Dashboard have administrative privileges to audit who authored specific scores.
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAPTER 17: Governance & Privacy -->
+    <section class="chapter-block" id="ch17-governance">
+      <div class="chapter-header">
+        <span class="chapter-tag">Part 5: LMS &amp; Configuration</span>
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          17. Privacy, GDPR &amp; Data Governance
+        </h2>
+      </div>
+
+      <p>
+        PeerLens is built on <strong>privacy-by-design</strong> principles:
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Client-Side Local Sovereignty</div>
+          <div class="card-desc">All student rosters, grades, and reviews reside in browser storage. No data is sent to external servers unless the instructor explicitly configures their own Firebase project.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">GDPR Compliance &amp; Purge</div>
+          <div class="card-desc">Instructors maintain full control. Course rosters can be exported or purged instantly via "Reset All Data". No tracking cookies or advertising telemetry are used.</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-subtle); text-align: center;">
+        PeerLens Documentation &amp; Institutional Operational Manual &bull; Educational Peer Assessment Platform
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  // ── Reading Progress Bar ──────────────────────────────
+  window.addEventListener('scroll', () => {
+    const el = document.documentElement;
+    const progress = (el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100;
+    const bar = document.getElementById('reading-progress');
+    if (bar) bar.style.width = Math.min(100, Math.max(0, progress)) + '%';
+  });
+
+  // ── TOC Toggle & Persistence ──────────────────────────
+  function toggleTOC() {
+    const isCollapsed = document.body.classList.toggle('toc-collapsed');
+    try {
+      localStorage.setItem('peerlens_doc_toc_collapsed', isCollapsed ? '1' : '0');
+    } catch(e) {}
+  }
+
+  // Restore TOC
+  try {
+    if (localStorage.getItem('peerlens_doc_toc_collapsed') === '1') {
+      document.body.classList.add('toc-collapsed');
+    }
+  } catch(e) {}
+
+  // ── Theme Switcher ────────────────────────────────────
+  function toggleTheme() {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme') || 'light';
+    const next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    const text = document.getElementById('theme-text');
+    if (text) text.textContent = next === 'dark' ? 'Light' : 'Dark';
+    try {
+      localStorage.setItem('peerlens_doc_theme', next);
+    } catch(e) {}
+  }
+
+  // Restore Theme
+  try {
+    const saved = localStorage.getItem('peerlens_doc_theme');
+    if (saved) {
+      document.documentElement.setAttribute('data-theme', saved);
+      const text = document.getElementById('theme-text');
+      if (text) text.textContent = saved === 'dark' ? 'Light' : 'Dark';
+    }
+  } catch(e) {}
+
+  // ── Keyboard Shortcuts (Ctrl+B to toggle TOC, / to search, Ctrl+T for theme) ──
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'b' || e.key === '\\')) {
+      e.preventDefault();
+      toggleTOC();
+    } else if (e.key === '/' && document.activeElement?.id !== 'manual-search') {
+      e.preventDefault();
+      document.getElementById('manual-search')?.focus();
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
+      e.preventDefault();
+      toggleTheme();
+    }
+  });
+
+  // ── Sidebar Search Filter ─────────────────────────────
+  function filterSidebar() {
+    const query = document.getElementById('manual-search').value.toLowerCase();
+    const items = document.querySelectorAll('.nav-item');
+    items.forEach(item => {
+      const match = item.textContent.toLowerCase().includes(query);
+      item.style.display = match ? 'flex' : 'none';
+    });
+  }
+
+  // ── Active Link Observer ──────────────────────────────
+  const sections = document.querySelectorAll('section.chapter-block[id]');
+  const navItems = document.querySelectorAll('.nav-item');
+
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navItems.forEach(link => link.classList.remove('active'));
+        const activeLink = document.querySelector(`.nav-item[href="#${entry.target.id}"]`);
+        if (activeLink) activeLink.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-15% 0px -70% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>

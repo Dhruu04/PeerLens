@@ -205,7 +205,7 @@ export function generateResultsCSV(classData: ClassData): string {
     const baseMark = storedBase ? Number(storedBase) : 100;
     const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
 
-    const { ratio, adjustedGrade } = calculateStudentWebPAScore(
+    const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(
       student.id,
       student.groupName,
       classData,
@@ -230,7 +230,7 @@ export function generateResultsCSV(classData: ClassData): string {
       ...fieldAveragesList,
       ...fieldStdDevsList,
       metrics.reviewsReceived > 0 ? `${ratio.toFixed(2)}x` : 'N/A',
-      metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${baseMark}` : 'N/A',
+      metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : 'N/A',
       metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A',
       escapeCSVValue(praiseSummary)
     ];
@@ -539,7 +539,7 @@ export function exportClassroomToExcel(classData: ClassData): void {
       .map(([tag, count]) => `${tag} (x${count})`)
       .join(' | ') || 'None';
 
-    const { ratio, adjustedGrade } = calculateStudentWebPAScore(
+    const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(
       student.id,
       student.groupName,
       classData,
@@ -568,7 +568,7 @@ export function exportClassroomToExcel(classData: ClassData): void {
       ...fieldAveragesList,
       ...fieldStdDevsList,
       metrics.reviewsReceived > 0 ? `${ratio.toFixed(2)}x` : 'N/A',
-      metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${baseMark}` : 'N/A',
+      metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : 'N/A',
       metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A',
       scaledScoreStr,
       praiseSummary
@@ -988,5 +988,546 @@ export function exportRosterToExcel(classData: ClassData): void {
   XLSX.utils.book_append_sheet(wb, ws, 'Student Roster');
   XLSX.writeFile(wb, `${safeName}_roster.xlsx`);
 }
+
+/* =========================================================================
+   LMS INTEGRATION & SMART EXPORT FORMATS (Canvas, Blackboard, Moodle, D2L)
+   ========================================================================= */
+
+export type LmsPlatform = 'canvas' | 'blackboard' | 'moodle' | 'brightspace' | 'custom';
+export type LmsScoreType = 'calibrated' | 'scale' | 'percent';
+
+export interface LmsExportFilterOptions {
+  teamFilter?: string; // 'all' or team group name
+  statusFilter?: 'all' | 'submitted' | 'pending';
+}
+
+export type CustomLmsColumnField =
+  | 'student_id'
+  | 'first_name'
+  | 'last_name'
+  | 'full_name_first_last'
+  | 'full_name_last_first'
+  | 'email'
+  | 'username'
+  | 'group_name'
+  | 'score'
+  | 'multiplier'
+  | 'submission_status'
+  | 'university'
+  | 'static_text';
+
+export interface CustomLmsColumn {
+  id: string;
+  field: CustomLmsColumnField;
+  header: string;
+  staticValue?: string;
+}
+
+export interface CustomLmsConfig {
+  name: string;
+  columns: CustomLmsColumn[];
+  delimiter: ',' | ';' | '\t';
+  includeHeader: boolean;
+  quoteValues: boolean;
+  includePointsPossibleRow?: boolean;
+}
+
+export const DEFAULT_CUSTOM_LMS_CONFIG: CustomLmsConfig = {
+  name: 'Custom SIS / LMS Format',
+  delimiter: ',',
+  includeHeader: true,
+  quoteValues: false,
+  includePointsPossibleRow: false,
+  columns: [
+    { id: 'c1', field: 'student_id', header: 'Student ID' },
+    { id: 'c2', field: 'full_name_last_first', header: 'Student Name' },
+    { id: 'c3', field: 'email', header: 'Email' },
+    { id: 'c4', field: 'group_name', header: 'Team' },
+    { id: 'c5', field: 'score', header: 'Peer Assessment Grade' }
+  ]
+};
+
+/**
+ * Filters classroom students by group/team and evaluation submission status.
+ */
+export function filterStudentsForLms(
+  students: Student[],
+  filters?: LmsExportFilterOptions
+): Student[] {
+  if (!filters) return students;
+  return students.filter((s) => {
+    if (filters.teamFilter && filters.teamFilter !== 'all' && s.groupName !== filters.teamFilter) {
+      return false;
+    }
+    if (filters.statusFilter === 'submitted' && !s.submitted) {
+      return false;
+    }
+    if (filters.statusFilter === 'pending' && s.submitted) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Splits a student's full name into first and last name components.
+ * Handles "First Last", "First Middle Last", and "Last, First" formats safely.
+ */
+export function splitStudentName(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = (fullName || '').trim();
+  if (!trimmed) return { firstName: 'Student', lastName: '' };
+
+  if (trimmed.includes(',')) {
+    const parts = trimmed.split(',').map((p) => p.trim());
+    return {
+      lastName: parts[0] || '',
+      firstName: parts.slice(1).join(' ') || ''
+    };
+  }
+
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: '' };
+  }
+  const lastName = parts[parts.length - 1];
+  const firstName = parts.slice(0, -1).join(' ');
+  return { firstName, lastName };
+}
+
+/**
+ * Calculates student score according to user-selected score type
+ * (WebPA calibrated grade, rubric max scale score, or percentage).
+ */
+export function getStudentLmsScore(
+  student: Student,
+  classData: ClassData,
+  scoreType: LmsScoreType = 'calibrated',
+  baseMark: number = 100,
+  fudgeWeight: number = 0.5
+): number {
+  if (scoreType === 'scale') {
+    const maxScale = getTargetScale(classData);
+    const metrics = calculateStudentMetrics(student, classData);
+    if (metrics.overallPercentage !== null) {
+      return Number(((metrics.overallPercentage / 100) * maxScale).toFixed(2));
+    }
+    return 0;
+  }
+
+  if (scoreType === 'percent') {
+    const metrics = calculateStudentMetrics(student, classData);
+    if (metrics.overallPercentage !== null) {
+      return Number(metrics.overallPercentage.toFixed(2));
+    }
+    return 0;
+  }
+
+  // Default: WebPA calibrated mark
+  const { adjustedGrade } = calculateStudentWebPAScore(
+    student.id,
+    student.groupName,
+    classData,
+    baseMark,
+    fudgeWeight
+  );
+  return adjustedGrade;
+}
+
+/**
+ * Extracts student login username from email or generates safe username.
+ */
+function getStudentUsername(student: Student): string {
+  if (student.email && student.email.includes('@')) {
+    return student.email.split('@')[0];
+  }
+  return student.id.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase();
+}
+
+/**
+ * Generates official Canvas LMS Gradebook compliant CSV string.
+ * Meets Canvas CSV import specification:
+ * - Row 1: Student,ID,SIS User ID,SIS Login ID,Section,Peer Assessment Final Score
+ * - Row 2: "    Points Possible",,,,,<pointsPossible>
+ * - Row 3+: "Last, First",ID,SIS User ID,SIS Login ID,Section,Score
+ */
+export function generateCanvasLMSCSV(
+  classData: ClassData,
+  scoreType: LmsScoreType = 'calibrated',
+  filters?: LmsExportFilterOptions
+): string {
+  const storedBase = localStorage.getItem('peer_base_grade');
+  const storedFudge = localStorage.getItem('peer_fudge_weight');
+  const baseMark = storedBase ? Number(storedBase) : 100;
+  const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
+
+  const targetStudents = filterStudentsForLms(classData.students, filters);
+
+  const pointsPossible = scoreType === 'scale' 
+    ? getTargetScale(classData) 
+    : (scoreType === 'percent' ? 100 : baseMark);
+
+  const headers = [
+    'Student',
+    'ID',
+    'SIS User ID',
+    'SIS Login ID',
+    'Section',
+    'Peer Assessment Final Score'
+  ];
+
+  // Canvas requires the "    Points Possible" row
+  const pointsRow = [
+    '    Points Possible',
+    '',
+    '',
+    '',
+    '',
+    String(pointsPossible)
+  ];
+
+  const dataRows = targetStudents.map((s) => {
+    const { firstName, lastName } = splitStudentName(s.name);
+    const canvasName = lastName ? `${lastName}, ${firstName}` : firstName;
+    const username = getStudentUsername(s);
+    const score = getStudentLmsScore(s, classData, scoreType, baseMark, fudgeWeight);
+
+    return [
+      escapeCSVValue(canvasName),
+      escapeCSVValue(s.id),
+      escapeCSVValue(s.id),
+      escapeCSVValue(username),
+      escapeCSVValue(s.groupName || classData.name || 'Default Section'),
+      String(score)
+    ];
+  });
+
+  return [headers.join(','), pointsRow.join(','), ...dataRows.map((r) => r.join(','))].join('\r\n');
+}
+
+/**
+ * Generates official Blackboard Learn Grade Center compliant CSV string.
+ * Columns: "Last Name","First Name","Username","Student ID","Peer Evaluation [Total Pts: <baseMark>]"
+ */
+export function generateBlackboardCSV(
+  classData: ClassData,
+  scoreType: LmsScoreType = 'calibrated',
+  filters?: LmsExportFilterOptions
+): string {
+  const storedBase = localStorage.getItem('peer_base_grade');
+  const storedFudge = localStorage.getItem('peer_fudge_weight');
+  const baseMark = storedBase ? Number(storedBase) : 100;
+  const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
+
+  const targetStudents = filterStudentsForLms(classData.students, filters);
+
+  const totalPts = scoreType === 'scale' 
+    ? getTargetScale(classData) 
+    : (scoreType === 'percent' ? 100 : baseMark);
+
+  const gradeColumnName = `Peer Evaluation [Total Pts: ${totalPts}]`;
+
+  const headers = [
+    'Last Name',
+    'First Name',
+    'Username',
+    'Student ID',
+    gradeColumnName
+  ];
+
+  const dataRows = targetStudents.map((s) => {
+    const { firstName, lastName } = splitStudentName(s.name);
+    const username = getStudentUsername(s);
+    const score = getStudentLmsScore(s, classData, scoreType, baseMark, fudgeWeight);
+
+    return [
+      escapeCSVValue(lastName || firstName),
+      escapeCSVValue(firstName),
+      escapeCSVValue(username),
+      escapeCSVValue(s.id),
+      String(score)
+    ];
+  });
+
+  return [headers.map(escapeCSVValue).join(','), ...dataRows.map((r) => r.join(','))].join('\r\n');
+}
+
+/**
+ * Generates official Moodle Grader report compliant CSV string.
+ * Columns: "First name","Last name","ID number","Email address","Peer Assessment (Real)"
+ */
+export function generateMoodleCSV(
+  classData: ClassData,
+  scoreType: LmsScoreType = 'calibrated',
+  filters?: LmsExportFilterOptions
+): string {
+  const storedBase = localStorage.getItem('peer_base_grade');
+  const storedFudge = localStorage.getItem('peer_fudge_weight');
+  const baseMark = storedBase ? Number(storedBase) : 100;
+  const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
+
+  const targetStudents = filterStudentsForLms(classData.students, filters);
+
+  const headers = [
+    'First name',
+    'Last name',
+    'ID number',
+    'Email address',
+    'Peer Assessment (Real)'
+  ];
+
+  const dataRows = targetStudents.map((s) => {
+    const { firstName, lastName } = splitStudentName(s.name);
+    const score = getStudentLmsScore(s, classData, scoreType, baseMark, fudgeWeight);
+
+    return [
+      escapeCSVValue(firstName),
+      escapeCSVValue(lastName || firstName),
+      escapeCSVValue(s.id),
+      escapeCSVValue(s.email || ''),
+      String(score)
+    ];
+  });
+
+  return [headers.map(escapeCSVValue).join(','), ...dataRows.map((r) => r.join(','))].join('\r\n');
+}
+
+/**
+ * Generates official Brightspace D2L Gradebook compliant CSV string.
+ * Columns: "OrgDefinedId","Username","Peer Assessment Points Grade","End-of-Line Indicator"
+ * OrgDefinedId rows are prefixed with "#" per D2L standard.
+ */
+export function generateBrightspaceCSV(
+  classData: ClassData,
+  scoreType: LmsScoreType = 'calibrated',
+  filters?: LmsExportFilterOptions
+): string {
+  const storedBase = localStorage.getItem('peer_base_grade');
+  const storedFudge = localStorage.getItem('peer_fudge_weight');
+  const baseMark = storedBase ? Number(storedBase) : 100;
+  const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
+
+  const targetStudents = filterStudentsForLms(classData.students, filters);
+
+  const headers = [
+    'OrgDefinedId',
+    'Username',
+    'Peer Assessment Points Grade',
+    'End-of-Line Indicator'
+  ];
+
+  const dataRows = targetStudents.map((s) => {
+    const username = getStudentUsername(s);
+    const score = getStudentLmsScore(s, classData, scoreType, baseMark, fudgeWeight);
+
+    return [
+      escapeCSVValue(`#${s.id}`),
+      escapeCSVValue(username),
+      String(score),
+      '#'
+    ];
+  });
+
+  return [headers.map(escapeCSVValue).join(','), ...dataRows.map((r) => r.join(','))].join('\r\n');
+}
+
+/**
+ * Generates custom LMS CSV based on user-defined column order, custom headers, and delimiters.
+ */
+export function generateCustomLMSCSV(
+  classData: ClassData,
+  scoreType: LmsScoreType = 'calibrated',
+  customConfig: CustomLmsConfig = DEFAULT_CUSTOM_LMS_CONFIG,
+  filters?: LmsExportFilterOptions
+): string {
+  const storedBase = localStorage.getItem('peer_base_grade');
+  const storedFudge = localStorage.getItem('peer_fudge_weight');
+  const baseMark = storedBase ? Number(storedBase) : 100;
+  const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
+
+  const targetStudents = filterStudentsForLms(classData.students, filters);
+  const delimiter = customConfig.delimiter || ',';
+
+  const formatCell = (val: string): string => {
+    if (customConfig.quoteValues) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    if (val.includes(delimiter) || val.includes('"') || val.includes('\n') || val.includes('\r')) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val;
+  };
+
+  const lines: string[] = [];
+
+  // Header row
+  if (customConfig.includeHeader) {
+    const headers = customConfig.columns.map((c) => formatCell(c.header || c.field));
+    lines.push(headers.join(delimiter));
+  }
+
+  // Optional Points Possible row
+  if (customConfig.includePointsPossibleRow) {
+    const pointsPossible = scoreType === 'scale' 
+      ? getTargetScale(classData) 
+      : (scoreType === 'percent' ? 100 : baseMark);
+
+    const pointsRow = customConfig.columns.map((c) => {
+      if (c.field === 'score') return formatCell(String(pointsPossible));
+      if (['student_id', 'first_name', 'full_name_first_last', 'full_name_last_first'].includes(c.field)) {
+        return formatCell('Points Possible');
+      }
+      return '';
+    });
+    lines.push(pointsRow.join(delimiter));
+  }
+
+  // Data rows
+  targetStudents.forEach((s) => {
+    const { firstName, lastName } = splitStudentName(s.name);
+    const score = getStudentLmsScore(s, classData, scoreType, baseMark, fudgeWeight);
+
+    const rowCells = customConfig.columns.map((col) => {
+      let val = '';
+      switch (col.field) {
+        case 'student_id':
+          val = s.id;
+          break;
+        case 'first_name':
+          val = firstName;
+          break;
+        case 'last_name':
+          val = lastName || firstName;
+          break;
+        case 'full_name_first_last':
+          val = `${firstName} ${lastName}`.trim() || s.name;
+          break;
+        case 'full_name_last_first':
+          val = lastName ? `${lastName}, ${firstName}` : s.name;
+          break;
+        case 'email':
+          val = s.email || '';
+          break;
+        case 'username':
+          val = getStudentUsername(s);
+          break;
+        case 'group_name':
+          val = s.groupName || 'Unassigned';
+          break;
+        case 'score':
+          val = String(score);
+          break;
+        case 'multiplier':
+          const { ratio } = calculateStudentWebPAScore(s.id, s.groupName, classData, baseMark, fudgeWeight);
+          val = `${ratio.toFixed(2)}x`;
+          break;
+        case 'submission_status':
+          val = s.submitted ? 'Submitted' : 'Pending';
+          break;
+        case 'university':
+          val = s.university || s.currentUniversity || s.originalUniversity || 'N/A';
+          break;
+        case 'static_text':
+          val = col.staticValue || '';
+          break;
+        default:
+          val = '';
+      }
+      return formatCell(val);
+    });
+
+    lines.push(rowCells.join(delimiter));
+  });
+
+  return lines.join('\r\n');
+}
+
+/**
+ * Direct file download trigger for selected LMS platform with optional filtering and custom schema.
+ */
+export function exportLMSGradebook(
+  platform: LmsPlatform,
+  classData: ClassData,
+  scoreType: LmsScoreType = 'calibrated',
+  filters?: LmsExportFilterOptions,
+  customConfig?: CustomLmsConfig
+): void {
+  const safeClassName = classData.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const teamSuffix = filters?.teamFilter && filters.teamFilter !== 'all'
+    ? `_${filters.teamFilter.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+    : '';
+
+  let content = '';
+  let filename = '';
+
+  switch (platform) {
+    case 'canvas':
+      content = generateCanvasLMSCSV(classData, scoreType, filters);
+      filename = `${safeClassName}${teamSuffix}_canvas_gradebook.csv`;
+      break;
+    case 'blackboard':
+      content = generateBlackboardCSV(classData, scoreType, filters);
+      filename = `${safeClassName}${teamSuffix}_blackboard_gradebook.csv`;
+      break;
+    case 'moodle':
+      content = generateMoodleCSV(classData, scoreType, filters);
+      filename = `${safeClassName}${teamSuffix}_moodle_gradebook.csv`;
+      break;
+    case 'brightspace':
+      content = generateBrightspaceCSV(classData, scoreType, filters);
+      filename = `${safeClassName}${teamSuffix}_brightspace_d2l_gradebook.csv`;
+      break;
+    case 'custom':
+      content = generateCustomLMSCSV(classData, scoreType, customConfig || DEFAULT_CUSTOM_LMS_CONFIG, filters);
+      const ext = customConfig?.delimiter === '\t' ? 'tsv' : 'csv';
+      filename = `${safeClassName}${teamSuffix}_custom_gradebook.${ext}`;
+      break;
+  }
+
+  const mimeType = customConfig?.delimiter === '\t'
+    ? 'text/tab-separated-values;charset=utf-8;'
+    : 'text/csv;charset=utf-8;';
+
+  downloadFileContent(content, filename, mimeType);
+}
+
+/**
+ * Returns header names and the first few preview rows for interactive in-app preview table with filtering.
+ */
+export function generateLMSPreview(
+  platform: LmsPlatform,
+  classData: ClassData,
+  scoreType: LmsScoreType = 'calibrated',
+  filters?: LmsExportFilterOptions,
+  customConfig?: CustomLmsConfig,
+  limit: number = 4
+): { headers: string[]; rows: string[][]; totalFilteredCount: number } {
+  let csv = '';
+  switch (platform) {
+    case 'canvas':
+      csv = generateCanvasLMSCSV(classData, scoreType, filters);
+      break;
+    case 'blackboard':
+      csv = generateBlackboardCSV(classData, scoreType, filters);
+      break;
+    case 'moodle':
+      csv = generateMoodleCSV(classData, scoreType, filters);
+      break;
+    case 'brightspace':
+      csv = generateBrightspaceCSV(classData, scoreType, filters);
+      break;
+    case 'custom':
+      csv = generateCustomLMSCSV(classData, scoreType, customConfig || DEFAULT_CUSTOM_LMS_CONFIG, filters);
+      break;
+  }
+
+  const matrix = parseCSVToMatrix(csv);
+  const totalFilteredCount = filterStudentsForLms(classData.students, filters).length;
+  if (matrix.length === 0) return { headers: [], rows: [], totalFilteredCount };
+
+  const headers = matrix[0];
+  const rows = matrix.slice(1, limit + 1);
+  return { headers, rows, totalFilteredCount };
+}
+
 
 

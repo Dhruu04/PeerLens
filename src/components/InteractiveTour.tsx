@@ -5,15 +5,17 @@ import {
   Sparkles, QrCode, Sliders, Users, Award, Mail,
   Layers, Lightbulb, ShieldCheck, Maximize2, Search,
   Settings, Activity, BookOpen, Download, RotateCcw,
-  MousePointer, Play, HelpCircle, Check
+  MousePointer, Play, HelpCircle, Check, Compass,
+  Calculator, FileText
 } from 'lucide-react';
+import { type FeatureToggles, loadFeatureToggles } from '../utils/featurePreferences';
 
 export interface TourStep {
   id: string;
   targetSelector: string;
-  stage: 'Workspace Setup' | 'Roster & Teams' | 'Rubrics & Simulator' | 'Analytics & Reports';
-  stageNumber: number;
-  totalStages: number;
+  stage: string;
+  stageNumber?: number;
+  totalStages?: number;
   title: string;
   description: string;
   actionPrompt?: string;
@@ -25,54 +27,56 @@ export interface TourStep {
   };
   proTip?: string;
   hotkey?: string;
-  tab?: 'roster' | 'grading' | 'results' | 'automation' | 'cloud';
+  tab?: 'hub' | 'roster' | 'grading' | 'results' | 'automation' | 'cloud';
   preferredPlacement?: 'top' | 'bottom' | 'left' | 'right' | 'corner';
   icon: React.ReactNode;
+  featureKey?: keyof FeatureToggles;
 }
 
 interface InteractiveTourProps {
   isOpen: boolean;
   onClose: () => void;
-  onNavigateTab?: (tab: 'roster' | 'grading' | 'results' | 'automation' | 'cloud') => void;
+  onNavigateTab?: (tab: 'hub' | 'roster' | 'grading' | 'results' | 'automation' | 'cloud') => void;
   activeTab?: string;
   customStepIds?: string[] | null;
   onRestoreSnapshot?: () => void;
   hasSnapshot?: boolean;
   onExecuteDemoStep?: (stepId: string) => void;
+  featureToggles?: FeatureToggles;
 }
 
 export const TOUR_STEPS: TourStep[] = [
-  // --- STAGE 1: WORKSPACE SETUP ---
+  // ==========================================
+  // --- STAGE 1: TOP NAVIGATION & SETUP ---
+  // ==========================================
   {
     id: 'class_header',
     targetSelector: '[data-tour="class-header"]',
-    stage: 'Workspace Setup',
-    stageNumber: 1,
-    totalStages: 4,
+    stage: 'Top Navigation & Setup',
+    featureKey: 'showClassPicker',
     title: 'Active Classroom & Course Section',
-    description: 'Select your active course section, 1-click copy your Classroom ID, and monitor enrolled student and team totals in real time.',
-    actionPrompt: 'Click the Classroom ID pill to copy it to your clipboard for student distribution.',
+    description: 'Switch active classrooms, find your 1-click Classroom ID copy pill inside the dropdown, and manage course sections.',
+    actionPrompt: 'Open the dropdown to view your classroom options and copy your unique Classroom ID.',
     howToProceed: [
-      'Locate the Course Header bar with active student and team counters.',
-      'Click the "Class ID" pill badge to copy your unique classroom code.',
-      'Distribute this code to students who register through the mobile portal.'
+      'Click the Course Header dropdown to switch active sections.',
+      'Notice the "Copy Class ID" button right inside the dropdown menu.',
+      'Distribute the code to students self-enrolling via smartphone.'
     ],
     demoPreview: {
       actionLabel: 'Copy Classroom ID to Clipboard',
       description: 'Instantly copies classroom code for syllabus and mobile registration.',
       expectedResult: 'Confirmation toast: "Classroom ID copied to clipboard!"'
     },
-    proTip: 'Click the Classroom ID badge to instantly copy it for student distribution.',
-    tab: 'roster',
+    proTip: 'The Classroom ID is neatly embedded inside the class dropdown to keep the top navigation bar clean and uncluttered.',
+    tab: 'hub',
     preferredPlacement: 'bottom',
     icon: <BookOpen size={17} className="text-primary" />
   },
   {
     id: 'workspace_switcher',
     targetSelector: '[data-tour="workspace-selector"]',
-    stage: 'Workspace Setup',
-    stageNumber: 1,
-    totalStages: 4,
+    stage: 'Top Navigation & Setup',
+    featureKey: 'showProfilePill',
     title: 'Multi-Workspace Profile Hub',
     description: 'Switch between instructor workspaces or create isolated class profiles for different academic courses, terms, or teaching assistants.',
     actionPrompt: 'Click the workspace selector dropdown to see how professor profiles isolate classes.',
@@ -88,21 +92,20 @@ export const TOUR_STEPS: TourStep[] = [
     },
     proTip: 'Profiles isolate student records, rubrics, and settings completely.',
     hotkey: 'Click dropdown',
-    tab: 'roster',
+    tab: 'hub',
     preferredPlacement: 'bottom',
     icon: <Layers size={17} className="text-indigo" />
   },
   {
     id: 'command_palette',
     targetSelector: '[data-tour="command-palette-btn"]',
-    stage: 'Workspace Setup',
-    stageNumber: 1,
-    totalStages: 4,
+    stage: 'Top Navigation & Setup',
+    featureKey: 'showCommandSearch',
     title: 'Quick Command Palette & Finder',
-    description: 'Instantly find any student record, jump across tabs, filter teams, or trigger classroom operations with keyboard speed.',
+    description: 'Instantly find any student record, jump across sections, filter teams, or trigger classroom operations with keyboard speed.',
     actionPrompt: 'Try pressing Ctrl+K (or Cmd+K) on your keyboard to test opening the Finder.',
     howToProceed: [
-      'Press Ctrl+K (or Cmd+K on macOS) or click the Search icon.',
+      'Press Ctrl+K (or Cmd+K on macOS) or click the Search bar.',
       'Type any student name, team name, or navigation command.',
       'Press Enter to immediately jump to the student or execute the action.'
     ],
@@ -113,16 +116,38 @@ export const TOUR_STEPS: TourStep[] = [
     },
     proTip: 'Press Ctrl+K (or Cmd+K) anywhere in the application to launch.',
     hotkey: 'Ctrl + K / ⌘K',
-    tab: 'roster',
+    tab: 'hub',
     preferredPlacement: 'bottom',
     icon: <Search size={17} className="text-primary" />
   },
   {
+    id: 'guide_center_btn',
+    targetSelector: '[data-tour="guide-center-btn"]',
+    stage: 'Top Navigation & Setup',
+    featureKey: 'showGuideButton',
+    title: 'Academic Guidance Center',
+    description: 'Access complete algorithm manuals (WebPA, Johari Window, Simulated Annealing), 5 focused spotlight walkthroughs, and an exhaustive 26-item feature catalog with live search.',
+    actionPrompt: 'Click the Academic Guidance button to explore the system manual or run focused spotlight tours.',
+    howToProceed: [
+      'Click the Guidance Center compass button in the top bar.',
+      'Browse the 3 tabs: System Manual, Spotlight Tours, and Feature Catalog.',
+      'Search any grading topic (e.g., "WebPA", "Johari", "Collusion") for formulas & tips.'
+    ],
+    demoPreview: {
+      actionLabel: 'Open Academic Guidance Center',
+      description: 'Launches full documentation hub with formulas, guides, and feature cards.',
+      expectedResult: 'Academic Guidance Center opens with searchable documentation.'
+    },
+    proTip: 'Standard Mode displays this guidance button by default so academic help is always 1 click away.',
+    tab: 'hub',
+    preferredPlacement: 'bottom',
+    icon: <Compass size={17} className="text-primary" />
+  },
+  {
     id: 'projector_mode',
     targetSelector: '[data-tour="projector-mode-btn"]',
-    stage: 'Workspace Setup',
-    stageNumber: 1,
-    totalStages: 4,
+    stage: 'Top Navigation & Setup',
+    featureKey: 'showProjectorButton',
     title: 'Fullscreen Live Projector Mode',
     description: 'Launch a privacy-safe monitor display designed for auditorium screens. Displays live QR check-ins and team diversity without exposing individual grades.',
     actionPrompt: 'Click the Projector button to preview the full-screen lecture hall display.',
@@ -137,16 +162,15 @@ export const TOUR_STEPS: TourStep[] = [
       expectedResult: 'Full-screen lecture display opens.'
     },
     proTip: 'Features a live digital clock, team filter matrix, and big QR code for lecture halls.',
-    tab: 'roster',
+    tab: 'hub',
     preferredPlacement: 'bottom',
     icon: <Maximize2 size={17} className="text-teal" />
   },
   {
     id: 'email_dispatcher',
     targetSelector: '[data-tour="email-dispatcher-btn"]',
-    stage: 'Workspace Setup',
-    stageNumber: 1,
-    totalStages: 4,
+    stage: 'Top Navigation & Setup',
+    featureKey: 'showEmailButton',
     title: 'Email Notification & Link Dispatcher',
     description: 'Distribute secure personal evaluation links to all students in 1 click using Brevo SMTP API or EmailJS adapters with live delivery progress.',
     actionPrompt: 'Click the Email button (or press E) to inspect the automated link transmitter.',
@@ -162,43 +186,163 @@ export const TOUR_STEPS: TourStep[] = [
     },
     proTip: 'Press "E" on your keyboard to quickly open the email transmitter.',
     hotkey: 'Press E',
-    tab: 'roster',
+    tab: 'hub',
     preferredPlacement: 'bottom',
     icon: <Mail size={17} className="text-primary" />
   },
   {
+    id: 'customize_view',
+    targetSelector: '[data-tour="customize-view-btn"]',
+    stage: 'Top Navigation & Setup',
+    featureKey: 'showCustomizeViewButton',
+    title: 'Customize View: Add & Remove Sections',
+    description: 'Tailor your workspace layout to match your exact teaching workflow. PeerLens features a modular interface engine: add, hide, or restore individual sections and cards at any time.',
+    actionPrompt: 'Click "Customize View" to choose between Minimal Mode, Standard Mode, Full Suite, or toggle individual cards.',
+    howToProceed: [
+      'Click the "Customize View" button in the top navigation dock.',
+      'Switch between presets: Minimal Mode (clean & focused) or Standard Mode (balanced default).',
+      'Toggle any module on or off — such as Anomaly Audit, QR Enrollment, or Johari Window.',
+      'Sections automatically expand and fill empty space when optional modules are turned off!'
+    ],
+    demoPreview: {
+      actionLabel: 'Open Interface & Modules Manager',
+      description: 'Opens modular layout settings to enable or remove sections and cards.',
+      expectedResult: 'Settings hub mounts directly to the Interface & Modules tab.'
+    },
+    proTip: 'You have complete control: hide modules you don\'t need for a clean interface, or activate advanced analytics when final grades are due.',
+    tab: 'hub',
+    preferredPlacement: 'bottom',
+    icon: <Sliders size={17} className="text-primary" />
+  },
+  {
     id: 'settings_hub',
     targetSelector: '[data-tour="settings-hub-btn"]',
-    stage: 'Workspace Setup',
-    stageNumber: 1,
-    totalStages: 4,
-    title: 'Settings & Cloud Synchronization Hub',
-    description: 'Configure real-time Firebase Cloud Sync for multi-device collaboration, custom Brevo email API keys, and customizable keyboard shortcut bindings.',
-    actionPrompt: 'Click Settings to configure multi-device Firebase cloud backup or edit shortcut keys.',
+    stage: 'Top Navigation & Setup',
+    featureKey: 'showSettingsButton',
+    title: 'Settings & System Preferences Hub',
+    description: 'Configure interface layout presets, custom keyboard shortcuts, Firebase cloud sync, and Brevo SMTP credentials in one centralized hub.',
+    actionPrompt: 'Click Settings to customize interface density or configure Firebase cloud backup.',
     howToProceed: [
       'Click the Settings gear icon in the top right.',
-      'Paste your Firebase config for real-time cloud backup across laptops/phones.',
+      'Select "Interface & Modules" to pick Minimal Mode, Standard Mode, or Full Suite.',
       'Customize hotkeys or configure Brevo SMTP credentials in the dedicated tabs.'
     ],
     demoPreview: {
-      actionLabel: 'Open Settings & Cloud Hub',
-      description: 'Manage cloud synchronization, SMTP keys, and keyboard shortcuts.',
-      expectedResult: 'Settings hub opens with Cloud Sync, Brevo, and Hotkey tabs.'
+      actionLabel: 'Open Settings Hub',
+      description: 'Manage interface density presets, cloud synchronization, and SMTP keys.',
+      expectedResult: 'Settings hub opens with Interface & Modules, Cloud Sync, and Profile tabs.'
     },
-    proTip: 'A green dot indicates that cloud sync is actively backed up to Firestore.',
+    proTip: 'Use "Customize View" in the top bar to jump straight to the Interface & Modules settings tab.',
     hotkey: 'Press S',
-    tab: 'roster',
+    tab: 'hub',
     preferredPlacement: 'bottom',
     icon: <Settings size={17} className="text-primary" />
   },
 
-  // --- STAGE 2: ROSTER & TEAMS ---
+  // ==========================================
+  // --- STAGE 2: HOME HUB NAVIGATION ---
+  // ==========================================
+  {
+    id: 'hub_enrollment',
+    targetSelector: '[data-tour="hub-enrollment-card"]',
+    stage: 'Home Hub Navigation',
+    featureKey: 'showEnrollmentCard',
+    title: 'Section 1 Hub Card: Enrollment & Teams',
+    description: 'Overview card for your classroom roster. Monitor enrolled student count, balanced teams, international diversity flags, and jump directly into Roster setup in 1 click.',
+    actionPrompt: 'Click "Open Section 1" or anywhere on the card to jump straight into Enrollment & Teams.',
+    howToProceed: [
+      'Inspect the live roster count and team breakdown meters.',
+      'Click the card or "Open Section 1" button to navigate to Section 1.',
+      'Use the quick action links for instant QR presentation or AutoGroup partitioning.'
+    ],
+    demoPreview: {
+      actionLabel: 'Jump to Section 1: Enrollment & Teams',
+      description: 'Switches directly from Home Hub to Section 1 roster workspace.',
+      expectedResult: 'Section 1 mounts with roster tables and import tools.'
+    },
+    proTip: 'When optional sections are hidden via Customize View, these cards automatically expand to fill available width.',
+    tab: 'hub',
+    preferredPlacement: 'bottom',
+    icon: <Users size={17} className="text-indigo" />
+  },
+  {
+    id: 'hub_review',
+    targetSelector: '[data-tour="hub-review-card"]',
+    stage: 'Home Hub Navigation',
+    featureKey: 'showReviewSystemCard',
+    title: 'Section 2 Hub Card: Review System',
+    description: 'Overview card for your evaluation rubrics. Monitor criteria count, 100% weight balance validation, and student mobile rating preview.',
+    actionPrompt: 'Click "Open Section 2" to jump straight into the rubric criteria & weight builder.',
+    howToProceed: [
+      'Inspect the green "Total Weightage: 100% (Balanced)" health badge.',
+      'Click "Open Section 2" to customize criteria, descriptors, or weights.',
+      'Test student mobile scoring using the built-in simulator.'
+    ],
+    demoPreview: {
+      actionLabel: 'Jump to Section 2: Review System',
+      description: 'Switches from Home Hub to Section 2 rubric builder.',
+      expectedResult: 'Section 2 mounts with accredited presets and criteria cards.'
+    },
+    proTip: 'PeerLens automatically verifies that criteria weights sum to exactly 100% before peer reviews begin.',
+    tab: 'hub',
+    preferredPlacement: 'bottom',
+    icon: <Sliders size={17} className="text-amber" />
+  },
+  {
+    id: 'hub_analytics',
+    targetSelector: '[data-tour="hub-analytics-card"]',
+    stage: 'Home Hub Navigation',
+    featureKey: 'showGradingAnalyticsCard',
+    title: 'Section 3 Hub Card: Grading & Analytics',
+    description: 'Overview card for grading results. Track cohort submission percentage, class average, WebPA factor calibration, and export reports in 1 click.',
+    actionPrompt: 'Click "Open Section 3" to inspect final grades, perception radar, and WebPA calibrator.',
+    howToProceed: [
+      'Check current submission completion rate and class mean.',
+      'Click "Open Section 3" to view the WebPA matrix and Spider Radar deck.',
+      'Generate batch PDF report cards or export formatted Excel spreadsheets.'
+    ],
+    demoPreview: {
+      actionLabel: 'Jump to Section 3: Grading & Analytics',
+      description: 'Switches from Home Hub to Section 3 calculation matrix.',
+      expectedResult: 'Section 3 mounts with WebPA Calibrator and Results Summary.'
+    },
+    proTip: 'Quickly export individual student PDF report cards or institutional Excel spreadsheets right from here.',
+    tab: 'hub',
+    preferredPlacement: 'bottom',
+    icon: <Award size={17} className="text-teal" />
+  },
+
+  // ==========================================
+  // --- STAGE 3: SECTION 1: ENROLLMENT & TEAMS ---
+  // ==========================================
+  {
+    id: 'section_roster_tab',
+    targetSelector: '[data-tour="section-roster-btn"]',
+    stage: 'Section 1: Enrollment & Teams',
+    title: 'Section 1: Enrollment & Teams Navigation',
+    description: 'This is the main workspace for managing student cohorts, auto-grouping balanced teams, and verifying mobile self-enrollment.',
+    actionPrompt: 'Click "1. Enrollment & Teams" (or press 1) to open the roster workspace.',
+    howToProceed: [
+      'Click the "1. Enrollment & Teams" tab button in the navigation switcher (or press "1").',
+      'All roster controls, import tools, and team formation studios are housed here.',
+      'Customize which cards appear in this section using the Customize View manager.'
+    ],
+    demoPreview: {
+      actionLabel: 'Switch to Section 1 Workspace',
+      description: 'Mounts Section 1 Roster & AutoGroup Studio.',
+      expectedResult: 'Section 1 mounts with self-enrollment, quick actions, and roster table.'
+    },
+    proTip: 'Press "1" on your keyboard anytime to jump straight to Section 1.',
+    hotkey: 'Press 1',
+    tab: 'roster',
+    preferredPlacement: 'bottom',
+    icon: <Users size={17} className="text-indigo" />
+  },
   {
     id: 'self_enrollment',
     targetSelector: '[data-tour="self-enrollment-card"]',
-    stage: 'Roster & Teams',
-    stageNumber: 2,
-    totalStages: 4,
+    stage: 'Section 1: Enrollment & Teams',
+    featureKey: 'showSelfEnrollmentCard',
     title: '1-Click Student Self-Enrollment',
     description: 'Students scan this QR code or use the direct join link on their smartphones to register instantly with duplicate name/email prevention.',
     actionPrompt: 'Click "Open QR Presentation Mode" to see the full-screen mobile check-in code.',
@@ -220,10 +364,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'quick_actions',
     targetSelector: '[data-tour="quick-actions-card"]',
-    stage: 'Roster & Teams',
-    stageNumber: 2,
-    totalStages: 4,
-    title: 'Quick Actions & Sample Generator',
+    stage: 'Section 1: Enrollment & Teams',
+    featureKey: 'showQuickActionsCard',
+    title: 'Quick Actions & 100 Demo Cohort',
     description: 'Add individual students, populate the classroom with 100 diverse demo students across 35+ countries, or download roster spreadsheets.',
     actionPrompt: 'Click "100 Demo Sample" right now to populate your classroom with 100 diverse students across 35 countries!',
     howToProceed: [
@@ -244,9 +387,8 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'import_wizard',
     targetSelector: '[data-tour="import-wizard-card"]',
-    stage: 'Roster & Teams',
-    stageNumber: 2,
-    totalStages: 4,
+    stage: 'Section 1: Enrollment & Teams',
+    featureKey: 'showImportWizardCard',
     title: 'Smart Roster Import Wizard',
     description: 'Bulk onboard student cohorts from Excel (.xlsx), PDF, CSV, or clipboard text with intelligent automatic header column mapping.',
     actionPrompt: 'Click "Open Onboarding Wizard" or drop a spreadsheet onto the dropzone.',
@@ -268,10 +410,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'autogroup_studio',
     targetSelector: '[data-tour="autogroup-studio"]',
-    stage: 'Roster & Teams',
-    stageNumber: 2,
-    totalStages: 4,
-    title: 'Intelligent Auto-Group & Diversity Studio',
+    stage: 'Section 1: Enrollment & Teams',
+    featureKey: 'showAutoGroupStudio',
+    title: 'Intelligent AutoGroup & Diversity Studio',
     description: 'Partition students into balanced teams by team size or count with automated gender parity, nationality mix, and CEFR English balancing.',
     actionPrompt: 'Select a Balancing Strategy from the dropdown and click "Re-Shuffle" to see team diversity synergy compute!',
     howToProceed: [
@@ -292,15 +433,14 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'classroom_roster',
     targetSelector: '[data-tour="classroom-roster-table"]',
-    stage: 'Roster & Teams',
-    stageNumber: 2,
-    totalStages: 4,
-    title: 'Classroom Roster & Duplicate Audit',
-    description: 'Search, filter, and manage enrolled students. Real-time audit flags alert you if students enter duplicate names or emails.',
+    stage: 'Section 1: Enrollment & Teams',
+    featureKey: 'showRosterTable',
+    title: 'Classroom Roster & Bulk Actions',
+    description: 'Search, filter, and manage enrolled students with the multi-select bulk actions bar. Real-time audit flags alert you if duplicate names or emails are detected.',
     actionPrompt: 'Try typing in the search box or click student checkboxes to test bulk management.',
     howToProceed: [
       'Type any keyword in the search bar to filter by student name, degree, or team.',
-      'Click checkboxes to perform bulk actions (e.g. bulk team assignment or deletion).',
+      'Click checkboxes to perform bulk actions (bulk team assignment or deletion).',
       'Look for amber audit badges that alert you to duplicate email registrations.'
     ],
     demoPreview: {
@@ -314,27 +454,27 @@ export const TOUR_STEPS: TourStep[] = [
     icon: <ShieldCheck size={17} className="text-primary" />
   },
 
-  // --- STAGE 3: RUBRICS & SIMULATOR ---
+  // ==========================================
+  // --- STAGE 4: SECTION 2: REVIEW SYSTEM ---
+  // ==========================================
   {
     id: 'rubric_tab',
     targetSelector: '[data-tour="rubric-tab-btn"]',
-    stage: 'Rubrics & Simulator',
-    stageNumber: 3,
-    totalStages: 4,
-    title: 'Evaluation Rubric Navigation',
-    description: 'Configure multi-dimensional evaluation criteria, customized score bounds, and load accredited academic presets.',
-    actionPrompt: 'Click "Evaluation Rubric" (or press 2) to navigate to the criteria and weightage builder.',
+    stage: 'Section 2: Review System',
+    title: 'Section 2: Review System Navigation',
+    description: 'Switch to Section 2 to design multi-criteria evaluation rubrics, define performance anchors, and balance weights to 100%.',
+    actionPrompt: 'Click "2. Review System" (or press 2) to navigate to the criteria and weightage builder.',
     howToProceed: [
-      'Click the "Evaluation Rubric" tab button (or press "2" on your keyboard).',
+      'Click the "2. Review System" tab button in the navigation switcher (or press "2").',
       'Here you can customize evaluation metrics, qualitative descriptors, and weights.',
       'Weights are automatically balanced to 100% by default.'
     ],
     demoPreview: {
-      actionLabel: 'Switch to Rubrics Tab',
+      actionLabel: 'Switch to Review System Tab',
       description: 'Navigates to the multi-dimensional criteria builder.',
       expectedResult: 'Evaluation Rubrics & Simulator workspace mounts.'
     },
-    proTip: 'Press "2" on your keyboard to jump directly to this tab.',
+    proTip: 'Press "2" on your keyboard to jump directly to Section 2.',
     hotkey: 'Press 2',
     tab: 'grading',
     preferredPlacement: 'bottom',
@@ -343,34 +483,55 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'rubric_builder',
     targetSelector: '[data-tour="rubric-builder-card"]',
-    stage: 'Rubrics & Simulator',
-    stageNumber: 3,
-    totalStages: 4,
-    title: 'Rubric Criteria & 100% Weightage Balancing',
-    description: 'Define metric names, scale ranges, and descriptive qualitative indicators. Weights are balanced to equal exactly 100% by default and remain fully editable.',
-    actionPrompt: 'Click "AAC&U VALUE" or "ABET Engineering" preset, or edit any weight (%) input to see live balance validation.',
+    stage: 'Section 2: Review System',
+    featureKey: 'showCriterionCards',
+    title: 'Rubric Criteria & 100% Weight Auto-Balancing',
+    description: 'Define criteria names, score ranges, and descriptive qualitative indicators. Use the "Auto-Balance" button to ensure weights equal exactly 100%.',
+    actionPrompt: 'Click the "IPAF Standard" preset to load the unified research-synthesized rubric, or edit any weight (%) input to see live balance validation.',
     howToProceed: [
-      'Click an accredited preset button (e.g. "AAC&U VALUE" or "ABET Engineering").',
-      'Notice that weights automatically equal 100% (e.g., 5 criteria at 20% each).',
+      'Click the "IPAF Standard" preset button in the rubric ribbon.',
+      'Notice that weights automatically equal 100% across all 6 empirically validated dimensions.',
       'Try editing any percentage input — the top validation bar alerts you if weights need balancing.'
     ],
     demoPreview: {
-      actionLabel: 'Load AAC&U VALUE (5x20% = 100%)',
-      description: 'Applies 5 accredited higher-ed teamwork criteria at 20% each.',
+      actionLabel: 'Load IPAF Standard (6 Dimensions = 100%)',
+      description: 'Applies the research-synthesized rubric derived from CATME, Salas, AAC&U, and WebPA.',
       expectedResult: 'Rubric loads with green "Total Weightage: 100% (Balanced & Valid)".'
     },
-    proTip: 'Load presets like AAC&U VALUE, ABET Engineering, Agile Scrum, or Design Studio in 1 click.',
+    proTip: 'Load the Integrated Peer Assessment Framework (IPAF) in 1 click for an empirically validated, 100% balanced rubric.',
     tab: 'grading',
     preferredPlacement: 'corner',
     icon: <Sliders size={17} className="text-indigo" />
   },
   {
+    id: 'target_scale',
+    targetSelector: '[data-tour="target-scale-card"]',
+    stage: 'Section 2: Review System',
+    featureKey: 'showTargetScaleCard',
+    title: 'Final Grade Scaling & Target Scale',
+    description: 'Optionally normalize raw criteria score totals to match your university\'s grading scale — such as 0–100%, 0–20 (French/European scale), or 0–4.0 GPA scale.',
+    actionPrompt: 'Set your institution\'s target maximum (e.g. 20 for European scale, 100 for percentage).',
+    howToProceed: [
+      'Look at the Target Scale card located directly above the criteria list.',
+      'Enter your institution\'s scale ceiling (e.g., 20 or 100).',
+      'All WebPA calculations, summaries, and PDF report cards will scale automatically.'
+    ],
+    demoPreview: {
+      actionLabel: 'Inspect Target Scale Conversion',
+      description: 'Demonstrates grade normalization from raw criteria points to target ceiling.',
+      expectedResult: 'Grade calculations instantly adopt institutional scale target.'
+    },
+    proTip: 'Set Target Scale to 20 for French/Bologna master programs, 100 for percentage-based grading, or leave unset.',
+    tab: 'grading',
+    preferredPlacement: 'bottom',
+    icon: <Award size={17} className="text-amber" />
+  },
+  {
     id: 'eval_simulator',
     targetSelector: '[data-tour="eval-simulator-card"]',
-    stage: 'Rubrics & Simulator',
-    stageNumber: 3,
-    totalStages: 4,
-    title: 'Interactive Evaluation Simulator',
+    stage: 'Section 2: Review System',
+    featureKey: 'showEvaluationSimulator',
+    title: 'Student Mobile Evaluation Simulator',
     description: 'Test what students experience on their mobile devices with qualitative tier snap buttons (Needs Work, Good, Excellent) and score fine-tuners.',
     actionPrompt: 'Click "Good (16/20)" or "Excellent (20/20)" and move the slider to experience student mobile scoring!',
     howToProceed: [
@@ -389,18 +550,18 @@ export const TOUR_STEPS: TourStep[] = [
     icon: <Lightbulb size={17} className="text-amber" />
   },
 
-  // --- STAGE 4: ANALYTICS & REPORTS ---
+  // ==========================================
+  // --- STAGE 5: SECTION 3: GRADING & ANALYTICS ---
+  // ==========================================
   {
     id: 'analytics_tab',
     targetSelector: '[data-tour="analytics-tab-btn"]',
-    stage: 'Analytics & Reports',
-    stageNumber: 4,
-    totalStages: 4,
-    title: 'Grade Analytics & Perception Insights',
-    description: 'Switch to the real-time Calculation Matrix, Competency Spider Radar, Johari Perception Matrix, and 1-Click Student PDF Reports.',
-    actionPrompt: 'Click "Grade Analytics" (or press 3) to view the WebPA matrix and Spider Radar deck.',
+    stage: 'Section 3: Grading & Analytics',
+    title: 'Section 3: Grading & Analytics Navigation',
+    description: 'Switch to Section 3 to inspect the real-time Calculation Matrix, WebPA Calibrator, Competency Spider Radar, and Johari Window.',
+    actionPrompt: 'Click "3. Analytics" (or press 3) to view the WebPA matrix and Spider Radar deck.',
     howToProceed: [
-      'Click the "Grade Analytics" tab button (or press "3" on your keyboard).',
+      'Click the "3. Analytics" tab button in the navigation switcher (or press "3").',
       'Inspect real-time WebPA factors, self-excluded peer averages, and radar comparisons.',
       'Generate batch PDF report cards or export formatted Excel spreadsheets.'
     ],
@@ -409,7 +570,7 @@ export const TOUR_STEPS: TourStep[] = [
       description: 'Navigates to the calculation matrix and perception decks.',
       expectedResult: 'Grade Analytics & Perception Insights dashboard mounts.'
     },
-    proTip: 'Press "3" on your keyboard to navigate directly to Grade Analytics.',
+    proTip: 'Press "3" on your keyboard to navigate directly to Section 3.',
     hotkey: 'Press 3',
     tab: 'results',
     preferredPlacement: 'bottom',
@@ -418,9 +579,8 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'perception_deck',
     targetSelector: '[data-tour="perception-deck-card"]',
-    stage: 'Analytics & Reports',
-    stageNumber: 4,
-    totalStages: 4,
+    stage: 'Section 3: Grading & Analytics',
+    featureKey: 'showCompetencyRadar',
     title: 'Competency Radar & Johari Perception Window',
     description: 'Compare cohort rubric averages vs specific teams with the Spider Radar, and identify self-overestimation vs underestimation blind spots.',
     actionPrompt: 'Switch the Team Overlay dropdown on the Radar chart to compare specific team competencies against class averages.',
@@ -440,28 +600,96 @@ export const TOUR_STEPS: TourStep[] = [
     icon: <Activity size={17} className="text-primary" />
   },
   {
-    id: 'gradebook_matrix',
-    targetSelector: '[data-tour="gradebook-matrix-card"]',
-    stage: 'Analytics & Reports',
-    stageNumber: 4,
-    totalStages: 4,
-    title: 'Real-Time Calculation Matrix & WebPA Calibrator',
-    description: 'Self-excluded averages calculate instantly. View WebPA multiplier factors, audit score anomalies, and download formatted Excel workbooks or student PDF report cards.',
+    id: 'webpa_calibrator',
+    targetSelector: '[data-tour="webpa-calibrator-card"]',
+    stage: 'Section 3: Grading & Analytics',
+    featureKey: 'showWebPACalibration',
+    title: 'WebPA Grade Calibrator & Loughborough Algorithm',
+    description: 'Adjust individual grade multipliers using the Loughborough WebPA algorithm. Drag the 0%–100% Fudge Weight slider to balance group score vs individual peer performance.',
     actionPrompt: 'Adjust the Fudge Weight slider (0% to 100%) to observe how individual student grades scale dynamically!',
     howToProceed: [
-      'Look at the WebPA Calibrator slider (Loughborough algorithm).',
-      'Drag the slider to adjust the balance between group deliverable grade and individual peer factor.',
-      'Click "Export Excel" or "Student PDF Reports" to deliver final feedback.'
+      'Look at the WebPA Calibrator card with the Loughborough formula.',
+      'Drag the Fudge Weight slider between 0% (pure group mark) and 100% (full peer multiplier impact).',
+      'Grades update in real time across the results summary sheet.'
     ],
     demoPreview: {
       actionLabel: 'Set WebPA Fudge Weight to 50%',
-      description: 'Recalculates individual WebPA calibrated grades across all students in real time.',
-      expectedResult: 'Calibrated grades update live across the entire matrix.'
+      description: 'Adjusts WebPA peer factor influence to 50% across all students.',
+      expectedResult: 'Calibrated grades recalculate instantly.'
     },
-    proTip: 'Calculations strictly exclude self-evaluations to eliminate bias in peer grading.',
+    proTip: 'A 50% fudge weighting is the higher-education standard: rewarding strong contributors without overly penalizing struggling peers.',
     tab: 'results',
     preferredPlacement: 'corner',
-    icon: <Award size={17} className="text-teal" />
+    icon: <Calculator size={17} className="text-teal" />
+  },
+  {
+    id: 'anomaly_audit',
+    targetSelector: '[data-tour="anomaly-audit-card"]',
+    stage: 'Section 3: Grading & Analytics',
+    featureKey: 'showAnomalyAudit',
+    title: 'Anomaly & Collusion Audit Deck',
+    description: 'Statistical diagnostics scan for peer grading collusion rings (reciprocal maximum scores), harsh outlier graders (spiteful reviews), and lazy uniform grading.',
+    actionPrompt: 'Inspect the Anomaly Audit card to see flagged student pairs and collusion severity scores.',
+    howToProceed: [
+      'Review any flagged pairs in the Collusion Matrix.',
+      'Click flagged students to inspect their reciprocal peer score breakdown.',
+      'Ensure academic grading integrity before releasing final grades.'
+    ],
+    demoPreview: {
+      actionLabel: 'Inspect Anomaly Audit Flags',
+      description: 'Audits peer score patterns across all teams for collusion or spite.',
+      expectedResult: 'Anomaly deck displays diagnostic integrity check.'
+    },
+    proTip: 'Audits flag scores deviating >2.0 standard deviations from team consensus.',
+    tab: 'results',
+    preferredPlacement: 'corner',
+    icon: <ShieldCheck size={17} className="text-rose" />
+  },
+  {
+    id: 'results_summary',
+    targetSelector: '[data-tour="results-summary-card"]',
+    stage: 'Section 3: Grading & Analytics',
+    featureKey: 'showResultsSummarySheet',
+    title: 'Results Summary Sheet & Batch Reports',
+    description: 'Complete overview of final calibrated grades, WebPA factors, submission statuses, and 1-click batch Excel / PDF report card generation.',
+    actionPrompt: 'Click "Export Excel" or "Student PDF Reports" to deliver final feedback.',
+    howToProceed: [
+      'Search or filter student grades in the clean summary table.',
+      'Click "Student PDF Reports" to batch generate individual feedback cards.',
+      'Click "Export Excel" for a complete multi-sheet institutional gradebook.'
+    ],
+    demoPreview: {
+      actionLabel: 'Inspect Results Summary Sheet',
+      description: 'Shows student calibrated marks, WebPA factors, and export options.',
+      expectedResult: 'Summary table highlights final scores and grade status.'
+    },
+    proTip: 'Reports contain formative comments and qualitative feedback without exposing peer names.',
+    tab: 'results',
+    preferredPlacement: 'corner',
+    icon: <FileText size={17} className="text-indigo" />
+  },
+  {
+    id: 'gradebook_matrix',
+    targetSelector: '[data-tour="gradebook-matrix-card"]',
+    stage: 'Section 3: Grading & Analytics',
+    featureKey: 'showDetailedReviewMatrix',
+    title: 'Detailed Peer Evaluation Matrix',
+    description: 'Inspect the granular cell-by-cell peer rating matrix with self-excluded averages, individual rubric criterion scores, and raw feedback.',
+    actionPrompt: 'Scroll through the matrix to review student-to-student ratings on individual criteria.',
+    howToProceed: [
+      'Inspect self-excluded student peer ratings across all criteria.',
+      'Check qualitative constructive feedback text left by teammates.',
+      'Review variance indicators across each rubric competency.'
+    ],
+    demoPreview: {
+      actionLabel: 'Inspect Detailed Matrix Breakdown',
+      description: 'Examines individual rubric score vectors across all peer evaluations.',
+      expectedResult: 'Granular evaluation matrix expands.'
+    },
+    proTip: 'Self-evaluations are strictly excluded from calculations to eliminate bias in peer grading.',
+    tab: 'results',
+    preferredPlacement: 'corner',
+    icon: <Activity size={17} className="text-teal" />
   }
 ];
 
@@ -472,7 +700,8 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
   customStepIds,
   onRestoreSnapshot,
   hasSnapshot,
-  onExecuteDemoStep
+  onExecuteDemoStep,
+  featureToggles
 }) => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
@@ -482,14 +711,39 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
   const popoverRef = useRef<HTMLDivElement>(null);
   const highlightedElRef = useRef<HTMLElement | null>(null);
 
+  const effectiveToggles = featureToggles || loadFeatureToggles();
+
+  // Smart adaptive steps: only show steps for features that are visible / enabled
   const activeSteps = useMemo(() => {
+    let baseSteps = TOUR_STEPS;
     if (customStepIds && customStepIds.length > 0) {
       const stepMap = new Map(TOUR_STEPS.map(s => [s.id, s]));
       const filtered = customStepIds.map(id => stepMap.get(id)).filter(Boolean) as TourStep[];
-      return filtered.length > 0 ? filtered : TOUR_STEPS;
+      if (filtered.length > 0) {
+        baseSteps = filtered;
+      }
     }
-    return TOUR_STEPS;
-  }, [customStepIds]);
+
+    // Adaptive filtering: ignore hidden features
+    const visibleSteps = baseSteps.filter(step => {
+      if (!step.featureKey) return true;
+      return effectiveToggles[step.featureKey] === true;
+    });
+
+    // Fallback if all steps in custom track happen to be hidden
+    return visibleSteps.length > 0 ? visibleSteps : baseSteps;
+  }, [customStepIds, effectiveToggles]);
+
+  // Dynamic stage deduction based solely on currently active visible steps
+  const stageList = useMemo(() => {
+    const list: string[] = [];
+    activeSteps.forEach(s => {
+      if (!list.includes(s.stage)) {
+        list.push(s.stage);
+      }
+    });
+    return list;
+  }, [activeSteps]);
 
   useEffect(() => {
     if (isOpen) {
@@ -499,7 +753,11 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
     }
   }, [isOpen, customStepIds]);
 
-  const step = activeSteps[currentStepIndex] || activeSteps[0];
+  const safeIndex = Math.min(currentStepIndex, Math.max(0, activeSteps.length - 1));
+  const step = activeSteps[safeIndex] || activeSteps[0];
+  const currentStageIndex = stageList.indexOf(step?.stage || '');
+  const currentStageNumber = currentStageIndex >= 0 ? currentStageIndex + 1 : 1;
+  const totalStages = stageList.length || 1;
 
   // Smart non-overlapping position calculator taking into account the floating top navigation bars
   const calculatePosition = useCallback((targetEl: Element) => {
@@ -522,14 +780,14 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
     const spaceRight = window.innerWidth - rect.right - margin;
 
     const isLargeElement = rect.height > 240 || rect.width > window.innerWidth * 0.75;
-    let chosenPlacement = step.preferredPlacement || (isInsideDock ? 'bottom' : 'corner');
+    let chosenPlacement = step?.preferredPlacement || (isInsideDock ? 'bottom' : 'corner');
 
     if (isInsideDock) {
       // Elements inside the floating dock must always have their tooltip below the dock
       chosenPlacement = 'bottom';
     } else if (chosenPlacement === 'corner' || isLargeElement) {
-      // For large container cards (e.g. Classroom Roster, AutoGroup, Rubric Builder, Calculation Matrix):
-      // Place the popover card cleanly in the bottom-right floating dock area so it NEVER covers table headers/inputs!
+      // For large container cards:
+      // Place the popover cleanly in the bottom-right floating dock area so it NEVER covers headers/inputs!
       chosenPlacement = 'corner';
     } else if (chosenPlacement === 'bottom') {
       if (spaceBelow < popoverHeight) {
@@ -615,8 +873,8 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
       onNavigateTab(step.tab);
     }
 
-    // Allow small delay for DOM tab mounting
-    setTimeout(() => {
+    // Allow small delay for DOM tab mounting with retry logic
+    const attemptHighlight = (retryCount = 0) => {
       const el = document.querySelector(step.targetSelector) as HTMLElement | null;
       if (el) {
         // Elevate element so user can directly click and interact with real buttons/inputs!
@@ -640,6 +898,8 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
         setTimeout(() => {
           calculatePosition(el);
         }, 150);
+      } else if (retryCount < 2) {
+        setTimeout(() => attemptHighlight(retryCount + 1), 180);
       } else {
         setTargetRect(null);
         setPopoverPos({
@@ -648,7 +908,9 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
           placement: 'center'
         });
       }
-    }, 120);
+    };
+
+    setTimeout(() => attemptHighlight(0), 120);
   }, [step, onNavigateTab, calculatePosition]);
 
   // Cleanup elevated zIndex on unmount
@@ -683,7 +945,7 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
       window.removeEventListener('resize', handleFollow);
       window.removeEventListener('scroll', handleFollow);
     };
-  }, [isOpen, currentStepIndex, syncStepTarget, calculatePosition, step]);
+  }, [isOpen, safeIndex, syncStepTarget, calculatePosition, step]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -701,17 +963,20 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, currentStepIndex]);
+  }, [isOpen, safeIndex, activeSteps.length]);
 
   const handleNext = () => {
     if (currentStepIndex < activeSteps.length - 1) {
       setCurrentStepIndex(prev => prev + 1);
       setActiveSubTab('instructions');
     } else {
+      if (onRestoreSnapshot) {
+        onRestoreSnapshot();
+      }
       localStorage.setItem('peer_has_completed_tour', 'true');
       // Return to home screen tab & scroll to top
       if (onNavigateTab) {
-        onNavigateTab('roster');
+        onNavigateTab('hub');
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
       onClose();
@@ -726,10 +991,13 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
   };
 
   const handleSkip = () => {
+    if (onRestoreSnapshot) {
+      onRestoreSnapshot();
+    }
     localStorage.setItem('peer_has_completed_tour', 'true');
     // Return to home screen tab & scroll to top
     if (onNavigateTab) {
-      onNavigateTab('roster');
+      onNavigateTab('hub');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
     onClose();
@@ -742,7 +1010,7 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
     localStorage.setItem('peer_has_completed_tour', 'true');
     // Return to home screen tab & scroll to top
     if (onNavigateTab) {
-      onNavigateTab('roster');
+      onNavigateTab('hub');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
     onClose();
@@ -751,14 +1019,14 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
   // Trigger live simulated action on the highlighted element safely
   const handleTriggerLiveDemo = () => {
     setDemoExecuted(true);
-    if (onExecuteDemoStep) {
+    if (onExecuteDemoStep && step) {
       onExecuteDemoStep(step.id);
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !step) return null;
 
-  const progressPercent = Math.round(((currentStepIndex + 1) / activeSteps.length) * 100);
+  const progressPercent = Math.round(((safeIndex + 1) / activeSteps.length) * 100);
 
   return createPortal(
     <div className="interactive-tour-overlay" aria-modal="true" role="dialog" style={{ position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'none' }}>
@@ -869,12 +1137,12 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
               letterSpacing: '0.03em'
             }}
           >
-            Stage {step.stageNumber}/{step.totalStages} &bull; {step.stage}
+            Stage {currentStageNumber}/{totalStages} &bull; {step.stage}
           </span>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>
-              {currentStepIndex + 1} / {activeSteps.length}
+              {safeIndex + 1} / {activeSteps.length}
             </span>
             <button
               type="button"
@@ -1116,7 +1384,7 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
 
         {/* Minimal Footer */}
         <div style={{ marginTop: '0.25rem', paddingTop: '0.55rem', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-          {hasSnapshot && currentStepIndex === activeSteps.length - 1 ? (
+          {hasSnapshot && safeIndex === activeSteps.length - 1 ? (
             <button
               type="button"
               onClick={handleFinishAndRestore}
@@ -1161,18 +1429,18 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
             <button
               type="button"
               onClick={handlePrev}
-              disabled={currentStepIndex === 0}
+              disabled={safeIndex === 0}
               style={{
                 padding: '0.35rem 0.65rem',
                 gap: '0.25rem',
-                opacity: currentStepIndex === 0 ? 0.4 : 1,
+                opacity: safeIndex === 0 ? 0.4 : 1,
                 backgroundColor: '#f8fafc',
                 border: '1px solid #cbd5e1',
                 borderRadius: '6px',
                 color: '#334155',
                 fontSize: '0.74rem',
                 fontWeight: 600,
-                cursor: currentStepIndex === 0 ? 'not-allowed' : 'pointer',
+                cursor: safeIndex === 0 ? 'not-allowed' : 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 whiteSpace: 'nowrap'
@@ -1200,7 +1468,7 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
                 whiteSpace: 'nowrap'
               }}
             >
-              {currentStepIndex === activeSteps.length - 1 ? (
+              {safeIndex === activeSteps.length - 1 ? (
                 <>
                   <CheckCircle size={12} /> Finish Tour
                 </>
@@ -1217,4 +1485,5 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
     document.body
   );
 };
+
 export default InteractiveTour;

@@ -38,36 +38,36 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
     {
       id: 'workspace',
       num: 1,
-      title: 'Profile Ready',
+      title: 'Workspace Active',
       isCompleted: true,
-      hint: 'Course workspace active',
+      hint: 'Course section ready',
       actionLabel: 'Settings',
       onClick: () => onNavigateTab('cloud')
     },
     {
       id: 'roster',
       num: 2,
-      title: 'Enroll Students & Teams',
+      title: 'Section 1: Enrollment & Teams',
       isCompleted: studentCount > 0,
-      hint: studentCount > 0 ? `${studentCount} students enrolled` : 'Add students or import spreadsheet',
+      hint: studentCount > 0 ? `${studentCount} students enrolled` : 'Add students, demo cohort, or import file',
       actionLabel: studentCount > 0 ? 'View' : 'Enroll',
       onClick: () => onNavigateTab('roster')
     },
     {
       id: 'rubrics',
       num: 3,
-      title: '100% Balanced Rubric',
+      title: 'Section 2: 100% Balanced Rubric',
       isCompleted: Math.abs(rubricWeightSum - 100) < 0.1,
-      hint: Math.abs(rubricWeightSum - 100) < 0.1 ? 'Weights equal 100%' : `Current: ${rubricWeightSum}%`,
+      hint: Math.abs(rubricWeightSum - 100) < 0.1 ? 'Weights balanced at 100%' : `Current sum: ${rubricWeightSum}%`,
       actionLabel: 'Rubric',
       onClick: () => onNavigateTab('grading')
     },
     {
       id: 'analytics',
       num: 4,
-      title: 'WebPA Analytics Matrix',
+      title: 'Section 3: WebPA & Analytics',
       isCompleted: hasEvaluations,
-      hint: hasEvaluations ? 'Peer ratings active' : 'WebPA factor & perception charts',
+      hint: hasEvaluations ? 'Evaluations & WebPA active' : 'WebPA Calibrator, Radars & Reports',
       actionLabel: 'Analytics',
       onClick: () => onNavigateTab('results')
     }

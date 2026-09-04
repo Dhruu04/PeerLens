@@ -5,19 +5,52 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# SPA Fallback routing: rewrite all incoming routes to index.html with 200 OK
+# Direct routing for Documentation & Operational Manual
+[[redirects]]
+  from = "/guide"
+  to = "/guide.html"
+  status = 200
+
+[[redirects]]
+  from = "/manual"
+  to = "/guide.html"
+  status = 200
+
+[[redirects]]
+  from = "/docs"
+  to = "/guide.html"
+  status = 200
+
+# SPA Fallback routing: rewrite all incoming app routes to index.html with 200 OK
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# Cache immutable assets for maximum performance
+# Cache immutable frontend assets for maximum performance
 [[headers]]
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# Security & framing headers
+# Optimized caching & MIME header for HTML guide
+[[headers]]
+  for = "/guide.html"
+  [headers.values]
+    Content-Type = "text/html; charset=utf-8"
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+
+[[headers]]
+  for = "/PEERLENS_COMPLETE_GUIDE.html"
+  [headers.values]
+    Content-Type = "text/html; charset=utf-8"
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+
+# Global security & framing headers
 [[headers]]
   for = "/*"
   [headers.values]
@@ -25,4 +58,3 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(self), microphone=(), geolocation=()"
-

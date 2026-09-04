@@ -1,1 +1,4 @@
-/*    /index.html   200
+/guide             /guide.html                200
+/manual            /guide.html                200
+/docs              /guide.html                200
+/*                 /index.html                200

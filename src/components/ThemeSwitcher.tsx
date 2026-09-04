@@ -6,7 +6,7 @@ interface ThemeSwitcherProps {
   compact?: boolean;
 }
 
-export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({ compact = false }) => {
+export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = () => {
   const { 
     themeMode, 
     effectiveTheme, 
@@ -45,19 +45,22 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({ compact = false })
     }
   };
 
-  // Ultra-compact 1-click icon dock button
-  if (compact) {
-    return (
+  // Unified 1-click icon dock button matching Settings & Customize View
+  return (
+    <div className="theme-toggle-wrapper" ref={popoverRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
       <button
         type="button"
-        className="btn btn-secondary btn-sm dock-btn icon-only-btn"
+        className="btn btn-secondary btn-sm dock-btn"
         onClick={handleToggleTheme}
-        title={`Toggle ${effectiveTheme === 'dark' ? 'Light' : 'Dark'} Mode (Current: ${effectiveTheme === 'dark' ? 'Dark' : 'Light'})`}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setIsOpen(!isOpen);
+        }}
+        title={`Switch to ${effectiveTheme === 'dark' ? 'Light' : 'Dark'} Mode (Current: ${effectiveTheme === 'dark' ? 'Dark' : 'Light'}) • Right-click for palette`}
         aria-label="Toggle light and dark theme"
         style={{
-          width: '28px',
-          minWidth: '28px',
-          height: '28px',
+          width: '34px',
+          height: '32px',
           padding: 0,
           display: 'inline-flex',
           alignItems: 'center',
@@ -65,119 +68,11 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({ compact = false })
         }}
       >
         {effectiveTheme === 'dark' ? (
-          <Moon size={13} className="text-primary" />
+          <Sun size={15} className="text-primary" />
         ) : (
-          <Sun size={13} className="text-primary" />
+          <Moon size={15} className="text-primary" />
         )}
       </button>
-    );
-  }
-
-  return (
-    <div className="theme-toggle-wrapper" ref={popoverRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-      {/* Minimal Unified Precision Pill */}
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          height: '30px',
-          backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '20px',
-          padding: '2px',
-          boxShadow: 'var(--shadow-sm)',
-          transition: 'all var(--transition-fast)'
-        }}
-      >
-        {/* 1-Click Mode Toggle Button */}
-        <button
-          type="button"
-          onClick={handleToggleTheme}
-          title={`Switch to ${effectiveTheme === 'dark' ? 'Light' : 'Dark'} Mode (Current: ${themeMode === 'system' ? 'System' : effectiveTheme === 'dark' ? 'Dark' : 'Light'})`}
-          aria-label="Toggle light and dark theme"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '28px',
-            height: '26px',
-            borderRadius: '16px',
-            border: 'none',
-            backgroundColor: 'transparent',
-            color: 'var(--primary)',
-            cursor: 'pointer',
-            padding: 0,
-            transition: 'all var(--transition-fast)'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'transparent';
-          }}
-        >
-          {effectiveTheme === 'dark' ? (
-            <Moon size={14} style={{ transition: 'transform 0.2s ease' }} />
-          ) : (
-            <Sun size={14} style={{ transition: 'transform 0.2s ease' }} />
-          )}
-        </button>
-
-        {/* Subtle Vertical Separator */}
-        {!compact && (
-          <span
-            style={{
-              width: '1px',
-              height: '14px',
-              backgroundColor: 'var(--border-color)',
-              margin: '0 2px'
-            }}
-          />
-        )}
-
-        {/* Accent Color Palette Trigger */}
-        {!compact && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsOpen(!isOpen)}
-            }
-            title={`Active Accent: ${activeAccent.name} (Click to switch colors)`}
-            aria-label="Customize accent colorway"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '24px',
-              height: '26px',
-              borderRadius: '16px',
-              border: 'none',
-              backgroundColor: isOpen ? 'var(--bg-surface-hover)' : 'transparent',
-              cursor: 'pointer',
-              padding: 0,
-              transition: 'all var(--transition-fast)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
-            }}
-            onMouseLeave={(e) => {
-              if (!isOpen) e.currentTarget.style.backgroundColor = 'transparent';
-            }}
-          >
-            <span
-              style={{
-                width: '10px',
-                height: '10px',
-                borderRadius: '50%',
-                backgroundColor: activeAccent.previewColor,
-                boxShadow: `0 0 0 1.5px var(--bg-surface), 0 0 6px ${activeAccent.previewColor}aa`,
-                transition: 'transform 0.15s ease'
-              }}
-            />
-          </button>
-        )}
-      </div>
 
       {/* Floating Micro-Palette Popover */}
       {isOpen && (

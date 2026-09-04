@@ -66,6 +66,17 @@ export interface ClassData {
   deadline?: string | null;
   milestones?: Milestone[];
   targetScale?: number | null;
+  teamBaseGrades?: Record<string, number>;
+}
+
+/**
+ * Resolves the team-specific base mark or falls back to the default base grade.
+ */
+export function getTeamBaseGrade(classData: ClassData, groupName: string, defaultGrade: number = 100): number {
+  if (classData?.teamBaseGrades && typeof classData.teamBaseGrades[groupName] === 'number') {
+    return classData.teamBaseGrades[groupName];
+  }
+  return defaultGrade;
 }
 
 /**
@@ -249,11 +260,14 @@ export function calculateStudentWebPAScore(
   baseGroupGrade: number = 100,
   fudgeWeight: number = 0.5
 ) {
+  const effectiveBaseGrade = getTeamBaseGrade(classData, groupName, baseGroupGrade);
+
   const groupStudents = classData.students.filter((s) => s.groupName === groupName);
   if (groupStudents.length <= 1) {
     return {
       ratio: 1.0,
-      adjustedGrade: baseGroupGrade
+      adjustedGrade: effectiveBaseGrade,
+      teamBaseGrade: effectiveBaseGrade
     };
   }
 
@@ -284,7 +298,8 @@ export function calculateStudentWebPAScore(
   if (validAverages.length === 0) {
     return {
       ratio: 1.0,
-      adjustedGrade: baseGroupGrade
+      adjustedGrade: effectiveBaseGrade,
+      teamBaseGrade: effectiveBaseGrade
     };
   }
 
@@ -296,19 +311,21 @@ export function calculateStudentWebPAScore(
   if (studentAvg === null || groupAvg === 0) {
     return {
       ratio: 1.0,
-      adjustedGrade: baseGroupGrade
+      adjustedGrade: effectiveBaseGrade,
+      teamBaseGrade: effectiveBaseGrade
     };
   }
 
   // WebPA ratio: individual peer average percentage divided by team's average percentage
   const ratio = Number((studentAvg / groupAvg).toFixed(3));
   
-  // Adjusted Grade = baseGroupGrade * ((1 - fudgeWeight) + fudgeWeight * ratio)
-  const adjustedGrade = Number((baseGroupGrade * ((1 - fudgeWeight) + fudgeWeight * ratio)).toFixed(1));
+  // Adjusted Grade = effectiveBaseGrade * ((1 - fudgeWeight) + fudgeWeight * ratio)
+  const adjustedGrade = Number((effectiveBaseGrade * ((1 - fudgeWeight) + fudgeWeight * ratio)).toFixed(1));
 
   return {
     ratio,
-    adjustedGrade
+    adjustedGrade,
+    teamBaseGrade: effectiveBaseGrade
   };
 }
 
