@@ -251,6 +251,52 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
     proTip: 'Qualitative tier snap buttons help students anchor their ratings objectively rather than defaulting to arbitrary numbers.'
   },
 
+  'evaluation-controls': {
+    id: 'evaluation-controls',
+    title: 'Peer Evaluation Form Fields & Student Permissions',
+    category: 'Student Portal',
+    summary: 'Configure which question prompts, constructive suggestions, praise tags, self-review steps, and identity permissions appear on student portals.',
+    whatItDoes: 'Controls student evaluation form fields including Self-Review calibration, Primary Strengths formative feedback, Constructive Improvement suggestions, Praise tags, Role Baseline archetype selection, and Student Profile self-editing freeze locks.',
+    whatToDo: [
+      'Toggle Self-Review on or off to calibrate student self-assessment vs team ratings.',
+      'Enable or disable qualitative prompts (Primary Strengths & Constructive Improvement).',
+      'Toggle micro-recognition praise chips and role archetype baselines.',
+      'Lock profile editing to freeze student names, roles, and email addresses.'
+    ],
+    whatYouGet: [
+      'Tailored evaluation experience customized to your course rubric and institutional requirements.',
+      'Optional qualitative feedback or pure numerical rating mode.',
+      'Roster identity lock prevention against student tampering.'
+    ],
+    proTip: 'Use the "Rating Only" quick preset for high-velocity quantitative evaluations, or "Full Experience" for comprehensive 360-degree peer growth feedback.'
+  },
+
+  'team-health-pulse': {
+    id: 'team-health-pulse',
+    title: 'Team Health "Micro-Pulse" Check-ins & Early Blocker Radar',
+    category: 'Analytics',
+    summary: 'On-demand 30-second sprint pulse surveys with sparklines, morale metrics, blocker detection, and natural team sorting.',
+    whatItDoes: 'Empowers instructors to launch lightweight 30-second pulse surveys during active milestones to track student team morale, collaboration velocity, and project roadblocks. Presents an interactive, naturally sorted matrix table with multi-column sorting (Team Name, Members Responded, Morale, Milestone Status, Blocker Notes), live search, and filter pills (All, Needs Attention, Pending Check-ins, On Track). On the student dashboard, it renders a dedicated 30s check-in form with instant feedback and cross-tab reminder banners without affecting formal peer reviews.',
+    whatToDo: [
+      'Navigate to Section 2: Review System (shortcut: 2) to locate the Team Health Micro-Pulse card.',
+      'Click "Launch New Pulse Round" or "Load Sample 3-Round Sprints" to initialize sprint monitoring.',
+      'Select a rating scale: 5-Star Rating, 5-Point Likert, 1-10 Velocity Slider, Traffic Light (RAG), or Emoji Sentiment.',
+      'Add optional custom questions tailored to specific project deliverables.',
+      'Students log into their dashboard and complete the 30-second check-in with 1-click status and blocker notes.',
+      'Inspect the class-wide Morale Index, Teams On Track rate, and Blocked Teams count in real time.',
+      'Sort columns or use the "Needs Attention" filter pill to immediately surface struggling teams for instructor intervention.'
+    ],
+    whatYouGet: [
+      'Proactive early warning radar detecting group friction weeks before final submissions.',
+      'Interactive sparkline trend visualizations illustrating historical team velocity across sprints.',
+      'Real-time student blocker notes highlighting missing dependencies, team silence, or technical bottlenecks.',
+      'Naturally sorted team rows (Team 1, Team 2... Team 10, Team 11) with responsive filtering and CSV export.',
+      'Completely decoupled check-in lifecycle that preserves regular peer evaluation statuses.'
+    ],
+    formula: 'Team Morale = (Σ Student Morale Ratings) / Active Respondents; Blocker Rate = Blocked Students / Total Responses',
+    proTip: 'Run a 30-second pulse check midway through a milestone. Teams flagged in Red (Blocked) can be mentored immediately before interpersonal conflicts impact deliverables.'
+  },
+
   'milestones-sprints': {
     id: 'milestones-sprints',
     title: 'Milestone Sprints & Session Archiver',
@@ -462,20 +508,21 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
   // --- SYSTEM & PORTALS ---
   'command-palette': {
     id: 'command-palette',
-    title: 'Quick Search & Command Palette (Ctrl+K)',
+    title: 'Omni Command Palette & Rapid Launcher (Ctrl+K or /)',
     category: 'Interface & Layout',
-    summary: 'Instant spotlight finder jumping across students, rubrics, team filters, and classroom actions with keyboard speed.',
-    whatItDoes: 'Launches a fast, keyboard-accessible command bar by pressing Ctrl+K (or Cmd+K) anywhere in the application. Lets you search students by name or email, jump directly to specific teams, trigger exports, or switch tabs.',
+    summary: 'Full-text searchable keyboard command launcher for instant navigation, actions, and module toggles.',
+    whatItDoes: 'Powers rapid keyboard-driven navigation across all classrooms, tools, tabs, settings, feature toggles, and modal dialogues with categorized search results and keyboard arrow navigation.',
     whatToDo: [
-      'Press Ctrl+K (Cmd+K on macOS) or click the Search bar in the top navigation.',
-      'Type any student name, team name, or navigation action.',
-      'Use Arrow keys to navigate results and press Enter to execute.'
+      'Press Ctrl+K (Cmd+K on macOS) or press "/" anywhere on the instructor dashboard.',
+      'Type keywords like "rubric", "pulse", "export", "auto group", "dark mode", or any team name.',
+      'Use Up/Down arrow keys to browse categorized results and press Enter to execute.'
     ],
     whatYouGet: [
-      'Rapid keyboard navigation across large classrooms with 100+ students.',
-      'Direct shortcuts to common actions without traversing multiple menus.'
+      'Instant access to 50+ software capabilities in under 1 second.',
+      'Keyboard accessibility and high-velocity workflows for power-user instructors.',
+      'Instant filtering by course, team, or administrative tool.'
     ],
-    proTip: 'Type "/" or press "?" to open the full global keyboard shortcuts cheat sheet.'
+    proTip: 'Press "/" from anywhere on the dashboard for instant single-keystroke access to the entire software command catalog.'
   },
 
   'projector-view': {
@@ -555,6 +602,67 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
       'Immediate synchronization of peer-assessed final grades directly into institutional grade centers.'
     ],
     proTip: 'Canvas imports require the "Points Possible" row in line 2; PeerLens automatically generates this so your Canvas gradebook imports without errors.'
+  },
+
+  'team-cohorts': {
+    id: 'team-cohorts',
+    title: 'Team Cohorts Overview & Formation Inspector',
+    category: 'Roster',
+    summary: 'Comprehensive cohort dashboard displaying group balances, member allocations, base marks, and submission progress.',
+    whatItDoes: 'Provides instructors with a holistic overview of all student teams in Section 1, tracking peer review submission status, team size equity, and diversity factors across the cohort.',
+    whatToDo: [
+      'Navigate to Section 1: Enrollment & Teams.',
+      'View the Team Overview Cards grid showing each team, its members, and completion badges.',
+      'Filter roster or gradebook by individual teams with a single click.',
+      'Use AutoGroup Studio to balance teams by gender, nationality, and language proficiency.'
+    ],
+    whatYouGet: [
+      'Instant visibility into which teams have complete vs. pending peer evaluations.',
+      'Clean team-by-team filtering across roster and calculation matrices.',
+      '1-Click navigation and inspection of individual student contributions.'
+    ],
+    proTip: 'Click any team badge in the Command Palette or on team cards to instantly filter the entire roster and gradebook to that group.'
+  },
+
+  'evaluation-form-controls': {
+    id: 'evaluation-form-controls',
+    title: 'Evaluation Form Controls & Student Permissions',
+    category: 'Grading',
+    summary: 'Customizable student portal permissions: self-evaluations, praise tags, qualitative prompts, role baselines, and profile lock.',
+    whatItDoes: 'Gives course instructors granular pedagogical control over which elements appear on the student evaluation form. Toggles self-reflection, qualitative strengths and growth text areas, research-backed praise tags across 6 soft-skill dimensions, role archetype baselines, and student profile locking.',
+    whatToDo: [
+      'Navigate to Section 2: Review System and locate the Evaluation Form Controls card.',
+      'Toggle "Allow Self-Review" to mandate or omit self-assessment.',
+      'Toggle "Praise Tags" so students can celebrate peers as Creative Problem Solvers, Reliable & Punctual, Supportive Team Players, etc.',
+      'Toggle "Qualitative Written Feedback" to collect formative written comments alongside numerical ratings.',
+      'Toggle "Lock Profile Info Editing" once your roster is finalized to prevent unauthorized name or email changes.'
+    ],
+    whatYouGet: [
+      'Pedagogical flexibility tailoring the assessment form to undergraduate vs postgraduate course objectives.',
+      'Enriched formative feedback combining quantitative criteria scores with qualitative praise and constructive tips.',
+      'Complete roster integrity and fraud prevention via profile locking after drop/add deadlines.'
+    ],
+    proTip: 'Lock student profile editing right after the university census date to ensure student names and emails stay strictly synchronized with your registrar records.'
+  },
+
+  'quick-action-pill': {
+    id: 'quick-action-pill',
+    title: 'Quick Action Center & Floating Dock',
+    category: 'Interface & Layout',
+    summary: 'Persistent floating utility dock with top bar shortcuts, layout modules manager, and direct administrative tools.',
+    whatItDoes: 'Provides an unobtrusive, always-accessible floating dock in the bottom-right corner of the workspace. Enables instructors to trigger top bar tools, manage visible layout modules across all 3 sections, balance criteria weights, and run diagnostics without losing their position on screen.',
+    whatToDo: [
+      'Click the floating action icon in the bottom-right corner (or press Escape to close).',
+      'Use "Top Bar Actions" with interactive hover states to access Search, Academic Guide, Projector View, Email Center, and Settings.',
+      'Use "Modules Manager" to toggle the visibility of individual cards across Section 1, 2, or 3.',
+      'Use "Tools & Utilities" for 1-click roster population, IPAF preset loading, auto weight balancing, and report exports.'
+    ],
+    whatYouGet: [
+      'Frictionless navigation across all 40+ system capabilities without vertical scrolling.',
+      'Instant layout customization to adapt the interface for lecture presentation vs grading mode.',
+      'Keyboard accessibility with full Escape key dismissal and click-outside handling.'
+    ],
+    proTip: 'When projecting in class, use the Quick Action Center to quickly toggle between Projector View, Rubrics, and Student Simulator without leaving your active tab.'
   }
 };
 

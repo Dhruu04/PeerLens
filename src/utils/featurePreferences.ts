@@ -12,6 +12,7 @@ export interface FeatureToggles {
   showGuideButton: boolean;
   showCloudStatus: boolean;
   showCustomizeViewButton: boolean;
+  showQuickActionPill: boolean;
 
   // --- Sub-Header / Breadcrumb Navigation ---
   showSectionNavBreadcrumbs: boolean;
@@ -49,6 +50,8 @@ export interface FeatureToggles {
   showCustomCriterionButton: boolean;
   showCriterionCards: boolean;
   showEvaluationSimulator: boolean;
+  showEvaluationFormControls: boolean;
+  showTeamHealthPulse: boolean;
 
   // --- Section 3: Grading & Performance Analytics ---
   showResultsHeaderCard: boolean;
@@ -81,6 +84,7 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showGuideButton: true,
   showCloudStatus: false,
   showCustomizeViewButton: true,
+  showQuickActionPill: false,
 
   // Home Hub & Sub-Bar Navigation
   showPresetsBanner: true,
@@ -116,6 +120,8 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showWeightBalanceBar: false,
   showCriterionCards: true,
   showEvaluationSimulator: false,
+  showEvaluationFormControls: false,
+  showTeamHealthPulse: false,
 
   // Section 3: Grading & Performance Analytics
   showResultsHeaderCard: false,
@@ -148,6 +154,7 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showGuideButton: false,
   showCloudStatus: false,
   showCustomizeViewButton: true,
+  showQuickActionPill: false,
 
   // Home Hub & Sub-Bar Navigation
   showPresetsBanner: true,
@@ -183,6 +190,8 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showWeightBalanceBar: false,
   showCriterionCards: true,
   showEvaluationSimulator: false,
+  showEvaluationFormControls: false,
+  showTeamHealthPulse: false,
 
   // Section 3: Grading & Performance Analytics
   showResultsHeaderCard: false,
@@ -214,6 +223,7 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showGuideButton: true,
   showCloudStatus: true,
   showCustomizeViewButton: true,
+  showQuickActionPill: true,
 
   showSectionNavBreadcrumbs: true,
   showClassIdBadge: true,
@@ -247,6 +257,8 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showCustomCriterionButton: true,
   showCriterionCards: true,
   showEvaluationSimulator: true,
+  showEvaluationFormControls: true,
+  showTeamHealthPulse: true,
 
   showResultsHeaderCard: true,
   showExportReportButtons: true,
@@ -269,7 +281,7 @@ const EVENT_KEY = 'peerlens_features_changed';
 
 export const loadFeatureToggles = (): FeatureToggles => {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('peer_feature_toggles_v2');
     if (saved) {
       const parsed = JSON.parse(saved);
       return { ...DEFAULT_FEATURE_TOGGLES, ...parsed };
@@ -283,6 +295,7 @@ export const loadFeatureToggles = (): FeatureToggles => {
 export const saveFeatureToggles = (toggles: FeatureToggles): void => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toggles));
+    localStorage.setItem('peer_feature_toggles_v2', JSON.stringify(toggles));
     window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: toggles }));
   } catch (e) {
     console.error('Failed to save feature toggles to localStorage', e);
@@ -294,6 +307,21 @@ export const subscribeFeatureToggles = (callback: (toggles: FeatureToggles) => v
     const customEvent = e as CustomEvent<FeatureToggles>;
     callback(customEvent.detail || loadFeatureToggles());
   };
+  const storageHandler = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEY || e.key === 'peer_feature_toggles_v2') {
+      callback(loadFeatureToggles());
+    }
+  };
   window.addEventListener(EVENT_KEY, handler);
-  return () => window.removeEventListener(EVENT_KEY, handler);
+  window.addEventListener('storage', storageHandler);
+  return () => {
+    window.removeEventListener(EVENT_KEY, handler);
+    window.removeEventListener('storage', storageHandler);
+  };
 };
+
+export const saveFeatureToggle = (key: keyof FeatureToggles, value: boolean): void => {
+  const current = loadFeatureToggles();
+  saveFeatureToggles({ ...current, [key]: value });
+};
+

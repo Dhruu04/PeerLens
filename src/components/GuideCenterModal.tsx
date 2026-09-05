@@ -5,7 +5,7 @@ import {
   Users, Sliders, Award, CheckCircle, HelpCircle,
   ChevronDown, ChevronUp, FileText, ArrowRight,
   LayoutGrid, Layers, Activity, Calculator,
-  ExternalLink
+  ExternalLink, Heart, Zap, ShieldCheck
 } from 'lucide-react';
 import { FEATURE_INFO_REGISTRY, type FeatureInfoItem } from '../data/featureDescriptions';
 
@@ -56,6 +56,17 @@ export const FOCUSED_TOUR_TRACKS: GuidedTourTrack[] = [
     keyTopics: ['Home Hub Section 2 Card', '100% Weight Auto-Balance', 'IPAF Standard Preset', 'Target Scale Normalization', 'Student Experience Simulator']
   },
   {
+    id: 'team_health_track',
+    title: 'Section 2: Team Health Pulse & Evaluation Controls',
+    category: 'Team Health & Governance',
+    stepCount: 4,
+    duration: '45 sec',
+    description: 'Launch 30-second micro-pulse check-ins with 5 customizable scale presets, blocker alerts, and natural team sorting. Govern self-evaluations, praise badges across 6 dimensions, and profile edit locks.',
+    icon: <Heart size={18} style={{ color: 'var(--accent-rose)' }} />,
+    stepIds: ['rubric_tab', 'eval_controls', 'team_health_pulse', 'quick_action_dock'],
+    keyTopics: ['30-Second Micro-Pulse Surveys', '5 Scale Presets (Likert, NPS, Performance, Traffic, Slider)', 'Blocker Alert Detection', 'Praise Badges & Qualitative Prompts', 'Quick Action Floating Dock']
+  },
+  {
     id: 'webpa_calibrator_track',
     title: 'Section 3: WebPA Calibrator & Master Gradebook',
     category: 'Grading & Multipliers',
@@ -81,10 +92,10 @@ export const FOCUSED_TOUR_TRACKS: GuidedTourTrack[] = [
 
 export const FULL_APP_STEP_IDS = [
   'class_header', 'workspace_switcher', 'command_palette', 'guide_center_btn', 'projector_mode', 'email_dispatcher',
-  'customize_view', 'settings_hub',
+  'customize_view', 'settings_hub', 'quick_action_dock',
   'hub_enrollment', 'hub_review', 'hub_analytics',
   'section_roster_tab', 'self_enrollment', 'quick_actions', 'import_wizard', 'autogroup_studio', 'classroom_roster',
-  'rubric_tab', 'rubric_builder', 'target_scale', 'eval_simulator',
+  'rubric_tab', 'rubric_builder', 'eval_controls', 'team_health_pulse', 'target_scale', 'eval_simulator',
   'analytics_tab', 'perception_deck', 'webpa_calibrator', 'anomaly_audit', 'results_summary', 'gradebook_matrix'
 ];
 
@@ -699,15 +710,16 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                       Review System &amp; Rubrics
                     </h4>
                     <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.42 }}>
-                      Define criteria dimensions, qualitative anchors, 100% weight auto-balancing, and preview the student mobile experience.
+                      Define criteria dimensions, qualitative anchors, 100% weight auto-balancing, team health pulse check-ins, and student evaluation governance.
                     </p>
                     <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                       <strong style={{ color: 'var(--text-primary)' }}>Key Features:</strong>
                       <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, lineHeight: 1.45 }}>
                         <li>100% Criteria Weight Auto-Balance bar</li>
                         <li>Standardized Rubric (IPAF Research-Synthesized)</li>
+                        <li>Team Health Micro-Pulse Surveys (30s check-ins, 5 scale presets, blocker alerts)</li>
+                        <li>Evaluation Form Controls (Self-evaluations, praise badges, profile locks)</li>
                         <li>Target Scale Normalization (20, 100%, Likert)</li>
-                        <li>Submission Deadline &amp; countdown timer</li>
                         <li>Interactive Student Smartphone Simulator</li>
                       </ul>
                     </div>
@@ -808,6 +820,68 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                     </div>
                     <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                       <strong style={{ color: 'var(--text-primary)' }}>Granular Control:</strong> Click &ldquo;Customize View&rdquo; in the top navigation at any time to toggle any of the 40+ interface elements individually to match your classroom.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Advanced Formative Feedback & Governance Systems */}
+              <div
+                style={{
+                  padding: '1.25rem',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface)',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.45rem' }}>
+                  <Heart size={16} style={{ color: 'var(--accent-rose)' }} />
+                  <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Formative Feedback Systems &amp; Evaluation Governance
+                  </h4>
+                </div>
+                <p style={{ margin: '0 0 0.85rem 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                  PeerLens augments traditional summative peer evaluations with continuous formative micro-pulses, structured recognition badges, and rigorous form governance:
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
+                  {/* Team Health Micro-Pulse */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
+                      <Activity size={14} style={{ color: 'var(--accent-teal)' }} />
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        Team Health Micro-Pulse Check-ins
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.73rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      Rapid 30-second weekly micro-surveys measuring real-time team morale and collaboration without grading anxiety. Features 5 customizable rating scale presets (1-5 Likert, 0-10 NPS, 1-4 Performance, 1-3 Traffic Light, 1-10 Slider), natural alphanumeric team sorting (Team 1, 2, ..., 10), column sorting, and instant blocker detection alerts.
+                    </p>
+                  </div>
+
+                  {/* Evaluation Form Controls & Permissions */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
+                      <ShieldCheck size={14} style={{ color: 'var(--accent-amber)' }} />
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        Evaluation Form Controls &amp; Permissions
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.73rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      Fine-tune student submission forms with collapsible controls. Toggle self-evaluations, enable structured praise recognition tags across 6 pedagogical dimensions (Innovation, Technical Execution, Dependability, Collaboration, Leadership, Problem Solving), set qualitative reflection requirements, define team role baselines, and lock student profile editing.
+                    </p>
+                  </div>
+
+                  {/* Quick Action Center & Command Palette */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
+                      <Zap size={14} style={{ color: 'var(--primary)' }} />
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        Quick Action Pill &amp; Omni Command Palette
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.73rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      Streamline instructor navigation with the floating Quick Action Pill docked at the bottom center. Expand to toggle modules live, switch classrooms, launch tools, or hit <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>Ctrl+K</kbd> to activate the Omni Command Palette for instant keyboard-first workflows.
                     </p>
                   </div>
                 </div>

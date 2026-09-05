@@ -3407,7 +3407,7 @@ kbd {
   /* Mobile Student Portal & Registration Optimizations */
   .student-portal-wrapper,
   .student-enrollment-wrapper {
-    padding: 1rem 0.75rem 3.5rem !important;
+    padding: 1rem 0.75rem 5.5rem !important;
     max-width: 100% !important;
   }
 
@@ -3512,48 +3512,45 @@ kbd {
   position: absolute;
   border-radius: 12px;
   border: 2px solid var(--primary);
-  box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.3), 0 0 25px rgba(99, 102, 241, 0.45);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25), 0 0 20px rgba(99, 102, 241, 0.35);
   pointer-events: none;
   z-index: 10001;
-  animation: tourHaloPulse 2.2s infinite ease-in-out;
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: tourHaloPulse 2.4s infinite ease-in-out;
 }
 
 @keyframes tourHaloPulse {
   0%, 100% {
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35), 0 0 16px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3), 0 0 16px rgba(99, 102, 241, 0.35);
     border-color: var(--primary);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(99, 102, 241, 0.15), 0 0 32px rgba(99, 102, 241, 0.65);
+    box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.12), 0 0 24px rgba(99, 102, 241, 0.5);
     border-color: var(--accent-teal);
   }
 }
 
 .tour-popover-card {
   position: fixed !important;
-  width: 410px;
-  max-width: calc(100vw - 36px);
-  max-height: calc(100vh - 48px);
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  box-shadow: 0 20px 45px -12px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.04);
-  padding: 1.25rem;
+  width: 350px;
+  max-width: calc(100vw - 28px);
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 14px;
+  box-shadow: var(--shadow-xl, 0 16px 36px -10px rgba(0, 0, 0, 0.18)), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  padding: 0.95rem 1.1rem;
   z-index: 10002;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  animation: tourPopoverFade 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  transition: top 0.32s cubic-bezier(0.16, 1, 0.3, 1), left 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  gap: 0.55rem;
+  animation: tourPopoverFade 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   box-sizing: border-box;
-  overflow: hidden;
+  color: var(--text-primary, #0f172a);
 }
 
 @keyframes tourPopoverFade {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.97);
+    transform: translateY(4px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -4639,4 +4636,95 @@ kbd {
   display: none !important;
   margin: 0 !important;
   padding: 0 !important;
+}
+
+/* Floating Quick Action Pill Animations & Styling */
+@keyframes peerlensFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pillPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.75;
+  }
+}
+
+@keyframes peerlensDockExpand {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes tabSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.quick-action-dock-container {
+  animation: peerlensDockExpand 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  transform-origin: bottom center;
+}
+
+.quick-action-pill-capsule {
+  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.quick-action-pill-capsule:hover {
+  transform: translateY(-3px) scale(1.01) !important;
+  box-shadow: 0 22px 48px -6px rgba(0, 0, 0, 0.36), 0 0 0 1.5px var(--primary), 0 0 24px rgba(99, 102, 241, 0.22) !important;
+}
+
+.quick-tool-card {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border: 1px solid var(--border-color) !important;
+  background-color: var(--bg-app) !important;
+  cursor: pointer;
+}
+
+.quick-tool-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary) !important;
+  box-shadow: 0 8px 22px -4px rgba(79, 70, 229, 0.18) !important;
+  background-color: var(--bg-surface) !important;
+}
+
+.quick-tool-card:active {
+  transform: translateY(0px) scale(0.98) !important;
+}
+
+.quick-tool-card:hover .tool-icon-wrapper {
+  transform: scale(1.12) rotate(3deg);
+}
+
+.tool-icon-wrapper {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.quick-pill-tab-content {
+  animation: tabSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

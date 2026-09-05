@@ -5,7 +5,7 @@ import {
   ExternalLink, Sparkles
 } from 'lucide-react';
 import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
-import { formatShortcutDisplay, getStoredShortcuts } from '../utils/keyboardShortcuts';
+import { formatShortcutDisplay, getStoredShortcuts, DEFAULT_KEYBOARD_SHORTCUTS } from '../utils/keyboardShortcuts';
 
 interface KeyboardShortcutsModalProps {
   isOpen: boolean;
@@ -34,7 +34,14 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
   }, [isOpen]);
 
   const activeShortcuts = useMemo(() => {
-    const list = propsShortcuts && propsShortcuts.length > 0 ? propsShortcuts : getStoredShortcuts();
+    const rawList = propsShortcuts && propsShortcuts.length > 0 ? propsShortcuts : getStoredShortcuts();
+    const list = [...rawList];
+    DEFAULT_KEYBOARD_SHORTCUTS.forEach(def => {
+      const found = list.some(s => (s.actionId || s.id) === (def.actionId || def.id));
+      if (!found) {
+        list.push({ ...def });
+      }
+    });
     return list.filter(s => !s.disabled);
   }, [propsShortcuts, isOpen]);
 

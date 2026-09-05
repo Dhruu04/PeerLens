@@ -11,7 +11,8 @@ import {
   QrCode, Copy, Check, Globe, AlertTriangle, Lock, Unlock,
   Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X,
   Settings, Plane, EyeOff, LogOut, Compass, ArrowLeft, ArrowRight, RotateCcw,
-  GraduationCap, Filter, ArrowUp, ArrowDown
+  GraduationCap, Filter, ArrowUp, ArrowDown,
+  ShieldAlert, History, ChevronDown, ChevronRight, ChevronUp
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { useClass } from '../context/ClassContext';
@@ -19,6 +20,7 @@ import { useTheme } from '../context/ThemeContext';
 import {
   loadFeatureToggles,
   saveFeatureToggles,
+  saveFeatureToggle,
   subscribeFeatureToggles,
   DEFAULT_FEATURE_TOGGLES,
   MINIMAL_FEATURE_TOGGLES,
@@ -70,6 +72,8 @@ import { calculateJohariWindowMetric, extractClassFeedbackInsights } from '../ut
 import { DIVERSE_100_STUDENTS, getSampleStudentsCSV, downloadSampleStudentsFile } from '../data/sampleStudents';
 import { RUBRIC_PRESETS } from '../utils/rubricPresets';
 import { SettingsModal } from '../components/SettingsModal';
+import { EvaluationControlsModal } from '../components/EvaluationControlsModal';
+import { CollapsibleEvaluationControls } from '../components/CollapsibleEvaluationControls';
 import FeatureInfoButton from '../components/FeatureInfoButton';
 import CommandPaletteModal from '../components/CommandPaletteModal';
 import InteractiveTour from '../components/InteractiveTour';
@@ -77,7 +81,10 @@ import GuideCenterModal from '../components/GuideCenterModal';
 import { StudentPortalPreviewModal } from '../components/StudentPortalPreviewModal';
 import { ContextHelpPopover } from '../components/ContextHelpPopover';
 import { OnboardingChecklistWidget } from '../components/OnboardingChecklistWidget';
+import { QuickActionPill } from '../components/QuickActionPill';
 import { KeyboardShortcutsModal } from '../components/KeyboardShortcutsModal';
+import { TeamCohortsOverview } from '../components/TeamCohortsOverview';
+import { TeamHealthPulseCard } from '../components/TeamHealthPulseCard';
 import { GuidedSandboxHUD, type SandboxMission } from '../components/GuidedSandboxHUD';
 import { Smartphone } from 'lucide-react';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -335,6 +342,7 @@ export const AdminDashboard: React.FC = () => {
     deleteClass,
     selectClass,
     updateGradingConfig,
+    updateEvaluationControls,
     updateTeamBaseGrade,
     setAllTeamBaseGrades,
     importRoster,
@@ -344,10 +352,16 @@ export const AdminDashboard: React.FC = () => {
     deleteStudents,
     batchSubmitClassReviews,
     resetClassReviews,
+    resetStudentReviews,
     clearClassRoster,
     saveClassDeadline,
     archiveActiveMilestone,
     deleteMilestone,
+    createPulseRound,
+    updatePulseRound,
+    submitPulseResponse,
+    deletePulseRound,
+    seedSamplePulseRounds,
     restoreClassesSnapshot,
     saveFirebaseConfig,
     isCloudSynced,
@@ -573,6 +587,15 @@ export const AdminDashboard: React.FC = () => {
       case 'results_summary':
         addToast('Results Summary: Inspecting calibrated grades, WebPA factors, and export options.', 'info');
         break;
+      case 'quick_action_dock':
+        addToast('Quick Actions Pill: Fast access to key tools, settings, command palette, and tour!', 'info');
+        break;
+      case 'eval_controls':
+        addToast('Evaluation Form Controls: Configure student self-evaluations, praise badges, and reflection prompts.', 'info');
+        break;
+      case 'team_health_pulse':
+        addToast('Team Health Pulse: 30-second micro-surveys measuring morale, collaboration, and blockers.', 'info');
+        break;
       default:
         break;
     }
@@ -648,6 +671,11 @@ export const AdminDashboard: React.FC = () => {
   const [groupFilter, setGroupFilter] = useState('All Groups');
   const [showOnlyDuplicates, setShowOnlyDuplicates] = useState(false);
   const [ignoredDuplicatePairs, setIgnoredDuplicatePairs] = useState<Set<string>>(new Set());
+
+  // Table expansion/contraction states (contracted by default so large tables consume minimal vertical space)
+  const [isRosterTableExpanded, setIsRosterTableExpanded] = useState<boolean>(false);
+  const [isResultsTableExpanded, setIsResultsTableExpanded] = useState<boolean>(false);
+  const [isAuditMatrixExpanded, setIsAuditMatrixExpanded] = useState<boolean>(false);
 
   // Compute potential duplicate student enrollments in real-time (Declared before any early returns)
   const duplicateFlagsMap = useMemo(() => {
@@ -737,6 +765,7 @@ export const AdminDashboard: React.FC = () => {
 
   // Settings Modal & Keyboard Shortcuts States
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isEvaluationControlsModalOpen, setIsEvaluationControlsModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'email' | 'cloud' | 'shortcuts' | 'appearance' | 'modules'>('email');
   const [shortcuts, setShortcuts] = useState<KeyboardShortcut[]>(() => getStoredShortcuts());
 
@@ -798,8 +827,15 @@ export const AdminDashboard: React.FC = () => {
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
   const [sandboxMissionIndex, setSandboxMissionIndex] = useState<number>(0);
   const [showOnboardingChecklist, setShowOnboardingChecklist] = useState<boolean>(() => {
-    return localStorage.getItem('peer_onboarding_dismissed') !== 'true';
+    return localStorage.getItem('peer_onboarding_dismissed') === 'false';
   });
+
+  useEffect(() => {
+    // Re-sync shortcuts whenever Settings or Cheat Sheet modal opens to ensure latest defaults
+    if (isSettingsModalOpen || isShortcutsModalOpen) {
+      setShortcuts(getStoredShortcuts());
+    }
+  }, [isSettingsModalOpen, isShortcutsModalOpen]);
 
   const sandboxMissions: SandboxMission[] = useMemo(() => {
     if (!activeClass) return [];
@@ -1153,6 +1189,23 @@ export const AdminDashboard: React.FC = () => {
 
       if (isInputFocused) return;
 
+      // Q or Alt + P to toggle Floating Quick Action Pill
+      if (
+        (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key.toLowerCase() === 'q' || e.code === 'KeyQ')) ||
+        (e.altKey && (e.key.toLowerCase() === 'p' || e.code === 'KeyP'))
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        const latestToggles = loadFeatureToggles();
+        const nextVal = !latestToggles.showQuickActionPill;
+        const updated = { ...latestToggles, showQuickActionPill: nextVal };
+        saveFeatureToggles(updated);
+        syncWorkspaceSettingsToCloud({ featureToggles: updated });
+        setFeatureToggles(updated);
+        addToast(nextVal ? 'Floating Quick Action Pill enabled (Q)' : 'Floating Quick Action Pill hidden (Q)', 'info');
+        return;
+      }
+
       // If any modal/overlay is currently active, don't fire background shortcuts
       const isAnyModalOpen = isShortcutsModalOpen || isGuideCenterOpen || !!previewingStudent || isTourOpen || 
         isCommandPaletteOpen || isSettingsModalOpen || isLinkDispatcherOpen || 
@@ -1178,6 +1231,7 @@ export const AdminDashboard: React.FC = () => {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [
     shortcuts,
+    featureToggles,
     isShortcutsModalOpen,
     isGuideCenterOpen,
     previewingStudent,
@@ -1723,7 +1777,9 @@ export const AdminDashboard: React.FC = () => {
       originalUniversity: editStudentData.isExchange ? editStudentData.originalUniversity.trim() || undefined : undefined,
       originalCountry: editStudentData.isExchange ? normalizeNationality(editStudentData.originalCountry) || undefined : undefined,
       currentUniversity: editStudentData.isExchange ? editStudentData.currentUniversity.trim() || undefined : undefined,
-      studentType: editStudentData.isExchange ? 'Erasmus' : editStudentData.isInternational ? 'International' : 'Normal'
+      studentType: editStudentData.isExchange ? 'Erasmus' : editStudentData.isInternational ? 'International' : 'Normal',
+      flaggedForReview: false,
+      suspiciousReason: null
     });
 
     setIsEditStudentModalOpen(false);
@@ -2218,6 +2274,17 @@ export const AdminDashboard: React.FC = () => {
         toggleThemeMode();
         addToast('Toggled interface color theme', 'info');
         break;
+      case 'toggle_quick_pill':
+        {
+          const latestToggles = loadFeatureToggles();
+          const nextVal = !latestToggles.showQuickActionPill;
+          const updated = { ...latestToggles, showQuickActionPill: nextVal };
+          saveFeatureToggles(updated);
+          syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          setFeatureToggles(updated);
+          addToast(nextVal ? 'Floating Quick Action Pill enabled (Q)' : 'Floating Quick Action Pill hidden (Q)', 'info');
+        }
+        break;
 
       // --- Roster & Teams ---
       case 'new_class':
@@ -2407,14 +2474,17 @@ export const AdminDashboard: React.FC = () => {
       // --- Layout & Presets ---
       case 'preset_standard':
         saveFeatureToggles(DEFAULT_FEATURE_TOGGLES);
+        syncWorkspaceSettingsToCloud({ featureToggles: DEFAULT_FEATURE_TOGGLES });
         addToast('Applied Standard Mode layout preset (Default)', 'success');
         break;
       case 'preset_minimal':
         saveFeatureToggles(MINIMAL_FEATURE_TOGGLES);
+        syncWorkspaceSettingsToCloud({ featureToggles: MINIMAL_FEATURE_TOGGLES });
         addToast('Applied Minimal Mode layout preset', 'info');
         break;
       case 'preset_full':
         saveFeatureToggles(FULL_FEATURE_TOGGLES);
+        syncWorkspaceSettingsToCloud({ featureToggles: FULL_FEATURE_TOGGLES });
         addToast('Applied Full Suite layout preset (All modules enabled)', 'success');
         break;
 
@@ -2696,7 +2766,7 @@ export const AdminDashboard: React.FC = () => {
               title="Quick Command Palette & Student Finder (Ctrl+K or /)"
             >
               <Search size={15} className="topbar-search-icon" />
-              <span className="topbar-search-placeholder">Search students, rubrics, actions...</span>
+              <span className="topbar-search-placeholder">Search students, rubrics, micro-pulse, actions...</span>
               <kbd className="topbar-search-kbd">⌘K</kbd>
             </div>
           )}
@@ -3729,6 +3799,7 @@ export const AdminDashboard: React.FC = () => {
           <div data-tour="autogroup-studio">
             <AutoGroupStudio
               students={activeClass.students}
+              defaultExpanded={false}
               onApplyGroups={(updatedStudents) => {
                 importRoster(activeClass.id, updatedStudents, true);
                 const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
@@ -3744,9 +3815,13 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Roster Filter & List Table - Toggleable in Settings */}
           {featureToggles.showRosterTable && (
-            <div className="card" data-tour="classroom-roster-table" style={{ padding: '1.25rem' }}>
-              <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <div className="card" data-tour="classroom-roster-table" style={{ padding: isRosterTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
+              <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isRosterTableExpanded ? '1.25rem' : 0 }}>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => setIsRosterTableExpanded(!isRosterTableExpanded)}
+                  title={isRosterTableExpanded ? 'Click to collapse table' : 'Click to expand table'}
+                >
                   <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
                     <Users size={20} className="text-indigo" /> Classroom Roster
                     <FeatureInfoButton featureId="classroom-roster" size="sm" tooltipText="Classroom Roster Guide" />
@@ -3754,6 +3829,11 @@ export const AdminDashboard: React.FC = () => {
                   <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
                     {filteredStudents.length} of {activeClass.students.length} members
                   </span>
+                  {duplicateFlagsMap.size > 0 && !isRosterTableExpanded && (
+                    <span className="badge badge-amber" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <AlertTriangle size={11} /> {duplicateFlagsMap.size} flags
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                   {featureToggles.showRosterSearchFilter && (
@@ -3824,11 +3904,37 @@ export const AdminDashboard: React.FC = () => {
                       </button>
                     </div>
                   )}
+
+                  {/* Expand / Collapse Roster Table Toggle */}
+                  <button
+                    type="button"
+                    className={isRosterTableExpanded ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
+                    onClick={() => setIsRosterTableExpanded(!isRosterTableExpanded)}
+                    style={{
+                      height: '36px',
+                      borderRadius: '8px',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      gap: '0.35rem',
+                      boxShadow: 'none'
+                    }}
+                    title={isRosterTableExpanded ? 'Collapse classroom roster table' : 'Expand classroom roster table'}
+                  >
+                    {isRosterTableExpanded ? (
+                      <>
+                        <ChevronUp size={14} /> Collapse Table
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown size={14} /> Expand Table ({filteredStudents.length})
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
-              {/* Intelligent Duplicate Enrollment Detection Banner - Toggleable in Settings */}
-              {featureToggles.showDuplicateDetector && duplicateFlagsMap.size > 0 && (
+              {/* Intelligent Duplicate Enrollment Detection Banner - Shown when table is expanded */}
+              {isRosterTableExpanded && featureToggles.showDuplicateDetector && duplicateFlagsMap.size > 0 && (
               <div
                 style={{
                   display: 'flex',
@@ -3943,9 +4049,10 @@ export const AdminDashboard: React.FC = () => {
                   Reset Filters
                 </button>
               </div>
-            ) : (
-              <div className="table-container table-container-sticky">
-                <table className="custom-table">
+            ) : !isRosterTableExpanded ? null : (
+              <>
+                <div className="table-container table-container-sticky">
+                  <table className="custom-table">
                   <thead>
                     <tr>
                       <th style={{ width: '38px', textAlign: 'center' }}>
@@ -4013,6 +4120,55 @@ export const AdminDashboard: React.FC = () => {
                                 <code style={{ fontSize: '0.68rem', padding: '0.05rem 0.25rem', borderRadius: '4px', backgroundColor: 'var(--bg-app)', color: 'var(--text-muted)' }}>
                                   #{s.id}
                                 </code>
+
+                                {/* Tamper & Identity Provenance Alert for Professors */}
+                                {((s.originalName && s.originalName !== s.name) || s.flaggedForReview || (s.nameChangeCount && s.nameChangeCount > 0)) && (
+                                  <span
+                                    className="badge"
+                                    style={{
+                                      backgroundColor: '#fef2f2',
+                                      color: '#dc2626',
+                                      border: '1px solid #fecaca',
+                                      fontSize: '0.65rem',
+                                      padding: '0.05rem 0.35rem',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.2rem',
+                                      fontWeight: 700,
+                                      cursor: 'help'
+                                    }}
+                                    title={
+                                      `⚠️ Identity Modification Detected:\n` +
+                                      `Enrolled Name: ${s.originalName || s.name}\n` +
+                                      `Enrolled Email: ${s.originalEmail || s.email}\n` +
+                                      (s.suspiciousReason ? `Audit note: ${s.suspiciousReason}\n` : '') +
+                                      (s.editHistory && s.editHistory.length > 0 
+                                        ? `\nChange Log (${s.editHistory.length}):\n` + s.editHistory.map(h => `• ${h.field}: "${h.from}" → "${h.to}"`).join('\n')
+                                        : '')
+                                    }
+                                  >
+                                    <ShieldAlert size={9} />
+                                    {s.originalName && s.originalName !== s.name ? `Formerly: ${s.originalName}` : 'Modified'}
+                                  </span>
+                                )}
+
+                                {/* Subtle Edit History Count if not flagged */}
+                                {s.editHistory && s.editHistory.length > 0 && !(s.originalName && s.originalName !== s.name) && !s.flaggedForReview && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.65rem',
+                                      color: 'var(--text-muted)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.2rem',
+                                      cursor: 'help'
+                                    }}
+                                    title={`Profile edit history (${s.editHistory.length} changes):\n` + s.editHistory.map(h => `• ${h.field}: "${h.from}" → "${h.to}"`).join('\n')}
+                                  >
+                                    <History size={10} /> {s.editHistory.length}
+                                  </span>
+                                )}
+
                                 {duplicateFlagsMap.has(s.id) && (
                                   <span
                                     className="badge"
@@ -4036,6 +4192,11 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                               <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
                                 {s.email}
+                                {s.originalEmail && s.originalEmail.toLowerCase() !== s.email.toLowerCase() && (
+                                  <span style={{ marginLeft: '0.35rem', color: '#dc2626', fontSize: '0.68rem', fontWeight: 600 }}>
+                                    (Originally: {s.originalEmail})
+                                  </span>
+                                )}
                               </span>
                             </div>
                           </td>
@@ -4115,9 +4276,39 @@ export const AdminDashboard: React.FC = () => {
                               </a>
                               <div>
                                 {s.submitted ? (
-                                  <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', gap: '0.2rem' }}>
-                                    <CheckCircle size={9} /> Done
-                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                                    <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', gap: '0.2rem' }}>
+                                      <CheckCircle size={9} /> Done
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        triggerConfirm(
+                                          'Reset Student Submission',
+                                          `Are you sure you want to reset the peer review submission for "${s.name}"? This will clear their submitted ratings and return their portal status to Pending so they can evaluate again.`,
+                                          () => resetStudentReviews(activeClass.id, s.id),
+                                          'Reset Submission',
+                                          'Cancel'
+                                        );
+                                      }}
+                                      style={{
+                                        fontSize: '0.64rem',
+                                        fontWeight: 700,
+                                        padding: '0.08rem 0.35rem',
+                                        borderRadius: '4px',
+                                        border: '1px solid var(--border-color)',
+                                        backgroundColor: 'var(--bg-surface)',
+                                        color: 'var(--accent-amber)',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.2rem'
+                                      }}
+                                      title={`Reset reviews submitted by ${s.name} so they can re-evaluate`}
+                                    >
+                                      <RotateCcw size={9} /> Reset
+                                    </button>
+                                  </div>
                                 ) : (
                                   <span className="badge badge-amber" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', gap: '0.2rem' }}>
                                     <Clock size={9} /> Pending
@@ -4130,6 +4321,25 @@ export const AdminDashboard: React.FC = () => {
                           {/* 1-Click Minimal Segmented Action Dock */}
                           <td style={{ textAlign: 'right' }}>
                             <div className="table-action-dock">
+                              {s.submitted && (
+                                <button
+                                  type="button"
+                                  className="table-action-btn action-reset"
+                                  onClick={() => {
+                                    triggerConfirm(
+                                      'Reset Student Submission',
+                                      `Are you sure you want to reset the peer review submission for "${s.name}"? This will clear their submitted ratings and return their portal status to Pending so they can evaluate again.`,
+                                      () => resetStudentReviews(activeClass.id, s.id),
+                                      'Reset Submission',
+                                      'Cancel'
+                                    );
+                                  }}
+                                  title={`Reset ${s.name}'s review submission`}
+                                  style={{ color: 'var(--accent-amber)' }}
+                                >
+                                  <RotateCcw size={13} />
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="table-action-btn action-simulator"
@@ -4228,144 +4438,145 @@ export const AdminDashboard: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-            )}
 
-            {/* Floating Bulk Actions Bar */}
-            {featureToggles.showBulkActionBar && selectedStudentIds.size > 0 && (
-              <div className="bulk-actions-floating-bar">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <span className="badge badge-primary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', fontWeight: 800 }}>
-                    {selectedStudentIds.size} Selected
-                  </span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    of {filteredStudents.length} students
-                  </span>
-                </div>
+              {/* Floating Bulk Actions Bar */}
+              {featureToggles.showBulkActionBar && selectedStudentIds.size > 0 && (
+                <div className="bulk-actions-floating-bar">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <span className="badge badge-primary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', fontWeight: 800 }}>
+                      {selectedStudentIds.size} Selected
+                    </span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      of {filteredStudents.length} students
+                    </span>
+                  </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  {/* Assign to Group */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <CustomSelect
-                      value={bulkTargetTeam}
-                      onChange={(val) => setBulkTargetTeam(val)}
-                      options={[
-                        { value: '', label: '-- Assign to Team --' },
-                        ...groupOptions.filter(g => g.value !== 'All Groups').map(g => ({ value: g.value, label: g.label }))
-                      ]}
-                      style={{ width: 'auto', minWidth: '150px' }}
-                      triggerStyle={{ height: '34px', fontSize: '0.78rem', padding: '0 0.6rem' }}
-                    />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {/* Assign to Group */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <CustomSelect
+                        value={bulkTargetTeam}
+                        onChange={(val) => setBulkTargetTeam(val)}
+                        options={[
+                          { value: '', label: '-- Assign to Team --' },
+                          ...groupOptions.filter(g => g.value !== 'All Groups').map(g => ({ value: g.value, label: g.label }))
+                        ]}
+                        style={{ width: 'auto', minWidth: '150px' }}
+                        triggerStyle={{ height: '34px', fontSize: '0.78rem', padding: '0 0.6rem' }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={!bulkTargetTeam}
+                        onClick={() => {
+                          selectedStudentIds.forEach(id => updateStudent(activeClass.id, id, { groupName: bulkTargetTeam }));
+                          addToast(`Assigned ${selectedStudentIds.size} students to "${bulkTargetTeam}"!`, 'success');
+                          setSelectedStudentIds(new Set());
+                          setBulkTargetTeam('');
+                        }}
+                        style={{ height: '34px', fontSize: '0.78rem', padding: '0 0.75rem' }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+
+                    {/* Bulk Export */}
                     <button
                       type="button"
-                      className="btn btn-primary btn-sm"
-                      disabled={!bulkTargetTeam}
+                      className="btn btn-secondary btn-sm"
                       onClick={() => {
-                        selectedStudentIds.forEach(id => updateStudent(activeClass.id, id, { groupName: bulkTargetTeam }));
-                        addToast(`Assigned ${selectedStudentIds.size} students to "${bulkTargetTeam}"!`, 'success');
-                        setSelectedStudentIds(new Set());
-                        setBulkTargetTeam('');
+                        const selectedData: ClassData = {
+                          ...activeClass,
+                          students: activeClass.students.filter(s => selectedStudentIds.has(s.id))
+                        };
+                        exportRosterToExcel(selectedData);
+                        addToast(`Exported ${selectedStudentIds.size} selected students to Excel!`, 'success');
                       }}
-                      style={{ height: '34px', fontSize: '0.78rem', padding: '0.3rem 0.75rem' }}
+                      style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
+                      title="Export selected students to Excel"
                     >
-                      Apply
+                      <Download size={13} className="text-teal" /> Excel
+                    </button>
+
+                    {/* Bulk Delete */}
+                    <button
+                      type="button"
+                      className="btn btn-rose btn-sm"
+                      onClick={() => {
+                        triggerConfirm(
+                          'Delete Selected Students',
+                          `Are you sure you want to delete ${selectedStudentIds.size} selected students and ALL associated peer evaluations? This action cannot be undone.`,
+                          () => {
+                            deleteStudents(activeClass.id, Array.from(selectedStudentIds));
+                            setSelectedStudentIds(new Set());
+                          },
+                          'Delete Selected',
+                          'Cancel'
+                        );
+                      }}
+                      style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
+                      title="Delete selected students from roster"
+                    >
+                      <Trash2 size={13} /> Delete
+                    </button>
+
+                    {/* Deselect All */}
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setSelectedStudentIds(new Set())}
+                      style={{ height: '34px', fontSize: '0.78rem' }}
+                    >
+                      Deselect
                     </button>
                   </div>
-
-                  {/* Bulk Export */}
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      const selectedData: ClassData = {
-                        ...activeClass,
-                        students: activeClass.students.filter(s => selectedStudentIds.has(s.id))
-                      };
-                      exportRosterToExcel(selectedData);
-                      addToast(`Exported ${selectedStudentIds.size} selected students to Excel!`, 'success');
-                    }}
-                    style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
-                    title="Export selected students to Excel"
-                  >
-                    <Download size={13} className="text-teal" /> Excel
-                  </button>
-
-                  {/* Bulk Delete */}
-                  <button
-                    type="button"
-                    className="btn btn-rose btn-sm"
-                    onClick={() => {
-                      triggerConfirm(
-                        'Delete Selected Students',
-                        `Are you sure you want to delete ${selectedStudentIds.size} selected students and ALL associated peer evaluations? This action cannot be undone.`,
-                        () => {
-                          deleteStudents(activeClass.id, Array.from(selectedStudentIds));
-                          setSelectedStudentIds(new Set());
-                        },
-                        'Delete Selected',
-                        'Cancel'
-                      );
-                    }}
-                    style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
-                    title="Delete selected students from roster"
-                  >
-                    <Trash2 size={13} /> Delete
-                  </button>
-
-                  {/* Deselect All */}
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setSelectedStudentIds(new Set())}
-                    style={{ height: '34px', fontSize: '0.78rem' }}
-                  >
-                    Deselect
-                  </button>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </>
+          )}
+        </div>
+      )}
 
-        {/* Team Overview Cards - Only rendered when enabled in Settings */}
+        {/* Team Overview Cards - Rendered when enabled in Settings */}
         {featureToggles.showTeamOverviewCards && uniqueGroups.length > 0 && (
-          <div className="card" style={{ padding: '1.25rem' }}>
-            <div className="card-header" style={{ marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
-                  <Users size={17} className="text-teal" /> Team Cohorts Overview ({uniqueGroups.length})
-                </h3>
-              </div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Click any card to filter the roster</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
-              {uniqueGroups.map((group) => {
-                const teamMembers = activeClass.students.filter(s => s.groupName === group);
-                const isSelected = groupFilter === group;
-                return (
-                  <div
-                    key={group}
-                    onClick={() => setGroupFilter(isSelected ? 'All Groups' : group)}
-                    style={{
-                      padding: '0.75rem 1rem',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: isSelected ? 'var(--primary-light)' : 'var(--bg-app)',
-                      border: isSelected ? '1.5px solid var(--primary)' : '1px solid var(--border-color)',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                      <strong style={{ fontSize: '0.85rem', color: isSelected ? 'var(--primary)' : 'var(--text-primary)' }}>{group}</strong>
-                      <span className="badge badge-teal" style={{ fontSize: '0.7rem' }}>{teamMembers.length} members</span>
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {teamMembers.map(m => m.name).join(', ') || 'No members'}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <TeamCohortsOverview
+            activeClass={activeClass}
+            selectedGroup={groupFilter}
+            onSelectGroup={(grp) => setGroupFilter(grp)}
+            baseGroupGrade={baseGroupGrade}
+            fudgeWeight={fudgeWeight}
+            onUpdateTeamBaseGrade={updateTeamBaseGrade}
+            onPreviewStudent={(s) => setPreviewingStudent(s)}
+            onEditStudent={(s) => {
+              const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
+              setEditStudentData({
+                id: s.id,
+                name: s.name,
+                email: s.email,
+                groupName: s.groupName,
+                gender: s.gender || 'Prefer not to say',
+                isInternational: isIntl,
+                isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
+                nationality: s.nationality || '',
+                currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
+                englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
+                university: s.university || '',
+                degree: s.degree || '',
+                originalUniversity: s.originalUniversity || '',
+                originalCountry: s.originalCountry || '',
+                currentUniversity: s.currentUniversity || s.university || '',
+                studentType: s.studentType || 'Normal'
+              });
+              setIsEditStudentModalOpen(true);
+            }}
+            onOpenReport={(studentId) => openReportModal(studentId)}
+            onResetStudentReviews={(classId, studentId) => resetStudentReviews(classId, studentId)}
+            addToast={(msg, type) => addToast(msg, type)}
+            triggerConfirm={triggerConfirm}
+            firebaseConfig={firebaseConfig}
+            isCloudSynced={isCloudSynced}
+            user={user}
+          />
         )}
       </div>
     )}
@@ -4682,7 +4893,7 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                       <div>
                         <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Weightage (%)</label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', height: '36px' }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: '85px', maxWidth: '105px', height: '36px' }}>
                           <input
                             type="number"
                             className="form-input"
@@ -4693,9 +4904,9 @@ export const AdminDashboard: React.FC = () => {
                               const val = Math.max(0, Math.min(100, Number(e.target.value)));
                               handleUpdateField(field.id, { weight: val });
                             }}
-                            style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center', width: '70px', fontWeight: 700 }}
+                            style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center', width: '100%', paddingRight: '26px', paddingLeft: '8px', fontWeight: 700 }}
                           />
-                          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-secondary)' }}>%</span>
+                          <span style={{ position: 'absolute', right: '10px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', pointerEvents: 'none' }}>%</span>
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
@@ -4856,6 +5067,42 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
           )}
+
+            {/* Evaluation Form Controls & Student Permissions (Collapsible & Minimal) */}
+            {featureToggles.showEvaluationFormControls && (
+              <div data-tour="eval-controls-card" style={{ marginTop: '1.5rem' }}>
+                <CollapsibleEvaluationControls
+                  activeClass={activeClass}
+                  onUpdateControls={(controls) => updateEvaluationControls(activeClass.id, controls)}
+                  defaultExpanded={false}
+                />
+              </div>
+            )}
+
+            {/* Team Health "Micro-Pulse" Check-ins (On-Demand & Customizable Scales) */}
+            {(featureToggles.showTeamHealthPulse || (activeClass.pulseRounds && activeClass.pulseRounds.length > 0)) && (
+              <div id="team-health-pulse-card" data-tour="team-health-pulse-card" style={{ marginTop: '1.5rem' }}>
+                <TeamHealthPulseCard
+                  activeClass={activeClass}
+                  onCreateRound={(classId, roundData) => {
+                    if (!featureToggles.showTeamHealthPulse) {
+                      saveFeatureToggle('showTeamHealthPulse', true);
+                    }
+                    createPulseRound(classId, roundData);
+                  }}
+                  onUpdateRound={updatePulseRound}
+                  onSubmitResponse={submitPulseResponse}
+                  onDeleteRound={deletePulseRound}
+                  onSeedSampleData={(classId) => {
+                    if (!featureToggles.showTeamHealthPulse) {
+                      saveFeatureToggle('showTeamHealthPulse', true);
+                    }
+                    seedSamplePulseRounds(classId);
+                  }}
+                  addToast={addToast}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -6329,9 +6576,13 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Grades Matrix Sheet */}
           {featureToggles.showResultsSummarySheet && (
-            <div className="card" data-tour="results-summary-card" style={{ padding: '1.25rem' }}>
-              <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <div className="card" data-tour="results-summary-card" style={{ padding: isResultsTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
+              <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isResultsTableExpanded ? '1.25rem' : 0 }}>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
+                  title={isResultsTableExpanded ? 'Click to collapse gradebook' : 'Click to expand gradebook'}
+                >
                   <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
                     <Award size={20} className="text-indigo" /> Results Summary Sheet &amp; Gradebook
                     <FeatureInfoButton featureId="results-summary-sheet" size="sm" tooltipText="Gradebook & Results Matrix Guide" />
@@ -6383,6 +6634,32 @@ export const AdminDashboard: React.FC = () => {
                       </button>
                     </div>
                   )}
+
+                  {/* Expand / Collapse Gradebook Toggle */}
+                  <button
+                    type="button"
+                    className={isResultsTableExpanded ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
+                    onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
+                    style={{
+                      height: '36px',
+                      borderRadius: '8px',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      gap: '0.35rem',
+                      boxShadow: 'none'
+                    }}
+                    title={isResultsTableExpanded ? 'Collapse gradebook matrix table' : 'Expand gradebook matrix table'}
+                  >
+                    {isResultsTableExpanded ? (
+                      <>
+                        <ChevronUp size={14} /> Collapse Gradebook
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown size={14} /> Expand Gradebook ({stats.totalStudents})
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -6394,7 +6671,7 @@ export const AdminDashboard: React.FC = () => {
                 <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: 0 }}>No results to compute</p>
                 <p style={{ fontSize: '0.82rem', margin: 0, maxWidth: '300px', lineHeight: 1.5 }}>Add participants to the roster and collect peer evaluations before viewing the performance matrix.</p>
               </div>
-            ) : (
+            ) : !isResultsTableExpanded ? null : (
               <div className="table-container table-container-sticky">
                 <table className="custom-table" style={{ whiteSpace: 'nowrap' }}>
                   <thead>
@@ -6475,9 +6752,39 @@ export const AdminDashboard: React.FC = () => {
                               </span>
                               <div>
                                 {s.submitted ? (
-                                  <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', gap: '0.2rem' }}>
-                                    <CheckCircle size={9} /> Completed
-                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                                    <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', gap: '0.2rem' }}>
+                                      <CheckCircle size={9} /> Completed
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        triggerConfirm(
+                                          'Reset Student Review Submission',
+                                          `Are you sure you want to reset the evaluation submitted by "${s.name}"? Their submitted scores will be cleared, returning their portal status to Pending so they can evaluate again.`,
+                                          () => resetStudentReviews(activeClass.id, s.id),
+                                          'Reset Submission',
+                                          'Cancel'
+                                        );
+                                      }}
+                                      style={{
+                                        fontSize: '0.64rem',
+                                        fontWeight: 700,
+                                        padding: '0.08rem 0.35rem',
+                                        borderRadius: '4px',
+                                        border: '1px solid var(--border-color)',
+                                        backgroundColor: 'var(--bg-surface)',
+                                        color: 'var(--accent-amber)',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.2rem'
+                                      }}
+                                      title={`Reset reviews submitted by ${s.name} so they can re-evaluate`}
+                                    >
+                                      <RotateCcw size={9} /> Reset
+                                    </button>
+                                  </div>
                                 ) : (
                                   <span className="badge badge-amber" style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', gap: '0.2rem' }}>
                                     <Clock size={9} /> Pending
@@ -6579,6 +6886,26 @@ export const AdminDashboard: React.FC = () => {
                           {/* 1-Click Minimal Segmented Action Dock */}
                           <td style={{ textAlign: 'right' }}>
                             <div className="table-action-dock">
+                              {s.submitted && (
+                                <button
+                                  type="button"
+                                  className="table-action-btn btn-text-action action-reset"
+                                  onClick={() => {
+                                    triggerConfirm(
+                                      'Reset Student Review Submission',
+                                      `Are you sure you want to reset the peer review submission for "${s.name}"? Their submitted scores will be cleared, returning their portal status to Pending so they can evaluate again.`,
+                                      () => resetStudentReviews(activeClass.id, s.id),
+                                      'Reset Submission',
+                                      'Cancel'
+                                    );
+                                  }}
+                                  title={`Reset ${s.name}'s review submission`}
+                                  style={{ color: 'var(--accent-amber)' }}
+                                >
+                                  <RotateCcw size={12} />
+                                  <span>Reset</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="table-action-btn btn-text-action action-report"
@@ -7591,6 +7918,47 @@ export const AdminDashboard: React.FC = () => {
         }
       >
         <form onSubmit={handleEditStudentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {(() => {
+            const currentEditingStudent = activeClass?.students.find(s => s.id === editStudentData.id);
+            if (!currentEditingStudent) return null;
+            const hasTamperAlert = (currentEditingStudent.originalName && currentEditingStudent.originalName !== currentEditingStudent.name) || currentEditingStudent.flaggedForReview || (currentEditingStudent.nameChangeCount && currentEditingStudent.nameChangeCount > 0);
+            const historyCount = currentEditingStudent.editHistory?.length || 0;
+            if (!hasTamperAlert && historyCount === 0) return null;
+
+            return (
+              <div style={{
+                backgroundColor: hasTamperAlert ? '#fef2f2' : 'var(--bg-app)',
+                border: `1px solid ${hasTamperAlert ? '#fecaca' : 'var(--border-color)'}`,
+                borderRadius: '10px',
+                padding: '0.85rem 1rem',
+                fontSize: '0.78rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: hasTamperAlert ? '#dc2626' : 'var(--text-primary)' }}>
+                    {hasTamperAlert ? <ShieldAlert size={15} /> : <History size={15} />}
+                    <span>{hasTamperAlert ? 'Identity Revision Audit Alert' : 'Student Edit History'}</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    Original: <b>{currentEditingStudent.originalName || currentEditingStudent.name}</b> ({currentEditingStudent.originalEmail || currentEditingStudent.email})
+                  </span>
+                </div>
+                {currentEditingStudent.suspiciousReason && (
+                  <div style={{ color: '#b91c1c', marginBottom: '0.4rem', fontWeight: 600 }}>
+                    {currentEditingStudent.suspiciousReason}
+                  </div>
+                )}
+                {historyCount > 0 && (
+                  <div style={{ maxHeight: '90px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.3rem', padding: '0.4rem', backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: '6px' }}>
+                    {currentEditingStudent.editHistory!.map((h, i) => (
+                      <div key={i} style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                        • <b>{h.field}</b>: <span style={{ textDecoration: 'line-through' }}>{h.from}</span> → <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{h.to}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* SECTION 1: IDENTITY & CONTACT */}
           <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -9239,22 +9607,89 @@ export const AdminDashboard: React.FC = () => {
                         Select a specific rubric metric to inspect individual raw ratings. Rows represent **Reviewers** and columns represent **Recipients**.
                       </p>
                     </div>
-                    <div className="hide-on-print" style={{ minWidth: '180px' }}>
+                    <div className="hide-on-print" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                       <select
                         className="form-input"
                         value={activeAuditMetric}
                         onChange={(e) => setActiveAuditMetric(e.target.value)}
-                        style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.5rem', fontSize: '0.82rem', width: '100%' }}
+                        style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.5rem', fontSize: '0.82rem', minWidth: '180px' }}
                       >
                         <option value="overall">Overall Averages (%)</option>
                         {activeClass.fields.map(f => (
                           <option key={f.id} value={f.id}>{f.name}</option>
                         ))}
                       </select>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setIsAuditMatrixExpanded(!isAuditMatrixExpanded)}
+                        style={{
+                          height: '36px',
+                          borderRadius: '8px',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          gap: '0.35rem',
+                          backgroundColor: isAuditMatrixExpanded ? 'var(--bg-app)' : 'var(--primary-light)',
+                          color: isAuditMatrixExpanded ? 'var(--text-primary)' : 'var(--primary)',
+                          borderColor: isAuditMatrixExpanded ? 'var(--border-color)' : 'var(--primary)'
+                        }}
+                        title={isAuditMatrixExpanded ? 'Contract audit matrix' : 'Expand audit matrix'}
+                      >
+                        {isAuditMatrixExpanded ? (
+                          <>
+                            <ChevronDown size={14} /> Collapse Matrix
+                          </>
+                        ) : (
+                          <>
+                            <ChevronRight size={14} /> Expand Matrix
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
 
-                  <div className="table-container">
+                  {!isAuditMatrixExpanded ? (
+                    <div
+                      onClick={() => setIsAuditMatrixExpanded(true)}
+                      style={{
+                        padding: '1rem 1.25rem',
+                        borderRadius: 'var(--radius-md, 8px)',
+                        backgroundColor: 'var(--bg-app)',
+                        border: '1px dashed var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        gap: '1rem',
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <Sliders size={18} className="text-teal" />
+                        <div>
+                          <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                            Evaluation Audit Matrix is Contracted
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                            Click to inspect raw ratings between all {teamStudents.length} teammates in this cohort
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsAuditMatrixExpanded(true);
+                        }}
+                        style={{ height: '30px', fontSize: '0.75rem', gap: '0.35rem', fontWeight: 700 }}
+                      >
+                        <ChevronRight size={13} /> Expand Matrix
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="table-container">
                     <table className="custom-table" style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse', textAlign: 'center' }}>
                       <thead>
                         <tr>
@@ -9319,6 +9754,7 @@ export const AdminDashboard: React.FC = () => {
                       </tbody>
                     </table>
                   </div>
+                  )}
                 </div>
               )}
 
@@ -9353,9 +9789,42 @@ export const AdminDashboard: React.FC = () => {
                             Email: {reviewer.email} • Status: {reviewer.submitted ? 'Submitted' : 'Pending'}
                           </span>
                         </div>
-                        <span className="badge badge-primary">
-                          {written.length} review(s) logged
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          {reviewer.submitted && (
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                triggerConfirm(
+                                  `Reset ${reviewer.name}'s Submission`,
+                                  `Are you sure you want to reset the peer review submission for "${reviewer.name}"? This will clear all reviews they submitted and allow them to re-evaluate from their student portal.`,
+                                  () => {
+                                    resetStudentReviews(activeClass.id, reviewer.id);
+                                    setSelectedStudentReport(null);
+                                  },
+                                  'Reset Submission',
+                                  'Cancel'
+                                );
+                              }}
+                              style={{
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                padding: '0.22rem 0.55rem',
+                                color: 'var(--accent-amber)',
+                                borderColor: 'var(--accent-amber)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem'
+                              }}
+                              title="Reset reviews submitted by this student"
+                            >
+                              <RotateCcw size={11} /> Reset Submission
+                            </button>
+                          )}
+                          <span className="badge badge-primary">
+                            {written.length} review(s) logged
+                          </span>
+                        </div>
                       </div>
 
                       {written.length === 0 ? (
@@ -9520,23 +9989,40 @@ export const AdminDashboard: React.FC = () => {
         onUpdateShortcuts={handleUpdateShortcuts}
         onResetShortcuts={handleResetShortcuts}
         showChecklist={showOnboardingChecklist}
-        onToggleChecklist={(show) => setShowOnboardingChecklist(show)}
+        onToggleChecklist={(show) => {
+          setShowOnboardingChecklist(show);
+          localStorage.setItem('peer_onboarding_dismissed', show ? 'false' : 'true');
+        }}
+      />
+
+      {/* MODAL: EVALUATION FORM CONTROLS & STUDENT PERMISSIONS */}
+      <EvaluationControlsModal
+        isOpen={isEvaluationControlsModalOpen}
+        onClose={() => setIsEvaluationControlsModalOpen(false)}
+        activeClass={activeClass}
+        onUpdateControls={(controls) => {
+          if (activeClass) {
+            updateEvaluationControls(activeClass.id, controls);
+          }
+        }}
       />
 
       {/* MODAL: QUICK COMMAND PALETTE & FINDER (CTRL/CMD + K) */}
       <CommandPaletteModal
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
+        onOpenEvaluationControls={() => setIsEvaluationControlsModalOpen(true)}
         classData={activeClass}
         featureToggles={featureToggles}
         onToggleFeature={(key, value) => {
           const updated = { ...featureToggles, [key]: value };
           saveFeatureToggles(updated);
+          syncWorkspaceSettingsToCloud({ featureToggles: updated });
         }}
         onApplyMode={(mode) => {
-          if (mode === 'minimal') saveFeatureToggles(MINIMAL_FEATURE_TOGGLES);
-          else if (mode === 'full') saveFeatureToggles(FULL_FEATURE_TOGGLES);
-          else saveFeatureToggles(DEFAULT_FEATURE_TOGGLES);
+          const updated = mode === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (mode === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
+          saveFeatureToggles(updated);
+          syncWorkspaceSettingsToCloud({ featureToggles: updated });
         }}
         onNavigateTab={(tab) => setActiveTab(tab)}
         onOpenProjector={() => setIsProjectorModalOpen(true)}
@@ -10008,7 +10494,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div style={{ backgroundColor: 'var(--bg-primary)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                💡 <strong>Canvas Tip:</strong> PeerLens automatically includes the required <code style={{ fontSize: '0.74rem' }}>Points Possible</code> definition on line 2, ensuring Canvas does not trigger missing column or formatting errors.
+                <Lightbulb size={13} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: '0.35rem', color: '#f59e0b' }} /> <strong>Canvas Tip:</strong> PeerLens automatically includes the required <code style={{ fontSize: '0.74rem' }}>Points Possible</code> definition on line 2, ensuring Canvas does not trigger missing column or formatting errors.
               </div>
             </div>
           )}
@@ -10059,7 +10545,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div style={{ backgroundColor: 'var(--bg-primary)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                💡 <strong>Blackboard Tip:</strong> The grade column name automatically includes <code style={{ fontSize: '0.74rem' }}>[Total Pts: ...]</code> which enables Blackboard to configure points possible automatically on import.
+                <Lightbulb size={13} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: '0.35rem', color: '#f59e0b' }} /> <strong>Blackboard Tip:</strong> The grade column name automatically includes <code style={{ fontSize: '0.74rem' }}>[Total Pts: ...]</code> which enables Blackboard to configure points possible automatically on import.
               </div>
             </div>
           )}
@@ -10110,7 +10596,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div style={{ backgroundColor: 'var(--bg-primary)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                💡 <strong>Moodle Tip:</strong> Both <em>ID number</em> and <em>Email address</em> are included so you can map whichever identifier your institution uses for student accounts.
+                <Lightbulb size={13} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: '0.35rem', color: '#f59e0b' }} /> <strong>Moodle Tip:</strong> Both <em>ID number</em> and <em>Email address</em> are included so you can map whichever identifier your institution uses for student accounts.
               </div>
             </div>
           )}
@@ -10161,7 +10647,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div style={{ backgroundColor: 'var(--bg-primary)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                💡 <strong>Brightspace Tip:</strong> D2L strictly requires the <code style={{ fontSize: '0.74rem' }}>#</code> OrgDefinedId prefix and terminal <code style={{ fontSize: '0.74rem' }}>#</code> End-of-Line Indicator, which PeerLens automatically formats for you.
+                <Lightbulb size={13} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: '0.35rem', color: '#f59e0b' }} /> <strong>Brightspace Tip:</strong> D2L strictly requires the <code style={{ fontSize: '0.74rem' }}>#</code> OrgDefinedId prefix and terminal <code style={{ fontSize: '0.74rem' }}>#</code> End-of-Line Indicator, which PeerLens automatically formats for you.
               </div>
             </div>
           )}
@@ -10212,7 +10698,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div style={{ backgroundColor: 'var(--bg-primary)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                💡 <strong>Persistent Customization:</strong> Your custom column mappings and delimiter options are automatically saved in your browser so you don't need to reconfigure them each time.
+                <Lightbulb size={13} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: '0.35rem', color: '#f59e0b' }} /> <strong>Persistent Customization:</strong> Your custom column mappings and delimiter options are automatically saved in your browser so you don't need to reconfigure them each time.
               </div>
             </div>
           )}
@@ -10230,6 +10716,160 @@ export const AdminDashboard: React.FC = () => {
           setIsSettingsModalOpen(true);
         }}
       />
+
+      {/* FLOATING QUICK ACTION PILL (STILL AT BOTTOM OF WINDOW) */}
+      {featureToggles.showQuickActionPill && (
+        <QuickActionPill
+          activeTab={activeTab}
+          onNavigateTab={(tab) => setActiveTab(tab)}
+          activeClass={activeClass}
+          classes={classes}
+          onSelectClass={(id) => selectClass(id)}
+          onDeleteClass={(id) => {
+            triggerConfirm(
+              'Delete Classroom Group',
+              `Are you sure you want to permanently delete the classroom "${activeClass.name}" and all of its student rosters, evaluations, and metrics? This action cannot be undone.`,
+              () => deleteClass(id),
+              'Delete Classroom',
+              'Cancel'
+            );
+          }}
+          onNewClass={() => setIsNewClassModalOpen(true)}
+          onOpenSearch={() => setIsCommandPaletteOpen(true)}
+          onOpenGuideCenter={(tab) => openGuideCenter(tab || 'system')}
+          onOpenProjector={() => setIsProjectorModalOpen(true)}
+          onOpenEmailDispatcher={() => setIsLinkDispatcherOpen(true)}
+          onOpenEvaluationControls={() => setIsEvaluationControlsModalOpen(true)}
+          onOpenSettings={(tab) => {
+            if (tab) setSettingsInitialTab(tab);
+            setIsSettingsModalOpen(true);
+          }}
+          onOpenProfile={() => setIsMobileProfileModalOpen(true)}
+          onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
+          onOpenTour={handleStartTour}
+          isCloudSynced={isCloudSynced}
+          activeAdminProfile={activeAdminProfile}
+          onToggleTheme={toggleThemeMode}
+          featureToggles={featureToggles}
+          onToggleFeature={(key, val) => {
+            const updated = { ...featureToggles, [key]: val };
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          }}
+          onApplyPreset={(preset) => {
+            const updated = preset === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (preset === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          }}
+          showChecklist={showOnboardingChecklist}
+          onToggleChecklist={(show) => {
+            setShowOnboardingChecklist(show);
+            localStorage.setItem('peer_onboarding_dismissed', show ? 'false' : 'true');
+          }}
+          onAddStudent={() => setIsAddStudentModalOpen(true)}
+          onOpenAutoGroup={() => setIsAutoGroupModalOpen(true)}
+          onOpenQRCode={() => setIsQRCodeModalOpen(true)}
+          onPopulate100Demo={() => {
+            if (activeClass) {
+              importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+              addToast('Loaded 100 diverse sample students across 35+ countries!', 'success');
+            }
+          }}
+          onExportCSV={() => {
+            if (activeClass) {
+              exportRosterToCSV(activeClass);
+              addToast('Exported classroom roster to CSV!', 'success');
+            }
+          }}
+          onExportExcel={handleExportExcel}
+          onAddCriterion={() => {
+            setActiveTab('grading');
+            if (activeClass) {
+              const nextNum = activeClass.fields.length + 1;
+              const newField: GradingScaleField = {
+                id: 'f_' + Math.random().toString(36).substring(2, 9),
+                name: `Criterion ${nextNum}`,
+                description: '',
+                min: 1,
+                max: 20,
+                weight: 1
+              };
+              updateGradingConfig(activeClass.id, [...activeClass.fields, newField]);
+              addToast(`Added Criterion ${nextNum} (Scale 1 to 20).`, 'success');
+            }
+          }}
+          onAutoBalanceWeights={() => {
+            if (activeClass && activeClass.fields.length > 0) {
+              const count = activeClass.fields.length;
+              const baseWeight = Math.floor(100 / count);
+              const remainder = 100 - (baseWeight * count);
+              const balanced = activeClass.fields.map((f, idx) => ({
+                ...f,
+                weight: baseWeight + (idx === 0 ? remainder : 0)
+              }));
+              updateGradingConfig(activeClass.id, balanced);
+              addToast(`Auto-balanced ${count} criteria weights to exactly 100%!`, 'success');
+            }
+          }}
+          onApplyIPAF={() => {
+            handleApplyPreset('ipaf_research_synthesized');
+            addToast('Applied Integrated Peer Assessment Framework (IPAF) Rubric Preset (100% balanced)!', 'success');
+          }}
+          onLaunchSimulator={() => {
+            if (activeClass && activeClass.students.length > 0) {
+              setPreviewingStudent(activeClass.students[0]);
+              addToast(`Launched Student Simulator for "${activeClass.students[0].name}"`, 'info');
+            } else {
+              addToast('Please enroll at least one student to launch simulator.', 'warning');
+            }
+          }}
+          onOpenWizard={() => setIsWizardOpen(true)}
+          onPopulateAuditData={handlePopulateAuditData}
+          onOpenStudentReport={() => openReportModal()}
+          onOpenArchive={() => setIsArchiveModalOpen(true)}
+          onOpenTeamBaseGrades={() => setIsTeamBaseGradesModalOpen(true)}
+          onOpenLmsGuide={() => setShowLmsGuideModal(true)}
+          onCopyJoinLink={() => {
+            if (activeClass) {
+              const url = getClassEnrollmentUrl(activeClass.id);
+              navigator.clipboard.writeText(url);
+              addToast('Student self-enrollment link copied to clipboard!', 'success');
+            }
+          }}
+          onResetReviews={() => {
+            if (activeClass) {
+              triggerConfirm(
+                'Reset All Classroom Submissions',
+                `Are you sure you want to clear all ${activeClass.reviews.length} peer evaluations submitted for "${activeClass.name}"? This allows you to start a fresh evaluation cycle.`,
+                () => {
+                  resetClassReviews(activeClass.id);
+                  addToast('Cleared all peer evaluation submissions for this classroom.', 'info');
+                },
+                'Reset Submissions',
+                'Cancel'
+              );
+            }
+          }}
+          onBackupJSON={() => {
+            if (activeClass) {
+              const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeClass, null, 2));
+              const downloadAnchor = document.createElement('a');
+              downloadAnchor.setAttribute("href", dataStr);
+              downloadAnchor.setAttribute("download", `${activeClass.name.toLowerCase().replace(/[^a-z0-9]/gi, '_')}_backup.json`);
+              document.body.appendChild(downloadAnchor);
+              downloadAnchor.click();
+              downloadAnchor.remove();
+              addToast(`Downloaded JSON snapshot backup for "${activeClass.name}"!`, 'success');
+            }
+          }}
+          onHidePill={() => {
+            const updated = { ...featureToggles, showQuickActionPill: false };
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+            addToast('Quick Action Pill hidden. Re-enable anytime in Settings or Command Palette.', 'info');
+          }}
+        />
+      )}
     </div>
   );
 };

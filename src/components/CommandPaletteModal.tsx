@@ -21,8 +21,8 @@ const SYNONYMS_HELP   = ['how to','what is','explain','help','what does','how do
 const SYNONYMS_MODE   = ['mode','preset','minimal','standard','full','power','simple','basic','advanced'];
 const SYNONYMS_NAV    = ['go to','switch to','navigate','take me to','jump to'];
 const SYNONYMS_THEME  = ['theme','dark','light','appearance','color'];
-const SYNONYMS_EXPORT = ['export','download','save as','csv','xlsx','excel','lms','pdf','canvas','moodle','blackboard','brightspace'];
-const SYNONYMS_FILTER = ['filter','pending','unsubmitted','submitted','unassigned','duplicate','team','jump'];
+const SYNONYMS_EXPORT = ['export','download','save as','csv','xlsx','excel','lms','pdf','canvas','moodle','blackboard','brightspace','pulse','pulse csv','micro-pulse'];
+const SYNONYMS_FILTER = ['filter','pending','unsubmitted','submitted','unassigned','duplicate','team','jump','cohort'];
 
 type IntentType = 'show_feature'|'hide_feature'|'navigate'|'help'|'mode_switch'|'theme'|'export'|'filter'|'general';
 interface NLPIntent { type: IntentType; confidence: number; }
@@ -75,7 +75,7 @@ function scoreItem(item: CPAction, queryTokens: string[], rawQ: string, intent: 
   if (intent.type === 'mode_switch' && item.category === 'Modes') sc += 60;
   if (intent.type === 'theme' && item.category === 'Appearance') sc += 60;
   if (intent.type === 'navigate' && item.category === 'Navigation') sc += 30;
-  if (intent.type === 'export' && (item.badge === 'Export' || item.badge === 'Excel' || item.badge === 'Canvas' || item.badge === 'Moodle' || item.badge === 'Blackboard' || item.badge === 'Brightspace' || item.badge === 'PDF' || item.badge === 'CSV' || item.keywords?.includes('export') || item.title.toLowerCase().startsWith('export'))) sc += 85;
+  if (intent.type === 'export' && (item.badge === 'Export' || item.badge === 'Excel' || item.badge === 'Pulse CSV' || item.badge === 'Canvas' || item.badge === 'Moodle' || item.badge === 'Blackboard' || item.badge === 'Brightspace' || item.badge === 'PDF' || item.badge === 'CSV' || item.keywords?.includes('export') || item.title.toLowerCase().startsWith('export'))) sc += 85;
   if (intent.type === 'filter' && (item.badge === 'Filter' || item.category === 'Teams' || item.keywords?.includes('filter') || item.title.toLowerCase().includes('filter'))) sc += 80;
   if (item.badge && item.badge.toLowerCase().includes(rawQ)) sc += 20;
   if (item.category.toLowerCase().includes(rawQ)) sc += 15;
@@ -126,6 +126,7 @@ const FL: Record<keyof FeatureToggles, { label: string; desc: string; section: s
   showGuideButton:          { label: 'Guide Center Button',       desc: 'Academic guidance & tutorials button',         section: 'Header',     icon: BookOpen },
   showCloudStatus:          { label: 'Cloud Sync Status',         desc: 'Firebase sync indicator badge',                section: 'Header',     icon: Cloud },
   showCustomizeViewButton:  { label: 'Customize View Button',     desc: 'Open interface module toggle panel',           section: 'Header',     icon: Sliders },
+  showQuickActionPill:      { label: 'Floating Quick Action Pill',desc: 'Contractable & expandable dock at bottom of window', section: 'Header', icon: Compass },
   showSectionNavBreadcrumbs:{ label: 'Section Breadcrumbs',       desc: 'Step 1/2/3 breadcrumb navigation bar',         section: 'Nav',        icon: LayoutDashboard },
   showClassIdBadge:         { label: 'Class ID Badge',            desc: 'Technical class ID in the sub-header',         section: 'Nav',        icon: Tag },
   showHubOverviewBanner:    { label: 'Hub Overview Banner',       desc: 'Full-width overview banner on Home Hub',       section: 'Hub',        icon: LayoutDashboard },
@@ -155,6 +156,8 @@ const FL: Record<keyof FeatureToggles, { label: string; desc: string; section: s
   showCustomCriterionButton:{ label: 'Add Criterion Button',      desc: 'Button to add custom evaluation criteria',     section: 'Section 2',  icon: Zap },
   showCriterionCards:       { label: 'Criterion Cards',           desc: 'Individual rubric criterion slider cards',     section: 'Section 2',  icon: Sliders },
   showEvaluationSimulator:  { label: 'Evaluation Simulator',      desc: 'Live preview of student evaluation portal',    section: 'Section 2',  icon: Eye },
+  showEvaluationFormControls:{ label: 'Form Controls Card',       desc: 'Card in Section 2 for questions & permissions',section: 'Section 2',  icon: Sliders },
+  showTeamHealthPulse:      { label: 'Team Health Micro-Pulse',   desc: 'On-demand 30-second pulse surveys & sparklines',section: 'Section 2', icon: Activity },
   showResultsHeaderCard:    { label: 'Results Header Card',       desc: 'Overview stats card in Section 3',             section: 'Section 3',  icon: BarChart2 },
   showExportReportButtons:  { label: 'Export Report Buttons',     desc: 'PDF, Excel, and CSV export action buttons',    section: 'Section 3',  icon: Download },
   showSubmissionReset:      { label: 'Submission Reset Button',   desc: 'Dangerous reset-all-reviews action button',    section: 'Section 3',  icon: RefreshCw },
@@ -286,6 +289,7 @@ export interface CommandPaletteModalProps {
   onOpenDeadline?: () => void;
   onResetSubmissions?: () => void;
   onToast?: (msg: string, type: 'success' | 'warning' | 'error' | 'info') => void;
+  onOpenEvaluationControls?: () => void;
 }
 
 // ── RESULT ROW COMPONENT (MINIMAL & POLISHED) ─────────────────────────────────
@@ -443,6 +447,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onSetFudgeWeight, onExportLMS, onExportResultsCSV, onExportPDFSummary,
   onOpenNewClass, onOpenImportWizard, onOpenAutoGroup,
   onOpenQRCode, onOpenDeadline, onResetSubmissions, onToast,
+  onOpenEvaluationControls,
 }) => {
   const { setThemeMode, themeMode } = useTheme();
   const [query,            setQuery]            = useState('');
@@ -481,6 +486,81 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     item.onExecute();
   }, []);
 
+  // ── PULSE CSV EXPORT HELPER ──────────────────────────────────────────────
+  const handleExportPulseCSV = useCallback(() => {
+    if (!classData) {
+      if (onToast) onToast('No classroom data available to export pulse.', 'warning');
+      return;
+    }
+    const rounds = classData.pulseRounds || [];
+    if (rounds.length === 0) {
+      if (onToast) onToast('No pulse check-in rounds found. Launch a round in Section 2 first.', 'warning');
+      return;
+    }
+    const targetRound = rounds.find(r => r.status === 'active') || rounds[0];
+
+    const headers = [
+      'Round Title',
+      'Status',
+      'Student Name',
+      'Team Name',
+      'Morale Rating',
+      'Scale Type',
+      'Milestone Status',
+      'Blocker Note',
+      'Submitted At',
+      'Custom Answers'
+    ];
+
+    const rows: string[][] = [];
+
+    if (targetRound.responses.length === 0) {
+      rows.push([
+        `"${targetRound.title.replace(/"/g, '""')}"`,
+        targetRound.status,
+        'No responses submitted yet',
+        '',
+        '',
+        targetRound.config?.scaleType || 'stars_5',
+        '',
+        '',
+        '',
+        ''
+      ]);
+    } else {
+      targetRound.responses.forEach(resp => {
+        const customFormatted = resp.customAnswers
+          ? Object.entries(resp.customAnswers).map(([k, v]) => `${k}: ${v}`).join('; ')
+          : '';
+        rows.push([
+          `"${targetRound.title.replace(/"/g, '""')}"`,
+          targetRound.status,
+          `"${resp.studentName.replace(/"/g, '""')}"`,
+          `"${resp.groupName.replace(/"/g, '""')}"`,
+          String(resp.moraleScore),
+          resp.scaleType,
+          resp.status,
+          `"${(resp.blockerNote || '').replace(/"/g, '""')}"`,
+          new Date(resp.submittedAt).toLocaleString(),
+          `"${customFormatted.replace(/"/g, '""')}"`
+        ]);
+      });
+    }
+
+    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const safeTitle = targetRound.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+    link.setAttribute('download', `${classData.name.replace(/\s+/g, '_')}_${safeTitle}_Pulse_Export.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    if (onToast) onToast('Downloaded pulse responses CSV successfully!', 'success');
+  }, [classData, onToast]);
+
   // ── BUILD ALL ITEMS ─────────────────────────────────────────────────────────
   const allItems = useMemo<CPAction[]>(() => {
     const list: CPAction[] = [];
@@ -504,6 +584,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       { id: 'act_settings',     title: 'Workspace Settings & Cloud Sync',   category: 'Actions', subtitle: 'Firebase, email API keys, and workspace profile',    icon: Settings,  badge: 'Cmd S',  keywords: ['settings','cloud','firebase','api','sync','config'],            onExecute: () => { onClose(); onOpenSettings('email'); } },
       { id: 'act_shortcuts',    title: 'Keyboard Shortcuts Reference',      category: 'Actions', subtitle: 'Full cheat sheet of keyboard controls',              icon: Keyboard,  badge: 'Cmd ?',  keywords: ['shortcuts','hotkeys','keyboard','cheat sheet','bindings'],      onExecute: () => { onClose(); onOpenShortcuts(); } },
       { id: 'act_customize',    title: 'Customize View (Module Toggles)',   category: 'Actions', subtitle: 'Toggle modular cards, top bar, and density presets', icon: Sliders,   badge: 'Cmd V',  keywords: ['customize','modules','interface','density','toggles','view'],   onExecute: () => { onClose(); onOpenSettings('modules'); } },
+      { id: 'act_toggle_quick_pill', title: featureToggles.showQuickActionPill ? 'Hide Floating Quick Action Pill' : 'Show Floating Quick Action Pill', category: 'Actions', subtitle: 'Contractable & expandable quick dock anchored at window bottom', icon: Compass, badge: 'Dock', keywords: ['quick action pill','pill','dock','bottom pill','floating dock','quick actions'], onExecute: () => { onClose(); if (onToggleFeature) onToggleFeature('showQuickActionPill', !featureToggles.showQuickActionPill); } },
     );
 
     // DIRECT EXPORT SHORTCUTS (Instant 1-Click File Downloads)
@@ -518,6 +599,17 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         badgeColor: '#10b981',
         keywords: ['export', 'excel', 'xlsx', 'spreadsheet', 'download excel', 'export excel', 'gradebook', 'workbook'],
         onExecute: () => { onClose(); onExportExcel(); },
+      },
+      {
+        id: 'act_export_pulse_csv',
+        title: 'Export: Team Health Pulse Responses (CSV)',
+        category: 'Actions',
+        subtitle: 'Download student check-in morale ratings, milestone statuses, and blocker notes as CSV',
+        icon: Download,
+        badge: 'Pulse CSV',
+        badgeColor: '#0d9488',
+        keywords: ['export pulse', 'pulse csv', 'download pulse', 'micro-pulse csv', 'export team health', 'pulse data', 'student morale csv', 'blockers csv', 'export'],
+        onExecute: () => { onClose(); handleExportPulseCSV(); },
       },
       {
         id: 'act_export_canvas',
@@ -588,6 +680,214 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
     // SMART CONFIGURATION SHORTCUTS (Rubrics, Scales & Calibrations)
     list.push(
+      {
+        id: 'act_evaluation_controls',
+        title: 'Peer Evaluation Form Fields & Student Permissions',
+        category: 'Actions',
+        subtitle: 'Toggle self-review, praise tags, constructive suggestions, strengths, role baseline & profile lock',
+        icon: Sliders,
+        badge: 'Form Controls',
+        badgeColor: '#14b8a6',
+        keywords: [
+          'evaluation form', 'form fields', 'peer evaluation form fields', 'self review', 'constructive suggestion',
+          'strengths', 'praise tags', 'role baseline', 'profile edit', 'profile editing', 'lock roster', 'permissions',
+          'controls', 'toggle', 'questions', 'survey', 'form questions'
+        ],
+        onExecute: () => { onClose(); if (onOpenEvaluationControls) onOpenEvaluationControls(); },
+      },
+      {
+        id: 'act_self_review_control',
+        title: 'Self-Review Calibration (Student Portal)',
+        category: 'Actions',
+        subtitle: 'Require students to evaluate their own contributions, strengths, and perceived grade',
+        icon: Sliders,
+        badge: 'Form Controls',
+        badgeColor: '#14b8a6',
+        keywords: ['self review', 'self assessment', 'self evaluation', 'calibration', 'peer evaluation form fields', 'self rating'],
+        onExecute: () => { onClose(); if (onOpenEvaluationControls) onOpenEvaluationControls(); },
+      },
+      {
+        id: 'act_praise_tags_control',
+        title: 'Strengths & Praise Recognition Tags',
+        category: 'Actions',
+        subtitle: 'Quick-select peer recognition chips (Code Quality, Team Player, Problem Solver, etc.)',
+        icon: Sliders,
+        badge: 'Form Controls',
+        badgeColor: '#14b8a6',
+        keywords: ['praise tags', 'recognition tags', 'strengths tags', 'peer praise', 'badges', 'chips', 'peer evaluation form fields'],
+        onExecute: () => { onClose(); if (onOpenEvaluationControls) onOpenEvaluationControls(); },
+      },
+      {
+        id: 'act_constructive_control',
+        title: 'Constructive Improvement & Qualitative Feedback',
+        category: 'Actions',
+        subtitle: 'Actionable peer growth feedback prompts on student evaluation forms',
+        icon: Sliders,
+        badge: 'Form Controls',
+        badgeColor: '#14b8a6',
+        keywords: ['constructive improvement', 'growth suggestions', 'actionable feedback', 'qualitative suggestions', 'peer evaluation form fields', 'strengths feedback'],
+        onExecute: () => { onClose(); if (onOpenEvaluationControls) onOpenEvaluationControls(); },
+      },
+      {
+        id: 'act_profile_editing_control',
+        title: 'Student Profile Self-Editing & Tamper Lock',
+        category: 'Actions',
+        subtitle: 'Lock or freeze student names, emails, and roles to prevent tampering',
+        icon: Sliders,
+        badge: 'Permissions',
+        badgeColor: '#f43f5e',
+        keywords: ['profile edit', 'profile editing', 'lock profile', 'freeze profile', 'student permissions', 'tamper lock', 'freeze identity'],
+        onExecute: () => { onClose(); if (onOpenEvaluationControls) onOpenEvaluationControls(); },
+      },
+      {
+        id: 'act_toggle_evaluation_card',
+        title: featureToggles.showEvaluationFormControls ? 'Hide Evaluation Form Controls Card in Section 2' : 'Show Evaluation Form Controls Card in Section 2',
+        category: 'Actions',
+        subtitle: 'Toggle visibility of the form controls and student permissions card on Section 2 page',
+        icon: Sliders,
+        badge: 'Toggle S2',
+        keywords: ['show evaluation form controls', 'hide evaluation form controls', 'evaluation controls card', 'section 2 card', 'review system card'],
+        onExecute: () => { onClose(); if (onToggleFeature) onToggleFeature('showEvaluationFormControls', !featureToggles.showEvaluationFormControls); },
+      },
+      {
+        id: 'act_team_health_pulse',
+        title: 'Team Health "Micro-Pulse" Check-ins',
+        category: 'Actions',
+        subtitle: 'On-demand 30-second pulse surveys with customizable reviewing scales & sparklines',
+        icon: Activity,
+        badge: 'Pulse Check',
+        badgeColor: '#0d9488',
+        keywords: ['pulse', 'micro pulse', 'micro-pulse', 'team health', 'morale', 'standup', 'blocker', 'roadblock', 'sprint check', 'pulse survey', 'team pulse', 'health check', 'likert', 'stars', 'traffic light', 'sparkline', 'check-in'],
+        onExecute: () => {
+          onClose();
+          onNavigateTab('grading');
+          if (!featureToggles.showTeamHealthPulse && onToggleFeature) {
+            onToggleFeature('showTeamHealthPulse', true);
+          }
+          setTimeout(() => {
+            const el = document.getElementById('team-health-pulse-card');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 120);
+        },
+      },
+      {
+        id: 'act_launch_pulse',
+        title: 'Launch New Team Health Micro-Pulse Check-in',
+        category: 'Actions',
+        subtitle: 'Trigger on-demand 30-second pulse survey directly on student dashboards',
+        icon: Activity,
+        badge: 'Launch',
+        badgeColor: '#0d9488',
+        keywords: ['launch pulse', 'start pulse', 'new pulse round', 'open pulse', 'run micro-pulse', 'trigger check-in', 'standup', 'sprint health', 'morale survey', 'pulse check', 'micro-pulse'],
+        onExecute: () => {
+          onClose();
+          onNavigateTab('grading');
+          if (!featureToggles.showTeamHealthPulse && onToggleFeature) {
+            onToggleFeature('showTeamHealthPulse', true);
+          }
+          setTimeout(() => {
+            const el = document.getElementById('team-health-pulse-card');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 120);
+          if (onToast) onToast('Navigated to Team Health Pulse — click "+ Launch Pulse Round"', 'info');
+        },
+      },
+      {
+        id: 'act_pulse_scales',
+        title: 'Micro-Pulse Scale: Stars, Likert, Traffic Light, Points',
+        category: 'Actions',
+        subtitle: 'Configure reviewing rubric scale (1-5 Stars, 1-7 Likert, RAG Traffic Light, 0-10 Points)',
+        icon: Sliders,
+        badge: 'Pulse Rubric',
+        badgeColor: '#0d9488',
+        keywords: ['pulse scale', 'pulse rubric', 'likert scale', 'stars scale', 'traffic light scale', 'points scale', 'custom scale', 'rubric style', 'pulse questions', 'reviewing scale'],
+        onExecute: () => {
+          onClose();
+          onNavigateTab('grading');
+          if (!featureToggles.showTeamHealthPulse && onToggleFeature) {
+            onToggleFeature('showTeamHealthPulse', true);
+          }
+          setTimeout(() => {
+            const el = document.getElementById('team-health-pulse-card');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 120);
+        },
+      },
+      {
+        id: 'act_pulse_responses',
+        title: 'Team Health Responses & Blocker Audit Log',
+        category: 'Actions',
+        subtitle: 'Review student morale submissions, roadblock notes, and team sparkline health trends',
+        icon: FileText,
+        badge: 'Pulse Audit',
+        badgeColor: '#0d9488',
+        keywords: ['pulse responses', 'pulse audit', 'blockers log', 'roadblocks', 'student morale', 'pulse answers', 'sprint blockers', 'health trends', 'pulse table'],
+        onExecute: () => {
+          onClose();
+          onNavigateTab('grading');
+          if (!featureToggles.showTeamHealthPulse && onToggleFeature) {
+            onToggleFeature('showTeamHealthPulse', true);
+          }
+          setTimeout(() => {
+            const el = document.getElementById('team-health-pulse-card');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 120);
+        },
+      },
+      {
+        id: 'act_toggle_team_health_pulse',
+        title: featureToggles.showTeamHealthPulse ? 'Hide Team Health Pulse Card in Section 2' : 'Show Team Health Pulse Card in Section 2',
+        category: 'Actions',
+        subtitle: 'Toggle visibility of the on-demand team health pulse card in Section 2',
+        icon: Activity,
+        badge: 'Toggle S2',
+        keywords: ['show team health pulse', 'hide team health pulse', 'pulse card', 'section 2 card', 'team pulse toggle'],
+        onExecute: () => { onClose(); if (onToggleFeature) onToggleFeature('showTeamHealthPulse', !featureToggles.showTeamHealthPulse); },
+      },
+      {
+        id: 'act_team_cohorts',
+        title: 'Team Cohorts Overview & Formation Cards',
+        category: 'Actions',
+        subtitle: 'Inspect team rosters, member distributions, and peer evaluation completion in Section 1',
+        icon: Users,
+        badge: 'Teams',
+        badgeColor: '#3b82f6',
+        keywords: ['cohorts', 'team cohorts', 'teams overview', 'inspect team', 'group cards', 'team members', 'cohort hub', 'balance teams', 'formation'],
+        onExecute: () => {
+          onClose();
+          onNavigateTab('roster');
+          if (!featureToggles.showTeamOverviewCards && onToggleFeature) {
+            onToggleFeature('showTeamOverviewCards', true);
+          }
+        },
+      },
+      {
+        id: 'act_rubric_weights',
+        title: 'Rubric Weight Distribution & Balance Bar',
+        category: 'Actions',
+        subtitle: 'Review criteria percentage weightings and verify 100% total balance in Section 2',
+        icon: BarChart2,
+        badge: 'Weights',
+        badgeColor: '#6366f1',
+        keywords: ['weights', 'weight box', 'weight balance', 'criteria weight', 'percentage weight', 'rubric weights', '100% weight', 'weightage'],
+        onExecute: () => {
+          onClose();
+          onNavigateTab('grading');
+          if (!featureToggles.showWeightBalanceBar && onToggleFeature) {
+            onToggleFeature('showWeightBalanceBar', true);
+          }
+        },
+      },
+      {
+        id: 'act_open_modules_settings',
+        title: 'Interface & Modules Settings (With Form Fields)',
+        category: 'Actions',
+        subtitle: 'Open Interface & Modules settings to configure density and peer evaluation form fields',
+        icon: Settings,
+        badge: 'Settings',
+        keywords: ['interface and modules', 'modules', 'interface', 'peer evaluation form fields', 'density presets', 'feature toggles', 'settings modules'],
+        onExecute: () => { onClose(); onOpenSettings('modules'); },
+      },
       {
         id: 'act_preset_ipaf',
         title: 'Apply Rubric: IPAF Standard (6 Dimensions)',
@@ -687,7 +987,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     if (onOpenAutoGroup)    list.push({ id: 'act_autogroup', title: 'AutoGroup Diversity Formation', category: 'Actions', subtitle: 'Balance teams by gender, nationality, language', icon: Users, badge: 'Algorithm', keywords: ['autogroup','teams','balance','diversity','formation','auto'], onExecute: () => { onClose(); onOpenAutoGroup(); } });
     if (onOpenQRCode)       list.push({ id: 'act_qr', title: 'Self-Enrollment QR Code & Link', category: 'Actions', subtitle: 'Instant QR badge and registration join link', icon: QrCode, badge: 'QR', keywords: ['qr','code','link','join','registration','self-enroll','scan'], onExecute: () => { onClose(); onOpenQRCode(); } });
     if (onOpenDeadline)     list.push({ id: 'act_deadline', title: 'Set Milestone Deadline & Countdown', category: 'Actions', subtitle: 'Configure submission cutoff and archive sprints', icon: Clock, badge: 'Timer', keywords: ['deadline','timer','cutoff','countdown','sprint','lock','archive'], onExecute: () => { onClose(); onOpenDeadline(); } });
-    if (onResetSubmissions) list.push({ id: 'act_reset', title: 'Reset All Submissions', category: 'Actions', subtitle: 'Wipe all reviews back to pending for a new round', icon: RefreshCw, badge: '⚠ Danger', badgeColor: '#f43f5e', keywords: ['reset','clear','wipe','delete submissions','restart'], onExecute: () => { onClose(); onResetSubmissions(); } });
+    if (onResetSubmissions) list.push({ id: 'act_reset', title: 'Reset All Submissions', category: 'Actions', subtitle: 'Wipe all reviews back to pending for a new round', icon: RefreshCw, badge: 'Danger', badgeColor: '#f43f5e', keywords: ['reset','clear','wipe','delete submissions','restart'], onExecute: () => { onClose(); onResetSubmissions(); } });
     if (onOpenTour)         list.push({ id: 'act_tour', title: 'Start App Walkthrough Tour', category: 'Actions', subtitle: 'Interactive spotlight tour showing every feature', icon: Compass, badge: 'Tour', keywords: ['tour','walkthrough','guide','tutorial','demo','onboard'], onExecute: () => { onClose(); onOpenTour(); } });
     list.push(
       {
@@ -722,9 +1022,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
     // APPEARANCE
     list.push(
-      { id: 'theme_dark',   title: 'Switch to Dark Mode',         category: 'Appearance', subtitle: 'Deep obsidian, eye-friendly for low-light',        icon: Moon,     badge: themeMode === 'dark'   ? '✓ Active' : undefined, keywords: ['dark mode','theme','black','night','obsidian'], onExecute: () => { setThemeMode('dark');   if (onToast) onToast('Switched to Dark Mode 🌙', 'info'); onClose(); } },
-      { id: 'theme_light',  title: 'Switch to Light Mode',        category: 'Appearance', subtitle: 'Crisp, high-contrast academic surfaces',           icon: Sun,      badge: themeMode === 'light'  ? '✓ Active' : undefined, keywords: ['light mode','theme','white','day','bright'],    onExecute: () => { setThemeMode('light');  if (onToast) onToast('Switched to Light Mode ☀️', 'info'); onClose(); } },
-      { id: 'theme_system', title: 'Sync Theme with System Auto', category: 'Appearance', subtitle: 'Follow your OS theme preference automatically',    icon: Sparkles, badge: themeMode === 'system' ? '✓ Active' : undefined, keywords: ['system theme','auto theme','os','automatic'],   onExecute: () => { setThemeMode('system'); if (onToast) onToast('Theme set to System Auto ✨', 'info'); onClose(); } },
+      { id: 'theme_dark',   title: 'Switch to Dark Mode',         category: 'Appearance', subtitle: 'Deep obsidian, eye-friendly for low-light',        icon: Moon,     badge: themeMode === 'dark'   ? '✓ Active' : undefined, keywords: ['dark mode','theme','black','night','obsidian'], onExecute: () => { setThemeMode('dark');   if (onToast) onToast('Switched to Dark Mode', 'info'); onClose(); } },
+      { id: 'theme_light',  title: 'Switch to Light Mode',        category: 'Appearance', subtitle: 'Crisp, high-contrast academic surfaces',           icon: Sun,      badge: themeMode === 'light'  ? '✓ Active' : undefined, keywords: ['light mode','theme','white','day','bright'],    onExecute: () => { setThemeMode('light');  if (onToast) onToast('Switched to Light Mode', 'info'); onClose(); } },
+      { id: 'theme_system', title: 'Sync Theme with System Auto', category: 'Appearance', subtitle: 'Follow your OS theme preference automatically',    icon: Sparkles, badge: themeMode === 'system' ? '✓ Active' : undefined, keywords: ['system theme','auto theme','os','automatic'],   onExecute: () => { setThemeMode('system'); if (onToast) onToast('Theme set to System Auto', 'info'); onClose(); } },
     );
 
     // MODES
@@ -1266,7 +1566,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                     : '#f59e0b',
               }}
             >
-              {activeMode === 'custom' ? '⚙ Custom' : activeMode === 'full' ? '🚀 Full Mode' : activeMode === 'minimal' ? '✦ Minimal' : '◆ Standard'}
+              {activeMode === 'custom' ? 'Custom' : activeMode === 'full' ? 'Full Mode' : activeMode === 'minimal' ? 'Minimal' : 'Standard'}
             </span>
           </div>
         )}
@@ -1282,7 +1582,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               setQuery(e.target.value);
               if (activeHelpArticle) setActiveHelpArticle(null);
             }}
-            placeholder="Search commands, toggle features, switch modes, find students..."
+            placeholder="Search commands, micro-pulse, cohorts, rubrics, students..."
             style={{
               border: 'none',
               background: 'transparent',

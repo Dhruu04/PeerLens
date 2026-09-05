@@ -7,6 +7,13 @@ export interface GradingScaleField {
   description?: string; // Guidance / behavioral indicator for reviewers
 }
 
+export interface StudentProfileAuditLog {
+  timestamp: string;
+  field: string;
+  from: string;
+  to: string;
+}
+
 export interface Student {
   id: string;
   name: string;
@@ -25,6 +32,14 @@ export interface Student {
   originalCountry?: string;
   originalUniversity?: string;
   currentUniversity?: string;
+  // Discreet audit & identity provenance fields
+  originalName?: string;
+  originalEmail?: string;
+  editHistory?: StudentProfileAuditLog[];
+  nameChangeCount?: number;
+  lastProfileEditAt?: number;
+  flaggedForReview?: boolean;
+  suspiciousReason?: string | null;
 }
 
 /**
@@ -57,6 +72,161 @@ export interface Milestone {
   reviews: Review[];
 }
 
+export interface EvaluationFormControls {
+  allowSelfReview?: boolean; // Toggle "Self review"
+  showGrowthSuggestions?: boolean; // Toggle "What is one constructive suggestion for their improvement?"
+  showPraiseTags?: boolean; // Toggle "Strengths & Praise Tags"
+  showStrengthsFeedback?: boolean; // Toggle "What are this teammate's primary strengths?"
+  showRoleBaseline?: boolean; // Toggle "Starting Role Baseline"
+  allowProfileEditing?: boolean; // Toggle if students can edit their profile info or not
+}
+
+export const DEFAULT_EVALUATION_CONTROLS: Required<EvaluationFormControls> = {
+  allowSelfReview: true,
+  showGrowthSuggestions: true,
+  showPraiseTags: true,
+  showStrengthsFeedback: true,
+  showRoleBaseline: true,
+  allowProfileEditing: true
+};
+
+export function getEvaluationControls(classData?: ClassData | null): Required<EvaluationFormControls> {
+  const ec = classData?.evaluationControls;
+  return {
+    allowSelfReview: ec?.allowSelfReview !== false,
+    showGrowthSuggestions: ec?.showGrowthSuggestions !== false,
+    showPraiseTags: ec?.showPraiseTags !== false,
+    showStrengthsFeedback: ec?.showStrengthsFeedback !== false,
+    showRoleBaseline: ec?.showRoleBaseline !== false,
+    allowProfileEditing: ec?.allowProfileEditing !== false
+  };
+}
+
+export type PulseScaleType = 'stars_5' | 'likert_5' | 'slider_10' | 'traffic_rag' | 'emoji_sentiment';
+
+export interface PulseCustomQuestion {
+  id: string;
+  title: string;
+  type: 'scale' | 'choice' | 'text';
+  options?: string[];
+  required?: boolean;
+}
+
+export interface PulseScaleOption {
+  value: number;
+  label: string;
+  iconName?: string; // 'star' | 'frown' | 'meh' | 'smile' | 'flame' | 'alert-circle' | 'alert-triangle' | 'check-circle' | 'sparkles'
+  color?: string;
+}
+
+export interface PulseConfig {
+  scaleType: PulseScaleType;
+  moralePrompt: string;
+  progressPrompt: string;
+  notePrompt: string;
+  allowBlockerNotes: boolean;
+  scaleOptions?: PulseScaleOption[];
+  customQuestions?: PulseCustomQuestion[];
+}
+
+export interface PulseResponse {
+  id: string;
+  studentId: string;
+  studentName: string;
+  groupName: string;
+  moraleScore: number;
+  scaleType: PulseScaleType;
+  status: 'on_track' | 'minor_roadblock' | 'blocked';
+  blockerNote?: string;
+  customAnswers?: Record<string, string | number>;
+  submittedAt: string;
+}
+
+export interface PulseRound {
+  id: string;
+  title: string;
+  createdAt: string;
+  status: 'active' | 'closed';
+  config: PulseConfig;
+  responses: PulseResponse[];
+}
+
+export const DEFAULT_PULSE_CONFIG: PulseConfig = {
+  scaleType: 'stars_5',
+  moralePrompt: 'Team Morale & Communication',
+  progressPrompt: 'Is your team on track for this milestone?',
+  notePrompt: 'Describe any blockers or dependencies (optional)',
+  allowBlockerNotes: true,
+  scaleOptions: [
+    { value: 1, label: 'Struggling / Silent', iconName: 'star', color: '#ef4444' },
+    { value: 2, label: 'Disconnected', iconName: 'star', color: '#f59e0b' },
+    { value: 3, label: 'Functional / Steady', iconName: 'star', color: '#3b82f6' },
+    { value: 4, label: 'Strong Alignment', iconName: 'star', color: '#10b981' },
+    { value: 5, label: 'Exceptional Velocity', iconName: 'star', color: '#8b5cf6' }
+  ],
+  customQuestions: []
+};
+
+export const PULSE_SCALE_PRESETS: Record<PulseScaleType, { title: string; description: string; options: PulseScaleOption[]; promptDefault: string }> = {
+  stars_5: {
+    title: '5-Star Quality Rating',
+    description: 'Universal 1-5 star scale for team morale, synergy, and active communication.',
+    promptDefault: 'Team Morale & Communication',
+    options: [
+      { value: 1, label: 'Struggling / Silent', iconName: 'star', color: '#ef4444' },
+      { value: 2, label: 'Disconnected', iconName: 'star', color: '#f59e0b' },
+      { value: 3, label: 'Functional / Steady', iconName: 'star', color: '#3b82f6' },
+      { value: 4, label: 'Strong Alignment', iconName: 'star', color: '#10b981' },
+      { value: 5, label: 'Exceptional Velocity', iconName: 'star', color: '#8b5cf6' }
+    ]
+  },
+  likert_5: {
+    title: '5-Point Likert Agreement Scale',
+    description: 'Academic standard (Edmondson Team Psychological Safety) measuring consensus.',
+    promptDefault: 'Our team is collaborating effectively and communicating with trust.',
+    options: [
+      { value: 1, label: 'Strongly Disagree', iconName: 'number', color: '#ef4444' },
+      { value: 2, label: 'Disagree', iconName: 'number', color: '#f97316' },
+      { value: 3, label: 'Neutral / Undecided', iconName: 'number', color: '#6b7280' },
+      { value: 4, label: 'Agree', iconName: 'number', color: '#10b981' },
+      { value: 5, label: 'Strongly Agree', iconName: 'number', color: '#059669' }
+    ]
+  },
+  traffic_rag: {
+    title: 'RAG Traffic Light (Red / Amber / Green)',
+    description: 'Executive project management delivery status for rapid escalation.',
+    promptDefault: 'Current Sprint Health & Delivery Risk',
+    options: [
+      { value: 1, label: 'Red (Critical Risk / Off Track)', iconName: 'alert-circle', color: '#ef4444' },
+      { value: 2, label: 'Amber (At Risk / Needs Help)', iconName: 'alert-triangle', color: '#f59e0b' },
+      { value: 3, label: 'Green (On Track / Normal)', iconName: 'check-circle', color: '#10b981' },
+      { value: 4, label: 'Blue (Exceeding Expectations)', iconName: 'sparkles', color: '#3b82f6' }
+    ]
+  },
+  emoji_sentiment: {
+    title: 'Sentiment Pulse Icons',
+    description: 'Low-friction emotional pulse check ideal for fast mobile standup check-ins.',
+    promptDefault: 'How do you feel about working with your team right now?',
+    options: [
+      { value: 1, label: 'Burned Out / Frustrated', iconName: 'frown', color: '#ef4444' },
+      { value: 2, label: 'Anxious / Confused', iconName: 'meh', color: '#f59e0b' },
+      { value: 3, label: 'Steady & Good', iconName: 'smile', color: '#10b981' },
+      { value: 4, label: 'Energized & Thriving', iconName: 'flame', color: '#8b5cf6' }
+    ]
+  },
+  slider_10: {
+    title: '1-to-10 Velocity Continuum Slider',
+    description: 'Fine-grained numerical slider for tracking quantitative team momentum.',
+    promptDefault: 'Team Momentum & Synergy Rating (1-10)',
+    options: Array.from({ length: 10 }, (_, i) => ({
+      value: i + 1,
+      label: `${i + 1}/10`,
+      iconName: 'number',
+      color: i < 3 ? '#ef4444' : i < 6 ? '#f59e0b' : i < 8 ? '#10b981' : '#6366f1'
+    }))
+  }
+};
+
 export interface ClassData {
   id: string;
   name: string;
@@ -67,6 +237,8 @@ export interface ClassData {
   milestones?: Milestone[];
   targetScale?: number | null;
   teamBaseGrades?: Record<string, number>;
+  evaluationControls?: EvaluationFormControls;
+  pulseRounds?: PulseRound[];
 }
 
 /**
@@ -508,4 +680,265 @@ export function detectClassAnomalies(classData: ClassData): Anomaly[] {
 
   return anomalies;
 }
+
+export interface TeamPulseSummary {
+  teamName: string;
+  memberCount: number;
+  responseCount: number;
+  averageMorale: number; // 1-5 normalized
+  rawAverageMorale: number;
+  scaleType: PulseScaleType;
+  dominantStatus: 'on_track' | 'minor_roadblock' | 'blocked';
+  statusCounts: { on_track: number; minor_roadblock: number; blocked: number };
+  blockerNotes: Array<{ studentName: string; note: string; submittedAt: string }>;
+  sparkline: Array<{ roundId: string; roundTitle: string; averageMorale: number; dominantStatus: string }>;
+}
+
+export interface ClassPulseOverview {
+  activeRound: PulseRound | null;
+  totalRounds: number;
+  classAverageMorale: number;
+  teamsOnTrackPercent: number;
+  teamsBlockedCount: number;
+  totalTeamsCount: number;
+  totalSubmissions: number;
+  totalStudentsExpected: number;
+  teamSummaries: TeamPulseSummary[];
+}
+
+export function calculateTeamPulseMetrics(classData: ClassData, selectedRoundId?: string): ClassPulseOverview {
+  const rounds = classData.pulseRounds || [];
+  const activeRound = selectedRoundId 
+    ? rounds.find(r => r.id === selectedRoundId) || rounds[rounds.length - 1] || null
+    : rounds.find(r => r.status === 'active') || rounds[rounds.length - 1] || null;
+
+  const teamMap = new Map<string, Student[]>();
+  classData.students.forEach(s => {
+    const g = s.groupName || 'Unassigned';
+    if (!teamMap.has(g)) teamMap.set(g, []);
+    teamMap.get(g)!.push(s);
+  });
+
+  const teamSummaries: TeamPulseSummary[] = [];
+  let totalClassMoraleSum = 0;
+  let totalClassMoraleCount = 0;
+  let teamsOnTrackCount = 0;
+  let teamsBlockedCount = 0;
+
+  const uniqueTeams = Array.from(teamMap.keys()).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+  );
+
+  uniqueTeams.forEach(teamName => {
+    const members = teamMap.get(teamName) || [];
+    const memberCount = members.length;
+    const memberIds = new Set(members.map(m => m.id));
+
+    // Responses in current active/selected round
+    const currentResponses = activeRound ? activeRound.responses.filter(r => memberIds.has(r.studentId) || r.groupName === teamName) : [];
+    const responseCount = currentResponses.length;
+
+    let moraleSum = 0;
+    const statusCounts = { on_track: 0, minor_roadblock: 0, blocked: 0 };
+    const blockerNotes: Array<{ studentName: string; note: string; submittedAt: string }> = [];
+
+    currentResponses.forEach(r => {
+      moraleSum += r.moraleScore;
+      statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
+      if (r.blockerNote && r.blockerNote.trim().length > 0) {
+        blockerNotes.push({
+          studentName: r.studentName,
+          note: r.blockerNote.trim(),
+          submittedAt: r.submittedAt
+        });
+      }
+    });
+
+    const rawAverageMorale = responseCount > 0 ? moraleSum / responseCount : 0;
+    
+    // Normalize to 1-5 scale for uniform reporting
+    let averageMorale = rawAverageMorale;
+    const scaleType = activeRound?.config?.scaleType || 'stars_5';
+    if (scaleType === 'slider_10') {
+      averageMorale = rawAverageMorale / 2;
+    } else if (scaleType === 'traffic_rag' || scaleType === 'emoji_sentiment') {
+      averageMorale = (rawAverageMorale / 4) * 5;
+    }
+
+    if (responseCount > 0) {
+      totalClassMoraleSum += averageMorale;
+      totalClassMoraleCount += 1;
+    }
+
+    // Determine dominant status
+    let dominantStatus: 'on_track' | 'minor_roadblock' | 'blocked' = 'on_track';
+    if (statusCounts.blocked > 0) {
+      dominantStatus = 'blocked';
+      teamsBlockedCount++;
+    } else if (statusCounts.minor_roadblock > 0) {
+      dominantStatus = 'minor_roadblock';
+    } else if (responseCount > 0) {
+      teamsOnTrackCount++;
+    }
+
+    // Historical sparkline across rounds
+    const sparkline: Array<{ roundId: string; roundTitle: string; averageMorale: number; dominantStatus: string }> = [];
+    rounds.forEach(r => {
+      const rRes = r.responses.filter(resp => memberIds.has(resp.studentId) || resp.groupName === teamName);
+      if (rRes.length > 0) {
+        const rSum = rRes.reduce((acc, curr) => acc + curr.moraleScore, 0);
+        let rAvg = rSum / rRes.length;
+        if (r.config?.scaleType === 'slider_10') rAvg /= 2;
+        else if (r.config?.scaleType === 'traffic_rag' || r.config?.scaleType === 'emoji_sentiment') rAvg = (rAvg / 4) * 5;
+
+        const hasBlocked = rRes.some(resp => resp.status === 'blocked');
+        const hasWarning = rRes.some(resp => resp.status === 'minor_roadblock');
+        const dStat = hasBlocked ? 'blocked' : hasWarning ? 'minor_roadblock' : 'on_track';
+
+        sparkline.push({
+          roundId: r.id,
+          roundTitle: r.title,
+          averageMorale: Number(rAvg.toFixed(1)),
+          dominantStatus: dStat
+        });
+      }
+    });
+
+    teamSummaries.push({
+      teamName,
+      memberCount,
+      responseCount,
+      averageMorale: Number(averageMorale.toFixed(1)),
+      rawAverageMorale: Number(rawAverageMorale.toFixed(1)),
+      scaleType,
+      dominantStatus,
+      statusCounts,
+      blockerNotes,
+      sparkline
+    });
+  });
+
+  const totalTeamsCount = uniqueTeams.length;
+  const classAverageMorale = totalClassMoraleCount > 0 ? Number((totalClassMoraleSum / totalClassMoraleCount).toFixed(1)) : 0;
+  const teamsOnTrackPercent = totalTeamsCount > 0 ? Math.round((teamsOnTrackCount / totalTeamsCount) * 100) : 0;
+  const totalSubmissions = activeRound ? activeRound.responses.length : 0;
+  const totalStudentsExpected = classData.students.length;
+
+  return {
+    activeRound,
+    totalRounds: rounds.length,
+    classAverageMorale,
+    teamsOnTrackPercent,
+    teamsBlockedCount,
+    totalTeamsCount,
+    totalSubmissions,
+    totalStudentsExpected,
+    teamSummaries
+  };
+}
+
+/**
+ * Generates rich, realistic sample pulse check rounds across historical sprints for instant testing.
+ */
+export function generateSamplePulseRounds(classData: ClassData): PulseRound[] {
+  const students = classData.students;
+  if (students.length === 0) return [];
+
+  const round1: PulseRound = {
+    id: `pulse_${Date.now() - 14 * 86400000}`,
+    title: 'Sprint 1 Kickoff & Synergy',
+    createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
+    status: 'closed',
+    config: {
+      ...DEFAULT_PULSE_CONFIG,
+      scaleType: 'stars_5',
+      moralePrompt: 'Team Morale & Communication',
+      progressPrompt: 'Is your team on track for Sprint 1 deliverables?'
+    },
+    responses: []
+  };
+
+  const round2: PulseRound = {
+    id: `pulse_${Date.now() - 7 * 86400000}`,
+    title: 'Midterm Architecture Standup',
+    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
+    status: 'closed',
+    config: {
+      ...DEFAULT_PULSE_CONFIG,
+      scaleType: 'likert_5',
+      moralePrompt: 'Our team is communicating openly and resolving technical roadblocks effectively.',
+      progressPrompt: 'Are all core milestones on schedule for midterm code review?'
+    },
+    responses: []
+  };
+
+  const round3: PulseRound = {
+    id: `pulse_${Date.now()}`,
+    title: 'Milestone 3 Pre-Demo Pulse',
+    createdAt: new Date().toISOString(),
+    status: 'active',
+    config: {
+      ...DEFAULT_PULSE_CONFIG,
+      scaleType: 'traffic_rag',
+      moralePrompt: 'Current Team Velocity & Alignment Status',
+      progressPrompt: 'Confidence level for Friday demonstration'
+    },
+    responses: []
+  };
+
+  // Populate realistic variations
+  students.forEach((s, idx) => {
+    // Round 1 (Stars 1-5)
+    const r1Score = idx % 7 === 0 ? 2 : idx % 4 === 0 ? 3 : idx % 3 === 0 ? 4 : 5;
+    const r1Status = r1Score <= 2 ? 'minor_roadblock' : 'on_track';
+    round1.responses.push({
+      id: `r1_${s.id}`,
+      studentId: s.id,
+      studentName: s.name,
+      groupName: s.groupName,
+      moraleScore: r1Score,
+      scaleType: 'stars_5',
+      status: r1Status,
+      blockerNote: r1Score <= 2 ? 'Clarifying requirements for database schema.' : undefined,
+      submittedAt: round1.createdAt
+    });
+
+    // Round 2 (Likert 1-5)
+    const r2Score = idx % 5 === 0 ? 2 : idx % 6 === 0 ? 3 : 4;
+    const r2Status = r2Score <= 2 ? 'blocked' : r2Score === 3 ? 'minor_roadblock' : 'on_track';
+    round2.responses.push({
+      id: `r2_${s.id}`,
+      studentId: s.id,
+      studentName: s.name,
+      groupName: s.groupName,
+      moraleScore: r2Score,
+      scaleType: 'likert_5',
+      status: r2Status,
+      blockerNote: r2Status === 'blocked' ? 'Waiting on third-party API keys and repo permissions.' : undefined,
+      submittedAt: round2.createdAt
+    });
+
+    // Round 3 (Traffic RAG: 1=Red, 2=Amber, 3=Green, 4=Blue)
+    // 85% submission rate for active round
+    if (idx % 8 !== 0) {
+      const isTeamProblem = s.groupName.includes('3') || s.groupName.includes('Gamma');
+      const r3Score = isTeamProblem ? 1 : idx % 5 === 0 ? 2 : idx % 2 === 0 ? 3 : 4;
+      const r3Status = r3Score === 1 ? 'blocked' : r3Score === 2 ? 'minor_roadblock' : 'on_track';
+      round3.responses.push({
+        id: `r3_${s.id}`,
+        studentId: s.id,
+        studentName: s.name,
+        groupName: s.groupName,
+        moraleScore: r3Score,
+        scaleType: 'traffic_rag',
+        status: r3Status,
+        blockerNote: r3Status === 'blocked' ? 'One member has been unresponsive on Slack since Tuesday.' : undefined,
+        submittedAt: round3.createdAt
+      });
+    }
+  });
+
+  return [round1, round2, round3];
+}
+
 

@@ -47,7 +47,7 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
   students,
   onApplyGroups,
   onLoadSampleStudents,
-  defaultExpanded = true
+  defaultExpanded = false
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
   const [targetSize, setTargetSize] = useState<number>(4);

@@ -855,7 +855,7 @@
     </a>
     <a href="#ch4-rubric" class="nav-item">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-      4. Rubric &amp; IPAF Framework
+      4. Rubrics, IPAF &amp; Team Health Pulse
     </a>
     <a href="#ch5-autogroup" class="nav-item">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"></path></svg>
@@ -879,7 +879,7 @@
     </a>
     <a href="#ch10-command-palette" class="nav-item">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path></svg>
-      10. Command Palette &amp; Export Suite
+      10. Quick Actions, Palette &amp; Exports
     </a>
 
     <div class="nav-group-label">Part 3: Student Manual</div>
@@ -1251,6 +1251,65 @@ Lukas Weber,l.weber@exchange.edu,Team Alpha,ST-104,Germany,B2,Male</code></pre>
           <div class="card-desc">Displays the direct mathematical sum of raw criterion slider ratings without normalization.</div>
         </div>
       </div>
+
+      <h3>Team Health "Micro-Pulse" Check-ins (Formative Diagnostics)</h3>
+      <p>
+        While summative peer evaluations measure retrospective performance for grade calibration, <strong>Team Health Micro-Pulses</strong> provide real-time, low-friction formative temperature checks throughout the project lifecycle. These 30-second pulse surveys can be deployed weekly or bi-weekly to diagnose friction, flagging disengaged teammates or coordination blockers before team outcomes suffer.
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">5 Flexible Rating Scale Presets</div>
+          <div class="card-desc">
+            Tailor pulse rounds to your pedagogical context:
+            <ul style="margin: 6px 0 0 16px; padding: 0; font-size: 11.5px; line-height: 1.5;">
+              <li><strong>1 – 5 Likert Scale:</strong> Standard 5-point agreement anchor (Strongly Disagree to Strongly Agree).</li>
+              <li><strong>0 – 10 Net Promoter (NPS):</strong> Measures collective team advocacy (Detractor, Passive, Promoter).</li>
+              <li><strong>1 – 4 Performance Matrix:</strong> Clear development stages (Needs Support, Developing, Proficient, Exemplary).</li>
+              <li><strong>1 – 3 Agile Traffic Light:</strong> Instant triage status (Red = Blocked, Amber = Minor Risks, Green = On Track).</li>
+              <li><strong>1 – 10 Continuous Slider:</strong> High-resolution sentiment gauge with custom pole descriptors.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Real-Time Team Analytics &amp; Blocker Triage</div>
+          <div class="card-desc">
+            Aggregated results provide instant classroom visibility:
+            <ul style="margin: 6px 0 0 16px; padding: 0; font-size: 11.5px; line-height: 1.5;">
+              <li><strong>Natural Alphanumeric Sorting:</strong> Groups are sequentially ordered (Team 1, Team 2, ..., Team 10) with multi-column sorting (Team, Response Rate, Average Rating, Status).</li>
+              <li><strong>Blocker Alert Detection:</strong> Highlights qualitative obstacles submitted by students so instructors can intervene early.</li>
+              <li><strong>Filter Toolbar &amp; Search:</strong> Rapidly filter by status (All, Blocked, At Risk, Healthy) or search teams by keyword.</li>
+              <li><strong>Zero Grade Pressure:</strong> Pulses are strictly formative and do not affect WebPA multiplier calculations.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <h3>Evaluation Form Controls &amp; Student Submission Governance</h3>
+      <p>
+        PeerLens provides instructors with granular controls to structure how students interact with the peer review form:
+      </p>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-title">Self-Evaluation Calibration</div>
+          <div class="card-desc">
+            Enable or disable student self-ratings. While self-ratings are collected for Johari Window blind spot analysis, they are mathematically segregated and strictly excluded from WebPA multiplier calculations to prevent grade inflation.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Praise Badges (6 Dimensions)</div>
+          <div class="card-desc">
+            Encourage positive peer recognition by enabling structured praise tags across six core professional competencies: <em>Innovation &amp; Creativity</em>, <em>Technical Execution</em>, <em>Dependability &amp; Grit</em>, <em>Team Collaboration</em>, <em>Leadership &amp; Initiative</em>, and <em>Critical Problem Solving</em>.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Role Baselines &amp; Profile Locks</div>
+          <div class="card-desc">
+            Define team role expectations (e.g., Lead Engineer, Project Manager, Quality Analyst) to guide evaluations relative to responsibilities. Toggle <strong>Lock Student Profile Editing</strong> to prevent unauthorized modifications to names, emails, or group assignments once cohorts are finalized.
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- CHAPTER 5: AutoGroup Diversity Studio -->
@@ -1374,7 +1433,7 @@ Lukas Weber,l.weber@exchange.edu,Team Alpha,ST-104,Germany,B2,Male</code></pre>
         </div>
         <div class="card">
           <div class="card-title">Incoming Student Live Dock</div>
-          <div class="card-desc">Detects newly self-enrolled students live during lectures. Instructors can assign students to groups with one click or trigger <strong>Auto-Balance All ⚡</strong>.</div>
+          <div class="card-desc">Detects newly self-enrolled students live during lectures. Instructors can assign students to groups with one click or trigger <strong>Auto-Balance All</strong>.</div>
         </div>
         <div class="card">
           <div class="card-title">Demographics &amp; Diversity Wall</div>
@@ -1553,12 +1612,23 @@ Lukas Weber,l.weber@exchange.edu,Team Alpha,ST-104,Germany,B2,Male</code></pre>
         <span class="chapter-tag">Part 2: Instructor Manual</span>
         <h2>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path></svg>
-          10. Smart Command Palette &amp; Export Suite
+          10. Quick Action Center, Smart Command Palette &amp; Export Suite
         </h2>
       </div>
 
+      <h3>Quick Action Center &amp; Floating Dock</h3>
       <p>
-        The <strong>Command Palette</strong> (shortcut: <code>Cmd + K</code> or <code>Ctrl + K</code>) provides a keyboard-driven workflow accelerator. Built-in NLP intent detection matches synonyms instantly.
+        The <strong>Quick Action Pill</strong> is a persistent, floating dock anchored at the bottom center of the instructor interface. It offers instant access to critical classroom controls regardless of active scroll position:
+      </p>
+      <ul>
+        <li><strong>Section Navigation:</strong> 1-click jumps between Section 1 (Enrollment &amp; Teams), Section 2 (Review System &amp; Rubrics), and Section 3 (Grading &amp; Analytics).</li>
+        <li><strong>Interface &amp; Module Toggles:</strong> Expand the dock to reveal real-time visibility toggles for the Home Hub cards, criteria auto-balancer, student portal simulator, projector view, team health pulse, and evaluation controls.</li>
+        <li><strong>Classroom Switcher &amp; ID Copy:</strong> Switch between multiple class sections seamlessly and copy the active classroom ID directly to clipboard.</li>
+        <li><strong>Rapid Tool Launcher:</strong> Trigger the Settings Hub, Academic Guidance Center, Student Portal Simulator, or Reset Review Submissions with zero clicks through menus.</li>
+      </ul>
+
+      <p>
+        The <strong>Command Palette</strong> (shortcut: <code>Cmd + K</code> or <code>Ctrl + K</code>, or pressing <code>/</code>) provides a keyboard-driven workflow accelerator. Built-in NLP intent detection matches synonyms instantly.
       </p>
 
       <h3>1-Click Direct Gradebook Exports</h3>
@@ -1681,6 +1751,32 @@ Lukas Weber,l.weber@exchange.edu,Team Alpha,ST-104,Germany,B2,Male</code></pre>
           </div>
         </div>
       </div>
+
+      <h3>30-Second Team Health Check-ins (Formative Feedback)</h3>
+      <p>
+        When your instructor launches a Team Health Micro-Pulse, a dedicated check-in banner appears at the top of your student dashboard:
+      </p>
+      <div class="step-list">
+        <div class="step-card">
+          <div class="step-num">A</div>
+          <div class="step-body">
+            <h4>Respond to the Micro-Pulse Survey</h4>
+            <p>Select your team sentiment rating on the provided scale (1–5 Likert, 0–10 NPS, 1–4 Performance, Traffic Light, or Slider). This takes under 30 seconds and is completely anonymous to your teammates.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">B</div>
+          <div class="step-body">
+            <h4>Flag Collaboration Blockers (Optional &amp; Confidential)</h4>
+            <p>If your team is experiencing technical roadblocks, unequal contribution, or communication friction, describe the obstacle in the blocker field. This notification is sent directly and confidentially to your instructor so they can assist your team.</p>
+          </div>
+        </div>
+      </div>
+
+      <h3>Student Profile &amp; Allocation Integrity</h3>
+      <p>
+        To ensure fair grading and audit integrity, instructors may lock profile editing once the evaluation window opens. When profile editing is locked, student names, institutional emails, and team assignments cannot be altered. If you notice an error in your group allocation, contact your instructor prior to submission.
+      </p>
     </section>
 
     <!-- CHAPTER 12: WebPA Mathematical Engine -->

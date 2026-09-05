@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import type { ClassData, Student, GradingScaleField, Review, Milestone } from '../utils/math';
-import { normalizeNationality } from '../utils/math';
+import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig } from '../utils/math';
+import { normalizeNationality, getEvaluationControls, DEFAULT_PULSE_CONFIG, generateSamplePulseRounds } from '../utils/math';
+import { loadFeatureToggles, DEFAULT_FEATURE_TOGGLES, type FeatureToggles } from '../utils/featurePreferences';
 import { hashCode } from '../utils/csv';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, doc, onSnapshot, collection, deleteDoc, runTransaction, setDoc } from 'firebase/firestore';
@@ -82,6 +83,7 @@ import {
     deleteClass: (id: string) => void;
     selectClass: (id: string | null) => void;
     updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify?: boolean) => void;
+    updateEvaluationControls: (classId: string, controls: Partial<EvaluationFormControls>) => void;
     updateTeamBaseGrade: (classId: string, teamName: string, grade: number) => void;
     setAllTeamBaseGrades: (classId: string, grades: Record<string, number>) => void;
     importRoster: (classId: string, students: Student[], clearExisting?: boolean) => void;
@@ -93,10 +95,18 @@ import {
     submitPeerReviews: (classId: string, reviewerId: string, reviews: Omit<Review, 'reviewerId'>[]) => Promise<void>;
     batchSubmitClassReviews: (classId: string, reviews: Review[], submittedStudentIds?: string[], silent?: boolean) => void;
     resetClassReviews: (classId: string, silent?: boolean) => void;
+    resetStudentReviews: (classId: string, studentId: string, silent?: boolean) => void;
     clearClassRoster: (classId: string, silent?: boolean) => void;
     saveClassDeadline: (classId: string, deadline: string | null) => void;
     archiveActiveMilestone: (classId: string, milestoneName: string) => void;
     deleteMilestone: (classId: string, milestoneId: string) => void;
+    
+    // Team Health Pulse Actions
+    createPulseRound: (classId: string, roundData: { title: string; config?: Partial<PulseConfig> }) => void;
+    updatePulseRound: (classId: string, roundId: string, updates: Partial<PulseRound>) => void;
+    submitPulseResponse: (classId: string, roundId: string, response: Omit<PulseResponse, 'id' | 'submittedAt'>) => void;
+    deletePulseRound: (classId: string, roundId: string) => void;
+    seedSamplePulseRounds: (classId: string) => void;
     
     // Settings / UI
     restoreClassesSnapshot: (snapshot: ClassData[]) => void;
@@ -132,6 +142,7 @@ import {
   };
   
   export const ClassProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const isApplyingCloudSettings = useRef(false);
     const [activeAdminProfile, setActiveAdminProfile] = useState<string>(() => {
       return localStorage.getItem('peer_grading_active_profile') || 'default';
     });
@@ -335,7 +346,16 @@ import {
               deadline: data.deadline || null,
               milestones: Array.isArray(data.milestones) ? data.milestones : [],
               targetScale: typeof data.targetScale === 'number' ? data.targetScale : null,
-              teamBaseGrades: data.teamBaseGrades && typeof data.teamBaseGrades === 'object' ? data.teamBaseGrades : {}
+              teamBaseGrades: data.teamBaseGrades && typeof data.teamBaseGrades === 'object' ? data.teamBaseGrades : {},
+              pulseRounds: Array.isArray(data.pulseRounds) ? data.pulseRounds : [],
+              evaluationControls: data.evaluationControls && typeof data.evaluationControls === 'object' ? {
+                allowSelfReview: data.evaluationControls.allowSelfReview !== false,
+                showGrowthSuggestions: data.evaluationControls.showGrowthSuggestions !== false,
+                showPraiseTags: data.evaluationControls.showPraiseTags !== false,
+                showStrengthsFeedback: data.evaluationControls.showStrengthsFeedback !== false,
+                showRoleBaseline: data.evaluationControls.showRoleBaseline !== false,
+                allowProfileEditing: data.evaluationControls.allowProfileEditing !== false
+              } : undefined
             });
           });
 
@@ -373,7 +393,7 @@ import {
             const currentActiveClass = localStorage.getItem('peer_active_class_id');
             const currentTab = localStorage.getItem('peer_active_tab') || 'hub';
             const currentShortcuts = localStorage.getItem('peerlens_shortcuts_v3');
-            const currentFeatures = localStorage.getItem('peer_feature_toggles_v2');
+            const currentFeatures = loadFeatureToggles();
             const emailService = localStorage.getItem('peer_email_service') || 'brevo';
             const brevoApiKey = localStorage.getItem('peer_brevo_api_key') || '';
             const brevoSenderEmail = localStorage.getItem('peer_brevo_sender_email') || '';
@@ -387,7 +407,7 @@ import {
               activeClassId: currentActiveClass || null,
               activeTab: currentTab,
               shortcuts: currentShortcuts ? JSON.parse(currentShortcuts) : null,
-              featureToggles: currentFeatures ? JSON.parse(currentFeatures) : null,
+              featureToggles: currentFeatures || null,
               emailSettings: {
                 service: emailService,
                 brevoApiKey,
@@ -442,9 +462,21 @@ import {
       }
 
       // 4. Feature toggles
-      if (data.featureToggles) {
-        localStorage.setItem('peer_feature_toggles_v2', JSON.stringify(data.featureToggles));
-        window.dispatchEvent(new CustomEvent('peerlens_features_synced', { detail: data.featureToggles }));
+      if (data.featureToggles && typeof data.featureToggles === 'object') {
+        const currentLocal = loadFeatureToggles();
+        const mergedToggles: FeatureToggles = {
+          ...DEFAULT_FEATURE_TOGGLES,
+          ...currentLocal,
+          ...data.featureToggles
+        };
+        isApplyingCloudSettings.current = true;
+        localStorage.setItem('peerlens_feature_toggles', JSON.stringify(mergedToggles));
+        localStorage.setItem('peer_feature_toggles_v2', JSON.stringify(mergedToggles));
+        window.dispatchEvent(new CustomEvent('peerlens_features_changed', { detail: mergedToggles }));
+        window.dispatchEvent(new CustomEvent('peerlens_features_synced', { detail: mergedToggles }));
+        setTimeout(() => {
+          isApplyingCloudSettings.current = false;
+        }, 300);
       }
 
       // 5. Email settings
@@ -504,6 +536,28 @@ import {
         console.warn('Could not sync workspace settings to cloud:', err);
       }
     };
+
+    // Automatically sync feature toggles to cloud whenever they change anywhere in the app
+    useEffect(() => {
+      let debounceTimer: any = null;
+      const handleFeaturesChanged = (e: Event) => {
+        if (isApplyingCloudSettings.current) return;
+        const customEvent = e as CustomEvent<FeatureToggles>;
+        const toggles = customEvent.detail || loadFeatureToggles();
+        if (toggles && isCloudSynced && firebaseConfig && user) {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            syncWorkspaceSettingsToCloud({ featureToggles: toggles });
+          }, 300);
+        }
+      };
+
+      window.addEventListener('peerlens_features_changed', handleFeaturesChanged);
+      return () => {
+        window.removeEventListener('peerlens_features_changed', handleFeaturesChanged);
+        clearTimeout(debounceTimer);
+      };
+    }, [isCloudSynced, firebaseConfig, user]);
 
     // Authentication Action Handlers
     const loginAdmin = async (email: string, password: string) => {
@@ -595,7 +649,16 @@ import {
                 deadline: c.deadline || null,
                 milestones: Array.isArray(c.milestones) ? c.milestones : [],
                 targetScale: typeof c.targetScale === 'number' ? c.targetScale : null,
-                teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {}
+                teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
+                pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds : [],
+                evaluationControls: c.evaluationControls && typeof c.evaluationControls === 'object' ? {
+                  allowSelfReview: c.evaluationControls.allowSelfReview !== false,
+                  showGrowthSuggestions: c.evaluationControls.showGrowthSuggestions !== false,
+                  showPraiseTags: c.evaluationControls.showPraiseTags !== false,
+                  showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback !== false,
+                  showRoleBaseline: c.evaluationControls.showRoleBaseline !== false,
+                  allowProfileEditing: c.evaluationControls.allowProfileEditing !== false
+                } : undefined
               }));
               
               setClasses(validated);
@@ -671,7 +734,16 @@ import {
                 deadline: c.deadline || null,
                 milestones: Array.isArray(c.milestones) ? c.milestones : [],
                 targetScale: typeof c.targetScale === 'number' ? c.targetScale : null,
-                teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {}
+                teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
+                pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds : [],
+                evaluationControls: c.evaluationControls && typeof c.evaluationControls === 'object' ? {
+                  allowSelfReview: c.evaluationControls.allowSelfReview !== false,
+                  showGrowthSuggestions: c.evaluationControls.showGrowthSuggestions !== false,
+                  showPraiseTags: c.evaluationControls.showPraiseTags !== false,
+                  showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback !== false,
+                  showRoleBaseline: c.evaluationControls.showRoleBaseline !== false,
+                  allowProfileEditing: c.evaluationControls.allowProfileEditing !== false
+                } : undefined
               }));
               setClasses(validated);
             }
@@ -714,7 +786,14 @@ import {
           originalCountry: s.originalCountry || '',
           originalUniversity: s.originalUniversity || '',
           currentUniversity: s.currentUniversity || '',
-          submitted: !!s.submitted
+          submitted: !!s.submitted,
+          originalName: s.originalName || s.name || '',
+          originalEmail: s.originalEmail || s.email || '',
+          editHistory: Array.isArray(s.editHistory) ? s.editHistory.slice(-25) : [],
+          nameChangeCount: typeof s.nameChangeCount === 'number' ? s.nameChangeCount : 0,
+          lastProfileEditAt: s.lastProfileEditAt || null,
+          flaggedForReview: !!s.flaggedForReview,
+          suspiciousReason: s.suspiciousReason || null
         })) : [],
         reviews: Array.isArray(c.reviews) ? c.reviews.map(r => ({
           reviewerId: r.reviewerId || '',
@@ -739,7 +818,48 @@ import {
           })) : []
         })) : [],
         targetScale: typeof c.targetScale === 'number' ? c.targetScale : null,
-        teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {}
+        teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
+        pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds.map(pr => ({
+          id: pr.id,
+          title: pr.title || 'Team Health Pulse',
+          createdAt: pr.createdAt || new Date().toISOString(),
+          status: pr.status || 'active',
+          config: pr.config ? {
+            scaleType: pr.config.scaleType || 'stars_5',
+            moralePrompt: pr.config.moralePrompt || 'How are you feeling about team collaboration & morale?',
+            progressPrompt: pr.config.progressPrompt || 'Is your team on track for this milestone?',
+            notePrompt: pr.config.notePrompt || 'Any blockers or dependencies you want your instructor to know? (optional)',
+            allowBlockerNotes: pr.config.allowBlockerNotes !== false,
+            scaleOptions: Array.isArray(pr.config.scaleOptions) ? pr.config.scaleOptions : [],
+            customQuestions: Array.isArray(pr.config.customQuestions) ? pr.config.customQuestions.map(q => ({
+              id: q.id,
+              title: q.title || '',
+              type: q.type || 'scale',
+              options: Array.isArray(q.options) ? q.options : undefined,
+              required: !!q.required
+            })) : []
+          } : DEFAULT_PULSE_CONFIG,
+          responses: Array.isArray(pr.responses) ? pr.responses.map(resp => ({
+            id: resp.id,
+            studentId: resp.studentId || '',
+            studentName: resp.studentName || '',
+            groupName: resp.groupName || '',
+            moraleScore: typeof resp.moraleScore === 'number' ? resp.moraleScore : 3,
+            scaleType: resp.scaleType || 'stars_5',
+            status: resp.status || 'on_track',
+            blockerNote: resp.blockerNote || '',
+            submittedAt: resp.submittedAt || new Date().toISOString(),
+            customAnswers: resp.customAnswers && typeof resp.customAnswers === 'object' ? resp.customAnswers : {}
+          })) : []
+        })) : [],
+        evaluationControls: {
+          allowSelfReview: c.evaluationControls?.allowSelfReview !== false,
+          showGrowthSuggestions: c.evaluationControls?.showGrowthSuggestions !== false,
+          showPraiseTags: c.evaluationControls?.showPraiseTags !== false,
+          showStrengthsFeedback: c.evaluationControls?.showStrengthsFeedback !== false,
+          showRoleBaseline: c.evaluationControls?.showRoleBaseline !== false,
+          allowProfileEditing: c.evaluationControls?.allowProfileEditing !== false
+        }
       };
     };
 
@@ -775,6 +895,7 @@ import {
                 
                 if (urlStudentId) {
                   // Student mode: Merge specifically to preserve other students' data and reviews
+                  const hasSubmittedReviews = (c.reviews || []).some(r => r.reviewerId === urlStudentId);
                   const otherReviews = (cloudData.reviews || []).filter(r => r.reviewerId !== urlStudentId);
                   const myNewReviews = (c.reviews || []).filter(r => r.reviewerId === urlStudentId);
                   const mergedReviews = [...otherReviews, ...myNewReviews];
@@ -782,18 +903,37 @@ import {
                   const mergedStudents = (c.students || []).map(s => {
                     const cloudStudent = (cloudData.students || []).find(cs => cs.id === s.id);
                     if (s.id === urlStudentId) {
-                      return { ...s, submitted: true };
+                      return { 
+                        ...s, 
+                        submitted: s.submitted || (cloudStudent ? cloudStudent.submitted : false) || hasSubmittedReviews 
+                      };
                     }
                     return {
                       ...s,
                       submitted: cloudStudent ? cloudStudent.submitted : s.submitted
                     };
                   });
+
+                  // Merge pulse responses from student into cloud pulse rounds
+                  const cloudPulseRounds = Array.isArray(cloudData.pulseRounds) ? cloudData.pulseRounds : [];
+                  const localPulseRounds = Array.isArray(c.pulseRounds) ? c.pulseRounds : [];
+                  const mergedPulseRounds = cloudPulseRounds.map(cr => {
+                    const matchingLocalRound = localPulseRounds.find(lr => lr.id === cr.id);
+                    if (!matchingLocalRound) return cr;
+                    const studentResponses = (matchingLocalRound.responses || []).filter(resp => resp.studentId === urlStudentId);
+                    if (studentResponses.length === 0) return cr;
+                    const otherResponses = (cr.responses || []).filter(resp => resp.studentId !== urlStudentId);
+                    return {
+                      ...cr,
+                      responses: [...otherResponses, ...studentResponses]
+                    };
+                  });
                   
                   const updatedClass = {
                     ...cloudData, // Preserve cloud-authoritative fields (deadline, milestones, configurations)
                     students: mergedStudents,
-                    reviews: mergedReviews
+                    reviews: mergedReviews,
+                    pulseRounds: mergedPulseRounds.length > 0 ? mergedPulseRounds : (cloudData.pulseRounds || [])
                   };
                   transaction.set(classDocRef, sanitizeClassForFirestore(updatedClass));
                 } else {
@@ -817,15 +957,32 @@ import {
                     const mergedStudents = c.students.map(s => {
                       const cloudStudent = (cloudData.students || []).find(cs => cs.id === s.id);
                       return { 
-                        ...s,
+                        ...s, 
                         submitted: s.submitted || (cloudStudent ? cloudStudent.submitted : false)
+                      };
+                    });
+
+                    // Merge student responses from cloud into admin's pulse rounds
+                    const cloudPulseRounds = Array.isArray(cloudData.pulseRounds) ? cloudData.pulseRounds : [];
+                    const localPulseRounds = Array.isArray(c.pulseRounds) ? c.pulseRounds : [];
+                    const mergedPulseRounds = localPulseRounds.map(lr => {
+                      const matchingCloudRound = cloudPulseRounds.find(cr => cr.id === lr.id);
+                      if (!matchingCloudRound) return lr;
+                      const localStudentIdsWithResponse = new Set((lr.responses || []).map(r => r.studentId));
+                      const incomingResponses = (matchingCloudRound.responses || []).filter(
+                        cr => !localStudentIdsWithResponse.has(cr.studentId)
+                      );
+                      return {
+                        ...lr,
+                        responses: [...(lr.responses || []), ...incomingResponses]
                       };
                     });
                     
                     const updatedClass = {
                       ...c,
                       students: mergedStudents,
-                      reviews: mergedReviews
+                      reviews: mergedReviews,
+                      pulseRounds: mergedPulseRounds
                     };
                     transaction.set(classDocRef, sanitizeClassForFirestore(updatedClass));
                   }
@@ -981,6 +1138,24 @@ import {
       }
     };
 
+    const updateEvaluationControls = (classId: string, controls: Partial<EvaluationFormControls>) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentControls = getEvaluationControls(c);
+          return {
+            ...c,
+            evaluationControls: {
+              ...currentControls,
+              ...controls
+            }
+          };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Evaluation form settings updated.', 'success');
+    };
+
     const updateTeamBaseGrade = (classId: string, teamName: string, grade: number) => {
       const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
@@ -1052,21 +1227,148 @@ import {
     ): Promise<{ success: boolean; studentId: string; message?: string }> => {
       const normEmail = studentData.email.trim().toLowerCase();
       const normalizedNation = normalizeNationality(studentData.nationality);
+      const isExistingId = !!studentData.id?.trim();
       const newStudentId = studentData.id?.trim() || 'std_' + Math.abs(hashCode(normEmail || studentData.name));
-      
-      const studentToEnroll: Student = {
-        ...studentData,
-        id: newStudentId,
-        name: studentData.name.trim(),
-        email: normEmail,
-        groupName: studentData.groupName?.trim() || 'General Team',
-        nationality: normalizedNation,
-        gender: studentData.gender?.trim() || 'Prefer not to say',
-        englishProficiency: studentData.englishProficiency?.trim() || 'Fluent (C1/C2)',
-        university: studentData.university?.trim() || '',
-        degree: studentData.degree?.trim() || '',
-        studentType: studentData.studentType?.trim() || 'Normal',
-        submitted: false
+      const nowMs = Date.now();
+      const nowIso = new Date(nowMs).toISOString();
+
+      // Local pre-validation against current class roster
+      const currentClasses = getCurrentClasses();
+      const targetClass = currentClasses.find(c => c.id === classId);
+      if (targetClass) {
+        // 0. Check if student profile editing is locked by the professor
+        if (isExistingId && targetClass.evaluationControls?.allowProfileEditing === false) {
+          return {
+            success: false,
+            studentId: newStudentId,
+            message: 'Profile editing has been locked by your instructor.'
+          };
+        }
+
+        // 1. Email collision check: Check if another student has this email
+        const emailCollision = targetClass.students.some(
+          s => s.id !== newStudentId && s.email.toLowerCase() === normEmail
+        );
+        if (emailCollision) {
+          return {
+            success: false,
+            studentId: newStudentId,
+            message: 'This email address is already in use by another enrolled student.'
+          };
+        }
+
+        // 2. Rate-limiting anti-spam cooldown: Prevent rapid script/bot spamming or frantic churning
+        const existingLocal = targetClass.students.find(
+          s => s.id === newStudentId || (!isExistingId && s.email.toLowerCase() === normEmail)
+        );
+        if (existingLocal && existingLocal.lastProfileEditAt) {
+          const elapsed = nowMs - existingLocal.lastProfileEditAt;
+          if (elapsed < 6000) {
+            return {
+              success: false,
+              studentId: newStudentId,
+              message: 'Profile update saved recently. Please wait a few moments before making further changes.'
+            };
+          }
+        }
+      }
+
+      // Helper to compute merged student record with tamper tracking & audit log
+      const mergeStudentRecord = (existing?: Student): Student => {
+        if (!existing) {
+          // Brand new enrollment
+          return {
+            ...studentData,
+            id: newStudentId,
+            name: studentData.name.trim(),
+            email: normEmail,
+            groupName: studentData.groupName?.trim() || 'General Team',
+            nationality: normalizedNation,
+            gender: studentData.gender?.trim() || 'Prefer not to say',
+            englishProficiency: studentData.englishProficiency?.trim() || 'Fluent (C1/C2)',
+            university: studentData.university?.trim() || '',
+            degree: studentData.degree?.trim() || '',
+            studentType: studentData.studentType?.trim() || 'Normal',
+            submitted: false,
+            originalName: studentData.name.trim(),
+            originalEmail: normEmail,
+            editHistory: [],
+            nameChangeCount: 0,
+            lastProfileEditAt: nowMs,
+            flaggedForReview: false,
+            suspiciousReason: null
+          };
+        }
+
+        // Existing student updating profile
+        const origName = existing.originalName || existing.name;
+        const origEmail = existing.originalEmail || existing.email;
+        const prevHistory = Array.isArray(existing.editHistory) ? [...existing.editHistory] : [];
+        
+        // Log changes across key fields
+        const incomingName = studentData.name.trim();
+        const incomingFields: Record<string, string> = {
+          name: incomingName,
+          email: normEmail,
+          university: (studentData.university || '').trim(),
+          degree: (studentData.degree || '').trim(),
+          gender: (studentData.gender || '').trim(),
+          nationality: normalizedNation || '',
+          studentType: (studentData.studentType || '').trim()
+        };
+
+        let nameModified = false;
+        Object.entries(incomingFields).forEach(([fieldKey, newVal]) => {
+          const oldVal = (existing[fieldKey as keyof Student] !== undefined ? String(existing[fieldKey as keyof Student]) : '').trim();
+          if (oldVal && newVal && oldVal !== newVal) {
+            if (fieldKey === 'name') nameModified = true;
+            prevHistory.push({
+              timestamp: nowIso,
+              field: fieldKey,
+              from: oldVal,
+              to: newVal
+            });
+          }
+        });
+
+        const updatedNameChangeCount = nameModified 
+          ? (existing.nameChangeCount || 0) + 1 
+          : (existing.nameChangeCount || 0);
+
+        let isFlagged = !!existing.flaggedForReview;
+        let reason = existing.suspiciousReason || null;
+
+        if (nameModified) {
+          isFlagged = true;
+          reason = `Student altered enrollment name from "${origName}" to "${incomingName}". Total name revisions: ${updatedNameChangeCount}.`;
+        } else if (origEmail && origEmail.toLowerCase() !== normEmail) {
+          isFlagged = true;
+          reason = `Student updated contact email from initial "${origEmail}" to "${normEmail}".`;
+        }
+
+        return {
+          ...existing,
+          ...studentData,
+          id: existing.id,
+          name: incomingName,
+          email: normEmail,
+          // Students cannot change their assigned group or overwrite reviews/submitted flag
+          groupName: existing.groupName,
+          submitted: existing.submitted,
+          nationality: normalizedNation,
+          gender: studentData.gender?.trim() || existing.gender || 'Prefer not to say',
+          englishProficiency: studentData.englishProficiency?.trim() || existing.englishProficiency || 'Fluent (C1/C2)',
+          university: studentData.university?.trim() || existing.university || '',
+          degree: studentData.degree?.trim() || existing.degree || '',
+          studentType: studentData.studentType?.trim() || existing.studentType || 'Normal',
+          originalName: origName,
+          originalEmail: origEmail,
+          editHistory: prevHistory.slice(-30),
+          nameChangeCount: updatedNameChangeCount,
+          lastProfileEditAt: nowMs,
+          flaggedForReview: isFlagged,
+          suspiciousReason: reason
+        };
       };
 
       // 1. If Cloud Synced with Firebase, do transactional write to Firestore
@@ -1086,23 +1388,33 @@ import {
               const cloudData = sfDoc.data() as ClassData;
               const currentStudents = cloudData.students || [];
               
-              // Check if already registered by email or ID (case-insensitive)
+              // Verify profile edit permission
+              if (isExistingId && cloudData.evaluationControls?.allowProfileEditing === false) {
+                throw new Error('Profile editing has been locked by your instructor.');
+              }
+
+              // Verify email conflict in cloud data
+              const cloudEmailConflict = currentStudents.some(
+                s => s.id !== newStudentId && s.email.toLowerCase() === normEmail
+              );
+              if (cloudEmailConflict) {
+                throw new Error('This email address is already in use by another enrolled student.');
+              }
+
+              // Check if already registered by ID or email
               const existingIndex = currentStudents.findIndex(
-                s => s.email.toLowerCase() === normEmail || s.id === newStudentId
+                s => s.id === newStudentId || (!isExistingId && s.email.toLowerCase() === normEmail)
               );
               
               let updatedStudents: Student[];
               if (existingIndex >= 0) {
-                // Update profile with new info while preserving submitted status
                 const existing = currentStudents[existingIndex];
+                const merged = mergeStudentRecord(existing);
                 updatedStudents = [...currentStudents];
-                updatedStudents[existingIndex] = {
-                  ...existing,
-                  ...studentToEnroll,
-                  submitted: existing.submitted
-                };
+                updatedStudents[existingIndex] = merged;
               } else {
-                updatedStudents = [...currentStudents, studentToEnroll];
+                const newStudent = mergeStudentRecord(undefined);
+                updatedStudents = [...currentStudents, newStudent];
               }
               
               const updatedClass = {
@@ -1113,35 +1425,34 @@ import {
               transaction.set(classDocRef, sanitizeClassForFirestore(updatedClass));
             });
           } catch (err: any) {
-            console.error('Failed to enroll student via Firestore transaction:', err);
+            console.error('Failed to enroll/update student via Firestore transaction:', err);
             return { success: false, studentId: newStudentId, message: err.message || 'Failed to sync with cloud.' };
           }
         }
       }
 
-      // 2. Update local state and localStorage
+      // 2. Update local state, classesRef, and localStorage
       setClasses(prevClasses => {
         const updated = prevClasses.map(c => {
           if (c.id === classId) {
             const existingIdx = c.students.findIndex(
-              s => s.email.toLowerCase() === normEmail || s.id === newStudentId
+              s => s.id === newStudentId || (!isExistingId && s.email.toLowerCase() === normEmail)
             );
             let updatedStudents: Student[];
             if (existingIdx >= 0) {
               const existing = c.students[existingIdx];
+              const merged = mergeStudentRecord(existing);
               updatedStudents = [...c.students];
-              updatedStudents[existingIdx] = {
-                ...existing,
-                ...studentToEnroll,
-                submitted: existing.submitted
-              };
+              updatedStudents[existingIdx] = merged;
             } else {
-              updatedStudents = [...c.students, studentToEnroll];
+              const newStudent = mergeStudentRecord(undefined);
+              updatedStudents = [...c.students, newStudent];
             }
             return { ...c, students: updatedStudents };
           }
           return c;
         });
+        classesRef.current = updated;
         localStorage.setItem(`peer_grading_classes_${activeAdminProfile}`, JSON.stringify(updated));
         return updated;
       });
@@ -1343,6 +1654,111 @@ import {
       persistClasses(updatedClasses);
       addToast('Historical milestone deleted.', 'info');
     };
+
+    const createPulseRound = (classId: string, roundData: { title: string; config?: Partial<PulseConfig> }) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.pulseRounds || [];
+          // Automatically close previous active rounds when launching a new active round
+          const updatedRounds = currentRounds.map(r => ({ ...r, status: 'closed' as const }));
+          const newRound: PulseRound = {
+            id: 'pulse_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+            title: roundData.title.trim() || `Health Pulse Check #${currentRounds.length + 1}`,
+            createdAt: new Date().toISOString(),
+            status: 'active',
+            config: {
+              ...DEFAULT_PULSE_CONFIG,
+              ...roundData.config
+            },
+            responses: []
+          };
+          return {
+            ...c,
+            pulseRounds: [...updatedRounds, newRound]
+          };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast(`New Team Health Pulse "${roundData.title}" launched and active for responses!`, 'success');
+    };
+
+    const updatePulseRound = (classId: string, roundId: string, updates: Partial<PulseRound>) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.pulseRounds || [];
+          const updatedRounds = currentRounds.map(r => {
+            if (r.id === roundId) {
+              return { ...r, ...updates };
+            }
+            return r;
+          });
+          return { ...c, pulseRounds: updatedRounds };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Team Health Pulse check-in updated.', 'info');
+    };
+
+    const submitPulseResponse = (classId: string, roundId: string, response: Omit<PulseResponse, 'id' | 'submittedAt'>) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.pulseRounds || [];
+          const updatedRounds = currentRounds.map(r => {
+            if (r.id === roundId) {
+              // Replace or add response from this student
+              const existingFiltered = r.responses.filter(resp => resp.studentId !== response.studentId);
+              const newResp: PulseResponse = {
+                ...response,
+                id: 'presp_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+                submittedAt: new Date().toISOString()
+              };
+              return {
+                ...r,
+                responses: [...existingFiltered, newResp]
+              };
+            }
+            return r;
+          });
+          return { ...c, pulseRounds: updatedRounds };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast(`30-Second Team Pulse recorded for ${response.studentName}!`, 'success');
+    };
+
+    const deletePulseRound = (classId: string, roundId: string) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.pulseRounds || [];
+          const updatedRounds = currentRounds.filter(r => r.id !== roundId);
+          return { ...c, pulseRounds: updatedRounds };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Pulse check-in session removed.', 'info');
+    };
+
+    const seedSamplePulseRounds = (classId: string) => {
+      const current = getCurrentClasses();
+      const target = current.find(c => c.id === classId);
+      if (!target || target.students.length === 0) {
+        addToast('Please enroll students in the roster before generating team pulse data.', 'warning');
+        return;
+      }
+      const sampleRounds = generateSamplePulseRounds(target);
+      const updatedClasses = current.map(c => {
+        if (c.id === classId) {
+          return { ...c, pulseRounds: sampleRounds };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast(`Populated 3 multi-round sprint pulse checks with realistic team health trends!`, 'success');
+    };
  
     const resetClassReviews = (classId: string, silent: boolean = false) => {
       const currentList = classesRef.current.length > 0 ? classesRef.current : classes;
@@ -1363,6 +1779,44 @@ import {
             onClick: () => {
               restoreClassesSnapshot(snapshot);
               addToast('Restored all peer evaluations and review statuses', 'success');
+            }
+          }
+        });
+      }
+    };
+
+    const resetStudentReviews = (classId: string, studentId: string, silent: boolean = false) => {
+      const currentList = classesRef.current.length > 0 ? classesRef.current : classes;
+      const snapshot = JSON.parse(JSON.stringify(currentList)) as ClassData[];
+      const targetClass = currentList.find((c) => c.id === classId);
+      const studentObj = targetClass?.students.find((s) => s.id === studentId);
+      const studentName = studentObj?.name || 'Student';
+
+      const updatedClasses = currentList.map((c) => {
+        if (c.id === classId) {
+          // Remove all reviews where reviewerId === studentId
+          const remainingReviews = c.reviews.filter((r) => r.reviewerId !== studentId);
+          // Set student submitted = false
+          const resetStudents = c.students.map((s) => {
+            if (s.id === studentId) {
+              return { ...s, submitted: false };
+            }
+            return s;
+          });
+          return { ...c, students: resetStudents, reviews: remainingReviews };
+        }
+        return c;
+      });
+
+      persistClasses(updatedClasses);
+      if (!silent) {
+        addToast(`Reset review submission for ${studentName}. They can now submit again.`, 'info', {
+          duration: 15000,
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              restoreClassesSnapshot(snapshot);
+              addToast(`Restored submission for ${studentName}`, 'success');
             }
           }
         });
@@ -1444,6 +1898,7 @@ import {
           deleteClass,
           selectClass,
           updateGradingConfig,
+          updateEvaluationControls,
           updateTeamBaseGrade,
           setAllTeamBaseGrades,
           importRoster,
@@ -1455,10 +1910,16 @@ import {
           submitPeerReviews,
           batchSubmitClassReviews,
           resetClassReviews,
+          resetStudentReviews,
           clearClassRoster,
           saveClassDeadline,
           archiveActiveMilestone,
           deleteMilestone,
+          createPulseRound,
+          updatePulseRound,
+          submitPulseResponse,
+          deletePulseRound,
+          seedSamplePulseRounds,
           restoreClassesSnapshot,
           saveFirebaseConfig,
           syncWorkspaceSettingsToCloud,

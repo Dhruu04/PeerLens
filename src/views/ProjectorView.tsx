@@ -917,7 +917,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               {submittedStudents} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>/ {totalStudents} completed</span>
             </b>
             <span style={{ fontSize: '0.75rem', color: submissionPct === 100 ? '#0d9488' : '#d97706', fontWeight: 700 }}>
-              {totalStudents - submittedStudents === 0 ? '✨ 100% Evaluations Complete!' : `${totalStudents - submittedStudents} evaluations pending`}
+              {totalStudents - submittedStudents === 0 ? '100% Evaluations Complete!' : `${totalStudents - submittedStudents} evaluations pending`}
             </span>
           </div>
         </div>

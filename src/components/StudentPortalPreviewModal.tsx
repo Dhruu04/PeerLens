@@ -280,7 +280,7 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
         >
           <style dangerouslySetInnerHTML={{ __html: `
             .smartphone-simulator-screen .student-portal-wrapper {
-              padding: 0 0.65rem 2.5rem 0.65rem !important;
+              padding: 0 0.65rem 4.5rem 0.65rem !important;
               max-width: 100% !important;
               margin: 0 !important;
             }

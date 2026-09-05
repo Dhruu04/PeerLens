@@ -168,6 +168,13 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     description: 'Quickly switch interface aesthetic between dark and light modes.',
     suggestedKey: 'f'
   },
+  {
+    id: 'toggle_quick_pill',
+    label: 'Toggle Quick Action Pill',
+    category: 'Tools & Modals',
+    description: 'Toggle the floating all-in-one Quick Action Pill at the bottom of the window.',
+    suggestedKey: 'q'
+  },
 
   // --- Roster & Teams ---
   {
@@ -532,6 +539,14 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     key: 's',
     description: 'Open unified settings for email APIs, cloud sync, and shortcuts.'
   },
+  {
+    id: 'toggle_quick_pill',
+    actionId: 'toggle_quick_pill',
+    label: 'Toggle Quick Action Pill',
+    category: 'Tools & Modals',
+    key: 'q',
+    description: 'Toggle the floating all-in-one Quick Action Pill at the bottom of the window (Q).'
+  },
 
   // Actions
   {
@@ -613,8 +628,7 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
     if (rawV3) {
       const parsed = JSON.parse(rawV3);
       if (Array.isArray(parsed)) {
-        // Return user's authoritative list! If user deleted premade shortcuts, they STAY deleted!
-        return parsed.map((p: any) => ({
+        let list: KeyboardShortcut[] = parsed.map((p: any) => ({
           id: p.id || `sc_${Math.random().toString(36).substring(2, 7)}`,
           actionId: p.actionId || p.id,
           label: p.label || 'Shortcut',
@@ -625,6 +639,35 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
           disabled: !!p.disabled,
           isCustom: !!p.isCustom
         }));
+
+        // Ensure toggle_quick_pill is present and uses key 'q' and category 'Tools & Modals'
+        const pillIdx = list.findIndex(s => s.actionId === 'toggle_quick_pill' || s.id === 'toggle_quick_pill');
+        if (pillIdx === -1) {
+          const def = DEFAULT_KEYBOARD_SHORTCUTS.find(d => d.actionId === 'toggle_quick_pill');
+          if (def) {
+            list.push({ ...def });
+            saveStoredShortcuts(list);
+          }
+        } else if (list[pillIdx].key !== 'q' || list[pillIdx].category !== 'Tools & Modals') {
+          list[pillIdx] = {
+            ...list[pillIdx],
+            label: 'Toggle Quick Action Pill',
+            category: 'Tools & Modals',
+            key: 'q',
+            modifiers: undefined,
+            description: 'Toggle the floating all-in-one Quick Action Pill at the bottom of the window (Q).'
+          };
+          saveStoredShortcuts(list);
+        }
+
+        // Add any other missing default shortcuts
+        const existingActionIds = new Set(list.map((p) => p.actionId || p.id));
+        const missingDefaults = DEFAULT_KEYBOARD_SHORTCUTS.filter(d => !existingActionIds.has(d.actionId || d.id));
+        if (missingDefaults.length > 0) {
+          list.push(...missingDefaults);
+          saveStoredShortcuts(list);
+        }
+        return list;
       }
     }
 
@@ -708,6 +751,8 @@ export function matchShortcut(e: KeyboardEvent, shortcut: KeyboardShortcut): boo
     (shortcutKey === '3' && (e.code === 'Digit3' || e.code === 'Numpad3')) ||
     (shortcutKey === '4' && (e.code === 'Digit4' || e.code === 'Numpad4')) ||
     (shortcutKey === '0' && (e.code === 'Digit0' || e.code === 'Numpad0')) ||
+    (shortcutKey === 'q' && (pressedKey === 'q' || e.code === 'KeyQ')) ||
+    (shortcutKey === 'p' && (pressedKey === 'p' || e.code === 'KeyP')) ||
     (shortcutKey === ' ' && (e.key === ' ' || e.code === 'Space')) ||
     (shortcutKey === 'escape' && (e.key === 'Escape' || e.code === 'Escape'));
 

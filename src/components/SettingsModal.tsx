@@ -38,7 +38,8 @@ import {
   Activity,
   Zap,
   Plus,
-  AlertCircle
+  AlertCircle,
+  SlidersHorizontal
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
 import { useTheme, type ThemeMode } from '../context/ThemeContext';
@@ -53,6 +54,7 @@ import {
   type FeatureToggles 
 } from '../utils/featurePreferences';
 import CustomSelect from './CustomSelect';
+import { CollapsibleEvaluationControls } from './CollapsibleEvaluationControls';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -72,11 +74,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   shortcuts,
   onUpdateShortcuts,
   onResetShortcuts,
-  showChecklist = true,
+  showChecklist = false,
   onToggleChecklist
 }) => {
   const { 
     classes, 
+    activeClass,
+    updateEvaluationControls,
     firebaseConfig, 
     saveFirebaseConfig, 
     isCloudSynced,
@@ -619,7 +623,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <CheckSquare size={15} className="text-primary" /> Instructor Onboarding &amp; Setup Checklist
                   </h4>
                   <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                    Display the 4-step progressive getting-started checklist at the top of your dashboard.
+                    Display the 4-step progressive getting-started checklist at the top of your dashboard. Hidden by default.
                   </p>
                 </div>
 
@@ -650,6 +654,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
 
+              {/* Floating Quick Action Pill Card */}
+              <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '0.9rem 1.15rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div style={{ maxWidth: '460px' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <Compass size={15} className="text-primary" /> Floating Quick Action Pill (Bottom Center)
+                  </h4>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Contractable &amp; expandable all-in-one floating pill anchored to the bottom of the window (doesn&apos;t move when scrolling). Direct access to top bar functions, search, module switches, and tools.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleFeatureToggle('showQuickActionPill')}
+                  style={{
+                    padding: '0.35rem 0.85rem',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    border: featureToggles.showQuickActionPill ? '1px solid #10b981' : '1px solid var(--border-color)',
+                    backgroundColor: featureToggles.showQuickActionPill ? 'var(--primary-light)' : 'var(--bg-surface)',
+                    color: featureToggles.showQuickActionPill ? 'var(--primary)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  {featureToggles.showQuickActionPill ? <CheckCircle size={13} /> : null}
+                  {featureToggles.showQuickActionPill ? 'Pill Visible' : 'Pill Hidden'}
+                </button>
+              </div>
+
+              {/* Collapsible Section: Peer Evaluation Form Fields & Student Permissions */}
+              <CollapsibleEvaluationControls
+                activeClass={activeClass}
+                onUpdateControls={(controls) => {
+                  if (activeClass) {
+                    updateEvaluationControls(activeClass.id, controls);
+                  }
+                }}
+                defaultExpanded={false}
+              />
+
               {/* Module Filter & Search Bar */}
               {(() => {
                 const MODULE_GROUPS = [
@@ -657,7 +705,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     id: 'header' as const,
                     title: 'Header & Top Navigation',
                     icon: Settings,
-                    keys: ['showClassPicker', 'showDeleteClassButton', 'showNewClassButton', 'showSettingsButton', 'showThemeSwitcher', 'showProfilePill', 'showProjectorButton', 'showCommandSearch', 'showEmailButton', 'showGuideButton', 'showCloudStatus', 'showCustomizeViewButton'] as (keyof FeatureToggles)[],
+                    keys: ['showClassPicker', 'showDeleteClassButton', 'showNewClassButton', 'showSettingsButton', 'showThemeSwitcher', 'showProfilePill', 'showProjectorButton', 'showCommandSearch', 'showEmailButton', 'showGuideButton', 'showCloudStatus', 'showCustomizeViewButton', 'showQuickActionPill'] as (keyof FeatureToggles)[],
                     items: [
                       { key: 'showClassPicker' as keyof FeatureToggles, title: 'Active Classroom Dropdown Selector', desc: 'Class dropdown on top-left to switch between active course sections.', icon: BookOpen },
                       { key: 'showDeleteClassButton' as keyof FeatureToggles, title: 'Delete Classroom Action Icon', desc: 'Trash icon next to classroom name to remove the active classroom.', icon: Trash2 },
@@ -670,7 +718,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       { key: 'showEmailButton' as keyof FeatureToggles, title: 'Classroom Email Center Button', desc: 'Dispatches secure assessment links to students via Brevo or EmailJS.', icon: Mail },
                       { key: 'showGuideButton' as keyof FeatureToggles, title: 'Academic Guidance Center Button', desc: 'Opens academic guidance instructions and interactive tours.', icon: Compass },
                       { key: 'showCloudStatus' as keyof FeatureToggles, title: 'Cloud Sync Status Indicator', desc: 'Minimal cloud connection icon button in top navigation bar.', icon: Database },
-                      { key: 'showCustomizeViewButton' as keyof FeatureToggles, title: 'Customize View Button', desc: 'Minimalist sliders button in the top navigation dock to customize visible modules.', icon: Sliders }
+                      { key: 'showCustomizeViewButton' as keyof FeatureToggles, title: 'Customize View Button', desc: 'Minimalist sliders button in the top navigation dock to customize visible modules.', icon: Sliders },
+                      { key: 'showQuickActionPill' as keyof FeatureToggles, title: 'Floating Quick Action Pill (Bottom Center)', desc: 'Contractable & expandable floating dock at the bottom of the window for instant access to top bar functions, search, modules, and tools.', icon: Compass }
                     ]
                   },
                   {
@@ -714,7 +763,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     id: 'rubric' as const,
                     title: 'Section 2: Review System',
                     icon: Sliders,
-                    keys: ['showRubricHeader', 'showCustomCriterionButton', 'showRubricPresets', 'showTargetScaleCard', 'showDeadlineTimer', 'showWeightBalanceBar', 'showCriterionCards', 'showEvaluationSimulator'] as (keyof FeatureToggles)[],
+                    keys: ['showRubricHeader', 'showCustomCriterionButton', 'showRubricPresets', 'showTargetScaleCard', 'showDeadlineTimer', 'showWeightBalanceBar', 'showCriterionCards', 'showEvaluationSimulator', 'showEvaluationFormControls', 'showTeamHealthPulse'] as (keyof FeatureToggles)[],
                     items: [
                       { key: 'showRubricHeader' as keyof FeatureToggles, title: 'Rubric Title & Criteria Counter Header', desc: 'Header title, rubric description, and guide info button.', icon: Sliders },
                       { key: 'showCustomCriterionButton' as keyof FeatureToggles, title: 'Add Custom Criterion Button', desc: '+ Add Custom Criterion button to create individual evaluation metrics.', icon: Sliders },
@@ -723,7 +772,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       { key: 'showDeadlineTimer' as keyof FeatureToggles, title: 'Milestone Deadline & Countdown Timer Card', desc: 'Submission cutoff date & countdown timer that locks evaluations upon expiration.', icon: Clock },
                       { key: 'showWeightBalanceBar' as keyof FeatureToggles, title: 'Rubric Weight Auto-Balance Bar', desc: 'Validation bar indicating criteria weight percentage sum and 100% balance.', icon: CheckCircle },
                       { key: 'showCriterionCards' as keyof FeatureToggles, title: 'Evaluation Rubric Criteria Cards List', desc: 'Configured rubric criteria cards with score ranges and behavioral anchors.', icon: Sliders },
-                      { key: 'showEvaluationSimulator' as keyof FeatureToggles, title: 'Student Interface Experience Preview', desc: 'Interactive simulator showing how students see and submit peer evaluation sliders.', icon: Sparkles }
+                      { key: 'showEvaluationSimulator' as keyof FeatureToggles, title: 'Student Interface Experience Preview', desc: 'Interactive simulator showing how students see and submit peer evaluation sliders.', icon: Sparkles },
+                      { key: 'showEvaluationFormControls' as keyof FeatureToggles, title: 'Peer Evaluation Form Fields & Controls Card', desc: 'Card to toggle question prompts, praise tags, self-review, and permissions directly on the page.', icon: SlidersHorizontal },
+                      { key: 'showTeamHealthPulse' as keyof FeatureToggles, title: 'Team Health "Micro-Pulse" Check-ins', desc: 'On-demand 30-second pulse surveys tracking team morale, communication, and project blockers with sparklines.', icon: Activity }
                     ]
                   },
                   {
@@ -1375,9 +1426,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* TAB 3: KEYBOARD SHORTCUTS */}
           {activeTab === 'shortcuts' && (() => {
-            const activeDefaultsCount = DEFAULT_KEYBOARD_SHORTCUTS.filter(d => shortcuts.some(s => s.id === d.id)).length;
+            const displayShortcuts: KeyboardShortcut[] = (() => {
+              const list = [...shortcuts];
+              DEFAULT_KEYBOARD_SHORTCUTS.forEach(def => {
+                const found = list.some(s => (s.actionId || s.id) === (def.actionId || def.id));
+                if (!found) {
+                  list.push({ ...def });
+                }
+              });
+              return list;
+            })();
+
+            const activeDefaultsCount = DEFAULT_KEYBOARD_SHORTCUTS.filter(d => displayShortcuts.some(s => s.id === d.id)).length;
             const removedDefaultsCount = DEFAULT_KEYBOARD_SHORTCUTS.length - activeDefaultsCount;
-            const customCount = shortcuts.filter(s => s.isCustom).length;
+            const customCount = displayShortcuts.filter(s => s.isCustom).length;
 
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -1385,7 +1447,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div>
                     <b style={{ fontSize: '0.84rem', color: 'var(--text-primary)' }}>Customizable Keybindings</b>
                     <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      {shortcuts.length} active shortcuts {customCount > 0 ? `(${customCount} custom) ` : ''}{removedDefaultsCount > 0 ? `• ${removedDefaultsCount} premade deleted ` : ''}• Click any key badge to quick-remap, or use Edit/Delete buttons.
+                      {displayShortcuts.length} active shortcuts {customCount > 0 ? `(${customCount} custom) ` : ''}{removedDefaultsCount > 0 ? `• ${removedDefaultsCount} premade deleted ` : ''}• Click any key badge to quick-remap, or use Edit/Delete buttons.
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -1699,7 +1761,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* Grouped Shortcuts */}
               {(['Custom', 'Navigation', 'Tools & Modals', 'Roster & Teams', 'Rubric & Scales', 'Grading & Analytics', 'Layout & Presets', 'General'] as const).map((category) => {
-                const groupShortcuts = shortcuts.filter(s => {
+                const groupShortcuts = displayShortcuts.filter(s => {
                   if (category === 'Custom') return s.isCustom || s.category === 'Custom';
                   return !s.isCustom && s.category === category;
                 });

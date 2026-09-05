@@ -209,11 +209,11 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
             emailjsUserId.trim()
           );
           successCount++;
-          setSendLogs(prev => [...prev, `✅ [${i + 1}/${total}] Sent via EmailJS to ${student.name} (${student.email})`]);
+          setSendLogs(prev => [...prev, `[SENT] [${i + 1}/${total}] Sent via EmailJS to ${student.name} (${student.email})`]);
         } catch (err: any) {
           failCount++;
           const msg = err?.text || err?.message || 'Network error';
-          setSendLogs(prev => [...prev, `❌ [${i + 1}/${total}] Failed for ${student.name} (${student.email}): ${msg}`]);
+          setSendLogs(prev => [...prev, `[FAILED] [${i + 1}/${total}] Failed for ${student.name} (${student.email}): ${msg}`]);
         }
       } else if (emailService === 'brevo') {
         try {
@@ -228,7 +228,7 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
               <h2 style="color: #0f172a; font-size: 19px; font-weight: 700; margin: 0 0 16px 0; text-align: center;">${subject}</h2>
               <div style="color: #334155; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${bodyText}</div>
               <div style="text-align: center; margin: 26px 0;">
-                <a href="${link}" target="_blank" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; display: inline-block;">Open Grading Portal ➔</a>
+                <a href="${link}" target="_blank" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; display: inline-block;">Open Grading Portal &rarr;</a>
               </div>
               <p style="color: #64748b; font-size: 12px; line-height: 1.4; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px; text-align: center;">
                 Confidential peer assessment link for <strong>${student.name}</strong> (${student.groupName || 'Unassigned'}).
@@ -256,10 +256,10 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
             throw new Error(data.message || `Brevo HTTP ${res.status}`);
           }
           successCount++;
-          setSendLogs(prev => [...prev, `✅ [${i + 1}/${total}] Sent via Brevo to ${student.name} (${student.email})`]);
+          setSendLogs(prev => [...prev, `[SENT] [${i + 1}/${total}] Sent via Brevo to ${student.name} (${student.email})`]);
         } catch (err: any) {
           failCount++;
-          setSendLogs(prev => [...prev, `❌ [${i + 1}/${total}] Failed for ${student.name} (${student.email}): ${err.message}`]);
+          setSendLogs(prev => [...prev, `[FAILED] [${i + 1}/${total}] Failed for ${student.name} (${student.email}): ${err.message}`]);
         }
       } else {
         // High-Fidelity Simulator
@@ -612,7 +612,7 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
                 {/* Log stream */}
                 <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.2rem' }}>
                   {sendLogs.map((log, idx) => (
-                    <div key={idx} style={{ fontSize: '0.7rem', color: log.includes('❌') ? 'var(--accent-rose)' : 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                    <div key={idx} style={{ fontSize: '0.7rem', color: log.includes('[FAILED]') ? 'var(--accent-rose)' : 'var(--text-secondary)', fontFamily: 'monospace' }}>
                       {log}
                     </div>
                   ))}

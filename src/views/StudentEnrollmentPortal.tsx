@@ -143,21 +143,14 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
         );
         if (existingStudent) {
           setEnrolledStudentId(existingStudent.id);
-          setFormData({
-            name: existingStudent.name || '',
-            email: existingStudent.email || '',
-            gender: existingStudent.gender || 'Female',
-            englishProficiency: existingStudent.englishProficiency || 'Fluent (C1/C2)',
-            degree: existingStudent.degree || '',
-            isInternational: !!existingStudent.isInternational,
-            nationality: existingStudent.nationality || '',
-            currentCountry: existingStudent.currentCountry || existingStudent.nationality || '',
-            isExchange: !!existingStudent.isExchange,
-            university: existingStudent.university || '',
-            originalUniversity: existingStudent.originalUniversity || '',
-            originalCountry: existingStudent.originalCountry || '',
-            currentUniversity: existingStudent.currentUniversity || existingStudent.university || ''
-          });
+          try {
+            localStorage.setItem('peer_active_student_session', JSON.stringify({ classId, studentId: existingStudent.id }));
+          } catch (e) {}
+          // Immediately route to personal student dashboard
+          const targetUrl = `${window.location.origin}${window.location.pathname}?classId=${classId}&studentId=${existingStudent.id}`;
+          window.history.replaceState(null, '', targetUrl);
+          window.dispatchEvent(new Event('popstate'));
+          return;
         }
       }
     } catch (e) {
@@ -280,8 +273,12 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
         setIsEditingInfo(false);
         try {
           localStorage.setItem(`peer_enrolled_student_${classId}`, JSON.stringify({ id: matchByEmailOrName.id, email: matchByEmailOrName.email }));
+          localStorage.setItem('peer_active_student_session', JSON.stringify({ classId, studentId: matchByEmailOrName.id }));
         } catch (e) { }
-        addToast(`Registered profile found for "${matchByEmailOrName.name}" (${matchByEmailOrName.email})! Profile loaded on this device.`, 'info');
+        addToast(`Welcome back, ${matchByEmailOrName.name}! Entering your student dashboard...`, 'success');
+        const targetUrl = `${window.location.origin}${window.location.pathname}?classId=${classId}&studentId=${matchByEmailOrName.id}`;
+        window.history.pushState(null, '', targetUrl);
+        window.dispatchEvent(new Event('popstate'));
         return;
       }
     }
@@ -324,8 +321,12 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
         setIsEditingInfo(false);
         try {
           localStorage.setItem(`peer_enrolled_student_${classId}`, JSON.stringify({ id: res.studentId, email: studentPayload.email }));
+          localStorage.setItem('peer_active_student_session', JSON.stringify({ classId, studentId: res.studentId }));
         } catch (e) { }
-        addToast(isEditingInfo ? 'Registration details updated successfully!' : 'Successfully registered in class activities!', 'success');
+        addToast(isEditingInfo ? 'Registration details updated!' : 'Registration successful! Entering your dashboard...', 'success');
+        const targetUrl = `${window.location.origin}${window.location.pathname}?classId=${classId}&studentId=${res.studentId}`;
+        window.history.pushState(null, '', targetUrl);
+        window.dispatchEvent(new Event('popstate'));
       } else {
         addToast(res.message || 'Enrollment failed. Please try again.', 'error');
       }
