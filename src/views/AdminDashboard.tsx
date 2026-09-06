@@ -86,14 +86,22 @@ import { KeyboardShortcutsModal } from '../components/KeyboardShortcutsModal';
 import { TeamCohortsOverview } from '../components/TeamCohortsOverview';
 import { TeamHealthPulseCard } from '../components/TeamHealthPulseCard';
 import { GuidedSandboxHUD, type SandboxMission } from '../components/GuidedSandboxHUD';
-import { Smartphone } from 'lucide-react';
+import { Smartphone, Edit3 } from 'lucide-react';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
+import { EditableModuleSlot } from '../components/EditableModuleSlot';
+import { LayoutEditBar } from '../components/LayoutEditBar';
+import {
+  getShortcutsEnabled,
+  setShortcutsEnabled as saveShortcutsEnabled,
+  subscribeShortcutsEnabled
+} from '../utils/customViewProfiles';
 import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
 import {
   getStoredShortcuts,
   saveStoredShortcuts,
   resetStoredShortcuts,
-  matchShortcut
+  matchShortcut,
+  DEFAULT_KEYBOARD_SHORTCUTS
 } from '../utils/keyboardShortcuts';
 import { downloadStudentReportPDF } from '../utils/pdfReport';
 
@@ -802,11 +810,28 @@ export const AdminDashboard: React.FC = () => {
   const [isEvaluationControlsModalOpen, setIsEvaluationControlsModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'email' | 'cloud' | 'shortcuts' | 'appearance' | 'modules'>('email');
   const [shortcuts, setShortcuts] = useState<KeyboardShortcut[]>(() => getStoredShortcuts());
+  const [shortcutsEnabled, setShortcutsEnabled] = useState<boolean>(() => getShortcutsEnabled());
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    return subscribeShortcutsEnabled((enabled) => setShortcutsEnabled(enabled));
+  }, []);
+
+  const handleToggleModule = (key: keyof FeatureToggles, nextVal: boolean) => {
+    const updated = { ...featureToggles, [key]: nextVal };
+    setFeatureToggles(updated);
+    saveFeatureToggles(updated);
+    syncWorkspaceSettingsToCloud({ featureToggles: updated });
+  };
 
   useEffect(() => {
     const handleShortcutsChanged = (e: any) => {
       if (Array.isArray(e.detail)) {
-        setShortcuts(e.detail);
+        const list = e.detail;
+        const existingActionIds = new Set(list.map((p: any) => p.actionId || p.id));
+        const missingDefaults = DEFAULT_KEYBOARD_SHORTCUTS.filter(d => !existingActionIds.has(d.actionId || d.id));
+        const merged = missingDefaults.length > 0 ? [...list, ...missingDefaults] : list;
+        setShortcuts(merged);
       }
     };
     window.addEventListener('peerlens_shortcuts_changed', handleShortcutsChanged);
@@ -1186,8 +1211,9 @@ export const AdminDashboard: React.FC = () => {
         target.tagName === 'SELECT'
       );
 
-      // Handle Escape to dismiss open overlays/modals
+      // Handle Escape to dismiss open overlays/modals or exit edit mode
       if (e.key === 'Escape') {
+        if (isEditMode) { setIsEditMode(false); addToast('Exited Layout Edit Mode', 'info'); return; }
         if (isShortcutsModalOpen) { setIsShortcutsModalOpen(false); return; }
         if (isGuideCenterOpen) { setIsGuideCenterOpen(false); return; }
         if (previewingStudent) { setPreviewingStudent(null); return; }
@@ -1213,7 +1239,8 @@ export const AdminDashboard: React.FC = () => {
         return;
       }
 
-      // Ctrl + K / Cmd + K to toggle Command Palette / Finder
+      // --- Core System Shortcuts (Always active regardless of shortcutsEnabled) ---
+      // 1. Ctrl + K / Cmd + K to toggle Command Palette / Finder
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'k' || e.code === 'KeyK')) {
         e.preventDefault();
         e.stopPropagation();
@@ -1221,7 +1248,31 @@ export const AdminDashboard: React.FC = () => {
         return;
       }
 
+      // 2. Alt + E or Alt + L to toggle Interactive Layout Edit Mode
+      // Fully platform-independent with e.code check and immediate preventDefault() to prevent browser menu activation
+      const isAltEditMode = e.altKey && !e.ctrlKey && !e.metaKey && (
+        e.key.toLowerCase() === 'e' || e.code === 'KeyE' ||
+        e.key.toLowerCase() === 'l' || e.code === 'KeyL'
+      );
+
+      if (isAltEditMode) {
+        if (isInputFocused && target && typeof target.blur === 'function') {
+          target.blur();
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        setIsEditMode(prev => {
+          const next = !prev;
+          addToast(next ? 'Interactive Layout Edit Mode activated (Alt+E)' : 'Exited Layout Edit Mode', 'info');
+          return next;
+        });
+        return;
+      }
+
       if (isInputFocused) return;
+
+      // Check if general single-key shortcuts (e, c, n, 1, 2, 3, etc.) are enabled globally
+      if (!shortcutsEnabled) return;
 
       // Q or Alt + P to toggle Floating Quick Action Pill
       if (
@@ -1282,9 +1333,9 @@ export const AdminDashboard: React.FC = () => {
     isArchiveModalOpen,
     confirmModal.isOpen,
     isNewClassModalOpen,
-    isNewProfileModalOpen,
-    isMobileProfileModalOpen,
-    activeTab
+    activeTab,
+    shortcutsEnabled,
+    isEditMode
   ]);
 
   // Handle Admin Authentication Form Submission (Option A)
@@ -2319,6 +2370,13 @@ export const AdminDashboard: React.FC = () => {
           addToast(nextVal ? 'Floating Quick Action Pill enabled (Q)' : 'Floating Quick Action Pill hidden (Q)', 'info');
         }
         break;
+      case 'toggle_edit_mode':
+        setIsEditMode(prev => {
+          const next = !prev;
+          addToast(next ? 'Interactive Layout Edit Mode activated (Alt+E)' : 'Exited Layout Edit Mode', 'info');
+          return next;
+        });
+        break;
 
       // --- Roster & Teams ---
       case 'new_class':
@@ -2726,213 +2784,234 @@ export const AdminDashboard: React.FC = () => {
             </span>
           </div>
 
-          {featureToggles.showClassPicker && (
+          {(isEditMode || featureToggles.showClassPicker) && (
             <span style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-color)', margin: '0 0.15rem', flexShrink: 0 }} />
           )}
 
-          {featureToggles.showClassPicker && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'nowrap' }} data-tour="class-header">
-              <BookOpen size={16} className="text-primary" style={{ flexShrink: 0 }} />
-              <CustomSelect
-                options={classOptions}
-                value={activeClass.id}
-                onChange={(val) => selectClass(val)}
-                dropdownMinWidth="220px"
-                style={{ width: 'auto', minWidth: '130px' }}
-                footer={
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '0.5rem', padding: '0.1rem 0' }}>
-                    <span style={{ fontFamily: 'monospace', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                      ID: <b style={{ color: 'var(--text-primary)' }}>{activeClass.id}</b>
-                    </span>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', height: '22px', gap: '0.25rem' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigator.clipboard.writeText(activeClass.id);
-                        addToast(`Class ID ${activeClass.id} copied to clipboard!`, 'info');
-                      }}
-                      title="Copy active Classroom ID"
-                    >
-                      <Copy size={11} /> <span>Copy</span>
-                    </button>
-                  </div>
-                }
-                triggerStyle={{
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  boxShadow: 'none',
-                  padding: '0.15rem 0.35rem',
-                  fontSize: '0.98rem',
-                  fontWeight: 800,
-                  height: '30px',
-                  color: 'var(--text-primary)',
-                  whiteSpace: 'nowrap'
-                }}
-              />
-              {featureToggles.showDeleteClassButton && classes.length > 1 && (
-                <button
-                  type="button"
-                  className="btn btn-sm text-rose"
-                  onClick={() => {
-                    triggerConfirm(
-                      'Delete Classroom Group',
-                      `Are you sure you want to permanently delete the classroom "${activeClass.name}" and all of its student rosters, evaluations, and metrics? This action cannot be undone.`,
-                      () => deleteClass(activeClass.id),
-                      'Delete Classroom',
-                      'Cancel'
-                    );
+          {(isEditMode || featureToggles.showClassPicker) && (
+            <EditableModuleSlot
+              moduleKey="showClassPicker"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showClassPicker}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
+            >
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'nowrap' }} data-tour="class-header">
+                <BookOpen size={16} className="text-primary" style={{ flexShrink: 0 }} />
+                <CustomSelect
+                  options={classOptions}
+                  value={activeClass.id}
+                  onChange={(val) => selectClass(val)}
+                  dropdownMinWidth="220px"
+                  style={{ width: 'auto', minWidth: '130px' }}
+                  footer={
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '0.5rem', padding: '0.1rem 0' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        ID: <b style={{ color: 'var(--text-primary)' }}>{activeClass.id}</b>
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', height: '22px', gap: '0.25rem' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(activeClass.id);
+                          addToast(`Class ID ${activeClass.id} copied to clipboard!`, 'info');
+                        }}
+                        title="Copy active Classroom ID"
+                      >
+                        <Copy size={11} /> <span>Copy</span>
+                      </button>
+                    </div>
+                  }
+                  triggerStyle={{
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    boxShadow: 'none',
+                    padding: '0.15rem 0.35rem',
+                    fontSize: '0.98rem',
+                    fontWeight: 800,
+                    height: '30px',
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'nowrap'
                   }}
-                  title="Delete Current Class"
-                  style={{ padding: '0.15rem 0.35rem', backgroundColor: 'transparent', border: 'none', color: 'var(--accent-rose)', height: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                >
-                  <Trash2 size={13} />
-                </button>
-              )}
-            </div>
+                />
+              </div>
+            </EditableModuleSlot>
+          )}
+
+          {(isEditMode || (featureToggles.showDeleteClassButton && classes.length > 1)) && (
+            <EditableModuleSlot
+              moduleKey="showDeleteClassButton"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showDeleteClassButton}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
+            >
+              <button
+                type="button"
+                className="btn btn-sm text-rose"
+                onClick={() => {
+                  triggerConfirm(
+                    'Delete Classroom Group',
+                    `Are you sure you want to permanently delete the classroom "${activeClass.name}" and all of its student rosters, evaluations, and metrics? This action cannot be undone.`,
+                    () => deleteClass(activeClass.id),
+                    'Delete Classroom',
+                    'Cancel'
+                  );
+                }}
+                title="Delete Current Class"
+                style={{ padding: '0.15rem 0.35rem', backgroundColor: 'transparent', border: 'none', color: 'var(--accent-rose)', height: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </EditableModuleSlot>
           )}
         </div>
 
         {/* Right: Tools & System Controls in exact intuitive order */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {/* Quick Command Search - Prominent Command Bar */}
-          {featureToggles.showCommandSearch && (
-            <div
-              className="topbar-search-bar"
-              data-tour="command-palette-btn"
-              onClick={() => setIsCommandPaletteOpen(true)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsCommandPaletteOpen(true)}
-              title="Quick Command Palette & Student Finder (Ctrl+K or /)"
+          {(isEditMode || featureToggles.showCommandSearch) && (
+            <EditableModuleSlot
+              moduleKey="showCommandSearch"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showCommandSearch}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
             >
-              <Search size={15} className="topbar-search-icon" />
-              <span className="topbar-search-placeholder">Search students, rubrics, micro-pulse, actions...</span>
-              <kbd className="topbar-search-kbd">⌘K</kbd>
-            </div>
+              <div
+                className="topbar-search-bar"
+                data-tour="command-palette-btn"
+                onClick={() => setIsCommandPaletteOpen(true)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsCommandPaletteOpen(true)}
+                title="Quick Command Palette & Student Finder (Ctrl+K or /)"
+              >
+                <Search size={15} className="topbar-search-icon" />
+                <span className="topbar-search-placeholder">Search students, rubrics, micro-pulse, actions...</span>
+                <kbd className="topbar-search-kbd">⌘K</kbd>
+              </div>
+            </EditableModuleSlot>
           )}
 
           {/* Academic Guide */}
-          {featureToggles.showGuideButton && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm dock-btn"
-              data-tour="guide-center-btn"
-              onClick={() => openGuideCenter('system')}
-              title="Open Academic Guidance Center &amp; Manual"
-              style={{ gap: '0.35rem', height: '32px' }}
+          {(isEditMode || featureToggles.showGuideButton) && (
+            <EditableModuleSlot
+              moduleKey="showGuideButton"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showGuideButton}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
             >
-              <Compass size={13} className="text-primary" /> <span>Guide</span>
-            </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm dock-btn"
+                data-tour="guide-center-btn"
+                onClick={() => openGuideCenter('system')}
+                title="Open Academic Guidance Center & Manual"
+                style={{ gap: '0.35rem', height: '32px' }}
+              >
+                <Compass size={13} className="text-primary" /> <span>Guide</span>
+              </button>
+            </EditableModuleSlot>
           )}
 
           {/* Projector Mode */}
-          {featureToggles.showProjectorButton && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm dock-btn"
-              data-tour="projector-mode-btn"
-              onClick={() => setIsProjectorModalOpen(true)}
-              title="Open Fullscreen Classroom Projector Mode"
-              style={{ gap: '0.35rem', height: '32px', fontWeight: 700 }}
+          {(isEditMode || featureToggles.showProjectorButton) && (
+            <EditableModuleSlot
+              moduleKey="showProjectorButton"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showProjectorButton}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
             >
-              <Maximize2 size={13} className="text-teal" /> <span>Projector</span>
-            </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm dock-btn"
+                data-tour="projector-mode-btn"
+                onClick={() => setIsProjectorModalOpen(true)}
+                title="Open Fullscreen Classroom Projector Mode"
+                style={{ gap: '0.35rem', height: '32px', fontWeight: 700 }}
+              >
+                <Maximize2 size={13} className="text-teal" /> <span>Projector</span>
+              </button>
+            </EditableModuleSlot>
           )}
 
           {/* Email Center */}
-          {featureToggles.showEmailButton && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm dock-btn"
-              data-tour="email-dispatcher-btn"
-              onClick={() => setIsLinkDispatcherOpen(true)}
-              title="Classroom Email Center & Evaluation Links"
-              style={{ gap: '0.35rem', height: '32px' }}
+          {(isEditMode || featureToggles.showEmailButton) && (
+            <EditableModuleSlot
+              moduleKey="showEmailButton"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showEmailButton}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
             >
-              <Mail size={13} className="text-primary" /> <span>Email</span>
-            </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm dock-btn"
+                data-tour="email-dispatcher-btn"
+                onClick={() => setIsLinkDispatcherOpen(true)}
+                title="Classroom Email Center & Evaluation Links"
+                style={{ gap: '0.35rem', height: '32px' }}
+              >
+                <Mail size={13} className="text-primary" /> <span>Email</span>
+              </button>
+            </EditableModuleSlot>
           )}
 
           {/* New Class Button */}
-          {featureToggles.showNewClassButton && (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm dock-btn"
-              onClick={() => setIsNewClassModalOpen(true)}
-              title="Create new classroom roster"
-              style={{ gap: '0.35rem', height: '32px', fontWeight: 700 }}
+          {(isEditMode || featureToggles.showNewClassButton) && (
+            <EditableModuleSlot
+              moduleKey="showNewClassButton"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showNewClassButton}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
             >
-              <Plus size={14} /> <span>New Class</span>
-            </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm dock-btn"
+                onClick={() => setIsNewClassModalOpen(true)}
+                title="Create new classroom roster"
+                style={{ gap: '0.35rem', height: '32px', fontWeight: 700 }}
+              >
+                <Plus size={14} /> <span>New Class</span>
+              </button>
+            </EditableModuleSlot>
           )}
 
           {/* Subtle Separator */}
           <span style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-color)', margin: '0 0.15rem', flexShrink: 0 }} />
 
           {/* Minimalist Settings Icon Button */}
-          {featureToggles.showSettingsButton && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm dock-btn"
-              data-tour="settings-hub-btn"
-              onClick={() => {
-                setSettingsInitialTab('modules');
-                setIsSettingsModalOpen(true);
-              }}
-              title="Workspace Settings"
-              style={{
-                width: '34px',
-                height: '32px',
-                padding: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
+          {(isEditMode || featureToggles.showSettingsButton) && (
+            <EditableModuleSlot
+              moduleKey="showSettingsButton"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showSettingsButton}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
             >
-              <Settings size={15} className="text-primary" />
-            </button>
-          )}
-
-          {/* Minimalist Customize View Icon Button (Icon only, placed after settings) */}
-          {featureToggles.showCustomizeViewButton && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm dock-btn"
-              data-tour="customize-view-btn"
-              onClick={() => {
-                setSettingsInitialTab('modules');
-                setIsSettingsModalOpen(true);
-              }}
-              title="Customize Interface & Modules"
-              style={{
-                width: '34px',
-                height: '32px',
-                padding: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <Sliders size={14} className="text-primary" />
-            </button>
-          )}
-
-          {/* Theme Switcher Toggle */}
-          {featureToggles.showThemeSwitcher && (
-            <ThemeSwitcher />
-          )}
-
-          {/* Admin Profile & Account Center Icon */}
-          {featureToggles.showProfilePill && (
-            <div style={{ position: 'relative', display: 'inline-flex' }}>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm dock-btn"
-                data-tour="workspace-selector"
-                onClick={() => setIsMobileProfileModalOpen(true)}
-                title={`Admin Workspace & Account Center: ${activeAdminProfile.toUpperCase()} (${isCloudSynced ? 'Cloud Synced' : 'Local Offline'})`}
+                data-tour="settings-hub-btn"
+                onClick={() => {
+                  setSettingsInitialTab('modules');
+                  setIsSettingsModalOpen(true);
+                }}
+                title="Workspace Settings"
                 style={{
                   width: '34px',
                   height: '32px',
@@ -2942,26 +3021,138 @@ export const AdminDashboard: React.FC = () => {
                   justifyContent: 'center'
                 }}
               >
-                <User size={15} className="text-primary" />
+                <Settings size={15} className="text-primary" />
               </button>
-              {/* Perfectly Anchored Connection Status Dot */}
-              <span
-                style={{
-                  position: 'absolute',
-                  top: '-1px',
-                  right: '-1px',
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: isCloudSynced ? 'var(--accent-teal)' : 'var(--text-muted)',
-                  boxShadow: isCloudSynced ? '0 0 6px var(--accent-teal)' : 'none',
-                  border: '1.5px solid var(--bg-surface)',
-                  pointerEvents: 'none',
-                  zIndex: 2
+            </EditableModuleSlot>
+          )}
+
+          {/* Minimalist Customize View Icon Button (Icon only, placed after settings) */}
+          {(isEditMode || featureToggles.showCustomizeViewButton) && (
+            <EditableModuleSlot
+              moduleKey="showCustomizeViewButton"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showCustomizeViewButton}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
+            >
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm dock-btn"
+                data-tour="customize-view-btn"
+                onClick={() => {
+                  setSettingsInitialTab('modules');
+                  setIsSettingsModalOpen(true);
                 }}
-                title={isCloudSynced ? 'Cloud Synced' : 'Local Offline'}
-              />
-            </div>
+                title="Customize Interface & Modules"
+                style={{
+                  width: '34px',
+                  height: '32px',
+                  padding: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Sliders size={14} className="text-primary" />
+              </button>
+            </EditableModuleSlot>
+          )}
+
+          {/* Interactive Layout Edit Mode Button */}
+          {(featureToggles.showEditModeButton || isEditMode) && (
+            <button
+              type="button"
+              className={`btn btn-sm dock-btn ${isEditMode ? 'btn-primary' : 'btn-secondary'}`}
+              data-tour="edit-layout-btn"
+              onClick={() => {
+                setIsEditMode(prev => {
+                  const next = !prev;
+                  addToast(next ? 'Interactive Layout Edit Mode activated (Alt+E)' : 'Exited Layout Edit Mode', 'info');
+                  return next;
+                });
+              }}
+              title={isEditMode ? 'Exit Layout Edit Mode' : 'Toggle Interactive Layout Edit Mode (Alt+E or Alt+L)'}
+              style={{
+                width: isEditMode ? 'auto' : '34px',
+                height: '32px',
+                padding: isEditMode ? '0 0.65rem' : 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.35rem',
+                fontWeight: 700,
+                fontSize: '0.74rem',
+                boxShadow: isEditMode ? '0 0 14px var(--primary-glow, rgba(79, 70, 229, 0.45))' : 'none',
+                border: isEditMode ? '1.5px solid var(--primary)' : undefined
+              }}
+            >
+              <Edit3 size={14} className={isEditMode ? '' : 'text-primary'} />
+              {isEditMode && <span>Editing Layout</span>}
+            </button>
+          )}
+
+          {/* Theme Switcher Toggle */}
+          {(isEditMode || featureToggles.showThemeSwitcher) && (
+            <EditableModuleSlot
+              moduleKey="showThemeSwitcher"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showThemeSwitcher}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
+            >
+              <ThemeSwitcher />
+            </EditableModuleSlot>
+          )}
+
+          {/* Admin Profile & Account Center Icon */}
+          {(isEditMode || featureToggles.showProfilePill) && (
+            <EditableModuleSlot
+              moduleKey="showProfilePill"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showProfilePill}
+              onToggle={handleToggleModule}
+              inline
+              slotType="button"
+            >
+              <div style={{ position: 'relative', display: 'inline-flex' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm dock-btn"
+                  data-tour="workspace-selector"
+                  onClick={() => setIsMobileProfileModalOpen(true)}
+                  title={`Admin Workspace & Account Center: ${activeAdminProfile.toUpperCase()} (${isCloudSynced ? 'Cloud Synced' : 'Local Offline'})`}
+                  style={{
+                    width: '34px',
+                    height: '32px',
+                    padding: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <User size={15} className="text-primary" />
+                </button>
+                {/* Perfectly Anchored Connection Status Dot */}
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '-1px',
+                    right: '-1px',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: isCloudSynced ? 'var(--accent-teal)' : 'var(--text-muted)',
+                    boxShadow: isCloudSynced ? '0 0 6px var(--accent-teal)' : 'none',
+                    border: '1.5px solid var(--bg-surface)',
+                    pointerEvents: 'none',
+                    zIndex: 2
+                  }}
+                  title={isCloudSynced ? 'Cloud Synced' : 'Local Offline'}
+                />
+              </div>
+            </EditableModuleSlot>
           )}
         </div>
       </header>
@@ -2993,20 +3184,53 @@ export const AdminDashboard: React.FC = () => {
               >
                 <ArrowLeft size={14} /> <span>Back to Hub</span>
               </button>
-              {featureToggles.showSectionNavBreadcrumbs && (
-                <>
-                  <span style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-color)' }} />
-                  <div className="section-nav-breadcrumb">
-                    <span style={{ color: 'var(--text-muted)' }}>{activeClass.name}</span>
-                    <span style={{ color: 'var(--text-muted)' }}>/</span>
-                    <span style={{ color: 'var(--primary)', fontWeight: 800 }}>
-                      {activeTab === 'roster' ? 'Enrollment & Teams' : activeTab === 'grading' ? 'Review System' : 'Grading & Performance Analytics'}
-                    </span>
-                    <span className={`hub-step-pill ${activeTab === 'roster' ? 'hub-step-indigo' : activeTab === 'grading' ? 'hub-step-amber' : 'hub-step-teal'}`} style={{ fontSize: '0.68rem', padding: '0.12rem 0.5rem' }}>
-                      {activeTab === 'roster' ? 'Step 1 of 3' : activeTab === 'grading' ? 'Step 2 of 3' : 'Step 3 of 3'}
-                    </span>
+              {(isEditMode || featureToggles.showSectionNavBreadcrumbs) && (
+                <EditableModuleSlot
+                  moduleKey="showSectionNavBreadcrumbs"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showSectionNavBreadcrumbs}
+                  onToggle={handleToggleModule}
+                  inline
+                  slotType="bar"
+                >
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <span style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-color)' }} />
+                    <div className="section-nav-breadcrumb">
+                      <span style={{ color: 'var(--text-muted)' }}>{activeClass.name}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>/</span>
+                      <span style={{ color: 'var(--primary)', fontWeight: 800 }}>
+                        {activeTab === 'roster' ? 'Enrollment & Teams' : activeTab === 'grading' ? 'Review System' : 'Grading & Performance Analytics'}
+                      </span>
+                      <span className={`hub-step-pill ${activeTab === 'roster' ? 'hub-step-indigo' : activeTab === 'grading' ? 'hub-step-amber' : 'hub-step-teal'}`} style={{ fontSize: '0.68rem', padding: '0.12rem 0.5rem' }}>
+                        {activeTab === 'roster' ? 'Step 1 of 3' : activeTab === 'grading' ? 'Step 2 of 3' : 'Step 3 of 3'}
+                      </span>
+                    </div>
                   </div>
-                </>
+                </EditableModuleSlot>
+              )}
+
+              {(isEditMode || featureToggles.showClassIdBadge) && (
+                <EditableModuleSlot
+                  moduleKey="showClassIdBadge"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showClassIdBadge}
+                  onToggle={handleToggleModule}
+                  inline
+                  slotType="button"
+                >
+                  <span
+                    className="badge badge-secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(activeClass.id);
+                      addToast(`Class ID ${activeClass.id} copied!`, 'info');
+                    }}
+                    style={{ fontSize: '0.72rem', fontFamily: 'monospace', cursor: 'pointer', padding: '0.2rem 0.55rem', borderRadius: '6px' }}
+                    title="Click to copy Class ID"
+                  >
+                    ID: {activeClass.id}
+                  </span>
+                </EditableModuleSlot>
               )}
             </div>
 
@@ -3191,51 +3415,69 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* Minimal but Informative Hub Overview Banner - Only shown if explicitly toggled on */}
-          {featureToggles.showHubOverviewBanner && (
-            <div className="hub-overview-banner" style={{ marginBottom: '1rem', width: '100%' }}>
-              <div className="hub-overview-left">
-                <div className="hub-overview-heading-row">
-                  <h2 className="hub-overview-title">{activeClass.name} Overview</h2>
-                  <span className="badge badge-teal" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.12rem 0.45rem' }}>
-                    Active Classroom
-                  </span>
-                </div>
-                <p className="hub-overview-desc">
-                  Select a core module below to get started.
-                </p>
-              </div>
-
-              <div className="hub-overview-right">
-                {featureToggles.showHubOverviewStats && (
-                  <div className="hub-summary-stats-strip">
-                    <div className="hub-summary-stat-item" title="Enrolled students and peer teams">
-                      <Users size={13} className="text-primary" />
-                      <span className="hub-summary-stat-val">{stats.totalStudents}</span>
-                      <span className="hub-summary-stat-lbl">Students</span>
-                      <span className="hub-summary-stat-sub">({stats.groupCount} Teams)</span>
-                    </div>
-
-                    <div className="hub-summary-stat-divider" />
-
-                    <div className="hub-summary-stat-item" title="Configured evaluation criteria and scale">
-                      <Sliders size={13} className="text-amber" />
-                      <span className="hub-summary-stat-val">{activeClass.fields.length}</span>
-                      <span className="hub-summary-stat-lbl">Criteria</span>
-                      <span className="hub-summary-stat-sub">(Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20})</span>
-                    </div>
-
-                    <div className="hub-summary-stat-divider" />
-
-                    <div className="hub-summary-stat-item" title="Evaluation submission progress">
-                      <Award size={13} className="text-teal" />
-                      <span className="hub-summary-stat-val">{stats.completionRate}%</span>
-                      <span className="hub-summary-stat-lbl">Submitted</span>
-                      <span className="hub-summary-stat-sub">({stats.submittedCount}/{stats.totalStudents})</span>
-                    </div>
+          {(isEditMode || featureToggles.showHubOverviewBanner) && (
+            <EditableModuleSlot
+              moduleKey="showHubOverviewBanner"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showHubOverviewBanner}
+              onToggle={handleToggleModule}
+              slotType="banner"
+              style={{ marginBottom: '1rem', width: '100%' }}
+            >
+              <div className="hub-overview-banner" style={{ marginBottom: '1rem', width: '100%' }}>
+                <div className="hub-overview-left">
+                  <div className="hub-overview-heading-row">
+                    <h2 className="hub-overview-title">{activeClass.name} Overview</h2>
+                    <span className="badge badge-teal" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.12rem 0.45rem' }}>
+                      Active Classroom
+                    </span>
                   </div>
-                )}
+                  <p className="hub-overview-desc">
+                    Select a core module below to get started.
+                  </p>
+                </div>
+
+                <div className="hub-overview-right">
+                  {(isEditMode || featureToggles.showHubOverviewStats) && (
+                    <EditableModuleSlot
+                      moduleKey="showHubOverviewStats"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showHubOverviewStats}
+                      onToggle={handleToggleModule}
+                      inline
+                      slotType="bar"
+                    >
+                      <div className="hub-summary-stats-strip">
+                        <div className="hub-summary-stat-item" title="Enrolled students and peer teams">
+                          <Users size={13} className="text-primary" />
+                          <span className="hub-summary-stat-val">{stats.totalStudents}</span>
+                          <span className="hub-summary-stat-lbl">Students</span>
+                          <span className="hub-summary-stat-sub">({stats.groupCount} Teams)</span>
+                        </div>
+
+                        <div className="hub-summary-stat-divider" />
+
+                        <div className="hub-summary-stat-item" title="Configured evaluation criteria and scale">
+                          <Sliders size={13} className="text-amber" />
+                          <span className="hub-summary-stat-val">{activeClass.fields.length}</span>
+                          <span className="hub-summary-stat-lbl">Criteria</span>
+                          <span className="hub-summary-stat-sub">(Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20})</span>
+                        </div>
+
+                        <div className="hub-summary-stat-divider" />
+
+                        <div className="hub-summary-stat-item" title="Evaluation submission progress">
+                          <Award size={13} className="text-teal" />
+                          <span className="hub-summary-stat-val">{stats.completionRate}%</span>
+                          <span className="hub-summary-stat-lbl">Submitted</span>
+                          <span className="hub-summary-stat-sub">({stats.submittedCount}/{stats.totalStudents})</span>
+                        </div>
+                      </div>
+                    </EditableModuleSlot>
+                  )}
+                </div>
               </div>
-            </div>
+            </EditableModuleSlot>
           )}
 
           {/* THE 3 BIG SECTIONS GRID */}
@@ -3244,325 +3486,394 @@ export const AdminDashboard: React.FC = () => {
             return (
               <div className="hub-grid">
                 {/* Section 1: Enrollment & Teams */}
-                {featureToggles.showEnrollmentCard && (
-                  <div
-                    className="hub-card hub-card-accent-indigo"
-                    data-tour="hub-enrollment-card"
-                    onClick={() => setActiveTab('roster')}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && setActiveTab('roster')}
-                    title="Enter Section 1: Enrollment & Teams"
+                {(isEditMode || featureToggles.showEnrollmentCard) && (
+                  <EditableModuleSlot
+                    moduleKey="showEnrollmentCard"
+                    isEditMode={isEditMode}
+                    isVisible={featureToggles.showEnrollmentCard}
+                    onToggle={handleToggleModule}
                   >
-                    <div className="hub-card-top">
-                      <div className="hub-card-header-row">
-                        <div className="hub-card-icon-badge" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
-                          <Users size={24} />
+                    <div
+                      className="hub-card hub-card-accent-indigo"
+                      data-tour="hub-enrollment-card"
+                      onClick={() => setActiveTab('roster')}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && setActiveTab('roster')}
+                      title="Enter Section 1: Enrollment & Teams"
+                    >
+                      <div className="hub-card-top">
+                        <div className="hub-card-header-row">
+                          <div className="hub-card-icon-badge" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
+                            <Users size={24} />
+                          </div>
+                          <span className="hub-step-pill hub-step-indigo">
+                            Step 1
+                          </span>
                         </div>
-                        <span className="hub-step-pill hub-step-indigo">
-                          Step 1
-                        </span>
+
+                        <div>
+                          <h3 className="hub-card-title">Enrollment &amp; Teams</h3>
+                          <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
+                            {isHubOptionsActive
+                              ? "Manage enrolled students, configure diverse student cohorts, generate QR join links, and organize peer teams."
+                              : "Manage enrolled students, configure diverse student cohorts, generate interactive QR join codes, and organize balanced peer teams with intelligent automated grouping tools. Track active rosters, import spreadsheet rosters, and streamline student onboarding seamlessly."}
+                          </p>
+                        </div>
+
+                        {/* Clean Unified Status & Metric */}
+                        {(isEditMode || featureToggles.showHubCardMetrics) && (
+                          <EditableModuleSlot
+                            moduleKey="showHubCardMetrics"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showHubCardMetrics}
+                            onToggle={handleToggleModule}
+                            slotType="bar"
+                          >
+                            <div className="hub-card-progress-box">
+                              <div className="hub-card-progress-labels">
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  <Users size={12} className="text-primary" /> {stats.totalStudents} Students • {stats.groupCount} Teams
+                                </span>
+                                <span style={{ color: stats.totalStudents > 0 ? 'var(--accent-teal)' : 'var(--text-muted)', fontWeight: 600 }}>
+                                  {stats.totalStudents > 0 ? 'Active' : 'Setup Needed'}
+                                </span>
+                              </div>
+                              <div className="hub-card-progress-track">
+                                <div
+                                  className="hub-card-progress-fill hub-progress-indigo"
+                                  style={{ width: stats.totalStudents > 0 ? `${Math.min(100, Math.max(20, stats.totalStudents * 4))}%` : '8%' }}
+                                />
+                              </div>
+                            </div>
+                          </EditableModuleSlot>
+                        )}
+
+                        {/* Minimal Quick Actions */}
+                        {(isEditMode || featureToggles.showHubQuickActions) && (
+                          <EditableModuleSlot
+                            moduleKey="showHubQuickActions"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showHubQuickActions}
+                            onToggle={handleToggleModule}
+                            slotType="bar"
+                          >
+                            <div className="hub-card-quick-actions">
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-indigo"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsAddStudentModalOpen(true);
+                                }}
+                                title="Add student manually"
+                              >
+                                <Plus size={11} /> <span>Add Student</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-indigo"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsQRCodeModalOpen(true);
+                                }}
+                                title="Open student QR join presentation"
+                              >
+                                <QrCode size={11} /> <span>QR Link</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-indigo"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsAutoGroupModalOpen(true);
+                                }}
+                                title="Launch Team Generator Studio"
+                              >
+                                <Users size={11} /> <span>Team Studio</span>
+                              </button>
+                            </div>
+                          </EditableModuleSlot>
+                        )}
                       </div>
 
-                      <div>
-                        <h3 className="hub-card-title">Enrollment &amp; Teams</h3>
-                        <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
-                          {isHubOptionsActive
-                            ? "Manage enrolled students, configure diverse student cohorts, generate QR join links, and organize peer teams."
-                            : "Manage enrolled students, configure diverse student cohorts, generate interactive QR join codes, and organize balanced peer teams with intelligent automated grouping tools. Track active rosters, import spreadsheet rosters, and streamline student onboarding seamlessly."}
-                        </p>
+                      <div className="hub-card-bottom">
+                        <button
+                          type="button"
+                          className="hub-cta-btn hub-cta-indigo"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab('roster');
+                          }}
+                        >
+                          <span>Enter Enrollment &amp; Teams</span>
+                          <ArrowRight size={14} className="hub-cta-arrow" />
+                        </button>
                       </div>
-
-                      {/* Clean Unified Status & Metric */}
-                      {featureToggles.showHubCardMetrics && (
-                        <div className="hub-card-progress-box">
-                          <div className="hub-card-progress-labels">
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                              <Users size={12} className="text-primary" /> {stats.totalStudents} Students • {stats.groupCount} Teams
-                            </span>
-                            <span style={{ color: stats.totalStudents > 0 ? 'var(--accent-teal)' : 'var(--text-muted)', fontWeight: 600 }}>
-                              {stats.totalStudents > 0 ? 'Active' : 'Setup Needed'}
-                            </span>
-                          </div>
-                          <div className="hub-card-progress-track">
-                            <div
-                              className="hub-card-progress-fill hub-progress-indigo"
-                              style={{ width: stats.totalStudents > 0 ? `${Math.min(100, Math.max(20, stats.totalStudents * 4))}%` : '8%' }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Minimal Quick Actions */}
-                      {featureToggles.showHubQuickActions && (
-                        <div className="hub-card-quick-actions">
-                          <button
-                            type="button"
-                            className="hub-quick-action-pill hub-quick-pill-indigo"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsAddStudentModalOpen(true);
-                            }}
-                            title="Add student manually"
-                          >
-                            <Plus size={11} /> <span>Add Student</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="hub-quick-action-pill hub-quick-pill-indigo"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsQRCodeModalOpen(true);
-                            }}
-                            title="Open student QR join presentation"
-                          >
-                            <QrCode size={11} /> <span>QR Link</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="hub-quick-action-pill hub-quick-pill-indigo"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsAutoGroupModalOpen(true);
-                            }}
-                            title="Launch Team Generator Studio"
-                          >
-                            <Users size={11} /> <span>Team Studio</span>
-                          </button>
-                        </div>
-                      )}
                     </div>
-
-                    <div className="hub-card-bottom">
-                      <button
-                        type="button"
-                        className="hub-cta-btn hub-cta-indigo"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveTab('roster');
-                        }}
-                      >
-                        <span>Enter Enrollment &amp; Teams</span>
-                        <ArrowRight size={14} className="hub-cta-arrow" />
-                      </button>
-                    </div>
-                  </div>
+                  </EditableModuleSlot>
                 )}
 
                 {/* Section 2: Review System */}
-                {featureToggles.showReviewSystemCard && (
-                  <div
-                    className="hub-card hub-card-accent-amber"
-                    data-tour="hub-review-card"
-                    onClick={() => setActiveTab('grading')}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && setActiveTab('grading')}
-                    title="Enter Section 2: Review System"
+                {(isEditMode || featureToggles.showReviewSystemCard) && (
+                  <EditableModuleSlot
+                    moduleKey="showReviewSystemCard"
+                    isEditMode={isEditMode}
+                    isVisible={featureToggles.showReviewSystemCard}
+                    onToggle={handleToggleModule}
                   >
-                    <div className="hub-card-top">
-                      <div className="hub-card-header-row">
-                        <div className="hub-card-icon-badge" style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#d97706' }}>
-                          <Sliders size={24} />
+                    <div
+                      className="hub-card hub-card-accent-amber"
+                      data-tour="hub-review-card"
+                      onClick={() => setActiveTab('grading')}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && setActiveTab('grading')}
+                      title="Enter Section 2: Review System"
+                    >
+                      <div className="hub-card-top">
+                        <div className="hub-card-header-row">
+                          <div className="hub-card-icon-badge" style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#d97706' }}>
+                            <Sliders size={24} />
+                          </div>
+                          <span className="hub-step-pill hub-step-amber">
+                            Step 2
+                          </span>
                         </div>
-                        <span className="hub-step-pill hub-step-amber">
-                          Step 2
-                        </span>
+
+                        <div>
+                          <h3 className="hub-card-title">Review System</h3>
+                          <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
+                            {isHubOptionsActive
+                              ? "Design multi-criteria evaluation rubrics, define performance anchors, adjust weights, and apply templates."
+                              : "Design multi-criteria evaluation rubrics, define performance anchors, adjust weights, and apply the accredited IPAF Standard template. Calibrate custom scoring scales, configure peer review submission deadlines, and balance criteria weights for transparent assessment."}
+                          </p>
+                        </div>
+
+                        {/* Clean Unified Status & Metric */}
+                        {(isEditMode || featureToggles.showHubCardMetrics) && (
+                          <EditableModuleSlot
+                            moduleKey="showHubCardMetrics"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showHubCardMetrics}
+                            onToggle={handleToggleModule}
+                            slotType="bar"
+                          >
+                            <div className="hub-card-progress-box">
+                              <div className="hub-card-progress-labels">
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  <Sliders size={12} className="text-amber" /> {activeClass.fields.length} Criteria • Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20}
+                                </span>
+                                <span style={{ color: '#b45309', fontWeight: 600 }}>
+                                  {activeClass.fields.length >= 3 ? 'Calibrated' : 'Basic Scale'}
+                                </span>
+                              </div>
+                              <div className="hub-card-progress-track">
+                                <div
+                                  className="hub-card-progress-fill hub-progress-amber"
+                                  style={{ width: `${Math.min(100, Math.max(25, activeClass.fields.length * 25))}%` }}
+                                />
+                              </div>
+                            </div>
+                          </EditableModuleSlot>
+                        )}
+
+                        {/* Minimal Quick Actions */}
+                        {(isEditMode || featureToggles.showHubQuickActions) && (
+                          <EditableModuleSlot
+                            moduleKey="showHubQuickActions"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showHubQuickActions}
+                            onToggle={handleToggleModule}
+                            slotType="bar"
+                          >
+                            <div className="hub-card-quick-actions">
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-amber"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab('grading');
+                                }}
+                                title="Add new grading criteria"
+                              >
+                                <Plus size={11} /> <span>Add Criterion</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-amber"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab('grading');
+                                }}
+                                title="Apply IPAF Standard Rubric Template"
+                              >
+                                <Sliders size={11} /> <span>IPAF Template</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-amber"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab('grading');
+                                }}
+                                title="Set peer review deadline"
+                              >
+                                <Clock size={11} /> <span>Deadline</span>
+                              </button>
+                            </div>
+                          </EditableModuleSlot>
+                        )}
                       </div>
 
-                      <div>
-                        <h3 className="hub-card-title">Review System</h3>
-                        <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
-                          {isHubOptionsActive
-                            ? "Design multi-criteria evaluation rubrics, define performance anchors, adjust weights, and apply templates."
-                            : "Design multi-criteria evaluation rubrics, define performance anchors, adjust weights, and apply the accredited IPAF Standard template. Calibrate custom scoring scales, configure peer review submission deadlines, and balance criteria weights for transparent assessment."}
-                        </p>
+                      <div className="hub-card-bottom">
+                        <button
+                          type="button"
+                          className="hub-cta-btn hub-cta-amber"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab('grading');
+                          }}
+                        >
+                          <span>Enter Review System</span>
+                          <ArrowRight size={14} className="hub-cta-arrow" />
+                        </button>
                       </div>
-
-                      {/* Clean Unified Status & Metric */}
-                      {featureToggles.showHubCardMetrics && (
-                        <div className="hub-card-progress-box">
-                          <div className="hub-card-progress-labels">
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                              <Sliders size={12} className="text-amber" /> {activeClass.fields.length} Criteria • Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20}
-                            </span>
-                            <span style={{ color: '#b45309', fontWeight: 600 }}>
-                              {activeClass.fields.length >= 3 ? 'Calibrated' : 'Basic Scale'}
-                            </span>
-                          </div>
-                          <div className="hub-card-progress-track">
-                            <div
-                              className="hub-card-progress-fill hub-progress-amber"
-                              style={{ width: `${Math.min(100, Math.max(25, activeClass.fields.length * 25))}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Minimal Quick Actions */}
-                      {featureToggles.showHubQuickActions && (
-                        <div className="hub-card-quick-actions">
-                          <button
-                            type="button"
-                            className="hub-quick-action-pill hub-quick-pill-amber"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveTab('grading');
-                            }}
-                            title="Add new grading criteria"
-                          >
-                            <Plus size={11} /> <span>Add Criterion</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="hub-quick-action-pill hub-quick-pill-amber"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveTab('grading');
-                            }}
-                            title="Apply IPAF Standard Rubric Template"
-                          >
-                            <Sliders size={11} /> <span>IPAF Template</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="hub-quick-action-pill hub-quick-pill-amber"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveTab('grading');
-                            }}
-                            title="Set peer review deadline"
-                          >
-                            <Clock size={11} /> <span>Deadline</span>
-                          </button>
-                        </div>
-                      )}
                     </div>
-
-                    <div className="hub-card-bottom">
-                      <button
-                        type="button"
-                        className="hub-cta-btn hub-cta-amber"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveTab('grading');
-                        }}
-                      >
-                        <span>Enter Review System</span>
-                        <ArrowRight size={14} className="hub-cta-arrow" />
-                      </button>
-                    </div>
-                  </div>
+                  </EditableModuleSlot>
                 )}
 
                 {/* Section 3: Grading & Performance Analytics */}
-                {featureToggles.showGradingAnalyticsCard && (
-                  <div
-                    className="hub-card hub-card-accent-teal"
-                    data-tour="hub-analytics-card"
-                    onClick={() => setActiveTab('results')}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && setActiveTab('results')}
-                    title="Enter Section 3: Grading & Performance Analytics"
+                {(isEditMode || featureToggles.showGradingAnalyticsCard) && (
+                  <EditableModuleSlot
+                    moduleKey="showGradingAnalyticsCard"
+                    isEditMode={isEditMode}
+                    isVisible={featureToggles.showGradingAnalyticsCard}
+                    onToggle={handleToggleModule}
                   >
-                    <div className="hub-card-top">
-                      <div className="hub-card-header-row">
-                        <div className="hub-card-icon-badge" style={{ backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)' }}>
-                          <Award size={24} />
+                    <div
+                      className="hub-card hub-card-accent-teal"
+                      data-tour="hub-analytics-card"
+                      onClick={() => setActiveTab('results')}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && setActiveTab('results')}
+                      title="Enter Section 3: Grading & Performance Analytics"
+                    >
+                      <div className="hub-card-top">
+                        <div className="hub-card-header-row">
+                          <div className="hub-card-icon-badge" style={{ backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)' }}>
+                            <Award size={24} />
+                          </div>
+                          <span className="hub-step-pill hub-step-teal">
+                            Step 3
+                          </span>
                         </div>
-                        <span className="hub-step-pill hub-step-teal">
-                          Step 3
-                        </span>
+
+                        <div>
+                          <h3 className="hub-card-title">Grading &amp; Performance Analytics</h3>
+                          <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
+                            {isHubOptionsActive
+                              ? "Real-time calculation matrix, peer perception radar benchmarks, PDF report cards, and gradebook exports."
+                              : "Real-time calculation matrix, peer perception radar benchmarks, PDF report cards, and gradebook exports. Analyze peer evaluation distributions with WebPA factor calibration, visualize Johari Window consensus, and export accredited grade summaries to Excel."}
+                          </p>
+                        </div>
+
+                        {/* Clean Unified Status & Metric */}
+                        {(isEditMode || featureToggles.showHubCardMetrics) && (
+                          <EditableModuleSlot
+                            moduleKey="showHubCardMetrics"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showHubCardMetrics}
+                            onToggle={handleToggleModule}
+                            slotType="bar"
+                          >
+                            <div className="hub-card-progress-box">
+                              <div className="hub-card-progress-labels">
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  <Award size={12} className="text-teal" /> {stats.submittedCount}/{stats.totalStudents} Evaluated
+                                </span>
+                                <span style={{ color: 'var(--accent-teal)', fontWeight: 600 }}>
+                                  {stats.completionRate}% Submitted
+                                </span>
+                              </div>
+                              <div className="hub-card-progress-track">
+                                <div
+                                  className="hub-card-progress-fill hub-progress-teal"
+                                  style={{ width: `${Math.max(stats.submittedCount > 0 ? 10 : 0, stats.completionRate)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </EditableModuleSlot>
+                        )}
+
+                        {/* Minimal Quick Actions */}
+                        {(isEditMode || featureToggles.showHubQuickActions) && (
+                          <EditableModuleSlot
+                            moduleKey="showHubQuickActions"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showHubQuickActions}
+                            onToggle={handleToggleModule}
+                            slotType="bar"
+                          >
+                            <div className="hub-card-quick-actions">
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-teal"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab('results');
+                                }}
+                                title="Open WebPA Gradebook Matrix"
+                              >
+                                <BarChart2 size={11} /> <span>Matrix</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-teal"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab('results');
+                                }}
+                                title="Open Johari Window Perception Radar"
+                              >
+                                <Activity size={11} /> <span>Radar</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-teal"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    exportClassroomToExcel(activeClass);
+                                  } catch (err) {
+                                    console.error(err);
+                                  }
+                                }}
+                                title="Export class data to Excel"
+                              >
+                                <Download size={11} /> <span>Excel</span>
+                              </button>
+                            </div>
+                          </EditableModuleSlot>
+                        )}
                       </div>
 
-                      <div>
-                        <h3 className="hub-card-title">Grading &amp; Performance Analytics</h3>
-                        <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
-                          {isHubOptionsActive
-                            ? "Real-time calculation matrix, peer perception radar benchmarks, PDF report cards, and gradebook exports."
-                            : "Real-time calculation matrix, peer perception radar benchmarks, PDF report cards, and gradebook exports. Analyze peer evaluation distributions with WebPA factor calibration, visualize Johari Window consensus, and export accredited grade summaries to Excel."}
-                        </p>
+                      <div className="hub-card-bottom">
+                        <button
+                          type="button"
+                          className="hub-cta-btn hub-cta-teal"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab('results');
+                          }}
+                        >
+                          <span>Enter Grading &amp; Analytics</span>
+                          <ArrowRight size={14} className="hub-cta-arrow" />
+                        </button>
                       </div>
-
-                      {/* Clean Unified Status & Metric */}
-                      {featureToggles.showHubCardMetrics && (
-                        <div className="hub-card-progress-box">
-                          <div className="hub-card-progress-labels">
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                              <Award size={12} className="text-teal" /> {stats.submittedCount}/{stats.totalStudents} Evaluated
-                            </span>
-                            <span style={{ color: 'var(--accent-teal)', fontWeight: 600 }}>
-                              {stats.completionRate}% Submitted
-                            </span>
-                          </div>
-                          <div className="hub-card-progress-track">
-                            <div
-                              className="hub-card-progress-fill hub-progress-teal"
-                              style={{ width: `${Math.max(stats.submittedCount > 0 ? 10 : 0, stats.completionRate)}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Minimal Quick Actions */}
-                      {featureToggles.showHubQuickActions && (
-                        <div className="hub-card-quick-actions">
-                          <button
-                            type="button"
-                            className="hub-quick-action-pill hub-quick-pill-teal"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveTab('results');
-                            }}
-                            title="Open WebPA Gradebook Matrix"
-                          >
-                            <BarChart2 size={11} /> <span>Matrix</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="hub-quick-action-pill hub-quick-pill-teal"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveTab('results');
-                            }}
-                            title="Open Johari Window Perception Radar"
-                          >
-                            <Activity size={11} /> <span>Radar</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="hub-quick-action-pill hub-quick-pill-teal"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              try {
-                                exportClassroomToExcel(activeClass);
-                              } catch (err) {
-                                console.error(err);
-                              }
-                            }}
-                            title="Export class data to Excel"
-                          >
-                            <Download size={11} /> <span>Excel</span>
-                          </button>
-                        </div>
-                      )}
                     </div>
-
-                    <div className="hub-card-bottom">
-                      <button
-                        type="button"
-                        className="hub-cta-btn hub-cta-teal"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveTab('results');
-                        }}
-                      >
-                        <span>Enter Grading &amp; Analytics</span>
-                        <ArrowRight size={14} className="hub-cta-arrow" />
-                      </button>
-                    </div>
-                  </div>
+                  </EditableModuleSlot>
                 )}
               </div>
             );
@@ -3574,290 +3885,324 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'roster' && (
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Top Auxiliary Cards Row - Only rendered if at least 1 card is enabled, leaving zero blank space when all are hidden */}
-          {(featureToggles.showSelfEnrollmentCard || featureToggles.showQuickActionsCard || featureToggles.showImportWizardCard) && (
+          {(isEditMode || featureToggles.showSelfEnrollmentCard || featureToggles.showQuickActionsCard || featureToggles.showImportWizardCard) && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
               {/* 1. Student Self-Enrollment QR & Link Card */}
-              {featureToggles.showSelfEnrollmentCard && (
-                <div className="card" data-tour="self-enrollment-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
-              <div>
-                <div className="card-header" style={{ marginBottom: '0.45rem' }}>
-                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
-                    <QrCode size={18} className="text-primary" /> Self-Enrollment
-                    <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Self-Enrollment QR Guide" />
-                  </h3>
-                  <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
-                    QR &amp; Link
-                  </span>
-                </div>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                  Share class QR code or direct join link with students for mobile self-registration.
-                </p>
+              {(isEditMode || featureToggles.showSelfEnrollmentCard) && (
+                <EditableModuleSlot
+                  moduleKey="showSelfEnrollmentCard"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showSelfEnrollmentCard}
+                  onToggle={handleToggleModule}
+                >
+                  <div className="card" data-tour="self-enrollment-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
+                    <div>
+                      <div className="card-header" style={{ marginBottom: '0.45rem' }}>
+                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                          <QrCode size={18} className="text-primary" /> Self-Enrollment
+                          <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Self-Enrollment QR Guide" />
+                        </h3>
+                        <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
+                          QR &amp; Link
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                        Share class QR code or direct join link with students for mobile self-registration.
+                      </p>
 
-                {/* QR Code preview & URL copy box */}
-                <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.55rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  {miniQrUrl ? (
-                    <div
-                      onClick={() => setIsQRCodeModalOpen(true)}
-                      style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      title="Click to expand QR Presentation Mode"
-                    >
-                      <img src={miniQrUrl} alt="Classroom QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                      {/* QR Code preview & URL copy box */}
+                      <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.55rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        {miniQrUrl ? (
+                          <div
+                            onClick={() => setIsQRCodeModalOpen(true)}
+                            style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            title="Click to expand QR Presentation Mode"
+                          >
+                            <img src={miniQrUrl} alt="Classroom QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => setIsQRCodeModalOpen(true)}
+                            style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}
+                            title="Click to expand QR Presentation Mode"
+                          >
+                            <QrCode size={26} />
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', gap: '0.3rem' }}>
+                            <input
+                              type="text"
+                              readOnly
+                              className="form-input"
+                              value={getClassEnrollmentUrl(activeClass.id)}
+                              style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '0.3rem 0.5rem', height: '32px', flex: 1 }}
+                              onClick={(e) => (e.target as HTMLInputElement).select()}
+                            />
+                            <button
+                              type="button"
+                              className={`btn ${copiedEnrollLink ? 'btn-teal' : 'btn-secondary'} btn-sm`}
+                              style={{ flexShrink: 0, padding: '0.25rem 0.55rem', height: '32px' }}
+                              onClick={() => {
+                                navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
+                                setCopiedEnrollLink(true);
+                                addToast('Classroom enrollment link copied to clipboard!', 'success');
+                                setTimeout(() => setCopiedEnrollLink(false), 2500);
+                              }}
+                              title="Copy enrollment link to clipboard"
+                            >
+                              {copiedEnrollLink ? <Check size={13} /> : <Copy size={13} />}
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                              <ShieldCheck size={11} className="text-teal" /> Cloud Sync Active
+                            </span>
+                            <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
+                              {activeClass.students.length} Enrolled
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <div
-                      onClick={() => setIsQRCodeModalOpen(true)}
-                      style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}
-                      title="Click to expand QR Presentation Mode"
-                    >
-                      <QrCode size={26} />
-                    </div>
-                  )}
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: '0.3rem' }}>
-                      <input
-                        type="text"
-                        readOnly
-                        className="form-input"
-                        value={getClassEnrollmentUrl(activeClass.id)}
-                        style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '0.3rem 0.5rem', height: '32px', flex: 1 }}
-                        onClick={(e) => (e.target as HTMLInputElement).select()}
-                      />
-                      <button
-                        type="button"
-                        className={`btn ${copiedEnrollLink ? 'btn-teal' : 'btn-secondary'} btn-sm`}
-                        style={{ flexShrink: 0, padding: '0.25rem 0.55rem', height: '32px' }}
-                        onClick={() => {
-                          navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
-                          setCopiedEnrollLink(true);
-                          addToast('Classroom enrollment link copied to clipboard!', 'success');
-                          setTimeout(() => setCopiedEnrollLink(false), 2500);
-                        }}
-                        title="Copy enrollment link to clipboard"
-                      >
-                        {copiedEnrollLink ? <Check size={13} /> : <Copy size={13} />}
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <ShieldCheck size={11} className="text-teal" /> Cloud Sync Active
-                      </span>
-                      <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
-                        {activeClass.students.length} Enrolled
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ width: '100%', justifyContent: 'center', gap: '0.45rem', padding: '0.55rem', fontSize: '0.84rem', fontWeight: 700 }}
-                onClick={() => setIsQRCodeModalOpen(true)}
-              >
-                <QrCode size={14} /> Open QR Presentation Mode
-              </button>
-            </div>
-          )}
-
-          {/* 2. Quick Actions Card */}
-          {featureToggles.showQuickActionsCard && (
-            <div className="card" data-tour="quick-actions-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
-              <div>
-                <div className="card-header" style={{ marginBottom: '0.45rem' }}>
-                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
-                    <Sliders size={18} className="text-indigo" /> Quick Actions
-                  </h3>
-                  <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
-                    Tools
-                  </span>
-                </div>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                  Add individual members, load diverse demo datasets, or export roster records.
-                </p>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => setIsAddStudentModalOpen(true)}
-                      style={{ justifyContent: 'center', gap: '0.35rem', padding: '0.45rem 0.35rem', fontSize: '0.78rem' }}
-                    >
-                      <Plus size={13} /> Add Member
-                    </button>
                     <button
                       type="button"
-                      className="btn btn-teal btn-sm"
-                      onClick={() => {
-                        importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
-                        addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
-                      }}
-                      style={{ fontSize: '0.78rem', gap: '0.35rem', justifyContent: 'center', padding: '0.45rem 0.35rem' }}
-                      title="Populate classroom with a diverse dataset of 100 students to test app features"
+                      className="btn btn-primary"
+                      style={{ width: '100%', justifyContent: 'center', gap: '0.45rem', padding: '0.55rem', fontSize: '0.84rem', fontWeight: 700 }}
+                      onClick={() => setIsQRCodeModalOpen(true)}
                     >
-                      <Sparkles size={13} /> 100 Demo Sample
+                      <QrCode size={14} /> Open QR Presentation Mode
                     </button>
                   </div>
+                </EditableModuleSlot>
+              )}
 
-                  {/* Export & Download Hub */}
-                  <div style={{ padding: '0.5rem 0.65rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Export &amp; Download Center
-                      </span>
-                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                        CSV &bull; Excel
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem' }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          if (activeClass.students.length === 0) {
-                            addToast('No students enrolled to export.', 'warning');
-                            return;
-                          }
-                          exportRosterToExcel(activeClass);
-                          addToast('Class roster exported to Excel (.xlsx)!', 'success');
-                        }}
-                        style={{ fontSize: '0.72rem', padding: '0.3rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
-                        title="Export current classroom roster to Excel"
-                      >
-                        <Download size={11} className="text-teal" /> Export Roster
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          downloadSampleStudentsFile('xlsx');
-                          addToast('Downloaded diverse student template spreadsheet (.xlsx)!', 'success');
-                        }}
-                        style={{ fontSize: '0.72rem', padding: '0.3rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
-                        title="Download sample spreadsheet template with 100 diverse students"
-                      >
-                        <Download size={11} className="text-indigo" /> Template
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Clear Roster Action */}
-              <button
-                type="button"
-                className="btn btn-secondary text-rose btn-sm"
-                style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', fontSize: '0.72rem', padding: '0.4rem', justifyContent: 'center', gap: '0.3rem', width: '100%' }}
-                onClick={() => {
-                  triggerConfirm(
-                    'Clear Class Roster',
-                    'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
-                    () => {
-                      clearClassRoster(activeClass.id);
-                    },
-                    'Clear Roster',
-                    'Cancel'
-                  );
-                }}
-                title="Clear all students from this classroom"
-              >
-                <Trash2 size={11} /> Clear Class Roster
-              </button>
-            </div>
-          )}
-
-          {/* 3. Import Wizard Card */}
-          {featureToggles.showImportWizardCard && (
-            <div className="card" data-tour="import-wizard-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
-              <div>
-                <div className="card-header" style={{ marginBottom: '0.45rem' }}>
-                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
-                    <Upload size={18} className="text-teal" /> Import Wizard
-                    <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import Wizard Guide" />
-                  </h3>
-                  <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                    Smart Mapper
-                  </span>
-                </div>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                  Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema header mapping.
-                </p>
-
-                {/* Interactive Dropzone / Format Trigger */}
-                <div
-                  onClick={() => {
-                    setWizardStep(1);
-                    setIsWizardOpen(true);
-                  }}
-                  style={{
-                    padding: '0.75rem 0.65rem',
-                    borderRadius: '8px',
-                    border: '1.5px dashed var(--accent-teal)',
-                    backgroundColor: 'rgba(20, 184, 166, 0.04)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.45rem',
-                    textAlign: 'center',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title="Click to launch Roster Onboarding Wizard"
+              {/* 2. Quick Actions Card */}
+              {(isEditMode || featureToggles.showQuickActionsCard) && (
+                <EditableModuleSlot
+                  moduleKey="showQuickActionsCard"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showQuickActionsCard}
+                  onToggle={handleToggleModule}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-teal)' }}>
-                    <Upload size={14} /> Click to Upload or Paste File
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem', width: '100%' }}>
-                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-teal)' }}>XLSX</span>
-                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-rose)' }}>PDF</span>
-                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}>CSV</span>
-                    <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-amber)' }}>PASTE</span>
-                  </div>
-                </div>
-              </div>
+                  <div className="card" data-tour="quick-actions-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
+                    <div>
+                      <div className="card-header" style={{ marginBottom: '0.45rem' }}>
+                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                          <Sliders size={18} className="text-indigo" /> Quick Actions
+                        </h3>
+                        <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
+                          Tools
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                        Add individual members, load diverse demo datasets, or export roster records.
+                      </p>
 
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  setWizardStep(1);
-                  setIsWizardOpen(true);
-                }}
-                style={{ width: '100%', justifyContent: 'center', padding: '0.55rem', gap: '0.45rem', fontWeight: 700, fontSize: '0.84rem' }}
-              >
-                <Sparkles size={15} /> Open Onboarding Wizard
-              </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setIsAddStudentModalOpen(true)}
+                            style={{ justifyContent: 'center', gap: '0.35rem', padding: '0.45rem 0.35rem', fontSize: '0.78rem' }}
+                          >
+                            <Plus size={13} /> Add Member
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-teal btn-sm"
+                            onClick={() => {
+                              importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+                              addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+                            }}
+                            style={{ fontSize: '0.78rem', gap: '0.35rem', justifyContent: 'center', padding: '0.45rem 0.35rem' }}
+                            title="Populate classroom with a diverse dataset of 100 students to test app features"
+                          >
+                            <Sparkles size={13} /> 100 Demo Sample
+                          </button>
+                        </div>
+
+                        {/* Export & Download Hub */}
+                        <div style={{ padding: '0.5rem 0.65rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              Export &amp; Download Center
+                            </span>
+                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                              CSV &bull; Excel
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem' }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                if (activeClass.students.length === 0) {
+                                  addToast('No students enrolled to export.', 'warning');
+                                  return;
+                                }
+                                exportRosterToExcel(activeClass);
+                                addToast('Class roster exported to Excel (.xlsx)!', 'success');
+                              }}
+                              style={{ fontSize: '0.72rem', padding: '0.3rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
+                              title="Export current classroom roster to Excel"
+                            >
+                              <Download size={11} className="text-teal" /> Export Roster
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                downloadSampleStudentsFile('xlsx');
+                                addToast('Downloaded diverse student template spreadsheet (.xlsx)!', 'success');
+                              }}
+                              style={{ fontSize: '0.72rem', padding: '0.3rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
+                              title="Download sample spreadsheet template with 100 diverse students"
+                            >
+                              <Download size={11} className="text-indigo" /> Template
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Clear Roster Action */}
+                    <button
+                      type="button"
+                      className="btn btn-secondary text-rose btn-sm"
+                      style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', fontSize: '0.72rem', padding: '0.4rem', justifyContent: 'center', gap: '0.3rem', width: '100%' }}
+                      onClick={() => {
+                        triggerConfirm(
+                          'Clear Class Roster',
+                          'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
+                          () => {
+                            clearClassRoster(activeClass.id);
+                          },
+                          'Clear Roster',
+                          'Cancel'
+                        );
+                      }}
+                      title="Clear all students from this classroom"
+                    >
+                      <Trash2 size={11} /> Clear Class Roster
+                    </button>
+                  </div>
+                </EditableModuleSlot>
+              )}
+
+              {/* 3. Import Wizard Card */}
+              {(isEditMode || featureToggles.showImportWizardCard) && (
+                <EditableModuleSlot
+                  moduleKey="showImportWizardCard"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showImportWizardCard}
+                  onToggle={handleToggleModule}
+                >
+                  <div className="card" data-tour="import-wizard-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
+                    <div>
+                      <div className="card-header" style={{ marginBottom: '0.45rem' }}>
+                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                          <Upload size={18} className="text-teal" /> Import Wizard
+                          <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import Wizard Guide" />
+                        </h3>
+                        <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                          Smart Mapper
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                        Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema header mapping.
+                      </p>
+
+                      {/* Interactive Dropzone / Format Trigger */}
+                      <div
+                        onClick={() => {
+                          setWizardStep(1);
+                          setIsWizardOpen(true);
+                        }}
+                        style={{
+                          padding: '0.75rem 0.65rem',
+                          borderRadius: '8px',
+                          border: '1.5px dashed var(--accent-teal)',
+                          backgroundColor: 'rgba(20, 184, 166, 0.04)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.45rem',
+                          textAlign: 'center',
+                          transition: 'all 0.2s ease'
+                        }}
+                        title="Click to launch Roster Onboarding Wizard"
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-teal)' }}>
+                          <Upload size={14} /> Click to Upload or Paste File
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem', width: '100%' }}>
+                          <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-teal)' }}>XLSX</span>
+                          <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-rose)' }}>PDF</span>
+                          <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}>CSV</span>
+                          <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-amber)' }}>PASTE</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => {
+                        setWizardStep(1);
+                        setIsWizardOpen(true);
+                      }}
+                      style={{ width: '100%', justifyContent: 'center', padding: '0.55rem', gap: '0.45rem', fontWeight: 700, fontSize: '0.84rem' }}
+                    >
+                      <Sparkles size={15} /> Open Onboarding Wizard
+                    </button>
+                  </div>
+                </EditableModuleSlot>
+              )}
             </div>
           )}
 
-          </div>
-        )}
-
-        {/* Intelligent Auto-Group & Diversity Studio - Only rendered when toggled on */}
-        {featureToggles.showAutoGroupStudio && (
-          <div data-tour="autogroup-studio">
-            <AutoGroupStudio
-              students={activeClass.students}
-              defaultExpanded={false}
-              onApplyGroups={(updatedStudents) => {
-                importRoster(activeClass.id, updatedStudents, true);
-                const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
-                addToast(`Successfully partitioned ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
-              }}
-              onLoadSampleStudents={() => {
-                importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
-                addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
-              }}
-            />
-          </div>
-        )}
+          {/* Intelligent Auto-Group & Diversity Studio - Only rendered when toggled on */}
+          {(isEditMode || featureToggles.showAutoGroupStudio) && (
+            <EditableModuleSlot
+              moduleKey="showAutoGroupStudio"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showAutoGroupStudio}
+              onToggle={handleToggleModule}
+            >
+              <div data-tour="autogroup-studio">
+                <AutoGroupStudio
+                  students={activeClass.students}
+                  defaultExpanded={false}
+                  onApplyGroups={(updatedStudents) => {
+                    importRoster(activeClass.id, updatedStudents, true);
+                    const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
+                    addToast(`Successfully partitioned ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
+                  }}
+                  onLoadSampleStudents={() => {
+                    importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+                    addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+                  }}
+                />
+              </div>
+            </EditableModuleSlot>
+          )}
 
           {/* Roster Filter & List Table - Toggleable in Settings */}
-          {featureToggles.showRosterTable && (
-            <div className="card" data-tour="classroom-roster-table" style={{ padding: isRosterTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
+          {(isEditMode || featureToggles.showRosterTable) && (
+            <EditableModuleSlot
+              moduleKey="showRosterTable"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showRosterTable}
+              onToggle={handleToggleModule}
+              slotType="table"
+            >
+              <div className="card" data-tour="classroom-roster-table" style={{ padding: isRosterTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isRosterTableExpanded ? '1.25rem' : 0 }}>
                 <div
                   style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
@@ -3878,73 +4223,113 @@ export const AdminDashboard: React.FC = () => {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                  {featureToggles.showRosterSearchFilter && (
-                    <>
-                      <div style={{ position: 'relative', width: '240px' }}>
-                        <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                        <input
-                          type="text"
-                          placeholder="Search by ID, Name, Country, Email..."
-                          className="form-input"
-                          style={{ paddingLeft: '2.1rem', paddingRight: searchTerm ? '2rem' : '0.75rem', height: '36px', fontSize: '0.82rem', borderRadius: '8px' }}
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
+                  {(isEditMode || featureToggles.showRosterSearchFilter) && (
+                    <EditableModuleSlot
+                      moduleKey="showRosterSearchFilter"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showRosterSearchFilter}
+                      onToggle={handleToggleModule}
+                      inline
+                      slotType="bar"
+                    >
+                      <div style={{ display: 'inline-flex', gap: '0.45rem', alignItems: 'center', flexWrap: 'nowrap' }}>
+                        <div style={{ position: 'relative', width: '220px' }}>
+                          <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                          <input
+                            type="text"
+                            placeholder="Search by ID, Name, Country, Email..."
+                            className="form-input"
+                            style={{ paddingLeft: '2.1rem', paddingRight: searchTerm ? '2rem' : '0.75rem', height: '36px', fontSize: '0.82rem', borderRadius: '8px' }}
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                          />
+                          {searchTerm && (
+                            <button
+                              type="button"
+                              onClick={() => setSearchTerm('')}
+                              style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.2rem' }}
+                              title="Clear search"
+                            >
+                              <X size={13} />
+                            </button>
+                          )}
+                        </div>
+                        <CustomSelect
+                          options={groupOptions}
+                          value={groupFilter}
+                          onChange={(val) => setGroupFilter(val)}
+                          style={{ width: 'auto', minWidth: '140px' }}
+                          triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
                         />
-                        {searchTerm && (
-                          <button
-                            type="button"
-                            onClick={() => setSearchTerm('')}
-                            style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.2rem' }}
-                            title="Clear search"
-                          >
-                            <X size={13} />
-                          </button>
-                        )}
                       </div>
-                      <CustomSelect
-                        options={groupOptions}
-                        value={groupFilter}
-                        onChange={(val) => setGroupFilter(val)}
-                        style={{ width: 'auto', minWidth: '150px' }}
-                        triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
-                      />
-                    </>
+                    </EditableModuleSlot>
                   )}
-                  {featureToggles.showExportButtons && (
-                    <div style={{ display: 'flex', gap: '0.35rem' }}>
+
+                  {(isEditMode || featureToggles.showExportButtons) && (
+                    <EditableModuleSlot
+                      moduleKey="showExportButtons"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showExportButtons}
+                      onToggle={handleToggleModule}
+                      inline
+                      slotType="button"
+                    >
+                      <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            if (activeClass.students.length === 0) {
+                              addToast('No students enrolled to export.', 'warning');
+                              return;
+                            }
+                            exportRosterToExcel(activeClass);
+                            addToast('Class roster exported to Excel (.xlsx)!', 'success');
+                          }}
+                          style={{ fontSize: '0.8rem', padding: '0 0.75rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
+                          title="Export complete roster with academic & demographic metadata to Excel"
+                        >
+                          <Download size={14} className="text-teal" /> Excel
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            if (activeClass.students.length === 0) {
+                              addToast('No students enrolled to export.', 'warning');
+                              return;
+                            }
+                            exportRosterToCSV(activeClass);
+                            addToast('Class roster exported to CSV!', 'success');
+                          }}
+                          style={{ fontSize: '0.8rem', padding: '0 0.65rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
+                          title="Export roster to CSV"
+                        >
+                          <Download size={14} /> CSV
+                        </button>
+                      </div>
+                    </EditableModuleSlot>
+                  )}
+
+                  {(isEditMode || featureToggles.showAddStudentButton) && (
+                    <EditableModuleSlot
+                      moduleKey="showAddStudentButton"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showAddStudentButton}
+                      onToggle={handleToggleModule}
+                      inline
+                      slotType="button"
+                    >
                       <button
                         type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          if (activeClass.students.length === 0) {
-                            addToast('No students enrolled to export.', 'warning');
-                            return;
-                          }
-                          exportRosterToExcel(activeClass);
-                          addToast('Class roster exported to Excel (.xlsx)!', 'success');
-                        }}
-                        style={{ fontSize: '0.8rem', padding: '0 0.75rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
-                        title="Export complete roster with academic & demographic metadata to Excel"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => setIsAddStudentModalOpen(true)}
+                        style={{ height: '36px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, gap: '0.35rem' }}
+                        title="Enroll new student manually"
                       >
-                        <Download size={14} className="text-teal" /> Excel
+                        <Plus size={14} /> Add Student
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          if (activeClass.students.length === 0) {
-                            addToast('No students enrolled to export.', 'warning');
-                            return;
-                          }
-                          exportRosterToCSV(activeClass);
-                          addToast('Class roster exported to CSV!', 'success');
-                        }}
-                        style={{ fontSize: '0.8rem', padding: '0 0.65rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
-                        title="Export roster to CSV"
-                      >
-                        <Download size={14} /> CSV
-                      </button>
-                    </div>
+                    </EditableModuleSlot>
                   )}
 
                   {/* Expand / Collapse Roster Table Toggle */}
@@ -4577,48 +4962,58 @@ export const AdminDashboard: React.FC = () => {
             </>
           )}
         </div>
-      )}
+      </EditableModuleSlot>
+    )}
 
         {/* Team Overview Cards - Rendered when enabled in Settings */}
-        {featureToggles.showTeamOverviewCards && uniqueGroups.length > 0 && (
-          <TeamCohortsOverview
-            activeClass={activeClass}
-            selectedGroup={groupFilter}
-            onSelectGroup={(grp) => setGroupFilter(grp)}
-            baseGroupGrade={baseGroupGrade}
-            fudgeWeight={fudgeWeight}
-            onUpdateTeamBaseGrade={updateTeamBaseGrade}
-            onPreviewStudent={(s) => setPreviewingStudent(s)}
-            onEditStudent={(s) => {
-              const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
-              setEditStudentData({
-                id: s.id,
-                name: s.name,
-                email: s.email,
-                groupName: s.groupName,
-                gender: s.gender || 'Prefer not to say',
-                isInternational: isIntl,
-                isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
-                nationality: s.nationality || '',
-                currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
-                englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
-                university: s.university || '',
-                degree: s.degree || '',
-                originalUniversity: s.originalUniversity || '',
-                originalCountry: s.originalCountry || '',
-                currentUniversity: s.currentUniversity || s.university || '',
-                studentType: s.studentType || 'Normal'
-              });
-              setIsEditStudentModalOpen(true);
-            }}
-            onOpenReport={(studentId) => openReportModal(studentId)}
-            onResetStudentReviews={(classId, studentId) => resetStudentReviews(classId, studentId)}
-            addToast={(msg, type) => addToast(msg, type)}
-            triggerConfirm={triggerConfirm}
-            firebaseConfig={firebaseConfig}
-            isCloudSynced={isCloudSynced}
-            user={user}
-          />
+        {(isEditMode || featureToggles.showTeamOverviewCards) && (
+          <EditableModuleSlot
+            moduleKey="showTeamOverviewCards"
+            isEditMode={isEditMode}
+            isVisible={featureToggles.showTeamOverviewCards}
+            onToggle={handleToggleModule}
+          >
+            {uniqueGroups.length > 0 && (
+              <TeamCohortsOverview
+                activeClass={activeClass}
+                selectedGroup={groupFilter}
+                onSelectGroup={(grp) => setGroupFilter(grp)}
+                baseGroupGrade={baseGroupGrade}
+                fudgeWeight={fudgeWeight}
+                onUpdateTeamBaseGrade={updateTeamBaseGrade}
+                onPreviewStudent={(s) => setPreviewingStudent(s)}
+                onEditStudent={(s) => {
+                  const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
+                  setEditStudentData({
+                    id: s.id,
+                    name: s.name,
+                    email: s.email,
+                    groupName: s.groupName,
+                    gender: s.gender || 'Prefer not to say',
+                    isInternational: isIntl,
+                    isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
+                    nationality: s.nationality || '',
+                    currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
+                    englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
+                    university: s.university || '',
+                    degree: s.degree || '',
+                    originalUniversity: s.originalUniversity || '',
+                    originalCountry: s.originalCountry || '',
+                    currentUniversity: s.currentUniversity || s.university || '',
+                    studentType: s.studentType || 'Normal'
+                  });
+                  setIsEditStudentModalOpen(true);
+                }}
+                onOpenReport={(studentId) => openReportModal(studentId)}
+                onResetStudentReviews={(classId, studentId) => resetStudentReviews(classId, studentId)}
+                addToast={(msg, type) => addToast(msg, type)}
+                triggerConfirm={triggerConfirm}
+                firebaseConfig={firebaseConfig}
+                isCloudSynced={isCloudSynced}
+                user={user}
+              />
+            )}
+          </EditableModuleSlot>
         )}
       </div>
     )}
@@ -4628,522 +5023,591 @@ export const AdminDashboard: React.FC = () => {
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="card" data-tour="rubric-builder-card" style={{ padding: '1.25rem' }}>
             {/* Header & Presets Bar */}
-            {featureToggles.showRubricHeader && (
-              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                    <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
-                      <Sliders size={20} className="text-indigo" /> Evaluation Rubric &amp; Grading Scales
-                      <FeatureInfoButton featureId="grading-rubric" size="sm" tooltipText="Rubric & Grading Scales Guide" />
-                    </h3>
-                    <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
-                      {activeClass.fields.length} Criteria
-                    </span>
+            {(isEditMode || featureToggles.showRubricHeader) && (
+              <EditableModuleSlot
+                moduleKey="showRubricHeader"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showRubricHeader}
+                onToggle={handleToggleModule}
+              >
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
+                        <Sliders size={20} className="text-indigo" /> Evaluation Rubric &amp; Grading Scales
+                        <FeatureInfoButton featureId="grading-rubric" size="sm" tooltipText="Rubric & Grading Scales Guide" />
+                      </h3>
+                      <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+                        {activeClass.fields.length} Criteria
+                      </span>
+                    </div>
+                    <p className="card-subtitle" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.4 }}>
+                      Configure multi-criteria rubrics with behavioral guidance. Define custom scales and load accredited academic presets.
+                    </p>
                   </div>
-                  <p className="card-subtitle" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.4 }}>
-                    Configure multi-criteria rubrics with behavioral guidance. Define custom scales and load accredited academic presets.
-                  </p>
-                </div>
 
-                {featureToggles.showCustomCriterionButton && (
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <button className="btn btn-primary btn-sm" onClick={handleAddField} style={{ height: '36px', gap: '0.35rem', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700, padding: '0 0.85rem' }}>
-                      <Plus size={15} /> Add Custom Criterion
-                    </button>
-                  </div>
-                )}
-              </div>
+                  {(isEditMode || featureToggles.showCustomCriterionButton) && (
+                    <EditableModuleSlot
+                      moduleKey="showCustomCriterionButton"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showCustomCriterionButton}
+                      onToggle={handleToggleModule}
+                      slotType="button"
+                    >
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <button className="btn btn-primary btn-sm" onClick={handleAddField} style={{ height: '36px', gap: '0.35rem', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700, padding: '0 0.85rem' }}>
+                          <Plus size={15} /> Add Custom Criterion
+                        </button>
+                      </div>
+                    </EditableModuleSlot>
+                  )}
+                </div>
+              </EditableModuleSlot>
             )}
 
             {/* Rubric Presets Library Banner - Only rendered when enabled in Settings */}
-            {featureToggles.showRubricPresets && (
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-app)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: '0.85rem 1.15rem',
-                  marginBottom: '1.25rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '0.85rem'
-                }}
+            {(isEditMode || featureToggles.showRubricPresets) && (
+              <EditableModuleSlot
+                moduleKey="showRubricPresets"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showRubricPresets}
+                onToggle={handleToggleModule}
+                slotType="banner"
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <BookOpen size={17} />
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                      <h4 style={{ margin: 0, fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                        Standardized Rubric Framework (IPAF)
-                      </h4>
-                      <FeatureInfoButton featureId="rubric-presets" size="sm" tooltipText="IPAF Rubric Guide" />
-                    </div>
-                    <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                      1-Click load research-synthesized peer evaluation criteria &amp; 100% balanced weights (CATME, Salas, AAC&amp;U, WebPA).
-                    </p>
-                  </div>
-                </div>
-
-                {/* Quick Preset Buttons in a Clean Flex Wrap Ribbon */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  {RUBRIC_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => handleApplyPreset(preset.id)}
-                      style={{
-                        fontSize: '0.76rem',
-                        padding: '0.35rem 0.7rem',
-                        height: '32px',
-                        borderRadius: '6px',
-                        fontWeight: 600,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.35rem',
-                        backgroundColor: 'var(--bg-surface)',
-                        border: '1px solid var(--border-color)',
-                        whiteSpace: 'nowrap'
-                      }}
-                      title={`${preset.name}: ${preset.description}`}
-                    >
-                      <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
-                        {preset.id === 'ipaf_research_synthesized' ? 'IPAF Standard (Research-Synthesized)' : preset.name}
-                      </span>
-                      <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '1px 5px', height: '16px', lineHeight: '14px' }}>
-                        {preset.fields.length} criteria
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Target final scale setting */}
-            {featureToggles.showTargetScaleCard && (
-              <div data-tour="target-scale-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'var(--primary-light)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid hsla(243, 75%, 59%, 0.15)', marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                  <div style={{ maxWidth: '520px' }}>
-                    <h4 style={{ fontWeight: 700, color: 'var(--primary)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <Sliders size={15} /> Final Grade Scaling Target Scale
-                    </h4>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
-                      Choose the target scale for final student grade calculations. Averages scale automatically (e.g. Out of 20, 100, or Sum of Rubrics).
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '240px', flexWrap: 'wrap' }}>
-                    <CustomSelect
-                      value={activeClass.targetScale === 0 ? 'sum' : activeClass.targetScale ? 'custom' : 'default'}
-                      onChange={(val) => {
-                        if (val === 'default') {
-                          updateGradingConfig(activeClass.id, activeClass.fields, null, true);
-                        } else if (val === 'sum') {
-                          updateGradingConfig(activeClass.id, activeClass.fields, 0, true);
-                        } else {
-                          updateGradingConfig(activeClass.id, activeClass.fields, 20, true); // Default to custom scale of 20
-                        }
-                      }}
-                      options={[
-                        { value: 'default', label: 'Default Scale (Out of 20)' },
-                        { value: 'sum', label: `Sum of rubrics' maximums (${activeClass.fields.reduce((sum, f) => sum + f.max, 0)})` },
-                        { value: 'custom', label: 'Custom scaling target...' }
-                      ]}
-                      style={{ width: 'auto', minWidth: '220px' }}
-                      triggerStyle={{ height: '36px', fontSize: '0.82rem', padding: '0 0.85rem' }}
-                    />
-                    {activeClass.targetScale !== 0 && activeClass.targetScale !== undefined && activeClass.targetScale !== null && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Out of:</span>
-                        <input
-                          type="number"
-                          className="form-input"
-                          value={activeClass.targetScale}
-                          min={1}
-                          max={1000}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            if (val > 0) {
-                              updateGradingConfig(activeClass.id, activeClass.fields, val, false);
-                            }
-                          }}
-                          style={{ padding: '0.4rem 0.6rem', fontSize: '0.85rem', width: '70px', textAlign: 'center' }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Milestone Evaluation Deadline Setting Card - Only rendered when enabled in Settings */}
-            {featureToggles.showDeadlineTimer && (
-              <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                  <div style={{ maxWidth: '520px' }}>
-                    <h4 style={{ fontWeight: 700, color: 'var(--accent-amber)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <Clock size={15} /> Submission Deadline &amp; Countdown Timer
-                    </h4>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
-                      Set an optional closing deadline. Displays a live countdown timer in the Projector View and Student Portal, and locks evaluations when time expires.
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <input
-                      type="datetime-local"
-                      className="form-input"
-                      value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          const iso = new Date(e.target.value).toISOString();
-                          saveClassDeadline(activeClass.id, iso);
-                        } else {
-                          saveClassDeadline(activeClass.id, null);
-                        }
-                      }}
-                      style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', height: '36px' }}
-                    />
-                    {activeClass.deadline && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm text-rose"
-                        onClick={() => {
-                          saveClassDeadline(activeClass.id, null);
-                        }}
-                        style={{ height: '36px', padding: '0.4rem 0.6rem' }}
-                        title="Clear Deadline"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Weightage Validation & Auto-Balance Bar */}
-            {featureToggles.showWeightBalanceBar && (() => {
-              const totalWeight = activeClass.fields.reduce((sum, f) => sum + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0);
-              const isBalanced = totalWeight === 100;
-              return (
                 <div
                   style={{
+                    backgroundColor: 'var(--bg-app)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '0.85rem 1.15rem',
+                    marginBottom: '1.25rem',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     flexWrap: 'wrap',
-                    gap: '0.75rem',
-                    padding: '0.75rem 1.15rem',
-                    borderRadius: 'var(--radius-md)',
-                    backgroundColor: isBalanced ? 'rgba(20, 184, 166, 0.08)' : 'rgba(245, 158, 11, 0.1)',
-                    border: `1px solid ${isBalanced ? 'rgba(20, 184, 166, 0.25)' : 'rgba(245, 158, 11, 0.3)'}`,
-                    marginBottom: '1.25rem'
+                    gap: '0.85rem'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    {isBalanced ? (
-                      <CheckCircle size={16} className="text-teal" />
-                    ) : (
-                      <AlertTriangle size={16} className="text-amber" />
-                    )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <BookOpen size={17} />
+                    </div>
                     <div>
-                      <div style={{ fontSize: '0.84rem', fontWeight: 800, color: isBalanced ? 'var(--accent-teal)' : 'var(--accent-amber)' }}>
-                        {isBalanced
-                          ? `Total Weightage: 100% (Balanced & Valid)`
-                          : `Total Weightage: ${totalWeight}% (${totalWeight > 100 ? `${totalWeight - 100}% over 100%` : `${100 - totalWeight}% remaining`})`}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <h4 style={{ margin: 0, fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          Standardized Rubric Framework (IPAF)
+                        </h4>
+                        <FeatureInfoButton featureId="rubric-presets" size="sm" tooltipText="IPAF Rubric Guide" />
                       </div>
-                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                        {isBalanced
-                          ? `All criteria weights add up to exactly 100%. Scores will calculate weighted contribution averages correctly.`
-                          : `Individual criteria weights must sum up to exactly 100% for proper weighted grading calculations.`}
-                      </div>
+                      <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                        1-Click load research-synthesized peer evaluation criteria &amp; 100% balanced weights (CATME, Salas, AAC&amp;U, WebPA).
+                      </p>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={handleAutoBalanceWeights}
-                    style={{
-                      fontSize: '0.76rem',
-                      height: '32px',
-                      fontWeight: 700,
-                      gap: '0.35rem',
-                      backgroundColor: 'var(--bg-surface)'
-                    }}
-                    title="Distribute 100% weight evenly across all criteria"
-                  >
-                    <Sparkles size={13} className="text-primary" /> Auto-Distribute Evenly (100%)
-                  </button>
+                  {/* Quick Preset Buttons in a Clean Flex Wrap Ribbon */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {RUBRIC_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleApplyPreset(preset.id)}
+                        style={{
+                          fontSize: '0.76rem',
+                          padding: '0.35rem 0.7rem',
+                          height: '32px',
+                          borderRadius: '6px',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          whiteSpace: 'nowrap'
+                        }}
+                        title={`${preset.name}: ${preset.description}`}
+                      >
+                        <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
+                          {preset.id === 'ipaf_research_synthesized' ? 'IPAF Standard (Research-Synthesized)' : preset.name}
+                        </span>
+                        <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '1px 5px', height: '16px', lineHeight: '14px' }}>
+                          {preset.fields.length} criteria
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Target final scale setting */}
+            {(isEditMode || featureToggles.showTargetScaleCard) && (
+              <EditableModuleSlot
+                moduleKey="showTargetScaleCard"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showTargetScaleCard}
+                onToggle={handleToggleModule}
+              >
+                <div data-tour="target-scale-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'var(--primary-light)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid hsla(243, 75%, 59%, 0.15)', marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                    <div style={{ maxWidth: '520px' }}>
+                      <h4 style={{ fontWeight: 700, color: 'var(--primary)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <Sliders size={15} /> Final Grade Scaling Target Scale
+                      </h4>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
+                        Choose the target scale for final student grade calculations. Averages scale automatically (e.g. Out of 20, 100, or Sum of Rubrics).
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '240px', flexWrap: 'wrap' }}>
+                      <CustomSelect
+                        value={activeClass.targetScale === 0 ? 'sum' : activeClass.targetScale ? 'custom' : 'default'}
+                        onChange={(val) => {
+                          if (val === 'default') {
+                            updateGradingConfig(activeClass.id, activeClass.fields, null, true);
+                          } else if (val === 'sum') {
+                            updateGradingConfig(activeClass.id, activeClass.fields, 0, true);
+                          } else {
+                            updateGradingConfig(activeClass.id, activeClass.fields, 20, true);
+                          }
+                        }}
+                        options={[
+                          { value: 'default', label: 'Default Benchmark (Out of 20)' },
+                          { value: 'sum', label: 'Sum of Rubrics Scale (Direct Sum)' },
+                          { value: 'custom', label: 'Custom Scaled Total Target' }
+                        ]}
+                        style={{ width: 'auto', minWidth: '230px' }}
+                        triggerStyle={{ height: '36px', fontSize: '0.82rem', fontWeight: 600, borderRadius: '8px' }}
+                      />
+
+                      {activeClass.targetScale !== 0 && activeClass.targetScale !== undefined && activeClass.targetScale !== null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Out of</span>
+                          <input
+                            type="number"
+                            className="form-input"
+                            value={activeClass.targetScale}
+                            min={1}
+                            max={1000}
+                            onChange={(e) => updateGradingConfig(activeClass.id, activeClass.fields, Number(e.target.value) || 20, true)}
+                            style={{ width: '70px', height: '36px', fontSize: '0.85rem', textAlign: 'center', fontWeight: 700, borderRadius: '8px' }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Milestone Evaluation Deadline Setting Card - Only rendered when enabled in Settings */}
+            {(isEditMode || featureToggles.showDeadlineTimer) && (
+              <EditableModuleSlot
+                moduleKey="showDeadlineTimer"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showDeadlineTimer}
+                onToggle={handleToggleModule}
+              >
+                <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                    <div style={{ maxWidth: '520px' }}>
+                      <h4 style={{ fontWeight: 700, color: 'var(--accent-amber)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <Clock size={15} /> Submission Deadline &amp; Countdown Timer
+                      </h4>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
+                        Set an optional closing deadline. Displays a live countdown timer in the Projector View and Student Portal, and locks evaluations when time expires.
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <input
+                        type="datetime-local"
+                        className="form-input"
+                        value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            const iso = new Date(e.target.value).toISOString();
+                            saveClassDeadline(activeClass.id, iso);
+                          } else {
+                            saveClassDeadline(activeClass.id, null);
+                          }
+                        }}
+                        style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', height: '36px' }}
+                      />
+                      {activeClass.deadline && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm text-rose"
+                          onClick={() => {
+                            saveClassDeadline(activeClass.id, null);
+                          }}
+                          style={{ height: '36px', padding: '0.4rem 0.6rem' }}
+                          title="Clear Deadline"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Weightage Validation & Auto-Balance Bar */}
+            {(isEditMode || featureToggles.showWeightBalanceBar) && (() => {
+              const totalWeight = activeClass.fields.reduce((sum, f) => sum + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0);
+              const isBalanced = totalWeight === 100;
+              return (
+                <EditableModuleSlot
+                  moduleKey="showWeightBalanceBar"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showWeightBalanceBar}
+                  onToggle={handleToggleModule}
+                  slotType="bar"
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '0.75rem',
+                      padding: '0.75rem 1.15rem',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: isBalanced ? 'rgba(20, 184, 166, 0.08)' : 'rgba(245, 158, 11, 0.1)',
+                      border: `1px solid ${isBalanced ? 'rgba(20, 184, 166, 0.25)' : 'rgba(245, 158, 11, 0.3)'}`,
+                      marginBottom: '1.25rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      {isBalanced ? (
+                        <CheckCircle size={16} className="text-teal" />
+                      ) : (
+                        <AlertTriangle size={16} className="text-amber" />
+                      )}
+                      <div>
+                        <div style={{ fontSize: '0.84rem', fontWeight: 800, color: isBalanced ? 'var(--accent-teal)' : 'var(--accent-amber)' }}>
+                          {isBalanced
+                            ? `Total Weightage: 100% (Balanced & Valid)`
+                            : `Total Weightage: ${totalWeight}% (${totalWeight > 100 ? `${totalWeight - 100}% over 100%` : `${100 - totalWeight}% remaining`})`}
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                          {isBalanced
+                            ? `All criteria weights add up to exactly 100%. Scores will calculate weighted contribution averages correctly.`
+                            : `Individual criteria weights must sum up to exactly 100% for proper weighted grading calculations.`}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleAutoBalanceWeights}
+                      style={{
+                        fontSize: '0.76rem',
+                        height: '32px',
+                        fontWeight: 700,
+                        gap: '0.35rem',
+                        backgroundColor: 'var(--bg-surface)'
+                      }}
+                      title="Distribute 100% weight evenly across all criteria"
+                    >
+                      <Sparkles size={13} className="text-primary" /> Auto-Distribute Evenly (100%)
+                    </button>
+                  </div>
+                </EditableModuleSlot>
               );
             })()}
 
             {/* Criteria List Cards */}
-            {featureToggles.showCriterionCards && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {activeClass.fields.map((field, idx) => (
-                  <div
-                    key={field.id}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.75rem',
-                      backgroundColor: 'var(--bg-app)',
-                      padding: '1rem 1.25rem',
-                      borderRadius: 'var(--radius-md)',
-                      border: '1px solid var(--border-color)'
-                    }}
-                  >
-                    {/* Top Row: Name, Scale, Editable Weightage, and Delete */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(110px, 1fr) auto', gap: '0.85rem', alignItems: 'flex-end' }}>
+            {(isEditMode || featureToggles.showCriterionCards) && (
+              <EditableModuleSlot
+                moduleKey="showCriterionCards"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showCriterionCards}
+                onToggle={handleToggleModule}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {activeClass.fields.map((field, idx) => (
+                    <div
+                      key={field.id}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.75rem',
+                        backgroundColor: 'var(--bg-app)',
+                        padding: '1rem 1.25rem',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-color)'
+                      }}
+                    >
+                      {/* Top Row: Name, Scale, Editable Weightage, and Delete */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(110px, 1fr) auto', gap: '0.85rem', alignItems: 'flex-end' }}>
+                        <div>
+                          <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '1px 5px' }}>#{idx + 1}</span> Criterion Name
+                          </label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={field.name}
+                            placeholder="e.g. Quality of Contribution, Collaboration..."
+                            onChange={(e) => handleUpdateField(field.id, { name: e.target.value })}
+                            style={{ height: '36px', fontSize: '0.84rem', fontWeight: 600 }}
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Min Scale</label>
+                          <input
+                            type="number"
+                            className="form-input"
+                            value={field.min}
+                            onChange={(e) => handleUpdateField(field.id, { min: Number(e.target.value) })}
+                            style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Max Scale</label>
+                          <input
+                            type="number"
+                            className="form-input"
+                            value={field.max}
+                            onChange={(e) => handleUpdateField(field.id, { max: Number(e.target.value) })}
+                            style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Weightage (%)</label>
+                          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: '85px', maxWidth: '105px', height: '36px' }}>
+                            <input
+                              type="number"
+                              className="form-input"
+                              value={field.weight !== undefined ? field.weight : Math.round(100 / activeClass.fields.length)}
+                              min={0}
+                              max={100}
+                              onChange={(e) => {
+                                const val = Math.max(0, Math.min(100, Number(e.target.value)));
+                                handleUpdateField(field.id, { weight: val });
+                              }}
+                              style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center', width: '100%', paddingRight: '26px', paddingLeft: '8px', fontWeight: 700 }}
+                            />
+                            <span style={{ position: 'absolute', right: '10px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', pointerEvents: 'none' }}>%</span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
+                          <button
+                            className="btn btn-rose btn-sm"
+                            onClick={() => handleDeleteField(field.id)}
+                            title="Delete rubric scale"
+                            style={{ height: '34px', padding: '0 0.6rem' }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Bottom Row: Behavioral Guidance / Criterion Description */}
                       <div>
-                        <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                          <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '1px 5px' }}>#{idx + 1}</span> Criterion Name
+                        <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', margin: 0, marginBottom: '0.25rem' }}>
+                          Guidance &amp; Behavioral Indicator (Shown to students while grading):
                         </label>
                         <input
                           type="text"
                           className="form-input"
-                          value={field.name}
-                          placeholder="e.g. Quality of Contribution, Collaboration..."
-                          onChange={(e) => handleUpdateField(field.id, { name: e.target.value })}
-                          style={{ height: '36px', fontSize: '0.84rem', fontWeight: 600 }}
+                          value={field.description || ''}
+                          placeholder="e.g. Produces thorough, accurate deliverables on schedule with high attention to detail..."
+                          onChange={(e) => handleUpdateField(field.id, { description: e.target.value })}
+                          style={{ fontSize: '0.78rem', height: '32px', color: 'var(--text-secondary)' }}
                         />
-                      </div>
-                      <div>
-                        <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Min Scale</label>
-                        <input
-                          type="number"
-                          className="form-input"
-                          value={field.min}
-                          onChange={(e) => handleUpdateField(field.id, { min: Number(e.target.value) })}
-                          style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
-                        />
-                      </div>
-                      <div>
-                        <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Max Scale</label>
-                        <input
-                          type="number"
-                          className="form-input"
-                          value={field.max}
-                          onChange={(e) => handleUpdateField(field.id, { max: Number(e.target.value) })}
-                          style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
-                        />
-                      </div>
-                      <div>
-                        <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Weightage (%)</label>
-                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: '85px', maxWidth: '105px', height: '36px' }}>
-                          <input
-                            type="number"
-                            className="form-input"
-                            value={field.weight !== undefined ? field.weight : Math.round(100 / activeClass.fields.length)}
-                            min={0}
-                            max={100}
-                            onChange={(e) => {
-                              const val = Math.max(0, Math.min(100, Number(e.target.value)));
-                              handleUpdateField(field.id, { weight: val });
-                            }}
-                            style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center', width: '100%', paddingRight: '26px', paddingLeft: '8px', fontWeight: 700 }}
-                          />
-                          <span style={{ position: 'absolute', right: '10px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', pointerEvents: 'none' }}>%</span>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
-                        <button
-                          className="btn btn-rose btn-sm"
-                          onClick={() => handleDeleteField(field.id)}
-                          title="Delete rubric scale"
-                          style={{ height: '34px', padding: '0 0.6rem' }}
-                        >
-                          <Trash2 size={15} />
-                        </button>
                       </div>
                     </div>
-
-                    {/* Bottom Row: Behavioral Guidance / Criterion Description */}
-                    <div>
-                      <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', margin: 0, marginBottom: '0.25rem' }}>
-                        Guidance &amp; Behavioral Indicator (Shown to students while grading):
-                      </label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={field.description || ''}
-                        placeholder="e.g. Produces thorough, accurate deliverables on schedule with high attention to detail..."
-                        onChange={(e) => handleUpdateField(field.id, { description: e.target.value })}
-                        style={{ fontSize: '0.78rem', height: '32px', color: 'var(--text-secondary)' }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </EditableModuleSlot>
             )}
 
             {/* Scale visual simulation - Only rendered when enabled in Settings */}
-            {featureToggles.showEvaluationSimulator && (
-              <div data-tour="eval-simulator-card" style={{ marginTop: '2rem', backgroundColor: 'var(--primary-light)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--primary)' }}>
-                <h4 style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                <Sparkles size={18} /> Student Interface Experience Preview
-              </h4>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-                Students see an engaging, professional tier evaluation selector. Selecting a contribution tier snaps the score, which can then be fine-tuned:
-              </p>
+            {(isEditMode || featureToggles.showEvaluationSimulator) && (
+              <EditableModuleSlot
+                moduleKey="showEvaluationSimulator"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showEvaluationSimulator}
+                onToggle={handleToggleModule}
+              >
+                <div data-tour="eval-simulator-card" style={{ marginTop: '2rem', backgroundColor: 'var(--primary-light)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--primary)' }}>
+                  <h4 style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <Sparkles size={18} /> Student Interface Experience Preview
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                    Students see an engaging, professional tier evaluation selector. Selecting a contribution tier snaps the score, which can then be fine-tuned:
+                  </p>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                {activeClass.fields.slice(0, 1).map(field => {
-                  const range = field.max - field.min;
-                  const isNarrowRange = range <= 15;
-                  const previewVal = Math.round(field.min + 0.63 * range); // Mimic "Solid Player" (63%)
-                  const scoreNodes = [];
-                  for (let val = field.min; val <= field.max; val++) {
-                    scoreNodes.push(val);
-                  }
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                    {activeClass.fields.slice(0, 1).map(field => {
+                      const range = field.max - field.min;
+                      const isNarrowRange = range <= 15;
+                      const previewVal = Math.round(field.min + 0.63 * range); // Mimic "Solid Player" (63%)
+                      const scoreNodes = [];
+                      for (let val = field.min; val <= field.max; val++) {
+                        scoreNodes.push(val);
+                      }
 
-                  return (
-                    <div key={field.id} style={{ backgroundColor: 'var(--bg-surface)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-                        <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{field.name}</span>
-                        <span className="slider-value-bubble" style={{ backgroundColor: 'var(--primary)', color: 'var(--text-inverse)', fontSize: '0.8rem', padding: '0.25rem 0.6rem', borderRadius: '4px', fontWeight: 700 }}>
-                          {previewVal} / {field.max}
-                        </span>
-                      </div>
-
-                      {/* Unified Single Scale Simulator Preview */}
-                      <div className="score-fine-tuner" style={{ margin: 0, padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-app)' }}>
-                        {/* Dynamic Qualitative Tier Indicator Simulation */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.75rem',
-                            padding: '0.65rem 0.85rem',
-                            borderRadius: 'var(--radius-sm)',
-                            backgroundColor: 'var(--primary-light)',
-                            color: 'var(--primary)',
-                            border: '1px solid hsla(243, 75%, 59%, 0.12)',
-                            marginBottom: '0.75rem'
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--primary)', color: '#fff', width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0 }}>
-                            <ThumbsUp size={13} />
+                      return (
+                        <div key={field.id} style={{ backgroundColor: 'var(--bg-surface)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                            <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{field.name}</span>
+                            <span className="slider-value-bubble" style={{ backgroundColor: 'var(--primary)', color: 'var(--text-inverse)', fontSize: '0.8rem', padding: '0.25rem 0.6rem', borderRadius: '4px', fontWeight: 700 }}>
+                              {previewVal} / {field.max}
+                            </span>
                           </div>
-                          <div>
-                            <strong style={{ fontSize: '0.82rem', display: 'block', color: 'var(--text-primary)' }}>Solid Player / Meets Expectations</strong>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25 }}>Met all standards, cooperative, communicative, reliable teamwork.</span>
-                          </div>
-                        </div>
 
-                        {isNarrowRange ? (
-                          <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', justifyContent: 'center' }}>
-                            {scoreNodes.map((nodeVal) => {
-                              const isActive = previewVal === nodeVal;
-                              return (
-                                <div
-                                  key={nodeVal}
-                                  className={`score-node-btn ${isActive ? 'active' : ''}`}
-                                  style={isActive ? { backgroundColor: 'var(--primary)', borderColor: 'var(--primary)', color: '#fff', cursor: 'default' } : { cursor: 'default' }}
-                                >
-                                  {nodeVal}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
-                                <Minus size={14} />
-                              </button>
-
-                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '45px' }}>
-                                <span className="score-stepper-value" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{previewVal}</span>
-                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>
-                                  63%
-                                </span>
+                          {/* Unified Single Scale Simulator Preview */}
+                          <div className="score-fine-tuner" style={{ margin: 0, padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-app)' }}>
+                            {/* Dynamic Qualitative Tier Indicator Simulation */}
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.75rem',
+                                padding: '0.65rem 0.85rem',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'var(--primary-light)',
+                                color: 'var(--primary)',
+                                border: '1px solid hsla(243, 75%, 59%, 0.12)',
+                                marginBottom: '0.75rem'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--primary)', color: '#fff', width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0 }}>
+                                <ThumbsUp size={13} />
                               </div>
-
-                              <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
-                                <Plus size={14} />
-                              </button>
+                              <div>
+                                <strong style={{ fontSize: '0.82rem', display: 'block', color: 'var(--text-primary)' }}>Solid Player / Meets Expectations</strong>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25 }}>Met all standards, cooperative, communicative, reliable teamwork.</span>
+                              </div>
                             </div>
 
-                            <div style={{ flex: 1, minWidth: '150px' }}>
-                              <input
-                                type="range"
-                                className="custom-slider"
-                                min={field.min}
-                                max={field.max}
-                                value={previewVal}
-                                disabled
-                                style={{
-                                  background: `linear-gradient(to right, var(--primary) 0%, var(--primary) 63%, var(--border-color) 63%, var(--border-color) 100%)`,
-                                  cursor: 'default'
-                                }}
-                              />
-                            </div>
+                            {isNarrowRange ? (
+                              <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', justifyContent: 'center' }}>
+                                {scoreNodes.map((nodeVal) => {
+                                  const isActive = previewVal === nodeVal;
+                                  return (
+                                    <div
+                                      key={nodeVal}
+                                      className={`score-node-btn ${isActive ? 'active' : ''}`}
+                                      style={isActive ? { backgroundColor: 'var(--primary)', borderColor: 'var(--primary)', color: '#fff', cursor: 'default' } : { cursor: 'default' }}
+                                    >
+                                      {nodeVal}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
+                                    <Minus size={14} />
+                                  </button>
+
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '45px' }}>
+                                    <span className="score-stepper-value" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{previewVal}</span>
+                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                                      63%
+                                    </span>
+                                  </div>
+
+                                  <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
+                                    <Plus size={14} />
+                                  </button>
+                                </div>
+
+                                <div style={{ flex: 1, minWidth: '150px' }}>
+                                  <input
+                                    type="range"
+                                    className="custom-slider"
+                                    min={field.min}
+                                    max={field.max}
+                                    value={previewVal}
+                                    disabled
+                                    style={{
+                                      background: `linear-gradient(to right, var(--primary) 0%, var(--primary) 63%, var(--border-color) 63%, var(--border-color) 100%)`,
+                                      cursor: 'default'
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {activeClass.fields.length > 1 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Additional Configured Metrics ({activeClass.fields.length - 1})
-                    </span>
-                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                      {activeClass.fields.slice(1).map(field => (
-                        <div key={field.id} style={{ backgroundColor: 'var(--bg-surface)', padding: '0.6rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          <span style={{ fontWeight: 600 }}>{field.name}</span>
-                          <span style={{ color: 'var(--text-muted)' }}>Range: {field.min} - {field.max}</span>
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
+
+                    {activeClass.fields.length > 1 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Additional Configured Metrics ({activeClass.fields.length - 1})
+                        </span>
+                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                          {activeClass.fields.slice(1).map(field => (
+                            <div key={field.id} style={{ backgroundColor: 'var(--bg-surface)', padding: '0.6rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                              <span style={{ fontWeight: 600 }}>{field.name}</span>
+                              <span style={{ color: 'var(--text-muted)' }}>Range: {field.min} - {field.max}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-          )}
+                </div>
+              </EditableModuleSlot>
+            )}
 
             {/* Evaluation Form Controls & Student Permissions (Collapsible & Minimal) */}
-            {featureToggles.showEvaluationFormControls && (
-              <div data-tour="eval-controls-card" style={{ marginTop: '1.5rem' }}>
-                <CollapsibleEvaluationControls
-                  activeClass={activeClass}
-                  onUpdateControls={(controls) => updateEvaluationControls(activeClass.id, controls)}
-                  defaultExpanded={false}
-                />
-              </div>
+            {(isEditMode || featureToggles.showEvaluationFormControls) && (
+              <EditableModuleSlot
+                moduleKey="showEvaluationFormControls"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showEvaluationFormControls}
+                onToggle={handleToggleModule}
+              >
+                <div data-tour="eval-controls-card" style={{ marginTop: '1.5rem' }}>
+                  <CollapsibleEvaluationControls
+                    activeClass={activeClass}
+                    onUpdateControls={(controls) => updateEvaluationControls(activeClass.id, controls)}
+                    defaultExpanded={false}
+                  />
+                </div>
+              </EditableModuleSlot>
             )}
 
             {/* Team Health "Micro-Pulse" Check-ins (On-Demand & Customizable Scales) */}
-            {(featureToggles.showTeamHealthPulse || (activeClass.pulseRounds && activeClass.pulseRounds.length > 0)) && (
-              <div id="team-health-pulse-card" data-tour="team-health-pulse-card" style={{ marginTop: '1.5rem' }}>
-                <TeamHealthPulseCard
-                  activeClass={activeClass}
-                  onCreateRound={(classId, roundData) => {
-                    if (!featureToggles.showTeamHealthPulse) {
-                      saveFeatureToggle('showTeamHealthPulse', true);
-                    }
-                    createPulseRound(classId, roundData);
-                  }}
-                  onUpdateRound={updatePulseRound}
-                  onSubmitResponse={submitPulseResponse}
-                  onDeleteRound={deletePulseRound}
-                  onSeedSampleData={(classId) => {
-                    if (!featureToggles.showTeamHealthPulse) {
-                      saveFeatureToggle('showTeamHealthPulse', true);
-                    }
-                    seedSamplePulseRounds(classId);
-                  }}
-                  addToast={addToast}
-                />
-              </div>
+            {(isEditMode || featureToggles.showTeamHealthPulse || (activeClass.pulseRounds && activeClass.pulseRounds.length > 0)) && (
+              <EditableModuleSlot
+                moduleKey="showTeamHealthPulse"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showTeamHealthPulse}
+                onToggle={handleToggleModule}
+              >
+                <div id="team-health-pulse-card" data-tour="team-health-pulse-card" style={{ marginTop: '1.5rem' }}>
+                  <TeamHealthPulseCard
+                    activeClass={activeClass}
+                    onCreateRound={(classId, roundData) => {
+                      if (!featureToggles.showTeamHealthPulse) {
+                        saveFeatureToggle('showTeamHealthPulse', true);
+                      }
+                      createPulseRound(classId, roundData);
+                    }}
+                    onUpdateRound={updatePulseRound}
+                    onSubmitResponse={submitPulseResponse}
+                    onDeleteRound={deletePulseRound}
+                    onSeedSampleData={(classId) => {
+                      if (!featureToggles.showTeamHealthPulse) {
+                        saveFeatureToggle('showTeamHealthPulse', true);
+                      }
+                      seedSamplePulseRounds(classId);
+                    }}
+                    addToast={addToast}
+                  />
+                </div>
+              </EditableModuleSlot>
             )}
           </div>
         </div>
@@ -5153,66 +5617,89 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'results' && (
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Action Header Card */}
-          {featureToggles.showResultsHeaderCard && (
-            <div className="card" data-tour="gradebook-matrix-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-              <div>
-                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                  <Award size={18} className="text-teal" /> Real-time Calculation Matrix
-                  <FeatureInfoButton featureId="calculation-matrix" size="sm" tooltipText="Calculation Matrix Guide" />
-                </h3>
-                <p className="card-subtitle">Self-excluded student averages recalculate instantly as submissions arrive. Calculations do not count self-grading reviews.</p>
+          {(isEditMode || featureToggles.showResultsHeaderCard) && (
+            <EditableModuleSlot
+              moduleKey="showResultsHeaderCard"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showResultsHeaderCard}
+              onToggle={handleToggleModule}
+            >
+              <div className="card" data-tour="gradebook-matrix-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <Award size={18} className="text-teal" /> Real-time Calculation Matrix
+                    <FeatureInfoButton featureId="calculation-matrix" size="sm" tooltipText="Calculation Matrix Guide" />
+                  </h3>
+                  <p className="card-subtitle">Self-excluded student averages recalculate instantly as submissions arrive. Calculations do not count self-grading reviews.</p>
+                </div>
+
+                <div className="responsive-btn-group">
+                  {(isEditMode || featureToggles.showExportReportButtons) && (
+                    <EditableModuleSlot
+                      moduleKey="showExportReportButtons"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showExportReportButtons}
+                      onToggle={handleToggleModule}
+                      slotType="button"
+                    >
+                      <button
+                        type="button"
+                        className="btn btn-teal"
+                        onClick={() => openReportModal()}
+                        title="View & Download Individual Student PDF Report Cards with Live Preview"
+                        style={{ gap: '0.4rem' }}
+                      >
+                        <FileText size={16} /> Student PDF Reports
+                      </button>
+                    </EditableModuleSlot>
+                  )}
+
+                  {(isEditMode || featureToggles.showSubmissionReset) && (
+                    <EditableModuleSlot
+                      moduleKey="showSubmissionReset"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showSubmissionReset}
+                      onToggle={handleToggleModule}
+                      slotType="button"
+                    >
+                      <button
+                        className="btn btn-secondary text-amber"
+                        style={{ borderColor: 'var(--accent-amber)' }}
+                        onClick={() => {
+                          triggerConfirm(
+                            'Reset All Peer Evaluations',
+                            'Are you sure you want to wipe all submitted peer reviews for this classroom? This will reset all student review statuses to pending. This action cannot be undone.',
+                            () => resetClassReviews(activeClass.id),
+                            'Reset Submissions',
+                            'Cancel'
+                          );
+                        }}
+                      >
+                        <RefreshCw size={16} /> Reset Submissions
+                      </button>
+                    </EditableModuleSlot>
+                  )}
+
+                  {featureToggles.showExportReportButtons && (
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleExportExcel}
+                      title="Download comprehensive multi-sheet Excel workbook with grades and written reviews"
+                    >
+                      <Download size={16} /> Download Excel Report (.xlsx)
+                    </button>
+                  )}
+                </div>
               </div>
-
-              <div className="responsive-btn-group">
-                {featureToggles.showExportReportButtons && (
-                  <button
-                    type="button"
-                    className="btn btn-teal"
-                    onClick={() => openReportModal()}
-                    title="View & Download Individual Student PDF Report Cards with Live Preview"
-                    style={{ gap: '0.4rem' }}
-                  >
-                    <FileText size={16} /> Student PDF Reports
-                  </button>
-                )}
-
-                {featureToggles.showSubmissionReset && (
-                  <button
-                    className="btn btn-secondary text-amber"
-                    style={{ borderColor: 'var(--accent-amber)' }}
-                    onClick={() => {
-                      triggerConfirm(
-                        'Reset All Peer Evaluations',
-                        'Are you sure you want to wipe all submitted peer reviews for this classroom? This will reset all student review statuses to pending. This action cannot be undone.',
-                        () => resetClassReviews(activeClass.id),
-                        'Reset Submissions',
-                        'Cancel'
-                      );
-                    }}
-                  >
-                    <RefreshCw size={16} /> Reset Submissions
-                  </button>
-                )}
-
-                {featureToggles.showExportReportButtons && (
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleExportExcel}
-                    title="Download comprehensive multi-sheet Excel workbook with grades and written reviews"
-                  >
-                    <Download size={16} /> Download Excel Report (.xlsx)
-                  </button>
-                )}
-              </div>
-            </div>
+            </EditableModuleSlot>
           )}
 
           {/* Advanced Analytics & Grading Engine Grid - Only rendered if at least one analytics component is enabled */}
-          {(featureToggles.showCompetencyRadar || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback || featureToggles.showWebPACalibration || featureToggles.showAnomalyAudit || featureToggles.showMilestonesHistory) && (
+          {(isEditMode || featureToggles.showCompetencyRadar || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback || featureToggles.showWebPACalibration || featureToggles.showAnomalyAudit || featureToggles.showMilestonesHistory) && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
               {/* Tier 1: Competency Radar, Johari Matrix & Qualitative Themes - Only rendered if enabled */}
-              {(featureToggles.showCompetencyRadar || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback) && (
+              {(isEditMode || featureToggles.showCompetencyRadar || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback) && (
                 <div data-tour="perception-deck-card" style={{
                   display: 'grid',
                   gridTemplateColumns: (featureToggles.showCompetencyRadar && (featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback)) ? 'repeat(auto-fit, minmax(340px, 1fr))' : '1fr',
@@ -5221,243 +5708,270 @@ export const AdminDashboard: React.FC = () => {
                 }}>
 
                   {/* Card 1: Multi-Axis Competency Spider Radar */}
-                  {featureToggles.showCompetencyRadar && (
-                  <div className="card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div>
-                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.98rem', fontWeight: 800 }}>
-                          <Activity size={17} className="text-primary" /> Competency Spider Radar
-                          <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Competency Radar Guide" />
-                        </h3>
-                        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
-                          Class rubric benchmarks vs individual team averages.
-                        </p>
-                      </div>
+                  {(isEditMode || featureToggles.showCompetencyRadar) && (
+                    <EditableModuleSlot
+                      moduleKey="showCompetencyRadar"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showCompetencyRadar}
+                      onToggle={handleToggleModule}
+                    >
+                      <div className="card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                          <div>
+                            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.98rem', fontWeight: 800 }}>
+                              <Activity size={17} className="text-primary" /> Competency Spider Radar
+                              <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Competency Radar Guide" />
+                            </h3>
+                            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                              Class rubric benchmarks vs individual team averages.
+                            </p>
+                          </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Overlay:</span>
-                        <CustomSelect
-                          value={radarTeamFilter}
-                          onChange={(val) => setRadarTeamFilter(val)}
-                          options={[
-                            { value: 'All', label: 'Class Average' },
-                            ...uniqueGroups.filter(g => g && g !== 'Unassigned').map(g => ({ value: g, label: g }))
-                          ]}
-                          style={{ width: 'auto', minWidth: '140px' }}
-                          triggerStyle={{ height: '30px', fontSize: '0.76rem', padding: '0 0.55rem' }}
-                        />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Overlay:</span>
+                            <CustomSelect
+                              value={radarTeamFilter}
+                              onChange={(val) => setRadarTeamFilter(val)}
+                              options={[
+                                { value: 'All', label: 'Class Average' },
+                                ...uniqueGroups.filter(g => g && g !== 'Unassigned').map(g => ({ value: g, label: g }))
+                              ]}
+                              style={{ width: 'auto', minWidth: '140px' }}
+                              triggerStyle={{ height: '30px', fontSize: '0.76rem', padding: '0 0.55rem' }}
+                            />
+                          </div>
+                        </div>
+
+                        {activeClass.fields.length >= 3 ? (
+                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, padding: '0.5rem 0' }}>
+                            <RadarChart
+                              metrics={activeClass.fields.map(f => ({ id: f.id, name: f.name, max: f.max }))}
+                              series={[
+                                {
+                                  id: 'class_avg',
+                                  name: 'Class Average',
+                                  color: 'var(--primary)',
+                                  values: (() => {
+                                    const res: Record<string, number | null> = {};
+                                    activeClass.fields.forEach(f => {
+                                      let sum = 0, count = 0;
+                                      activeClass.students.forEach(s => {
+                                        const m = calculateStudentMetrics(s, activeClass);
+                                        const val = m.fieldAverages[f.id];
+                                        if (val !== null) { sum += val; count++; }
+                                      });
+                                      res[f.id] = count > 0 ? sum / count : null;
+                                    });
+                                    return res;
+                                  })()
+                                },
+                                ...(radarTeamFilter !== 'All' ? [{
+                                  id: 'team_avg',
+                                  name: `${radarTeamFilter} Average`,
+                                  color: 'var(--accent-teal)',
+                                  values: (() => {
+                                    const res: Record<string, number | null> = {};
+                                    const teamStudents = activeClass.students.filter(s => s.groupName === radarTeamFilter);
+                                    activeClass.fields.forEach(f => {
+                                      let sum = 0, count = 0;
+                                      teamStudents.forEach(s => {
+                                        const m = calculateStudentMetrics(s, activeClass);
+                                        const val = m.fieldAverages[f.id];
+                                        if (val !== null) { sum += val; count++; }
+                                      });
+                                      res[f.id] = count > 0 ? sum / count : null;
+                                    });
+                                    return res;
+                                  })()
+                                }] : [])
+                              ]}
+                              size={270}
+                            />
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '2rem 1rem', textAlign: 'center', backgroundColor: 'var(--bg-app)', borderRadius: '10px', border: '1px dashed var(--border-color)', margin: '0.5rem 0' }}>
+                            <div style={{ width: '46px', height: '46px', borderRadius: '12px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', marginBottom: '0.75rem' }}>
+                              <Activity size={22} />
+                            </div>
+                            <h4 style={{ margin: '0 0 0.35rem 0', fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                              Multi-Axis Radar Requires 3+ Criteria
+                            </h4>
+                            <p style={{ margin: '0 0 1rem 0', fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '340px', lineHeight: 1.45 }}>
+                              Your classroom currently has {activeClass.fields.length} {activeClass.fields.length === 1 ? 'criterion' : 'criteria'}. A multi-axis spider radar requires at least 3 evaluation axes to construct its geometric benchmark polygon.
+                            </p>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                onClick={() => {
+                                  handleApplyPreset('ipaf_research_synthesized');
+                                  addToast('Loaded 6-criteria research rubric preset! Spider radar is now active.', 'success');
+                                }}
+                                style={{ fontSize: '0.78rem', gap: '0.35rem', height: '32px' }}
+                              >
+                                <Sparkles size={13} /> Load 6-Axis Rubric Preset
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setActiveTab('grading')}
+                                style={{ fontSize: '0.78rem', gap: '0.35rem', height: '32px' }}
+                              >
+                                <Plus size={13} /> Add Criteria in Review System
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
+                    </EditableModuleSlot>
+                  )}
+
+                  {/* Column 2: Johari Alignment & Qualitative Feedback Insights - Only rendered if enabled */}
+                  {(isEditMode || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+                      {/* Card 2: Johari Alignment */}
+                      {(isEditMode || featureToggles.showJohariMatrix) && (() => {
+                        const johariList = activeClass.students.map(s => calculateJohariWindowMetric(s.id, activeClass));
+                        const calibrated = johariList.filter(j => j.category === 'calibrated').length;
+                        const overestimating = johariList.filter(j => j.category === 'overestimating').length;
+                        const underestimating = johariList.filter(j => j.category === 'underestimating').length;
+                        const totalActive = calibrated + overestimating + underestimating;
+
+                        return (
+                          <EditableModuleSlot
+                            moduleKey="showJohariMatrix"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showJohariMatrix}
+                            onToggle={handleToggleModule}
+                          >
+                            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
+                              <div>
+                                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                                  <UserCheck size={17} className="text-teal" /> Self-Awareness &amp; Johari Alignment
+                                  <FeatureInfoButton featureId="johari-window" size="sm" tooltipText="Johari Alignment Guide" />
+                                  <ContextHelpPopover topicKey="johari" />
+                                </h3>
+                                <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                                  Self-evaluation alignment vs anonymous peer consensus (±7.5% threshold).
+                                </p>
+                              </div>
+
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
+                                    <span style={{ color: 'var(--accent-teal)', fontWeight: 700 }}>Accurately Calibrated</span>
+                                    <b>{calibrated} ({totalActive > 0 ? Math.round((calibrated / totalActive) * 100) : 0}%)</b>
+                                  </div>
+                                  <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${totalActive > 0 ? (calibrated / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-teal)', height: '100%', borderRadius: '3px' }} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
+                                    <span style={{ color: 'var(--accent-amber)', fontWeight: 700 }}>Blind Spot (Overestimating)</span>
+                                    <b>{overestimating} ({totalActive > 0 ? Math.round((overestimating / totalActive) * 100) : 0}%)</b>
+                                  </div>
+                                  <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${totalActive > 0 ? (overestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-amber)', height: '100%', borderRadius: '3px' }} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
+                                    <span style={{ color: 'var(--primary)', fontWeight: 700 }}>Imposter (Underestimating)</span>
+                                    <b>{underestimating} ({totalActive > 0 ? Math.round((underestimating / totalActive) * 100) : 0}%)</b>
+                                  </div>
+                                  <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${totalActive > 0 ? (underestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--primary)', height: '100%', borderRadius: '3px' }} />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </EditableModuleSlot>
+                        );
+                      })()}
+
+                      {/* Card 3: Qualitative Feedback Themes */}
+                      {(isEditMode || featureToggles.showQualitativeFeedback) && (() => {
+                        const insights = extractClassFeedbackInsights(activeClass);
+                        return (
+                          <EditableModuleSlot
+                            moduleKey="showQualitativeFeedback"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showQualitativeFeedback}
+                            onToggle={handleToggleModule}
+                          >
+                            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
+                              <div>
+                                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                                  <MessageSquare size={17} className="text-primary" /> Qualitative Feedback Themes
+                                  <FeatureInfoButton featureId="feedback-sentiment" size="sm" tooltipText="Feedback Themes Guide" />
+                                </h3>
+                                <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                                  Automated keyword extraction across all written teammate comments.
+                                </p>
+                              </div>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                <div>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Top Strengths:
+                                  </span>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
+                                    {insights.topStrengthsThemes.length === 0 ? (
+                                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No strengths feedback yet</span>
+                                    ) : (
+                                      insights.topStrengthsThemes.slice(0, 4).map(t => (
+                                        <span key={t.word} className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
+                                          {t.word} ({t.count})
+                                        </span>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-amber)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Growth Areas:
+                                  </span>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
+                                    {insights.topGrowthThemes.length === 0 ? (
+                                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No constructive feedback yet</span>
+                                    ) : (
+                                      insights.topGrowthThemes.slice(0, 4).map(t => (
+                                        <span key={t.word} className="badge badge-amber" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
+                                          {t.word} ({t.count})
+                                        </span>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </EditableModuleSlot>
+                        );
+                      })()}
+
                     </div>
-
-                    {activeClass.fields.length >= 3 ? (
-                      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, padding: '0.5rem 0' }}>
-                        <RadarChart
-                          metrics={activeClass.fields.map(f => ({ id: f.id, name: f.name, max: f.max }))}
-                          series={[
-                            {
-                              id: 'class_avg',
-                              name: 'Class Average',
-                              color: 'var(--primary)',
-                              values: (() => {
-                                const res: Record<string, number | null> = {};
-                                activeClass.fields.forEach(f => {
-                                  let sum = 0, count = 0;
-                                  activeClass.students.forEach(s => {
-                                    const m = calculateStudentMetrics(s, activeClass);
-                                    const val = m.fieldAverages[f.id];
-                                    if (val !== null) { sum += val; count++; }
-                                  });
-                                  res[f.id] = count > 0 ? sum / count : null;
-                                });
-                                return res;
-                              })()
-                            },
-                            ...(radarTeamFilter !== 'All' ? [{
-                              id: 'team_avg',
-                              name: `${radarTeamFilter} Average`,
-                              color: 'var(--accent-teal)',
-                              values: (() => {
-                                const res: Record<string, number | null> = {};
-                                const teamStudents = activeClass.students.filter(s => s.groupName === radarTeamFilter);
-                                activeClass.fields.forEach(f => {
-                                  let sum = 0, count = 0;
-                                  teamStudents.forEach(s => {
-                                    const m = calculateStudentMetrics(s, activeClass);
-                                    const val = m.fieldAverages[f.id];
-                                    if (val !== null) { sum += val; count++; }
-                                  });
-                                  res[f.id] = count > 0 ? sum / count : null;
-                                });
-                                return res;
-                              })()
-                            }] : [])
-                          ]}
-                          size={270}
-                        />
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '2rem 1rem', textAlign: 'center', backgroundColor: 'var(--bg-app)', borderRadius: '10px', border: '1px dashed var(--border-color)', margin: '0.5rem 0' }}>
-                        <div style={{ width: '46px', height: '46px', borderRadius: '12px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', marginBottom: '0.75rem' }}>
-                          <Activity size={22} />
-                        </div>
-                        <h4 style={{ margin: '0 0 0.35rem 0', fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                          Multi-Axis Radar Requires 3+ Criteria
-                        </h4>
-                        <p style={{ margin: '0 0 1rem 0', fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '340px', lineHeight: 1.45 }}>
-                          Your classroom currently has {activeClass.fields.length} {activeClass.fields.length === 1 ? 'criterion' : 'criteria'}. A multi-axis spider radar requires at least 3 evaluation axes to construct its geometric benchmark polygon.
-                        </p>
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={() => {
-                              handleApplyPreset('ipaf_research_synthesized');
-                              addToast('Loaded 6-criteria research rubric preset! Spider radar is now active.', 'success');
-                            }}
-                            style={{ fontSize: '0.78rem', gap: '0.35rem', height: '32px' }}
-                          >
-                            <Sparkles size={13} /> Load 6-Axis Rubric Preset
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => setActiveTab('grading')}
-                            style={{ fontSize: '0.78rem', gap: '0.35rem', height: '32px' }}
-                          >
-                            <Plus size={13} /> Add Criteria in Review System
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Column 2: Johari Alignment & Qualitative Feedback Insights - Only rendered if enabled */}
-                {(featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback) && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-                    {/* Card 2: Johari Alignment */}
-                    {featureToggles.showJohariMatrix && (() => {
-                      const johariList = activeClass.students.map(s => calculateJohariWindowMetric(s.id, activeClass));
-                      const calibrated = johariList.filter(j => j.category === 'calibrated').length;
-                      const overestimating = johariList.filter(j => j.category === 'overestimating').length;
-                      const underestimating = johariList.filter(j => j.category === 'underestimating').length;
-                      const totalActive = calibrated + overestimating + underestimating;
-
-                      return (
-                        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
-                          <div>
-                            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                              <UserCheck size={17} className="text-teal" /> Self-Awareness &amp; Johari Alignment
-                              <FeatureInfoButton featureId="johari-window" size="sm" tooltipText="Johari Alignment Guide" />
-                              <ContextHelpPopover topicKey="johari" />
-                            </h3>
-                            <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
-                              Self-evaluation alignment vs anonymous peer consensus (±7.5% threshold).
-                            </p>
-                          </div>
-
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                            <div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
-                                <span style={{ color: 'var(--accent-teal)', fontWeight: 700 }}>Accurately Calibrated</span>
-                                <b>{calibrated} ({totalActive > 0 ? Math.round((calibrated / totalActive) * 100) : 0}%)</b>
-                              </div>
-                              <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
-                                <div style={{ width: `${totalActive > 0 ? (calibrated / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-teal)', height: '100%', borderRadius: '3px' }} />
-                              </div>
-                            </div>
-
-                            <div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
-                                <span style={{ color: 'var(--accent-amber)', fontWeight: 700 }}>Blind Spot (Overestimating)</span>
-                                <b>{overestimating} ({totalActive > 0 ? Math.round((overestimating / totalActive) * 100) : 0}%)</b>
-                              </div>
-                              <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
-                                <div style={{ width: `${totalActive > 0 ? (overestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-amber)', height: '100%', borderRadius: '3px' }} />
-                              </div>
-                            </div>
-
-                            <div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
-                                <span style={{ color: 'var(--primary)', fontWeight: 700 }}>Imposter (Underestimating)</span>
-                                <b>{underestimating} ({totalActive > 0 ? Math.round((underestimating / totalActive) * 100) : 0}%)</b>
-                              </div>
-                              <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
-                                <div style={{ width: `${totalActive > 0 ? (underestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--primary)', height: '100%', borderRadius: '3px' }} />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Card 3: Qualitative Feedback Themes */}
-                    {featureToggles.showQualitativeFeedback && (() => {
-                      const insights = extractClassFeedbackInsights(activeClass);
-                      return (
-                        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
-                          <div>
-                            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                              <MessageSquare size={17} className="text-primary" /> Qualitative Feedback Themes
-                              <FeatureInfoButton featureId="feedback-sentiment" size="sm" tooltipText="Feedback Themes Guide" />
-                            </h3>
-                            <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
-                              Automated keyword extraction across all written teammate comments.
-                            </p>
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                            <div>
-                              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Top Strengths:
-                              </span>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
-                                {insights.topStrengthsThemes.length === 0 ? (
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No strengths feedback yet</span>
-                                ) : (
-                                  insights.topStrengthsThemes.slice(0, 4).map(t => (
-                                    <span key={t.word} className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
-                                      {t.word} ({t.count})
-                                    </span>
-                                  ))
-                                )}
-                              </div>
-                            </div>
-
-                            <div>
-                              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-amber)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Growth Areas:
-                              </span>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
-                                {insights.topGrowthThemes.length === 0 ? (
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No constructive feedback yet</span>
-                                ) : (
-                                  insights.topGrowthThemes.slice(0, 4).map(t => (
-                                    <span key={t.word} className="badge badge-amber" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
-                                      {t.word} ({t.count})
-                                    </span>
-                                  ))
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              )}
 
             {/* Tier 2: WebPA Calibration, Anomaly Audit & Milestones (3 Equal Columns) */}
-            {(featureToggles.showWebPACalibration || featureToggles.showAnomalyAudit || featureToggles.showMilestonesHistory) && (
+            {(isEditMode || featureToggles.showWebPACalibration || featureToggles.showAnomalyAudit || featureToggles.showMilestonesHistory) && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
 
                 {/* Card 4: WebPA Grade Calibration */}
-                {featureToggles.showWebPACalibration && (
-                  <div className="card" data-tour="webpa-calibrator-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                <EditableModuleSlot
+                  moduleKey="showWebPACalibration"
+                  title="WebPA Grade Calibration"
+                  isVisible={featureToggles.showWebPACalibration}
+                  isEditMode={isEditMode}
+                  onToggle={handleToggleModule}
+                >
+                  <div className="card" data-tour="webpa-calibrator-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
                     <div>
                       <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                         <Sliders size={17} className="text-teal" /> WebPA Grade Calibration
@@ -5569,11 +6083,17 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                )}
+                </EditableModuleSlot>
 
                 {/* Card 5: Anomaly Conflict Audit */}
-                {featureToggles.showAnomalyAudit && (
-                  <div className="card" data-tour="anomaly-audit-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                <EditableModuleSlot
+                  moduleKey="showAnomalyAudit"
+                  title="Anomaly & Collusion Audit"
+                  isVisible={featureToggles.showAnomalyAudit}
+                  isEditMode={isEditMode}
+                  onToggle={handleToggleModule}
+                >
+                  <div className="card" data-tour="anomaly-audit-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
                     <div>
                       <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                         <ShieldCheck size={17} className="text-rose" /> Anomaly &amp; Collusion Audit
@@ -5611,11 +6131,17 @@ export const AdminDashboard: React.FC = () => {
                       )}
                     </div>
                   </div>
-                )}
+                </EditableModuleSlot>
 
                 {/* Card 6: Milestone Archive Card */}
-                {featureToggles.showMilestonesHistory && (
-                  <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                <EditableModuleSlot
+                  moduleKey="showMilestonesHistory"
+                  title="Milestones & Sprints History"
+                  isVisible={featureToggles.showMilestonesHistory}
+                  isEditMode={isEditMode}
+                  onToggle={handleToggleModule}
+                >
+                  <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
                     <div>
                       <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                         <RefreshCw size={17} className="text-indigo" /> Milestone &amp; Sprints History
@@ -5665,7 +6191,7 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                )}
+                </EditableModuleSlot>
 
               </div>
             )}
@@ -5673,7 +6199,13 @@ export const AdminDashboard: React.FC = () => {
           )}
 
           {/* LMS Gradebook Integration & Smart Export Formats */}
-          {featureToggles.showLmsExport && (
+          <EditableModuleSlot
+            moduleKey="showLmsExport"
+            title="LMS Gradebook Integration"
+            isVisible={featureToggles.showLmsExport}
+            isEditMode={isEditMode}
+            onToggle={handleToggleModule}
+          >
             <div
               className="card"
               data-tour="lms-export-card"
@@ -6543,48 +7075,53 @@ export const AdminDashboard: React.FC = () => {
                   teamFilter: lmsTeamFilter,
                   statusFilter: lmsStatusFilter
                 };
-                const preview = generateLMSPreview(selectedLmsTab, activeClass, lmsScoreType, filters, customLmsConfig, 4);
-
-                if (preview.headers.length === 0 || preview.rows.length === 0) {
-                  return (
-                    <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem', backgroundColor: 'var(--bg-primary)', borderRadius: 'var(--radius-md)' }}>
-                      No students match the selected filter {lmsTeamFilter !== 'all' ? `("${lmsTeamFilter}")` : ''}.
-                    </div>
-                  );
-                }
+                const preview = generateLMSPreview(selectedLmsTab, activeClass, lmsScoreType, filters, customLmsConfig, 6);
 
                 return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Live CSV Preview (First {preview.rows.length} of {preview.totalFilteredCount} matching students)
-                      </span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                        {lmsTeamFilter !== 'all' ? `Filtered to Team: ${lmsTeamFilter}` : `Total ${activeClass.students.length} students enrolled`}
-                      </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          Live LMS Export Preview
+                        </span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                          ({preview.totalFilteredCount} matching student row{preview.totalFilteredCount !== 1 ? 's' : ''}, showing first {Math.min(6, preview.rows.length)})
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <span className="badge badge-secondary" style={{ fontSize: '0.68rem', fontFamily: 'monospace' }}>
+                          Format: {selectedLmsTab.toUpperCase()}
+                        </span>
+                        <span className="badge badge-teal" style={{ fontSize: '0.68rem' }}>
+                          {selectedLmsTab === 'custom' ? `Delimiter: "${customLmsConfig.delimiter === '\t' ? '\\t' : customLmsConfig.delimiter}"` : 'Standard LMS Schema'}
+                        </span>
+                      </div>
                     </div>
 
                     <div
+                      className="table-container"
                       style={{
-                        overflowX: 'auto',
-                        borderRadius: 'var(--radius-md)',
                         border: '1px solid var(--border-color)',
-                        backgroundColor: 'var(--bg-primary)'
+                        borderRadius: 'var(--radius-md)',
+                        maxHeight: '220px',
+                        overflowX: 'auto',
+                        overflowY: 'auto'
                       }}
                     >
-                      <table className="table" style={{ margin: 0, fontSize: '0.75rem', width: '100%' }}>
+                      <table className="custom-table" style={{ width: '100%', fontSize: '0.76rem', margin: 0 }}>
                         <thead>
-                          <tr style={{ backgroundColor: 'var(--bg-surface)' }}>
+                          <tr>
                             {preview.headers.map((h, i) => (
                               <th
                                 key={i}
                                 style={{
                                   padding: '0.45rem 0.65rem',
                                   whiteSpace: 'nowrap',
-                                  fontWeight: 800,
-                                  fontFamily: 'monospace',
-                                  fontSize: '0.72rem',
+                                  backgroundColor: 'var(--bg-app)',
                                   color: 'var(--text-primary)',
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.74rem',
                                   borderBottom: '1px solid var(--border-color)'
                                 }}
                               >
@@ -6637,10 +7174,16 @@ export const AdminDashboard: React.FC = () => {
                 </>
               )}
             </div>
-          )}
+          </EditableModuleSlot>
 
           {/* Grades Matrix Sheet */}
-          {featureToggles.showResultsSummarySheet && (
+          <EditableModuleSlot
+            moduleKey="showResultsSummarySheet"
+            title="Results Summary Sheet & Gradebook"
+            isVisible={featureToggles.showResultsSummarySheet}
+            isEditMode={isEditMode}
+            onToggle={handleToggleModule}
+          >
             <div className="card" data-tour="results-summary-card" style={{ padding: isResultsTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isResultsTableExpanded ? '1.25rem' : 0 }}>
                 <div
@@ -6658,46 +7201,64 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  {featureToggles.showGradebookSearchFilter && (
-                    <CustomSelect
-                      options={groupOptions}
-                      value={groupFilter}
-                      onChange={(val) => setGroupFilter(val)}
-                      style={{ width: 'auto', minWidth: '150px' }}
-                      triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
-                    />
+                  {(isEditMode || featureToggles.showGradebookSearchFilter) && (
+                    <EditableModuleSlot
+                      moduleKey="showGradebookSearchFilter"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showGradebookSearchFilter}
+                      onToggle={handleToggleModule}
+                      inline
+                      slotType="bar"
+                    >
+                      <CustomSelect
+                        options={groupOptions}
+                        value={groupFilter}
+                        onChange={(val) => setGroupFilter(val)}
+                        style={{ width: 'auto', minWidth: '150px' }}
+                        triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
+                      />
+                    </EditableModuleSlot>
                   )}
 
-                  {featureToggles.showExportReportButtons && (
-                    <div style={{ display: 'flex', gap: '0.35rem' }}>
-                      <button
-                        type="button"
-                        className="btn btn-teal btn-sm"
-                        onClick={handleExportExcel}
-                        style={{ fontSize: '0.8rem', padding: '0 0.85rem', gap: '0.35rem', fontWeight: 700, height: '36px', borderRadius: '8px' }}
-                        title="Export complete 2-sheet Excel report with WebPA metrics and written comments"
-                      >
-                        <Download size={14} /> Export Excel Report
-                      </button>
+                  {(isEditMode || featureToggles.showExportReportButtons) && (
+                    <EditableModuleSlot
+                      moduleKey="showExportReportButtons"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showExportReportButtons}
+                      onToggle={handleToggleModule}
+                      inline
+                      slotType="button"
+                    >
+                      <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-teal btn-sm"
+                          onClick={handleExportExcel}
+                          style={{ fontSize: '0.8rem', padding: '0 0.85rem', gap: '0.35rem', fontWeight: 700, height: '36px', borderRadius: '8px' }}
+                          title="Export complete 2-sheet Excel report with WebPA metrics and written comments"
+                        >
+                          <Download size={14} /> Export Excel Report
+                        </button>
 
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          try {
-                            const csv = generateResultsCSV(activeClass);
-                            downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
-                            addToast('Results summary CSV downloaded successfully!', 'success');
-                          } catch (e) {
-                            addToast('Failed to export CSV results.', 'error');
-                          }
-                        }}
-                        style={{ fontSize: '0.8rem', padding: '0 0.75rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
-                        title="Export results summary to CSV"
-                      >
-                        <Download size={14} /> CSV
-                      </button>
-                    </div>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            try {
+                              const csv = generateResultsCSV(activeClass);
+                              downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
+                              addToast('Results summary CSV downloaded successfully!', 'success');
+                            } catch (e) {
+                              addToast('Failed to export CSV results.', 'error');
+                            }
+                          }}
+                          style={{ fontSize: '0.8rem', padding: '0 0.75rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
+                          title="Export results summary to CSV"
+                        >
+                          <Download size={14} /> CSV
+                        </button>
+                      </div>
+                    </EditableModuleSlot>
                   )}
 
                   {/* Expand / Collapse Gradebook Toggle */}
@@ -7011,7 +7572,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
           </div>
-        )}
+          </EditableModuleSlot>
         </div>
       )}
 
@@ -9661,335 +10222,351 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               {/* Dynamic Cross-Grid Matrix (Who Rated Whom Audit Matrix) - Only rendered if enabled */}
-              {featureToggles.showDetailedReviewMatrix && (
-                <div className="card" style={{ padding: '1.5rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
-                    <div>
-                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <Sliders size={18} className="text-teal" /> Who Rated Whom: Evaluation Audit Matrix
-                      </h3>
-                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0', lineHeight: 1.4 }}>
-                        Select a specific rubric metric to inspect individual raw ratings. Rows represent **Reviewers** and columns represent **Recipients**.
-                      </p>
-                    </div>
-                    <div className="hide-on-print" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <select
-                        className="form-input"
-                        value={activeAuditMetric}
-                        onChange={(e) => setActiveAuditMetric(e.target.value)}
-                        style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.5rem', fontSize: '0.82rem', minWidth: '180px' }}
-                      >
-                        <option value="overall">Overall Averages (%)</option>
-                        {activeClass.fields.map(f => (
-                          <option key={f.id} value={f.id}>{f.name}</option>
-                        ))}
-                      </select>
+              {(isEditMode || featureToggles.showDetailedReviewMatrix) && (
+                <EditableModuleSlot
+                  moduleKey="showDetailedReviewMatrix"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showDetailedReviewMatrix}
+                  onToggle={handleToggleModule}
+                  slotType="card"
+                >
+                  <div className="card" style={{ padding: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+                      <div>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <Sliders size={18} className="text-teal" /> Who Rated Whom: Evaluation Audit Matrix
+                        </h3>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0', lineHeight: 1.4 }}>
+                          Select a specific rubric metric to inspect individual raw ratings. Rows represent **Reviewers** and columns represent **Recipients**.
+                        </p>
+                      </div>
+                      <div className="hide-on-print" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <select
+                          className="form-input"
+                          value={activeAuditMetric}
+                          onChange={(e) => setActiveAuditMetric(e.target.value)}
+                          style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.5rem', fontSize: '0.82rem', minWidth: '180px' }}
+                        >
+                          <option value="overall">Overall Averages (%)</option>
+                          {activeClass.fields.map(f => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                          ))}
+                        </select>
 
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => setIsAuditMatrixExpanded(!isAuditMatrixExpanded)}
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setIsAuditMatrixExpanded(!isAuditMatrixExpanded)}
+                          style={{
+                            height: '36px',
+                            borderRadius: '8px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            gap: '0.35rem',
+                            backgroundColor: isAuditMatrixExpanded ? 'var(--bg-app)' : 'var(--primary-light)',
+                            color: isAuditMatrixExpanded ? 'var(--text-primary)' : 'var(--primary)',
+                            borderColor: isAuditMatrixExpanded ? 'var(--border-color)' : 'var(--primary)'
+                          }}
+                          title={isAuditMatrixExpanded ? 'Contract audit matrix' : 'Expand audit matrix'}
+                        >
+                          {isAuditMatrixExpanded ? (
+                            <>
+                              <ChevronDown size={14} /> Collapse Matrix
+                            </>
+                          ) : (
+                            <>
+                              <ChevronRight size={14} /> Expand Matrix
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {!isAuditMatrixExpanded ? (
+                      <div
+                        onClick={() => setIsAuditMatrixExpanded(true)}
                         style={{
-                          height: '36px',
-                          borderRadius: '8px',
-                          fontSize: '0.8rem',
-                          fontWeight: 700,
-                          gap: '0.35rem',
-                          backgroundColor: isAuditMatrixExpanded ? 'var(--bg-app)' : 'var(--primary-light)',
-                          color: isAuditMatrixExpanded ? 'var(--text-primary)' : 'var(--primary)',
-                          borderColor: isAuditMatrixExpanded ? 'var(--border-color)' : 'var(--primary)'
+                          padding: '1rem 1.25rem',
+                          borderRadius: 'var(--radius-md, 8px)',
+                          backgroundColor: 'var(--bg-app)',
+                          border: '1px dashed var(--border-color)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          gap: '1rem',
+                          flexWrap: 'wrap'
                         }}
-                        title={isAuditMatrixExpanded ? 'Contract audit matrix' : 'Expand audit matrix'}
                       >
-                        {isAuditMatrixExpanded ? (
-                          <>
-                            <ChevronDown size={14} /> Collapse Matrix
-                          </>
-                        ) : (
-                          <>
-                            <ChevronRight size={14} /> Expand Matrix
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {!isAuditMatrixExpanded ? (
-                    <div
-                      onClick={() => setIsAuditMatrixExpanded(true)}
-                      style={{
-                        padding: '1rem 1.25rem',
-                        borderRadius: 'var(--radius-md, 8px)',
-                        backgroundColor: 'var(--bg-app)',
-                        border: '1px dashed var(--border-color)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        gap: '1rem',
-                        flexWrap: 'wrap'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <Sliders size={18} className="text-teal" />
-                        <div>
-                          <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                            Evaluation Audit Matrix is Contracted
-                          </div>
-                          <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                            Click to inspect raw ratings between all {teamStudents.length} teammates in this cohort
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <Sliders size={18} className="text-teal" />
+                          <div>
+                            <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                              Evaluation Audit Matrix is Contracted
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                              Click to inspect raw ratings between all {teamStudents.length} teammates in this cohort
+                            </div>
                           </div>
                         </div>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsAuditMatrixExpanded(true);
+                          }}
+                          style={{ height: '30px', fontSize: '0.75rem', gap: '0.35rem', fontWeight: 700 }}
+                        >
+                          <ChevronRight size={13} /> Expand Matrix
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsAuditMatrixExpanded(true);
-                        }}
-                        style={{ height: '30px', fontSize: '0.75rem', gap: '0.35rem', fontWeight: 700 }}
-                      >
-                        <ChevronRight size={13} /> Expand Matrix
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="table-container">
-                    <table className="custom-table" style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse', textAlign: 'center' }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left', backgroundColor: 'var(--bg-app)' }}>Reviewer \ Recipient</th>
-                          {teamStudents.map(ts => (
-                            <th key={ts.id} style={{ backgroundColor: 'var(--bg-app)' }}>{ts.name}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {teamStudents.map(reviewer => {
-                          return (
-                            <tr key={reviewer.id}>
-                              <td style={{ fontWeight: 700, textAlign: 'left', backgroundColor: 'var(--bg-app)' }}>{reviewer.name}</td>
-                              {teamStudents.map(recipient => {
-                                // Find evaluation
-                                const review = activeClass.reviews.find(r => r.reviewerId === reviewer.id && r.recipientId === recipient.id);
-                                const isSelf = reviewer.id === recipient.id;
+                    ) : (
+                      <div className="table-container">
+                      <table className="custom-table" style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse', textAlign: 'center' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left', backgroundColor: 'var(--bg-app)' }}>Reviewer \ Recipient</th>
+                            {teamStudents.map(ts => (
+                              <th key={ts.id} style={{ backgroundColor: 'var(--bg-app)' }}>{ts.name}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {teamStudents.map(reviewer => {
+                            return (
+                              <tr key={reviewer.id}>
+                                <td style={{ fontWeight: 700, textAlign: 'left', backgroundColor: 'var(--bg-app)' }}>{reviewer.name}</td>
+                                {teamStudents.map(recipient => {
+                                  // Find evaluation
+                                  const review = activeClass.reviews.find(r => r.reviewerId === reviewer.id && r.recipientId === recipient.id);
+                                  const isSelf = reviewer.id === recipient.id;
 
-                                let cellText = '—';
-                                if (review) {
-                                  if (activeAuditMetric === 'overall') {
-                                    // Compute overall percentage of this review
-                                    let sum = 0, max = 0;
-                                    activeClass.fields.forEach(f => {
-                                      sum += review.scores[f.id] ?? 0;
-                                      max += f.max;
-                                    });
-                                    cellText = max > 0 ? `${((sum / max) * 100).toFixed(0)}%` : '—';
-                                  } else {
-                                    // Single field score
-                                    const score = review.scores[activeAuditMetric];
-                                    const fieldObj = activeClass.fields.find(f => f.id === activeAuditMetric);
-                                    cellText = score !== undefined && fieldObj ? `${score} / ${fieldObj.max}` : '—';
+                                  let cellText = '—';
+                                  if (review) {
+                                    if (activeAuditMetric === 'overall') {
+                                      // Compute overall percentage of this review
+                                      let sum = 0, max = 0;
+                                      activeClass.fields.forEach(f => {
+                                        sum += review.scores[f.id] ?? 0;
+                                        max += f.max;
+                                      });
+                                      cellText = max > 0 ? `${((sum / max) * 100).toFixed(0)}%` : '—';
+                                    } else {
+                                      // Single field score
+                                      const score = review.scores[activeAuditMetric];
+                                      const fieldObj = activeClass.fields.find(f => f.id === activeAuditMetric);
+                                      cellText = score !== undefined && fieldObj ? `${score} / ${fieldObj.max}` : '—';
+                                    }
                                   }
-                                }
 
-                                return (
-                                  <td
-                                    key={recipient.id}
-                                    style={{
-                                      fontWeight: 600,
-                                      backgroundColor: isSelf ? 'hsla(173, 80%, 50%, 0.05)' : 'transparent',
-                                      border: isSelf ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
-                                      color: isSelf ? 'var(--accent-teal)' : 'var(--text-primary)',
-                                      position: 'relative',
-                                      padding: '0.75rem 1rem'
-                                    }}
-                                  >
-                                    <div className="tooltip-container" style={{ display: 'inline-block', width: '100%', height: '100%' }}>
-                                      <span>{cellText}</span>
-                                      <span className="tooltip-text">
-                                        {isSelf ? 'Self Evaluation Rating' : `${reviewer.name} rated ${recipient.name}`}
-                                      </span>
-                                    </div>
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                  return (
+                                    <td
+                                      key={recipient.id}
+                                      style={{
+                                        fontWeight: 600,
+                                        backgroundColor: isSelf ? 'hsla(173, 80%, 50%, 0.05)' : 'transparent',
+                                        border: isSelf ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
+                                        color: isSelf ? 'var(--accent-teal)' : 'var(--text-primary)',
+                                        position: 'relative',
+                                        padding: '0.75rem 1rem'
+                                      }}
+                                    >
+                                      <div className="tooltip-container" style={{ display: 'inline-block', width: '100%', height: '100%' }}>
+                                        <span>{cellText}</span>
+                                        <span className="tooltip-text">
+                                          {isSelf ? 'Self Evaluation Rating' : `${reviewer.name} rated ${recipient.name}`}
+                                        </span>
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    )}
                   </div>
-                  )}
-                </div>
+                </EditableModuleSlot>
               )}
 
               {/* Detailed Peer Evaluations Card Feed */}
-              {featureToggles.showTeammateAuditLog && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <MessageSquare size={20} className="text-indigo" /> Teammate Evaluation Audit Log
-                  </h3>
+              {(isEditMode || featureToggles.showTeammateAuditLog) && (
+                <EditableModuleSlot
+                  moduleKey="showTeammateAuditLog"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showTeammateAuditLog}
+                  onToggle={handleToggleModule}
+                  slotType="card"
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <MessageSquare size={20} className="text-indigo" /> Teammate Evaluation Audit Log
+                    </h3>
 
-                {teamStudents.map(reviewer => {
-                  // Get all reviews written by this reviewer
-                  const written = activeClass.reviews.filter(r => r.reviewerId === reviewer.id);
+                  {teamStudents.map(reviewer => {
+                    // Get all reviews written by this reviewer
+                    const written = activeClass.reviews.filter(r => r.reviewerId === reviewer.id);
 
-                  return (
-                    <div
-                      key={reviewer.id}
-                      className="card"
-                      style={{
-                        padding: '1.5rem',
-                        borderLeft: '4px solid var(--primary)',
-                        backgroundColor: 'var(--bg-surface)',
-                        pageBreakInside: 'avoid'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
-                        <div>
-                          <h4 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                            Evaluations Written by: {reviewer.name}
-                          </h4>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                            Email: {reviewer.email} • Status: {reviewer.submitted ? 'Submitted' : 'Pending'}
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                          {reviewer.submitted && (
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => {
-                                triggerConfirm(
-                                  `Reset ${reviewer.name}'s Submission`,
-                                  `Are you sure you want to reset the peer review submission for "${reviewer.name}"? This will clear all reviews they submitted and allow them to re-evaluate from their student portal.`,
-                                  () => {
-                                    resetStudentReviews(activeClass.id, reviewer.id);
-                                    setSelectedStudentReport(null);
-                                  },
-                                  'Reset Submission',
-                                  'Cancel'
-                                );
-                              }}
-                              style={{
-                                fontSize: '0.72rem',
-                                fontWeight: 700,
-                                padding: '0.22rem 0.55rem',
-                                color: 'var(--accent-amber)',
-                                borderColor: 'var(--accent-amber)',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.3rem'
-                              }}
-                              title="Reset reviews submitted by this student"
-                            >
-                              <RotateCcw size={11} /> Reset Submission
-                            </button>
-                          )}
-                          <span className="badge badge-primary">
-                            {written.length} review(s) logged
-                          </span>
-                        </div>
-                      </div>
-
-                      {written.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '1.5rem', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                          This student has not submitted any evaluations yet.
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                          {written.map(rev => {
-                            const recipient = activeClass.students.find(s => s.id === rev.recipientId);
-                            if (!recipient) return null;
-                            const isSelfEval = reviewer.id === recipient.id;
-
-                            // Calculate peer review percentage
-                            let rSum = 0, rMax = 0;
-                            activeClass.fields.forEach(f => {
-                              rSum += rev.scores[f.id] ?? 0;
-                              rMax += f.max;
-                            });
-                            const scorePct = rMax > 0 ? ((rSum / rMax) * 100).toFixed(0) : 0;
-
-                            return (
-                              <div
-                                key={rev.recipientId}
-                                style={{
-                                  backgroundColor: 'var(--bg-app)',
-                                  border: '1px solid var(--border-color)',
-                                  borderRadius: 'var(--radius-sm)',
-                                  padding: '1rem'
+                    return (
+                      <div
+                        key={reviewer.id}
+                        className="card"
+                        style={{
+                          padding: '1.5rem',
+                          borderLeft: '4px solid var(--primary)',
+                          backgroundColor: 'var(--bg-surface)',
+                          pageBreakInside: 'avoid'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+                          <div>
+                            <h4 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                              Evaluations Written by: {reviewer.name}
+                            </h4>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              Email: {reviewer.email} • Status: {reviewer.submitted ? 'Submitted' : 'Pending'}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                            {reviewer.submitted && (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                  triggerConfirm(
+                                    `Reset ${reviewer.name}'s Submission`,
+                                    `Are you sure you want to reset the peer review submission for "${reviewer.name}"? This will clear all reviews they submitted and allow them to re-evaluate from their student portal.`,
+                                    () => {
+                                      resetStudentReviews(activeClass.id, reviewer.id);
+                                      setSelectedStudentReport(null);
+                                    },
+                                    'Reset Submission',
+                                    'Cancel'
+                                  );
                                 }}
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  padding: '0.22rem 0.55rem',
+                                  color: 'var(--accent-amber)',
+                                  borderColor: 'var(--accent-amber)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.3rem'
+                                }}
+                                title="Reset reviews submitted by this student"
                               >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: isSelfEval ? 'var(--accent-teal)' : 'var(--text-primary)' }}>
-                                    {isSelfEval ? 'Self Assessment Evaluation' : `Target: ${recipient.name}`}
-                                  </span>
-                                  <span className="badge" style={{ backgroundColor: isSelfEval ? 'var(--accent-teal-light)' : 'var(--primary-light)', color: isSelfEval ? 'var(--accent-teal)' : 'var(--primary)', fontWeight: 700, fontSize: '0.75rem' }}>
-                                    Review Score: {scorePct}% ({rSum} / {rMax})
-                                  </span>
-                                </div>
-
-                                {/* Metric list */}
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', marginBottom: '0.75rem', padding: '0.5rem', backgroundColor: 'var(--bg-card)', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
-                                  {activeClass.fields.map(f => (
-                                    <span key={f.id} style={{ color: 'var(--text-secondary)' }}>
-                                      {f.name}: <b style={{ color: 'var(--text-primary)' }}>{rev.scores[f.id] ?? 'N/A'} / {f.max}</b>
-                                    </span>
-                                  ))}
-                                </div>
-
-                                {/* Praise tags if any */}
-                                {Array.isArray(rev.praiseTags) && rev.praiseTags.length > 0 && (
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.75rem' }}>
-                                    {rev.praiseTags.map(tagText => {
-                                      const tagInfo = getPraiseTagInfo(tagText);
-                                      const TagIcon = tagInfo.icon;
-                                      return (
-                                        <span
-                                          key={tagText}
-                                          className="praise-badge-pill"
-                                          style={{
-                                            backgroundColor: tagInfo.bg,
-                                            color: tagInfo.color,
-                                            borderColor: tagInfo.border,
-                                            padding: '0.15rem 0.4rem',
-                                            fontSize: '0.68rem'
-                                          }}
-                                        >
-                                          <TagIcon size={9} />
-                                          <span>{tagInfo.text}</span>
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-
-                                {/* Written Text Feed */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.78rem', lineHeight: 1.4 }}>
-                                  {rev.strengthsText && (
-                                    <div>
-                                      <b className="text-teal">Strengths Comment:</b>
-                                      <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.strengthsText}"</p>
-                                    </div>
-                                  )}
-                                  {rev.growthText && (
-                                    <div style={{ marginTop: '0.2rem' }}>
-                                      <b className="text-rose">Growth Comment:</b>
-                                      <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.growthText}"</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
+                                <RotateCcw size={11} /> Reset Submission
+                              </button>
+                            )}
+                            <span className="badge badge-primary">
+                              {written.length} review(s) logged
+                            </span>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+
+                        {written.length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: '1.5rem', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                            This student has not submitted any evaluations yet.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                            {written.map(rev => {
+                              const recipient = activeClass.students.find(s => s.id === rev.recipientId);
+                              if (!recipient) return null;
+                              const isSelfEval = reviewer.id === recipient.id;
+
+                              // Calculate peer review percentage
+                              let rSum = 0, rMax = 0;
+                              activeClass.fields.forEach(f => {
+                                rSum += rev.scores[f.id] ?? 0;
+                                rMax += f.max;
+                              });
+                              const scorePct = rMax > 0 ? ((rSum / rMax) * 100).toFixed(0) : 0;
+
+                              return (
+                                <div
+                                  key={rev.recipientId}
+                                  style={{
+                                    backgroundColor: 'var(--bg-app)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    padding: '1rem'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: isSelfEval ? 'var(--accent-teal)' : 'var(--text-primary)' }}>
+                                      {isSelfEval ? 'Self Assessment Evaluation' : `Target: ${recipient.name}`}
+                                    </span>
+                                    <span className="badge" style={{ backgroundColor: isSelfEval ? 'var(--accent-teal-light)' : 'var(--primary-light)', color: isSelfEval ? 'var(--accent-teal)' : 'var(--primary)', fontWeight: 700, fontSize: '0.75rem' }}>
+                                      Review Score: {scorePct}% ({rSum} / {rMax})
+                                    </span>
+                                  </div>
+
+                                  {/* Metric list */}
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', marginBottom: '0.75rem', padding: '0.5rem', backgroundColor: 'var(--bg-card)', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
+                                    {activeClass.fields.map(f => (
+                                      <span key={f.id} style={{ color: 'var(--text-secondary)' }}>
+                                        {f.name}: <b style={{ color: 'var(--text-primary)' }}>{rev.scores[f.id] ?? 'N/A'} / {f.max}</b>
+                                      </span>
+                                    ))}
+                                  </div>
+
+                                  {/* Praise tags if any */}
+                                  {Array.isArray(rev.praiseTags) && rev.praiseTags.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.75rem' }}>
+                                      {rev.praiseTags.map(tagText => {
+                                        const tagInfo = getPraiseTagInfo(tagText);
+                                        const TagIcon = tagInfo.icon;
+                                        return (
+                                          <span
+                                            key={tagText}
+                                            className="praise-badge-pill"
+                                            style={{
+                                              backgroundColor: tagInfo.bg,
+                                              color: tagInfo.color,
+                                              borderColor: tagInfo.border,
+                                              padding: '0.15rem 0.4rem',
+                                              fontSize: '0.68rem'
+                                            }}
+                                          >
+                                            <TagIcon size={9} />
+                                            <span>{tagInfo.text}</span>
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {/* Written Text Feed */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.78rem', lineHeight: 1.4 }}>
+                                    {rev.strengthsText && (
+                                      <div>
+                                        <b className="text-teal">Strengths Comment:</b>
+                                        <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.strengthsText}"</p>
+                                      </div>
+                                    )}
+                                    {rev.growthText && (
+                                      <div style={{ marginTop: '0.2rem' }}>
+                                        <b className="text-rose">Growth Comment:</b>
+                                        <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.growthText}"</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  </div>
+                </EditableModuleSlot>
+              )}
             </div>
           );
         })()}
@@ -10057,6 +10634,12 @@ export const AdminDashboard: React.FC = () => {
         onToggleChecklist={(show) => {
           setShowOnboardingChecklist(show);
           localStorage.setItem('peer_onboarding_dismissed', show ? 'false' : 'true');
+        }}
+        onOpenEditMode={() => setIsEditMode(true)}
+        shortcutsEnabled={shortcutsEnabled}
+        onToggleShortcutsEnabled={(val) => {
+          setShortcutsEnabled(val);
+          saveShortcutsEnabled(val);
         }}
       />
 
@@ -10214,6 +10797,12 @@ export const AdminDashboard: React.FC = () => {
             'Delete Class',
             'Cancel'
           );
+        }}
+        onOpenEditMode={() => setIsEditMode(true)}
+        shortcutsEnabled={shortcutsEnabled}
+        onToggleShortcutsEnabled={(val) => {
+          setShortcutsEnabled(val);
+          saveShortcutsEnabled(val);
         }}
       />
 
@@ -10968,8 +11557,35 @@ export const AdminDashboard: React.FC = () => {
             syncWorkspaceSettingsToCloud({ featureToggles: updated });
             addToast('Quick Action Pill hidden. Re-enable anytime in Settings or Command Palette.', 'info');
           }}
+          onOpenEditMode={() => setIsEditMode(true)}
+          shortcutsEnabled={shortcutsEnabled}
+          onToggleShortcutsEnabled={(val) => {
+            setShortcutsEnabled(val);
+            saveShortcutsEnabled(val);
+          }}
         />
       )}
+
+      {/* FLOATING IN-PLACE LAYOUT EDIT MODE BAR */}
+      <LayoutEditBar
+        isOpen={isEditMode}
+        onClose={() => setIsEditMode(false)}
+        activeTab={activeTab}
+        onNavigateTab={(tab) => setActiveTab(tab)}
+        featureToggles={featureToggles}
+        onApplyPreset={(preset) => {
+          const updated = preset === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (preset === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
+          saveFeatureToggles(updated);
+          syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          addToast(`Applied ${preset.toUpperCase()} density preset!`, 'info');
+        }}
+        shortcutsEnabled={shortcutsEnabled}
+        onToggleShortcutsEnabled={(val) => {
+          setShortcutsEnabled(val);
+          saveShortcutsEnabled(val);
+        }}
+        onToast={(msg, type) => addToast(msg, type || 'info')}
+      />
     </div>
   );
 };

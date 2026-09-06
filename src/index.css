@@ -2,6 +2,7 @@
 
 /* --- DESIGN SYSTEM CONFIGURATION --- */
 :root {
+  color-scheme: light;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   /* Harmonious Light Palette (Default) */
@@ -61,6 +62,7 @@
 /* ─── TRUE DEEP DARK THEME (HIGH-END OBSIDIAN / ZINC ARCHITECTURE) ─── */
 html[data-theme="dark"],
 :root[data-theme="dark"] {
+  color-scheme: dark;
   /* True dark surfaces - neutral obsidian slate, zero muddy blue tint */
   --bg-app: #090a0f;
   --bg-surface: #121318;
@@ -208,6 +210,16 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(214, 20%, 70%);
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb,
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover,
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 /* --- LAYOUT UTILITIES --- */
@@ -702,6 +714,12 @@ body {
 .badge-rose {
   background-color: var(--accent-rose-light);
   color: var(--accent-rose);
+}
+
+.badge-secondary {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
 }
 
 /* --- STATS GRID --- */
@@ -4795,4 +4813,25 @@ kbd {
 
 .quick-pill-tab-content {
   animation: tabSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* --- LAYOUT EDIT MODE & SUB-MODULE NESTING --- */
+.edit-mode-slot {
+  pointer-events: auto !important;
+}
+
+.edit-mode-slot .edit-mode-slot {
+  pointer-events: auto !important;
+}
+
+.edit-mode-submodule {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.edit-mode-submodule:hover {
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.22);
+}
+
+.edit-mode-submodule-hidden:hover {
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.22);
 }

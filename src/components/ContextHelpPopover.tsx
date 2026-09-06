@@ -168,28 +168,28 @@ export const ContextHelpPopover: React.FC<ContextHelpPopoverProps> = ({
             transform: 'translateX(-50%)',
             width: '320px',
             maxWidth: '90vw',
-            backgroundColor: '#ffffff',
+            backgroundColor: 'var(--bg-surface)',
             borderRadius: '12px',
-            border: '1px solid #cbd5e1',
-            boxShadow: '0 12px 30px -5px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04)',
+            border: '1px solid var(--border-color)',
+            boxShadow: 'var(--shadow-premium, 0 12px 30px -5px rgba(0, 0, 0, 0.25))',
             padding: '0.85rem',
             zIndex: 9999,
             display: 'flex',
             flexDirection: 'column',
             gap: '0.5rem',
             fontSize: '0.75rem',
-            color: '#334155',
+            color: 'var(--text-secondary)',
             boxSizing: 'border-box',
             textAlign: 'left'
           }}
         >
           {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.4rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.4rem' }}>
             <div>
-              <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#4f46e5', backgroundColor: '#eef2ff', padding: '1px 6px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+              <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--primary)', backgroundColor: 'var(--primary-light)', padding: '1px 6px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
                 {info.badge}
               </span>
-              <h5 style={{ margin: '0.25rem 0 0 0', fontSize: '0.82rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.25 }}>
+              <h5 style={{ margin: '0.25rem 0 0 0', fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
                 {info.topic}
               </h5>
             </div>
@@ -197,40 +197,40 @@ export const ContextHelpPopover: React.FC<ContextHelpPopoverProps> = ({
               type="button"
               onClick={() => setIsOpen(false)}
               aria-label="Close popover"
-              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '1px', borderRadius: '4px' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '1px', borderRadius: '4px' }}
             >
               <X size={13} />
             </button>
           </div>
 
           {/* Summary & How it works */}
-          <p style={{ margin: 0, fontSize: '0.74rem', color: '#475569', lineHeight: 1.4 }}>
+          <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
             {info.summary}
           </p>
 
-          <div style={{ backgroundColor: '#f8fafc', padding: '0.5rem 0.65rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#0f172a', display: 'block', marginBottom: '0.15rem' }}>
+          <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.5rem 0.65rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.15rem' }}>
               How It Calculates:
             </span>
-            <div style={{ fontSize: '0.72rem', color: '#334155', lineHeight: 1.38 }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
               {info.howItWorks}
             </div>
           </div>
 
           {info.standardValue && (
-            <div style={{ fontSize: '0.72rem', color: '#0f172a', fontWeight: 600 }}>
-              <b>Standard Setting:</b> <span style={{ color: '#4f46e5' }}>{info.standardValue}</span>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+              <b>Standard Setting:</b> <span style={{ color: 'var(--primary)' }}>{info.standardValue}</span>
             </div>
           )}
 
           {info.formula && (
-            <div style={{ padding: '0.35rem 0.5rem', backgroundColor: '#f1f5f9', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.68rem', color: '#0f172a', wordBreak: 'break-all' }}>
+            <div style={{ padding: '0.35rem 0.5rem', backgroundColor: 'var(--bg-app)', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.68rem', color: 'var(--text-primary)', border: '1px solid var(--border-color)', wordBreak: 'break-all' }}>
               {info.formula}
             </div>
           )}
 
           {info.proTip && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.7rem', color: '#166534', backgroundColor: '#f0fdf4', padding: '0.35rem 0.55rem', borderRadius: '5px', border: '1px solid #bbf7d0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.7rem', color: 'var(--accent-teal)', backgroundColor: 'var(--accent-teal-light)', padding: '0.35rem 0.55rem', borderRadius: '5px', border: '1px solid var(--accent-teal)' }}>
               <Sparkles size={11} style={{ flexShrink: 0 }} /> <span><b>Tip:</b> {info.proTip}</span>
             </div>
           )}

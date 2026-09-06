@@ -404,6 +404,14 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
 
   // --- Layout & Presets ---
   {
+    id: 'toggle_edit_mode',
+    label: 'Toggle Interactive Layout Edit Mode',
+    category: 'Layout & Presets',
+    description: 'Highlight all dashboard modules on-screen to directly hide or make them visible (Alt+E or Alt+L).',
+    suggestedKey: 'e',
+    suggestedModifiers: { alt: true }
+  },
+  {
     id: 'preset_standard',
     label: 'Apply Standard Mode (Default Layout)',
     category: 'Layout & Presets',
@@ -562,6 +570,15 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     category: 'Tools & Modals',
     key: 'q',
     description: 'Toggle the floating all-in-one Quick Action Pill at the bottom of the window (Q).'
+  },
+  {
+    id: 'toggle_edit_mode',
+    actionId: 'toggle_edit_mode',
+    label: 'Toggle Interactive Layout Edit Mode',
+    category: 'Layout & Presets',
+    key: 'e',
+    modifiers: { alt: true },
+    description: 'Highlight all dashboard modules on-screen to directly hide or make them visible.'
   },
 
   // Actions
@@ -762,13 +779,11 @@ export function matchShortcut(e: KeyboardEvent, shortcut: KeyboardShortcut): boo
   const isKeyMatch = 
     shortcutKey === pressedKey ||
     shortcut.key === e.key ||
-    (shortcutKey === '1' && (e.code === 'Digit1' || e.code === 'Numpad1')) ||
-    (shortcutKey === '2' && (e.code === 'Digit2' || e.code === 'Numpad2')) ||
-    (shortcutKey === '3' && (e.code === 'Digit3' || e.code === 'Numpad3')) ||
-    (shortcutKey === '4' && (e.code === 'Digit4' || e.code === 'Numpad4')) ||
-    (shortcutKey === '0' && (e.code === 'Digit0' || e.code === 'Numpad0')) ||
-    (shortcutKey === 'q' && (pressedKey === 'q' || e.code === 'KeyQ')) ||
-    (shortcutKey === 'p' && (pressedKey === 'p' || e.code === 'KeyP')) ||
+    (shortcutKey.length === 1 && (
+      e.code === `Key${shortcutKey.toUpperCase()}` ||
+      e.code === `Digit${shortcutKey}` ||
+      e.code === `Numpad${shortcutKey}`
+    )) ||
     (shortcutKey === ' ' && (e.key === ' ' || e.code === 'Space')) ||
     (shortcutKey === 'escape' && (e.key === 'Escape' || e.code === 'Escape'));
 

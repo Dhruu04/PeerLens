@@ -8,7 +8,8 @@ import {
   Lightbulb, BarChart2, Grid,
   Filter, Mail, Cloud, GraduationCap, Activity, Trash2, Star,
   ChevronsDown, ChevronsUp, CheckCircle2, ShieldCheck, Scale, Copy, Check,
-  AlertTriangle
+  AlertTriangle,
+  Edit3
 } from 'lucide-react';
 import type { ClassData } from '../utils/math';
 import { generateStudentDisputeAudit } from '../utils/math';
@@ -148,6 +149,7 @@ const FL: Record<keyof FeatureToggles, { label: string; desc: string; section: s
   showGuideButton:          { label: 'Guide Center Button',       desc: 'Academic guidance & tutorials button',         section: 'Header',     icon: BookOpen },
   showCloudStatus:          { label: 'Cloud Sync Status',         desc: 'Firebase sync indicator badge',                section: 'Header',     icon: Cloud },
   showCustomizeViewButton:  { label: 'Customize View Button',     desc: 'Open interface module toggle panel',           section: 'Header',     icon: Sliders },
+  showEditModeButton:       { label: 'Layout Edit Mode Button',   desc: 'Interactive 1-click in-place layout editor',   section: 'Header',     icon: Edit3 },
   showQuickActionPill:      { label: 'Floating Quick Action Pill',desc: 'Contractable & expandable dock at bottom of window', section: 'Header', icon: Compass },
   showSectionNavBreadcrumbs:{ label: 'Section Breadcrumbs',       desc: 'Step 1/2/3 breadcrumb navigation bar',         section: 'Nav',        icon: LayoutDashboard },
   showClassIdBadge:         { label: 'Class ID Badge',            desc: 'Technical class ID in the sub-header',         section: 'Nav',        icon: Tag },
@@ -317,6 +319,9 @@ export interface CommandPaletteModalProps {
   onToast?: (msg: string, type: 'success' | 'warning' | 'error' | 'info') => void;
   onOpenEvaluationControls?: () => void;
   onToggleExcused?: (studentId: string, reason?: string) => void;
+  onOpenEditMode?: () => void;
+  shortcutsEnabled?: boolean;
+  onToggleShortcutsEnabled?: (enabled: boolean) => void;
 }
 
 // ── RESULT ROW COMPONENT (MINIMAL & POLISHED) ─────────────────────────────────
@@ -475,6 +480,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenNewClass, onOpenImportWizard, onOpenAutoGroup,
   onOpenQRCode, onOpenDeadline, onResetSubmissions, onClearRoster, onDeleteStudent, onDeleteClass, onToast,
   onOpenEvaluationControls, onToggleExcused,
+  onOpenEditMode, shortcutsEnabled, onToggleShortcutsEnabled
 }) => {
   const { setThemeMode, themeMode } = useTheme();
   const [query,            setQuery]            = useState('');
@@ -744,6 +750,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       { id: 'act_settings',     title: 'Workspace Settings & Cloud Sync',   category: 'Actions', subtitle: 'Firebase, email API keys, and workspace profile',    icon: Settings,  badge: 'Cmd S',  keywords: ['settings','cloud','firebase','api','sync','config'],            onExecute: () => { onClose(); onOpenSettings('email'); } },
       { id: 'act_shortcuts',    title: 'Keyboard Shortcuts Reference',      category: 'Actions', subtitle: 'Full cheat sheet of keyboard controls',              icon: Keyboard,  badge: 'Cmd ?',  keywords: ['shortcuts','hotkeys','keyboard','cheat sheet','bindings'],      onExecute: () => { onClose(); onOpenShortcuts(); } },
       { id: 'act_customize',    title: 'Customize View (Module Toggles)',   category: 'Actions', subtitle: 'Toggle modular cards, top bar, and density presets', icon: Sliders,   badge: 'Cmd V',  keywords: ['customize','modules','interface','density','toggles','view'],   onExecute: () => { onClose(); onOpenSettings('modules'); } },
+      { id: 'act_toggle_edit_mode', title: 'Toggle Dashboard Layout Edit Mode', category: 'Actions', subtitle: 'Visually highlight and click modules on-screen to hide or show them', icon: Edit3, badge: 'Alt E', keywords: ['edit mode','edit layout','layout editor','in-place editor','highlight modules','customize','visual layout'], onExecute: () => { onClose(); if (onOpenEditMode) onOpenEditMode(); } },
+      { id: 'act_toggle_shortcuts', title: shortcutsEnabled ? 'Disable Keyboard Shortcuts' : 'Enable Keyboard Shortcuts', category: 'Actions', subtitle: shortcutsEnabled ? 'Currently Active — click to disable/pause keyboard hotkeys' : 'Currently Disabled — click to activate keyboard hotkeys across workspace', icon: Keyboard, badge: shortcutsEnabled ? 'Active' : 'Disabled', keywords: ['shortcuts','keyboard','hotkeys','enable shortcuts','disable shortcuts','keybindings'], onExecute: () => { onClose(); if (onToggleShortcutsEnabled) onToggleShortcutsEnabled(!shortcutsEnabled); } },
       { id: 'act_toggle_quick_pill', title: featureToggles.showQuickActionPill ? 'Hide Floating Quick Action Pill' : 'Show Floating Quick Action Pill', category: 'Actions', subtitle: 'Contractable & expandable quick dock anchored at window bottom', icon: Compass, badge: 'Dock', keywords: ['quick action pill','pill','dock','bottom pill','floating dock','quick actions'], onExecute: () => { onClose(); if (onToggleFeature) onToggleFeature('showQuickActionPill', !featureToggles.showQuickActionPill); } },
       {
         id: 'act_quick_action_pinned',

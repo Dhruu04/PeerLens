@@ -2,10 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Command, X, Search, Sliders, Settings, 
-  ExternalLink, Sparkles
+  ExternalLink, Sparkles, AlertCircle
 } from 'lucide-react';
 import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
 import { formatShortcutDisplay, getStoredShortcuts, DEFAULT_KEYBOARD_SHORTCUTS } from '../utils/keyboardShortcuts';
+import { getShortcutsEnabled, setShortcutsEnabled as saveShortcutsEnabled, subscribeShortcutsEnabled } from '../utils/customViewProfiles';
 
 interface KeyboardShortcutsModalProps {
   isOpen: boolean;
@@ -21,6 +22,11 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
   onOpenCustomize
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [shortcutsEnabled, setShortcutsEnabled] = useState<boolean>(getShortcutsEnabled);
+
+  useEffect(() => {
+    return subscribeShortcutsEnabled((enabled) => setShortcutsEnabled(enabled));
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -103,6 +109,28 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !shortcutsEnabled;
+                setShortcutsEnabled(next);
+                saveShortcutsEnabled(next);
+              }}
+              className="btn btn-secondary btn-sm"
+              style={{
+                height: '28px',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                gap: '0.3rem',
+                border: shortcutsEnabled ? '1px solid #10b981' : '1px solid var(--border-color)',
+                backgroundColor: shortcutsEnabled ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                color: shortcutsEnabled ? '#059669' : 'var(--text-muted)'
+              }}
+              title={shortcutsEnabled ? 'Shortcuts are currently enabled. Click to disable.' : 'Shortcuts are currently disabled. Click to enable.'}
+            >
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: shortcutsEnabled ? '#10b981' : '#94a3b8' }} />
+              <span>{shortcutsEnabled ? 'Active' : 'Disabled'}</span>
+            </button>
             {onOpenCustomize && (
               <button
                 type="button"
@@ -124,6 +152,48 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Warning banner when shortcuts are disabled */}
+        {!shortcutsEnabled && (
+          <div
+            style={{
+              padding: '0.45rem 0.75rem',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              fontSize: '0.72rem',
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <AlertCircle size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
+              <span>Keybindings are currently paused/disabled.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShortcutsEnabled(true);
+                saveShortcutsEnabled(true);
+              }}
+              style={{
+                background: '#10b981',
+                border: 'none',
+                color: '#fff',
+                borderRadius: '5px',
+                padding: '0.15rem 0.5rem',
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Enable Now
+            </button>
+          </div>
+        )}
 
         {/* Search filter input */}
         <div style={{ position: 'relative' }}>

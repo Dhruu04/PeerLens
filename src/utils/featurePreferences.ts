@@ -12,6 +12,7 @@ export interface FeatureToggles {
   showGuideButton: boolean;
   showCloudStatus: boolean;
   showCustomizeViewButton: boolean;
+  showEditModeButton: boolean;
   showQuickActionPill: boolean;
 
   // --- Sub-Header / Breadcrumb Navigation ---
@@ -84,6 +85,7 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showGuideButton: true,
   showCloudStatus: false,
   showCustomizeViewButton: true,
+  showEditModeButton: false,
   showQuickActionPill: false,
 
   // Home Hub & Sub-Bar Navigation
@@ -154,6 +156,7 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showGuideButton: false,
   showCloudStatus: false,
   showCustomizeViewButton: true,
+  showEditModeButton: false,
   showQuickActionPill: false,
 
   // Home Hub & Sub-Bar Navigation
@@ -223,6 +226,7 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showGuideButton: true,
   showCloudStatus: true,
   showCustomizeViewButton: true,
+  showEditModeButton: true,
   showQuickActionPill: true,
 
   showSectionNavBreadcrumbs: true,

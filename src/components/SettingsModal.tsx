@@ -13,33 +13,21 @@ import {
   ExternalLink,
   Settings,
   X,
-  Sliders,
   CheckCircle,
+  CheckSquare,
   Palette,
   Sun,
   Moon,
   Monitor,
   LayoutGrid,
-  Award,
-  Users,
-  Maximize2,
-  BookOpen,
   Compass,
   Search,
-  User,
   Trash2,
   Edit2,
-  QrCode,
-  Clock,
-  MessageSquare,
-  CheckSquare,
-  RefreshCw,
-  Database,
-  Activity,
-  Zap,
   Plus,
   AlertCircle,
-  SlidersHorizontal
+  Edit3,
+  FolderPlus
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
 import { useTheme, type ThemeMode } from '../context/ThemeContext';
@@ -53,6 +41,17 @@ import {
   FULL_FEATURE_TOGGLES, 
   type FeatureToggles 
 } from '../utils/featurePreferences';
+import { 
+  getShortcutsEnabled, 
+  setShortcutsEnabled as saveShortcutsEnabled, 
+  subscribeShortcutsEnabled,
+  getCustomProfiles,
+  saveCustomProfile,
+  deleteCustomProfile,
+  subscribeCustomProfiles,
+  type CustomViewProfile
+} from '../utils/customViewProfiles';
+import { MODULE_GROUPS, MODULE_ITEMS, type ModuleItem } from '../utils/moduleRegistry';
 import CustomSelect from './CustomSelect';
 import { CollapsibleEvaluationControls } from './CollapsibleEvaluationControls';
 
@@ -65,6 +64,9 @@ interface SettingsModalProps {
   onResetShortcuts: () => void;
   showChecklist?: boolean;
   onToggleChecklist?: (show: boolean) => void;
+  onOpenEditMode?: () => void;
+  shortcutsEnabled?: boolean;
+  onToggleShortcutsEnabled?: (enabled: boolean) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -75,7 +77,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateShortcuts,
   onResetShortcuts,
   showChecklist = false,
-  onToggleChecklist
+  onToggleChecklist,
+  onOpenEditMode,
+  shortcutsEnabled: propShortcutsEnabled,
+  onToggleShortcutsEnabled
 }) => {
   const { 
     classes, 
@@ -101,6 +106,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [moduleCategoryFilter, setModuleCategoryFilter] = useState<'all' | 'header' | 'hub' | 'roster' | 'rubric' | 'analytics'>('all');
   const [moduleSearchQuery, setModuleSearchQuery] = useState('');
   const [moduleStatusFilter, setModuleStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
+
+  const [shortcutsEnabled, setShortcutsEnabled] = useState<boolean>(() => {
+    return propShortcutsEnabled !== undefined ? propShortcutsEnabled : getShortcutsEnabled();
+  });
+  const [customProfiles, setCustomProfiles] = useState<CustomViewProfile[]>(getCustomProfiles);
+  const [isAddingProfile, setIsAddingProfile] = useState(false);
+  const [profileNameInput, setProfileNameInput] = useState('');
+
+  useEffect(() => {
+    if (propShortcutsEnabled !== undefined) {
+      setShortcutsEnabled(propShortcutsEnabled);
+    }
+  }, [propShortcutsEnabled]);
+
+  useEffect(() => {
+    const unsubShortcuts = subscribeShortcutsEnabled((enabled) => setShortcutsEnabled(enabled));
+    const unsubProfiles = subscribeCustomProfiles((profs) => setCustomProfiles(profs));
+    return () => {
+      unsubShortcuts();
+      unsubProfiles();
+    };
+  }, []);
 
   // Disable background scrolling when modal is open
   useEffect(() => {
@@ -193,8 +220,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
   }, [isOpen, initialTab]);
 
-  const handleFeatureToggle = (key: keyof FeatureToggles) => {
-    const nextVal = !featureToggles[key];
+  const handleFeatureToggle = (key: keyof FeatureToggles, explicitVal?: boolean) => {
+    const nextVal = explicitVal !== undefined ? explicitVal : !featureToggles[key];
     const updated = { ...featureToggles, [key]: nextVal };
     setFeatureToggles(updated);
     saveFeatureToggles(updated);
@@ -576,43 +603,231 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB: INTERFACE & FEATURE MODULES */}
           {activeTab === 'modules' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* In-Place Interactive Edit Mode Launcher Banner */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.1) 0%, rgba(14, 165, 233, 0.1) 100%)',
+                  border: '1.5px solid rgba(99, 102, 241, 0.4)',
+                  borderRadius: '12px',
+                  padding: '1rem 1.15rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '0.85rem',
+                  boxShadow: '0 4px 14px rgba(79, 70, 229, 0.06)'
+                }}
+              >
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <Edit3 size={16} style={{ color: 'var(--primary)' }} /> Interactive On-Screen Layout Edit Mode
+                  </h4>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Visually configure your dashboard directly in place. All active modules highlight so you can hide them with 1-click, and hidden modules display empty space placeholders to restore them.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    onClose();
+                    if (onOpenEditMode) onOpenEditMode();
+                  }}
+                  style={{ fontSize: '0.78rem', fontWeight: 700, gap: '0.35rem', height: '32px', padding: '0 0.85rem' }}
+                >
+                  <Edit3 size={14} /> Launch In-Place Editor
+                </button>
+              </div>
+
               {/* Presets Header Banner */}
               {featureToggles.showPresetsBanner !== false && (
-                <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem 1.15rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.85rem' }}>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                      <LayoutGrid size={16} className="text-primary" /> Interface Density &amp; Layout Presets
-                    </h4>
-                    <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                      Customize workspace density from ultra-minimal to power-user mode, or toggle each component individually below.
-                    </p>
+                <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem 1.15rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.85rem' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <LayoutGrid size={16} className="text-primary" /> Interface Density &amp; Layout Presets
+                      </h4>
+                      <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                        Customize workspace density from ultra-minimal to power-user mode, or toggle each component individually below.
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleApplyFeaturePreset(MINIMAL_FEATURE_TOGGLES, 'Minimal')}
+                        style={{ fontSize: '0.76rem', fontWeight: 700 }}
+                      >
+                        Minimal Mode
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleApplyFeaturePreset(DEFAULT_FEATURE_TOGGLES, 'Standard')}
+                        style={{ fontSize: '0.76rem', fontWeight: 700 }}
+                      >
+                        Standard Default
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-teal btn-sm"
+                        onClick={() => handleApplyFeaturePreset(FULL_FEATURE_TOGGLES, 'Full Power')}
+                        style={{ fontSize: '0.76rem', fontWeight: 700 }}
+                      >
+                        Show All Features
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setIsAddingProfile(prev => !prev)}
+                        style={{ fontSize: '0.76rem', fontWeight: 700, gap: '0.25rem', color: 'var(--primary)' }}
+                        title="Save current module choices and shortcut status as a custom view profile"
+                      >
+                        <FolderPlus size={13} />
+                        <span>Save View</span>
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => handleApplyFeaturePreset(MINIMAL_FEATURE_TOGGLES, 'Minimal')}
-                      style={{ fontSize: '0.76rem', fontWeight: 700 }}
+
+                  {/* Inline Save Custom Profile Form */}
+                  {isAddingProfile && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--bg-surface)',
+                        border: '1.5px solid var(--primary)'
+                      }}
                     >
-                      Minimal Mode
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => handleApplyFeaturePreset(DEFAULT_FEATURE_TOGGLES, 'Standard')}
-                      style={{ fontSize: '0.76rem', fontWeight: 700 }}
-                    >
-                      Standard Default
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-teal btn-sm"
-                      onClick={() => handleApplyFeaturePreset(FULL_FEATURE_TOGGLES, 'Full Power')}
-                      style={{ fontSize: '0.76rem', fontWeight: 700 }}
-                    >
-                      Show All Features
-                    </button>
-                  </div>
+                      <input
+                        type="text"
+                        value={profileNameInput}
+                        onChange={(e) => setProfileNameInput(e.target.value)}
+                        placeholder="Profile name (e.g. Exam Mode, Clean Grading, Presentation)"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const trimmed = profileNameInput.trim();
+                            if (trimmed) {
+                              saveCustomProfile(trimmed, featureToggles, shortcutsEnabled);
+                              setProfileNameInput('');
+                              setIsAddingProfile(false);
+                              addToast(`Saved custom view profile "${trimmed}"!`, 'success');
+                            }
+                          }
+                          if (e.key === 'Escape') setIsAddingProfile(false);
+                        }}
+                        style={{
+                          flex: 1,
+                          fontSize: '0.78rem',
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--text-primary)',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const trimmed = profileNameInput.trim();
+                          if (trimmed) {
+                            saveCustomProfile(trimmed, featureToggles, shortcutsEnabled);
+                            setProfileNameInput('');
+                            setIsAddingProfile(false);
+                            addToast(`Saved custom view profile "${trimmed}"!`, 'success');
+                          }
+                        }}
+                        className="btn btn-primary btn-sm"
+                        style={{ fontSize: '0.72rem', height: '28px', padding: '0 0.65rem' }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingProfile(false);
+                          setProfileNameInput('');
+                        }}
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.72rem', height: '28px', padding: '0 0.5rem' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Saved Custom View Profiles Chips */}
+                  {customProfiles.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)' }}>Custom View Profiles:</span>
+                      {customProfiles.map((prof) => (
+                        <div
+                          key={prof.id}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '6px',
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--border-color)',
+                            fontSize: '0.72rem',
+                            fontWeight: 600
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              Object.entries(prof.toggles).forEach(([k, v]) => {
+                                handleFeatureToggle(k as keyof FeatureToggles, v);
+                              });
+                              if (prof.shortcutsEnabled !== undefined) {
+                                setShortcutsEnabled(prof.shortcutsEnabled);
+                                saveShortcutsEnabled(prof.shortcutsEnabled);
+                                if (onToggleShortcutsEnabled) onToggleShortcutsEnabled(prof.shortcutsEnabled);
+                              }
+                              addToast(`Applied custom view profile: "${prof.name}"`, 'success');
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: 0,
+                              color: 'var(--primary)',
+                              fontWeight: 700,
+                              fontSize: '0.72rem'
+                            }}
+                            title={`Click to apply "${prof.name}" (Shortcuts: ${prof.shortcutsEnabled ? 'ON' : 'OFF'})`}
+                          >
+                            {prof.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteCustomProfile(prof.id);
+                              addToast(`Deleted profile "${prof.name}"`, 'info');
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '1px',
+                              color: 'var(--text-muted)',
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}
+                            title="Delete custom view profile"
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -700,107 +915,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* Module Filter & Search Bar */}
               {(() => {
-                const MODULE_GROUPS = [
-                  {
-                    id: 'header' as const,
-                    title: 'Header & Top Navigation',
-                    icon: Settings,
-                    keys: ['showClassPicker', 'showDeleteClassButton', 'showNewClassButton', 'showSettingsButton', 'showThemeSwitcher', 'showProfilePill', 'showProjectorButton', 'showCommandSearch', 'showEmailButton', 'showGuideButton', 'showCloudStatus', 'showCustomizeViewButton', 'showQuickActionPill'] as (keyof FeatureToggles)[],
-                    items: [
-                      { key: 'showClassPicker' as keyof FeatureToggles, title: 'Active Classroom Dropdown Selector', desc: 'Class dropdown on top-left to switch between active course sections.', icon: BookOpen },
-                      { key: 'showDeleteClassButton' as keyof FeatureToggles, title: 'Delete Classroom Action Icon', desc: 'Trash icon next to classroom name to remove the active classroom.', icon: Trash2 },
-                      { key: 'showNewClassButton' as keyof FeatureToggles, title: 'New Class (+ Class) Action Button', desc: 'Top-right button to create new classroom cohorts.', icon: Maximize2 },
-                      { key: 'showSettingsButton' as keyof FeatureToggles, title: 'Workspace Settings Button', desc: 'Gear button in top-right to open settings & module configuration.', icon: Settings },
-                      { key: 'showThemeSwitcher' as keyof FeatureToggles, title: 'Theme Mode Switcher', desc: 'Compact toggle button for dark, light, or system themes.', icon: Sun },
-                      { key: 'showProfilePill' as keyof FeatureToggles, title: 'Admin Profile & Account Center Icon', desc: 'Top dock button to open the workspace profile selector and account center.', icon: User },
-                      { key: 'showProjectorButton' as keyof FeatureToggles, title: 'Live Classroom Projector Button', desc: '1-click fullscreen projector mode button for lecture screens.', icon: Maximize2 },
-                      { key: 'showCommandSearch' as keyof FeatureToggles, title: 'Quick Search & Command Palette', desc: 'Search shortcut button to quickly filter students or trigger actions.', icon: Search },
-                      { key: 'showEmailButton' as keyof FeatureToggles, title: 'Classroom Email Center Button', desc: 'Dispatches secure assessment links to students via Brevo or EmailJS.', icon: Mail },
-                      { key: 'showGuideButton' as keyof FeatureToggles, title: 'Academic Guidance Center Button', desc: 'Opens academic guidance instructions and interactive tours.', icon: Compass },
-                      { key: 'showCloudStatus' as keyof FeatureToggles, title: 'Cloud Sync Status Indicator', desc: 'Minimal cloud connection icon button in top navigation bar.', icon: Database },
-                      { key: 'showCustomizeViewButton' as keyof FeatureToggles, title: 'Customize View Button', desc: 'Minimalist sliders button in the top navigation dock to customize visible modules.', icon: Sliders },
-                      { key: 'showQuickActionPill' as keyof FeatureToggles, title: 'Floating Quick Action Pill (Bottom Center)', desc: 'Contractable & expandable floating dock at the bottom of the window for instant access to top bar functions, search, modules, and tools.', icon: Compass }
-                    ]
-                  },
-                  {
-                    id: 'hub' as const,
-                    title: 'Home Hub & Sub-Bar Navigation',
-                    icon: LayoutGrid,
-                    keys: ['showPresetsBanner', 'showHubOverviewBanner', 'showHubOverviewStats', 'showSectionNavBreadcrumbs', 'showClassIdBadge', 'showEnrollmentCard', 'showReviewSystemCard', 'showGradingAnalyticsCard', 'showHubCardMetrics', 'showHubQuickActions'] as (keyof FeatureToggles)[],
-                    items: [
-                      { key: 'showPresetsBanner' as keyof FeatureToggles, title: 'Interface Density & Layout Presets Card', desc: 'Quick preset density buttons at the top of the Interface & Modules tab.', icon: LayoutGrid },
-                      { key: 'showHubOverviewBanner' as keyof FeatureToggles, title: 'Classroom Hub Overview Banner', desc: 'Displays the active classroom header, status badge, and shortcut hints.', icon: LayoutGrid },
-                      { key: 'showHubOverviewStats' as keyof FeatureToggles, title: 'Live Metrics Snapshot Strip', desc: 'Live students, criteria count, and submission progress chips inside the banner.', icon: Sparkles },
-                      { key: 'showSectionNavBreadcrumbs' as keyof FeatureToggles, title: 'Section Breadcrumb Trail', desc: 'Displays the "Class A / Section Name" trail in the section bar.', icon: Compass },
-                      { key: 'showClassIdBadge' as keyof FeatureToggles, title: 'Classroom ID Copy Pill', desc: 'Clickable badge in the Hub header displaying class ID for student enrollment.', icon: Key },
-                      { key: 'showEnrollmentCard' as keyof FeatureToggles, title: 'Hub Card: Section 1 (Enrollment & Teams)', desc: 'Large interactive section card on the Home Hub screen.', icon: Users },
-                      { key: 'showReviewSystemCard' as keyof FeatureToggles, title: 'Hub Card: Section 2 (Review System)', desc: 'Large interactive section card on the Home Hub screen.', icon: Sliders },
-                      { key: 'showGradingAnalyticsCard' as keyof FeatureToggles, title: 'Hub Card: Section 3 (Grading & Analytics)', desc: 'Large interactive section card on the Home Hub screen.', icon: Award },
-                      { key: 'showHubCardMetrics' as keyof FeatureToggles, title: 'Hub Cards: Status & Progress Meters', desc: 'Readiness progress tracks and real-time student/rubric/submission metrics on Hub cards.', icon: Activity },
-                      { key: 'showHubQuickActions' as keyof FeatureToggles, title: 'Hub Cards: Quick Action Launch Buttons', desc: 'Direct 1-click shortcut buttons (+ Add Student, QR Link, VALUE Presets, etc.) on Hub cards.', icon: Zap }
-                    ]
-                  },
-                  {
-                    id: 'roster' as const,
-                    title: 'Section 1: Enrollment & Teams',
-                    icon: Users,
-                    keys: ['showSelfEnrollmentCard', 'showQuickActionsCard', 'showImportWizardCard', 'showAutoGroupStudio', 'showAddStudentButton', 'showExportButtons', 'showRosterSearchFilter', 'showBulkActionBar', 'showDuplicateDetector', 'showRosterTable', 'showTeamOverviewCards'] as (keyof FeatureToggles)[],
-                    items: [
-                      { key: 'showSelfEnrollmentCard' as keyof FeatureToggles, title: 'Self-Enrollment QR Code & Link Card', desc: 'Card showing class QR code preview and 1-click student self-enrollment URL.', icon: QrCode },
-                      { key: 'showQuickActionsCard' as keyof FeatureToggles, title: 'Quick Actions & Demo 100 Sample Card', desc: 'Card with quick member creation, 100 sample student population, and Excel export.', icon: Sparkles },
-                      { key: 'showImportWizardCard' as keyof FeatureToggles, title: 'Smart Roster Import Wizard Card', desc: 'Drag-and-drop dropzone card to onboard rosters from CSV, XLSX, or clipboard.', icon: Download },
-                      { key: 'showAutoGroupStudio' as keyof FeatureToggles, title: 'AutoGroup Algorithmic Formation Studio', desc: 'Automated team formation studio balancing cohorts by diversity, skill, and size.', icon: Users },
-                      { key: 'showAddStudentButton' as keyof FeatureToggles, title: 'Manual Add Participant Button', desc: '+ Enroll Participant button above the roster table.', icon: Users },
-                      { key: 'showExportButtons' as keyof FeatureToggles, title: 'Roster Export Buttons', desc: 'Export to Excel and CSV buttons for roster backups.', icon: Download },
-                      { key: 'showRosterSearchFilter' as keyof FeatureToggles, title: 'Roster Search & Team Filter Bar', desc: 'Search input and team filter dropdown above the roster table.', icon: Search },
-                      { key: 'showBulkActionBar' as keyof FeatureToggles, title: 'Multi-Select Bulk Actions Toolbar', desc: 'Floating action bar when students are selected (move team, delete selected).', icon: CheckSquare },
-                      { key: 'showDuplicateDetector' as keyof FeatureToggles, title: 'Duplicate Enrollment Warning Banner', desc: 'Alert banner flagging duplicate student names or emails in roster.', icon: ShieldCheck },
-                      { key: 'showRosterTable' as keyof FeatureToggles, title: 'Enrolled Students Roster Table', desc: 'Main table listing all students, assigned teams, and individual actions.', icon: Users },
-                      { key: 'showTeamOverviewCards' as keyof FeatureToggles, title: 'Teams & Group Breakdown Cards', desc: 'Grid of team cards displaying members per team.', icon: Users }
-                    ]
-                  },
-                  {
-                    id: 'rubric' as const,
-                    title: 'Section 2: Review System',
-                    icon: Sliders,
-                    keys: ['showRubricHeader', 'showCustomCriterionButton', 'showRubricPresets', 'showTargetScaleCard', 'showDeadlineTimer', 'showWeightBalanceBar', 'showCriterionCards', 'showEvaluationSimulator', 'showEvaluationFormControls', 'showTeamHealthPulse'] as (keyof FeatureToggles)[],
-                    items: [
-                      { key: 'showRubricHeader' as keyof FeatureToggles, title: 'Rubric Title & Criteria Counter Header', desc: 'Header title, rubric description, and guide info button.', icon: Sliders },
-                      { key: 'showCustomCriterionButton' as keyof FeatureToggles, title: 'Add Custom Criterion Button', desc: '+ Add Custom Criterion button to create individual evaluation metrics.', icon: Sliders },
-                      { key: 'showRubricPresets' as keyof FeatureToggles, title: 'Standardized Rubric (IPAF) Ribbon', desc: 'Quick-apply library banner for the research-synthesized IPAF peer evaluation standard (CATME, Salas, AAC&U, WebPA).', icon: BookOpen },
-                      { key: 'showTargetScaleCard' as keyof FeatureToggles, title: 'Final Grade Scaling Target Scale Card', desc: 'Sets grade scaling target (Out of 20, Out of 100, or Rubric Sum).', icon: Sliders },
-                      { key: 'showDeadlineTimer' as keyof FeatureToggles, title: 'Milestone Deadline & Countdown Timer Card', desc: 'Submission cutoff date & countdown timer that locks evaluations upon expiration.', icon: Clock },
-                      { key: 'showWeightBalanceBar' as keyof FeatureToggles, title: 'Rubric Weight Auto-Balance Bar', desc: 'Validation bar indicating criteria weight percentage sum and 100% balance.', icon: CheckCircle },
-                      { key: 'showCriterionCards' as keyof FeatureToggles, title: 'Evaluation Rubric Criteria Cards List', desc: 'Configured rubric criteria cards with score ranges and behavioral anchors.', icon: Sliders },
-                      { key: 'showEvaluationSimulator' as keyof FeatureToggles, title: 'Student Interface Experience Preview', desc: 'Interactive simulator showing how students see and submit peer evaluation sliders.', icon: Sparkles },
-                      { key: 'showEvaluationFormControls' as keyof FeatureToggles, title: 'Peer Evaluation Form Fields & Controls Card', desc: 'Card to toggle question prompts, praise tags, self-review, and permissions directly on the page.', icon: SlidersHorizontal },
-                      { key: 'showTeamHealthPulse' as keyof FeatureToggles, title: 'Team Health "Micro-Pulse" Check-ins', desc: 'On-demand 30-second pulse surveys tracking team morale, communication, and project blockers with sparklines.', icon: Activity }
-                    ]
-                  },
-                  {
-                    id: 'analytics' as const,
-                    title: 'Section 3: Grading & Performance Analytics',
-                    icon: Award,
-                    keys: ['showResultsHeaderCard', 'showExportReportButtons', 'showSubmissionReset', 'showCompetencyRadar', 'showJohariMatrix', 'showQualitativeFeedback', 'showWebPACalibration', 'showAnomalyAudit', 'showMilestonesHistory', 'showLmsExport', 'showResultsSummarySheet', 'showGradebookSearchFilter', 'showDetailedReviewMatrix', 'showTeammateAuditLog'] as (keyof FeatureToggles)[],
-                    items: [
-                      { key: 'showResultsHeaderCard' as keyof FeatureToggles, title: 'Real-Time Calculation Matrix Header Card', desc: 'Top title card explaining non-self peer averaging and real-time updates.', icon: Award },
-                      { key: 'showExportReportButtons' as keyof FeatureToggles, title: 'Export Gradebook & Student PDF Reports Buttons', desc: 'Download class Excel gradebook and generate individual PDF report cards.', icon: Download },
-                      { key: 'showSubmissionReset' as keyof FeatureToggles, title: 'Reset All Evaluations Action Button', desc: 'Danger zone button allowing instructors to wipe reviews back to pending.', icon: RefreshCw },
-                      { key: 'showCompetencyRadar' as keyof FeatureToggles, title: 'Competency Spider Radar Chart', desc: 'Multi-axis radar chart showing class rubric benchmarks vs individual team averages.', icon: Sparkles },
-                      { key: 'showJohariMatrix' as keyof FeatureToggles, title: 'Johari Window & Self-Awareness Alignment', desc: 'Identifies student self-awareness anomalies, over-raters, and under-raters vs team consensus.', icon: Award },
-                      { key: 'showQualitativeFeedback' as keyof FeatureToggles, title: 'Qualitative Feedback Themes Card', desc: 'Automated keyword extraction across all written teammate feedback comments.', icon: MessageSquare },
-                      { key: 'showWebPACalibration' as keyof FeatureToggles, title: 'WebPA Grade Calibration Card', desc: 'Base Grade mark input and Fudge weight slider for individual peer mark multipliers.', icon: Sliders },
-                      { key: 'showAnomalyAudit' as keyof FeatureToggles, title: 'Statistical Anomaly & Collusion Audit Card', desc: 'Statistical conflict auditing flagging collusion, outlier ratings, and uniform grades.', icon: ShieldCheck },
-                      { key: 'showMilestonesHistory' as keyof FeatureToggles, title: 'Milestone & Sprints History Card', desc: 'Archive evaluations into permanent sprint records to freeze marks over time.', icon: RefreshCw },
-                      { key: 'showLmsExport' as keyof FeatureToggles, title: 'LMS Gradebook Integration & Smart Export Formats', desc: '1-click export presets for Canvas LMS, Blackboard Learn, Moodle, and Brightspace D2L.', icon: Download },
-                      { key: 'showResultsSummarySheet' as keyof FeatureToggles, title: 'Results Summary Sheet & Gradebook Table', desc: 'Master gradebook table with individual student multipliers, raw scores, and actions.', icon: Award },
-                      { key: 'showGradebookSearchFilter' as keyof FeatureToggles, title: 'Gradebook Search & Team Filter Bar', desc: 'Search by student name and team filter dropdown on the gradebook.', icon: Search },
-                      { key: 'showDetailedReviewMatrix' as keyof FeatureToggles, title: 'Who Rated Whom: Evaluation Audit Cross-Matrix', desc: 'Cross-grid audit matrix in Team modal displaying reviewer vs recipient ratings.', icon: Sliders },
-                      { key: 'showTeammateAuditLog' as keyof FeatureToggles, title: 'Teammate Evaluation Audit Log', desc: 'Written qualitative feedback comments and review records in Team modal.', icon: MessageSquare }
-                    ]
-                  }
-                ];
-
                 const totalItemsCount = MODULE_GROUPS.reduce((acc, g) => acc + g.items.length, 0);
 
                 const filterCategories = [
@@ -834,38 +948,90 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 const matchingItemsCount = filteredGroups.reduce((acc, g) => acc + g.items.length, 0);
 
-                const renderToggleRow = (key: keyof FeatureToggles, title: string, desc: string, icon?: any) => {
-                  const isEnabled = featureToggles[key];
-                  const Icon = icon;
+                const renderToggleRow = (item: ModuleItem) => {
+                  const isEnabled = featureToggles[item.key];
+                  const Icon = item.icon;
+                  const isSubmodule = Boolean(item.parentKey);
+                  const parentModule = item.parentKey ? MODULE_ITEMS.find(m => m.key === item.parentKey) : null;
+                  const isParentEnabled = item.parentKey ? featureToggles[item.parentKey] : true;
+
                   return (
                     <div
-                      key={key}
+                      key={item.key}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        padding: '0.65rem 0.85rem',
-                        backgroundColor: 'var(--bg-app)',
-                        border: '1px solid var(--border-color)',
+                        padding: isSubmodule ? '0.6rem 0.85rem 0.6rem 0.85rem' : '0.65rem 0.85rem',
+                        marginLeft: isSubmodule ? '1.5rem' : 0,
+                        backgroundColor: isSubmodule ? 'var(--bg-surface)' : 'var(--bg-app)',
+                        border: isSubmodule ? '1px dashed var(--border-color)' : '1px solid var(--border-color)',
+                        borderLeft: isSubmodule ? '3.5px solid var(--primary)' : '1px solid var(--border-color)',
                         borderRadius: '8px',
                         gap: '1rem',
-                        transition: 'all var(--transition-fast)'
+                        transition: 'all var(--transition-fast)',
+                        boxShadow: isSubmodule ? '0 1px 3px rgba(0,0,0,0.03)' : 'none'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem', minWidth: 0, flex: 1 }}>
                         {Icon && (
-                          <div style={{ width: '26px', height: '26px', borderRadius: '6px', backgroundColor: isEnabled ? 'var(--primary-light)' : 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
-                            <Icon size={13} style={{ color: isEnabled ? 'var(--primary)' : 'var(--text-muted)' }} />
+                          <div style={{
+                            width: isSubmodule ? '24px' : '26px',
+                            height: isSubmodule ? '24px' : '26px',
+                            borderRadius: '6px',
+                            backgroundColor: isEnabled ? 'var(--primary-light)' : 'var(--bg-app)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            marginTop: '2px'
+                          }}>
+                            <Icon size={isSubmodule ? 12 : 13} style={{ color: isEnabled ? 'var(--primary)' : 'var(--text-muted)' }} />
                           </div>
                         )}
-                        <div>
-                          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.35, marginTop: '0.1rem' }}>{desc}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</span>
+                            {isSubmodule && (
+                              <span
+                                className="badge badge-secondary"
+                                style={{
+                                  fontSize: '0.66rem',
+                                  padding: '0.1rem 0.45rem',
+                                  fontWeight: 600,
+                                  borderRadius: '10px',
+                                  backgroundColor: 'var(--bg-app)',
+                                  color: 'var(--primary)',
+                                  borderColor: 'var(--primary-light)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.2rem'
+                                }}
+                              >
+                                ↳ Sub-module of {parentModule?.title ? parentModule.title.split(' ')[0] : 'Parent'}
+                              </span>
+                            )}
+                            {isSubmodule && !isParentEnabled && (
+                              <span
+                                className="badge badge-amber"
+                                style={{
+                                  fontSize: '0.62rem',
+                                  padding: '0.08rem 0.35rem',
+                                  borderRadius: '8px',
+                                  fontWeight: 600
+                                }}
+                                title="The parent module is currently hidden, so this sub-module will not be displayed until the parent is enabled."
+                              >
+                                Parent Hidden
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.35, marginTop: '0.1rem' }}>{item.desc}</div>
                         </div>
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleFeatureToggle(key)}
+                        onClick={() => handleFeatureToggle(item.key)}
                         style={{
                           padding: '0.3rem 0.7rem',
                           fontSize: '0.74rem',
@@ -1048,7 +1214,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         >
                           {renderGroupHeader(group.title, group.icon, group.keys, group.items.length)}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                            {group.items.map(item => renderToggleRow(item.key, item.title, item.desc, item.icon))}
+                            {group.items.map(item => renderToggleRow(item))}
                           </div>
                         </div>
                       ))
@@ -1443,14 +1609,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem' }}>
                   <div>
                     <b style={{ fontSize: '0.84rem', color: 'var(--text-primary)' }}>Customizable Keybindings</b>
                     <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                       {displayShortcuts.length} active shortcuts {customCount > 0 ? `(${customCount} custom) ` : ''}{removedDefaultsCount > 0 ? `• ${removedDefaultsCount} premade deleted ` : ''}• Click any key badge to quick-remap, or use Edit/Delete buttons.
                     </span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
@@ -1479,8 +1645,69 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       <RotateCcw size={12} /> Reset Defaults
                     </button>
+
+                    {/* Keyboard Shortcuts Enable/Disable Toggle - Placed at exact position indicated by user */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextVal = !shortcutsEnabled;
+                        setShortcutsEnabled(nextVal);
+                        saveShortcutsEnabled(nextVal);
+                        if (onToggleShortcutsEnabled) onToggleShortcutsEnabled(nextVal);
+                        addToast(nextVal ? 'Keyboard shortcuts enabled' : 'Keyboard shortcuts disabled (paused)', 'info');
+                      }}
+                      style={{
+                        height: '28px',
+                        padding: '0 0.65rem',
+                        borderRadius: '6px',
+                        border: shortcutsEnabled ? '1.5px solid #10b981' : '1.5px solid var(--border-color)',
+                        backgroundColor: shortcutsEnabled ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-app)',
+                        color: shortcutsEnabled ? 'var(--accent-teal, #10b981)' : 'var(--text-muted)',
+                        fontWeight: 700,
+                        fontSize: '0.72rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        cursor: 'pointer',
+                        transition: 'all 150ms ease'
+                      }}
+                      title={shortcutsEnabled ? 'Click to disable all keyboard shortcuts' : 'Click to enable keyboard shortcuts'}
+                    >
+                      <span
+                        style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          backgroundColor: shortcutsEnabled ? '#10b981' : '#94a3b8',
+                          boxShadow: shortcutsEnabled ? '0 0 6px #10b981' : 'none'
+                        }}
+                      />
+                      <span>Shortcuts: {shortcutsEnabled ? 'Enabled' : 'Disabled'}</span>
+                    </button>
                   </div>
                 </div>
+
+                {/* Banner when keyboard shortcuts are disabled */}
+                {!shortcutsEnabled && (
+                  <div
+                    style={{
+                      padding: '0.5rem 0.85rem',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                      border: '1px solid rgba(245, 158, 11, 0.25)',
+                      fontSize: '0.74rem',
+                      color: 'var(--text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem'
+                    }}
+                  >
+                    <AlertCircle size={15} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                    <span>
+                      <strong>Keyboard shortcuts are currently disabled (default).</strong> Use the <strong>Shortcuts: Disabled</strong> button above to activate hotkeys across the workspace.
+                    </span>
+                  </div>
+                )}
 
               {/* CARD: ADD CUSTOM SHORTCUT FORM */}
               {isAddingShortcut && (
@@ -1662,7 +1889,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       const nShift = !!newModifiers.shift;
                       return sCtrl === nCtrl && sAlt === nAlt && sShift === nShift;
                     }) && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.65rem', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '0.72rem', color: '#b45309' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.65rem', backgroundColor: 'var(--accent-amber-light)', border: '1px solid var(--accent-amber)', borderRadius: '6px', fontSize: '0.72rem', color: 'var(--accent-amber)' }}>
                         <AlertCircle size={13} style={{ flexShrink: 0 }} />
                         <span>
                           Notice: Key combination is currently mapped to &quot;{shortcuts.find(s => {
@@ -1792,7 +2019,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 alignItems: 'center', 
                                 justifyContent: 'space-between', 
                                 padding: '0.45rem 0.6rem', 
-                                backgroundColor: isEditingThis ? 'var(--primary-light)' : '#ffffff', 
+                                backgroundColor: isEditingThis ? 'var(--primary-light)' : 'var(--bg-surface)', 
                                 border: `1px solid ${isRecording || isEditingThis ? 'var(--primary)' : 'var(--border-color)'}`,
                                 borderRadius: '6px',
                                 gap: '0.4rem',

@@ -45,10 +45,21 @@ import {
   X,
   ChevronsDown,
   ChevronsUp,
-  FolderPlus
+  FolderPlus,
+  Edit3
 } from 'lucide-react';
 import type { ClassData } from '../utils/math';
 import type { FeatureToggles } from '../utils/featurePreferences';
+import {
+  getShortcutsEnabled,
+  setShortcutsEnabled as saveShortcutsEnabled,
+  subscribeShortcutsEnabled,
+  getCustomProfiles,
+  saveCustomProfile,
+  deleteCustomProfile,
+  subscribeCustomProfiles,
+  type CustomViewProfile
+} from '../utils/customViewProfiles';
 
 export interface QuickActionPillProps {
   activeTab: string;
@@ -96,6 +107,9 @@ export interface QuickActionPillProps {
   onCopyJoinLink?: () => void;
   onResetReviews?: () => void;
   onBackupJSON?: () => void;
+  onOpenEditMode?: () => void;
+  shortcutsEnabled?: boolean;
+  onToggleShortcutsEnabled?: (enabled: boolean) => void;
 }
 
 export const QuickActionPill: React.FC<QuickActionPillProps> = ({
@@ -143,7 +157,10 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
   onOpenLmsGuide,
   onCopyJoinLink,
   onResetReviews,
-  onBackupJSON
+  onBackupJSON,
+  onOpenEditMode,
+  shortcutsEnabled: propShortcutsEnabled,
+  onToggleShortcutsEnabled
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [dockTab, setDockTab] = useState<'topbar' | 'modules' | 'tools'>('topbar');
@@ -202,48 +219,51 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     });
   };
 
-  // Custom View Profiles saved by instructor
-  const [customProfiles, setCustomProfiles] = useState<{ id: string; name: string; createdAt: number; toggles: FeatureToggles }[]>(() => {
-    try {
-      const saved = localStorage.getItem('peer_custom_layout_profiles');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [];
+  // Custom View Profiles saved by instructor & shortcuts enabled state
+  const [shortcutsEnabled, setShortcutsEnabled] = useState<boolean>(() => {
+    return propShortcutsEnabled !== undefined ? propShortcutsEnabled : getShortcutsEnabled();
   });
+  const [customProfiles, setCustomProfiles] = useState<CustomViewProfile[]>(getCustomProfiles);
   const [isAddingProfile, setIsAddingProfile] = useState(false);
   const [profileNameInput, setProfileNameInput] = useState('');
+
+  useEffect(() => {
+    if (propShortcutsEnabled !== undefined) {
+      setShortcutsEnabled(propShortcutsEnabled);
+    }
+  }, [propShortcutsEnabled]);
+
+  useEffect(() => {
+    const unsubShortcuts = subscribeShortcutsEnabled((enabled) => setShortcutsEnabled(enabled));
+    const unsubProfiles = subscribeCustomProfiles((profs) => setCustomProfiles(profs));
+    return () => {
+      unsubShortcuts();
+      unsubProfiles();
+    };
+  }, []);
 
   const saveCurrentProfile = () => {
     const trimmed = profileNameInput.trim();
     if (!trimmed) return;
-    const newProf = {
-      id: `prof_${Date.now()}`,
-      name: trimmed,
-      createdAt: Date.now(),
-      toggles: { ...featureToggles }
-    };
-    const updated = [newProf, ...customProfiles.filter(p => p.name.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
-    setCustomProfiles(updated);
-    try {
-      localStorage.setItem('peer_custom_layout_profiles', JSON.stringify(updated));
-    } catch (err) {}
+    saveCustomProfile(trimmed, featureToggles, shortcutsEnabled);
     setProfileNameInput('');
     setIsAddingProfile(false);
   };
 
-  const deleteCustomProfile = (id: string, e: React.MouseEvent) => {
+  const deleteCustomProfileHandler = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = customProfiles.filter(p => p.id !== id);
-    setCustomProfiles(updated);
-    try {
-      localStorage.setItem('peer_custom_layout_profiles', JSON.stringify(updated));
-    } catch (err) {}
+    deleteCustomProfile(id);
   };
 
-  const applyCustomProfile = (profile: { id: string; name: string; createdAt: number; toggles: FeatureToggles }) => {
+  const applyCustomProfile = (profile: CustomViewProfile) => {
     Object.entries(profile.toggles).forEach(([k, v]) => {
       onToggleFeature(k as keyof FeatureToggles, v);
     });
+    if (profile.shortcutsEnabled !== undefined) {
+      setShortcutsEnabled(profile.shortcutsEnabled);
+      saveShortcutsEnabled(profile.shortcutsEnabled);
+      if (onToggleShortcutsEnabled) onToggleShortcutsEnabled(profile.shortcutsEnabled);
+    }
   };
 
   // Master Section Fold / Expand Across All Foldable Cards
@@ -1303,6 +1323,19 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                       </button>
                       <button
                         type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          if (onOpenEditMode) onOpenEditMode();
+                        }}
+                        className="btn btn-primary btn-sm"
+                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', fontWeight: 700, gap: '0.25rem' }}
+                        title="Launch interactive on-screen layout edit mode"
+                      >
+                        <Edit3 size={12} />
+                        <span>Edit Mode</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setIsAddingProfile(true)}
                         className="btn btn-secondary btn-sm"
                         style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 700, gap: '0.25rem', color: 'var(--primary)' }}
@@ -1405,7 +1438,7 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => deleteCustomProfile(prof.id, e)}
+                            onClick={(e) => deleteCustomProfileHandler(prof.id, e)}
                             style={{
                               background: 'none',
                               border: 'none',

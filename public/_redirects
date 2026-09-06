@@ -1,4 +1,7 @@
-/guide             /guide.html                200
-/manual            /guide.html                200
-/docs              /guide.html                200
-/*                 /index.html                200
+/guide             /guide.html                    200
+/manual            /guide.html                    200
+/docs              /guide.html                    200
+/complete-guide    /PEERLENS_COMPLETE_GUIDE.html  200
+/complete_guide    /PEERLENS_COMPLETE_GUIDE.html  200
+/full-guide        /PEERLENS_COMPLETE_GUIDE.html  200
+/*                 /index.html                    200

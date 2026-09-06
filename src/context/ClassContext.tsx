@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig } from '../utils/math';
 import { normalizeNationality, getEvaluationControls, DEFAULT_PULSE_CONFIG, generateSamplePulseRounds } from '../utils/math';
 import { loadFeatureToggles, DEFAULT_FEATURE_TOGGLES, type FeatureToggles } from '../utils/featurePreferences';
+import { DEFAULT_KEYBOARD_SHORTCUTS } from '../utils/keyboardShortcuts';
 import { hashCode } from '../utils/csv';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, doc, onSnapshot, collection, deleteDoc, runTransaction, setDoc } from 'firebase/firestore';
@@ -458,8 +459,13 @@ import {
 
       // 3. Shortcuts
       if (Array.isArray(data.shortcuts) && data.shortcuts.length > 0) {
-        localStorage.setItem('peerlens_shortcuts_v3', JSON.stringify(data.shortcuts));
-        window.dispatchEvent(new CustomEvent('peerlens_shortcuts_changed', { detail: data.shortcuts }));
+        // Merge with DEFAULT_KEYBOARD_SHORTCUTS so system shortcuts (e.g. toggle_edit_mode) are never lost during cloud sync
+        const existingActionIds = new Set(data.shortcuts.map((p: any) => p.actionId || p.id));
+        const missingDefaults = DEFAULT_KEYBOARD_SHORTCUTS.filter(d => !existingActionIds.has(d.actionId || d.id));
+        const mergedShortcuts = missingDefaults.length > 0 ? [...data.shortcuts, ...missingDefaults] : data.shortcuts;
+
+        localStorage.setItem('peerlens_shortcuts_v3', JSON.stringify(mergedShortcuts));
+        window.dispatchEvent(new CustomEvent('peerlens_shortcuts_changed', { detail: mergedShortcuts }));
       }
 
       // 4. Feature toggles
