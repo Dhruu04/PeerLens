@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Users, CheckCircle, Clock, Mail, Copy, Check, Globe,
   Download, Smartphone, FileText, Edit2, RotateCcw,
-  Filter, X, Award, TrendingUp, GraduationCap
+  Filter, X, Award, TrendingUp, GraduationCap, ChevronDown, ChevronUp
 } from 'lucide-react';
 import type { ClassData, Student } from '../utils/math';
 import { calculateStudentWebPAScore, normalizeNationality } from '../utils/math';
@@ -49,6 +49,19 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
   const [copiedEmailTeam, setCopiedEmailTeam] = useState(false);
   const [editingBaseGrade, setEditingBaseGrade] = useState<string | null>(null);
   const [tempBaseGrade, setTempBaseGrade] = useState<number>(100);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(true);
+
+  // Master Collapse / Expand listener
+  useEffect(() => {
+    const handleCollapse = () => setIsCollapsed(true);
+    const handleExpand = () => setIsCollapsed(false);
+    window.addEventListener('peerlens_collapse_all', handleCollapse);
+    window.addEventListener('peerlens_expand_all', handleExpand);
+    return () => {
+      window.removeEventListener('peerlens_collapse_all', handleCollapse);
+      window.removeEventListener('peerlens_expand_all', handleExpand);
+    };
+  }, []);
 
   // Derive unique team groups
   const uniqueGroups = useMemo(() => {
@@ -369,10 +382,38 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
               <X size={13} /> Reset Filter
             </button>
           )}
+
+          {/* Expand / Collapse Button */}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            style={{
+              height: '32px',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              gap: '0.35rem',
+              borderRadius: '8px'
+            }}
+            title={isCollapsed ? 'Expand Team Cohorts Overview & Deep Dive' : 'Collapse Team Cohorts Overview & Deep Dive'}
+          >
+            {isCollapsed ? (
+              <>
+                <ChevronDown size={14} /> Expand ({summary.totalTeams} Teams)
+              </>
+            ) : (
+              <>
+                <ChevronUp size={14} /> Collapse
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* ─── 2. SEARCH & FILTER TOOLBAR ─── */}
+      {/* ─── 2. COLLAPSIBLE CARD BODY ─── */}
+      {!isCollapsed && (
+        <>
+          {/* ─── SEARCH & FILTER TOOLBAR ─── */}
       <div
         style={{
           display: 'flex',
@@ -1515,6 +1556,8 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
             )}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

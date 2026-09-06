@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles, CheckCircle, ArrowRight, RotateCcw,
   Check, ChevronUp, ChevronDown, Play, Compass, Pin, PinOff
@@ -36,6 +36,18 @@ export const GuidedSandboxHUD: React.FC<GuidedSandboxHUDProps> = ({
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isPinned, setIsPinned] = useState(true);
+
+  // Master Collapse / Expand listener
+  useEffect(() => {
+    const handleCollapse = () => setIsMinimized(true);
+    const handleExpand = () => setIsMinimized(false);
+    window.addEventListener('peerlens_collapse_all', handleCollapse);
+    window.addEventListener('peerlens_expand_all', handleExpand);
+    return () => {
+      window.removeEventListener('peerlens_collapse_all', handleCollapse);
+      window.removeEventListener('peerlens_expand_all', handleExpand);
+    };
+  }, []);
 
   const currentMission = missions[currentMissionIndex] || missions[0];
   const completedCount = missions.filter(m => m.isCompleted).length;

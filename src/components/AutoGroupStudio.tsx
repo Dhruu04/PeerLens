@@ -59,6 +59,18 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
   const [viewMode, setViewMode] = useState<'grid' | 'kanban'>('grid');
   const [draggedStudentId, setDraggedStudentId] = useState<string | null>(null);
 
+  // Master Collapse / Expand listener
+  useEffect(() => {
+    const handleCollapse = () => setIsExpanded(false);
+    const handleExpand = () => setIsExpanded(true);
+    window.addEventListener('peerlens_collapse_all', handleCollapse);
+    window.addEventListener('peerlens_expand_all', handleExpand);
+    return () => {
+      window.removeEventListener('peerlens_collapse_all', handleCollapse);
+      window.removeEventListener('peerlens_expand_all', handleExpand);
+    };
+  }, []);
+
   // Student bifurcation detail card modal
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SlidersHorizontal,
   ChevronDown,
@@ -32,6 +32,19 @@ export const CollapsibleEvaluationControls: React.FC<CollapsibleEvaluationContro
   compact = false
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  // Master Collapse / Expand listener
+  useEffect(() => {
+    const handleCollapse = () => setIsExpanded(false);
+    const handleExpand = () => setIsExpanded(true);
+    window.addEventListener('peerlens_collapse_all', handleCollapse);
+    window.addEventListener('peerlens_expand_all', handleExpand);
+    return () => {
+      window.removeEventListener('peerlens_collapse_all', handleCollapse);
+      window.removeEventListener('peerlens_expand_all', handleExpand);
+    };
+  }, []);
+
   const controls = getEvaluationControls(activeClass);
 
   const activeCount = Object.values(controls).filter(Boolean).length;

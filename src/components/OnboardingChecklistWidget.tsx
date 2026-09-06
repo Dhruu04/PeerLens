@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CheckCircle, Circle, ChevronDown, ChevronUp, Sparkles, X, Play
 } from 'lucide-react';
@@ -25,6 +25,28 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return localStorage.getItem('peer_onboarding_collapsed') === 'true';
   });
+
+  // Master Collapse / Expand listener
+  useEffect(() => {
+    const handleCollapse = () => {
+      setIsCollapsed(true);
+      try {
+        localStorage.setItem('peer_onboarding_collapsed', 'true');
+      } catch (e) {}
+    };
+    const handleExpand = () => {
+      setIsCollapsed(false);
+      try {
+        localStorage.setItem('peer_onboarding_collapsed', 'false');
+      } catch (e) {}
+    };
+    window.addEventListener('peerlens_collapse_all', handleCollapse);
+    window.addEventListener('peerlens_expand_all', handleExpand);
+    return () => {
+      window.removeEventListener('peerlens_collapse_all', handleCollapse);
+      window.removeEventListener('peerlens_expand_all', handleExpand);
+    };
+  }, []);
 
   const toggleCollapse = () => {
     setIsCollapsed(prev => {

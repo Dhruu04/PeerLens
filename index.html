@@ -10,18 +10,36 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>PeerLens - Intelligent Peer Assessment</title>
+    <script>
+      // Clean up service workers and local caches immediately on localhost before modules load
+      if (typeof window !== 'undefined') {
+        const isLocalDev = window.location.hostname === 'localhost' ||
+                           window.location.hostname === '127.0.0.1' ||
+                           window.location.port === '5173' ||
+                           window.location.port === '3000';
+        if (isLocalDev) {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then((regs) => {
+              regs.forEach((r) => r.unregister());
+            });
+          }
+          if ('caches' in window) {
+            caches.keys().then((keys) => {
+              keys.forEach((k) => caches.delete(k));
+            });
+          }
+        } else if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js').catch((err) => {
+              console.log('SW registration note:', err?.message || err);
+            });
+          });
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch((err) => {
-            console.log('SW registration note:', err?.message || err);
-          });
-        });
-      }
-    </script>
   </body>
 </html>

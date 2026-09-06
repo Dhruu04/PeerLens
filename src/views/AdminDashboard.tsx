@@ -377,6 +377,7 @@ export const AdminDashboard: React.FC = () => {
     signupAdmin,
     logoutAdmin,
     syncWorkspaceSettingsToCloud,
+    toggleStudentExcused,
     addToast
   } = useClass();
   const { toggleThemeMode } = useTheme();
@@ -734,6 +735,7 @@ export const AdminDashboard: React.FC = () => {
   const [copiedLms, setCopiedLms] = useState(false);
   const [showLmsGuideModal, setShowLmsGuideModal] = useState(false);
   const [lmsGuideActiveTab, setLmsGuideActiveTab] = useState<LmsPlatform>('canvas');
+  const [isLmsExportExpanded, setIsLmsExportExpanded] = useState<boolean>(false);
 
   // Custom LMS Schema Config state (persisted in localStorage)
   const [customLmsConfig, setCustomLmsConfig] = useState<CustomLmsConfig>(() => {
@@ -753,6 +755,38 @@ export const AdminDashboard: React.FC = () => {
       console.warn('Failed to save custom LMS configuration to localStorage', e);
     }
   }, [customLmsConfig]);
+
+  // Master Collapse/Expand All listener across all sections
+  useEffect(() => {
+    const handleCollapseAll = () => {
+      setIsRosterTableExpanded(false);
+      setIsResultsTableExpanded(false);
+      setIsAuditMatrixExpanded(false);
+      setIsLmsExportExpanded(false);
+      try {
+        document.querySelectorAll('details').forEach(el => {
+          el.open = false;
+        });
+      } catch (e) {}
+    };
+    const handleExpandAll = () => {
+      setIsRosterTableExpanded(true);
+      setIsResultsTableExpanded(true);
+      setIsAuditMatrixExpanded(true);
+      setIsLmsExportExpanded(true);
+      try {
+        document.querySelectorAll('details').forEach(el => {
+          el.open = true;
+        });
+      } catch (e) {}
+    };
+    window.addEventListener('peerlens_collapse_all', handleCollapseAll);
+    window.addEventListener('peerlens_expand_all', handleExpandAll);
+    return () => {
+      window.removeEventListener('peerlens_collapse_all', handleCollapseAll);
+      window.removeEventListener('peerlens_expand_all', handleExpandAll);
+    };
+  }, []);
 
   // Student PDF Report Card modal state
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -2486,6 +2520,14 @@ export const AdminDashboard: React.FC = () => {
         saveFeatureToggles(FULL_FEATURE_TOGGLES);
         syncWorkspaceSettingsToCloud({ featureToggles: FULL_FEATURE_TOGGLES });
         addToast('Applied Full Suite layout preset (All modules enabled)', 'success');
+        break;
+      case 'expand_all_sections':
+        window.dispatchEvent(new CustomEvent('peerlens_expand_all'));
+        addToast('Expanded all foldable dashboard sections', 'success');
+        break;
+      case 'collapse_all_sections':
+        window.dispatchEvent(new CustomEvent('peerlens_collapse_all'));
+        addToast('Collapsed all foldable dashboard sections', 'info');
         break;
 
       default:
@@ -5689,10 +5731,31 @@ export const AdminDashboard: React.FC = () => {
                   >
                     <BookOpen size={14} className="text-primary" /> LMS Import Step-by-Step Guide
                   </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setIsLmsExportExpanded(!isLmsExportExpanded)}
+                    style={{ fontSize: '0.78rem', height: '34px', padding: '0 0.85rem', gap: '0.4rem', fontWeight: 700 }}
+                    title={isLmsExportExpanded ? 'Collapse LMS Gradebook Integration' : 'Expand LMS Gradebook Integration'}
+                  >
+                    {isLmsExportExpanded ? (
+                      <>
+                        <ChevronUp size={14} /> Collapse
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown size={14} /> Expand ({selectedLmsTab.toUpperCase()})
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
-              {/* Tab Selector & Controls Row */}
+              {/* Collapsible Body */}
+              {isLmsExportExpanded && (
+                <>
+                  {/* Tab Selector & Controls Row */}
               <div
                 style={{
                   display: 'flex',
@@ -6571,6 +6634,8 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 );
               })()}
+                </>
+              )}
             </div>
           )}
 
@@ -10112,6 +10177,41 @@ export const AdminDashboard: React.FC = () => {
             'Are you sure you want to wipe all submitted peer reviews for this classroom? This will reset all student review statuses to pending. This action cannot be undone.',
             () => resetClassReviews(activeClass.id),
             'Reset Submissions',
+            'Cancel'
+          );
+        }}
+        onClearRoster={() => {
+          if (!activeClass) return;
+          triggerConfirm(
+            'Clear Classroom Roster',
+            `Are you sure you want to permanently delete all ${activeClass.students.length} students and their evaluation records from "${activeClass.name}"? Active student sessions will be immediately terminated.`,
+            () => clearClassRoster(activeClass.id),
+            'Clear Entire Roster',
+            'Cancel'
+          );
+        }}
+        onDeleteStudent={(studentId, studentName) => {
+          if (!activeClass) return;
+          triggerConfirm(
+            'Delete Student Record',
+            `Are you sure you want to remove "${studentName}" from "${activeClass.name}"? Their active session will be immediately terminated.`,
+            () => deleteStudent(activeClass.id, studentId),
+            'Delete Student',
+            'Cancel'
+          );
+        }}
+        onToggleExcused={(studentId, reason) => {
+          if (activeClass) {
+            toggleStudentExcused(activeClass.id, studentId, reason);
+          }
+        }}
+        onDeleteClass={() => {
+          if (!activeClass) return;
+          triggerConfirm(
+            'Delete Classroom Group',
+            `Are you sure you want to permanently delete "${activeClass.name}" and all of its associated students, teams, and evaluations?`,
+            () => deleteClass(activeClass.id),
+            'Delete Class',
             'Cancel'
           );
         }}

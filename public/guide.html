@@ -879,7 +879,7 @@
     </a>
     <a href="#ch10-command-palette" class="nav-item">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path></svg>
-      10. Quick Actions, Palette &amp; Exports
+      10. Omni Search, Quick Action Pill &amp; Office Hours Dossier
     </a>
 
     <div class="nav-group-label">Part 3: Student Manual</div>
@@ -1606,33 +1606,231 @@ Lukas Weber,l.weber@exchange.edu,Team Alpha,ST-104,Germany,B2,Male</code></pre>
       </div>
     </section>
 
-    <!-- CHAPTER 10: Command Palette & Export Suite -->
+    <!-- CHAPTER 10: Omni Search, Quick Action Pill & Office Hours Dossier -->
     <section class="chapter-block" id="ch10-command-palette">
       <div class="chapter-header">
         <span class="chapter-tag">Part 2: Instructor Manual</span>
         <h2>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path></svg>
-          10. Quick Action Center, Smart Command Palette &amp; Export Suite
+          10. Omni Search Bar, Quick Action Pill &amp; Office Hours Dispute Dossier
         </h2>
       </div>
 
-      <h3>Quick Action Center &amp; Floating Dock</h3>
       <p>
-        The <strong>Quick Action Pill</strong> is a persistent, floating dock anchored at the bottom center of the instructor interface. It offers instant access to critical classroom controls regardless of active scroll position:
+        PeerLens provides two synchronized control centers to eliminate administrative latency, automate grading workflows, and deliver instant transparency during live classroom facilitation and student office hours:
       </p>
+
+      <!-- Section 10.1: Omni Search & Command Palette -->
+      <h3>10.1 Omni Search Bar &amp; Universal Command Palette (<code>Ctrl + K</code> / <code>/</code>)</h3>
+      <p>
+        The <strong>Omni Search Bar</strong> (accessible via <code>Ctrl + K</code> on Windows/Linux, <code>Cmd + K</code> on macOS, or pressing <code>/</code>) is a keyboard-driven command execution and entity discovery engine. It searches across all active classroom entities with zero latency and zero page reloads.
+      </p>
+
+      <h4>Prefix Filter Syntax</h4>
+      <p>Instructors can isolate specific categories immediately by prefixing their query with a single trigger character, or clicking the corresponding prefix filter chip in the search header:</p>
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 12%;">
+            <col style="width: 24%;">
+            <col style="width: 32%;">
+            <col style="width: 32%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Prefix</th>
+              <th>Mode</th>
+              <th>Target Entities &amp; Telemetry</th>
+              <th>Example Queries</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>@</code></td>
+              <td><strong>Student Roster Filter</strong></td>
+              <td>Queries enrolled students by name, email, student ID, or group allocation. Displays submission timestamp and current peer multiplier.</td>
+              <td><code>@sarah</code>, <code>@team b</code>, <code>@unsubmitted</code></td>
+            </tr>
+            <tr>
+              <td><code>#</code></td>
+              <td><strong>Team Health Filter</strong></td>
+              <td>Queries project teams, rendering member count, completion %, group base mark, and rater consensus standard deviation.</td>
+              <td><code>#team 4</code>, <code>#alpha</code>, <code>#delta</code></td>
+            </tr>
+            <tr>
+              <td><code>&gt;</code></td>
+              <td><strong>Command &amp; Action Filter</strong></td>
+              <td>Executes administrative operations, modal launchers, layout modes, and LMS export workflows directly.</td>
+              <td><code>&gt;canvas</code>, <code>&gt;dark mode</code>, <code>&gt;reset reviews</code></td>
+            </tr>
+            <tr>
+              <td><code>?</code></td>
+              <td><strong>Help &amp; Pedagogical Reference</strong></td>
+              <td>Searches algorithmic derivations, Loughborough WebPA formulas, Johari thresholds, and keyboard shortcuts.</td>
+              <td><code>?webpa</code>, <code>?fudge weight</code>, <code>?johari</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>Natural Language Intent Parser &amp; Action Macros</h4>
+      <p>The Omni Search Bar includes semantic intent detection that matches common instructor terminology without requiring exact keyword syntax:</p>
       <ul>
-        <li><strong>Section Navigation:</strong> 1-click jumps between Section 1 (Enrollment &amp; Teams), Section 2 (Review System &amp; Rubrics), and Section 3 (Grading &amp; Analytics).</li>
-        <li><strong>Interface &amp; Module Toggles:</strong> Expand the dock to reveal real-time visibility toggles for the Home Hub cards, criteria auto-balancer, student portal simulator, projector view, team health pulse, and evaluation controls.</li>
-        <li><strong>Classroom Switcher &amp; ID Copy:</strong> Switch between multiple class sections seamlessly and copy the active classroom ID directly to clipboard.</li>
-        <li><strong>Rapid Tool Launcher:</strong> Trigger the Settings Hub, Academic Guidance Center, Student Portal Simulator, or Reset Review Submissions with zero clicks through menus.</li>
+        <li><code>"export"</code> / <code>"canvas"</code> / <code>"moodle"</code> / <code>"excel"</code> → Immediately launches the interactive <strong>Smart Export Studio</strong> with format pre-selected.</li>
+        <li><code>"remind pending"</code> / <code>"email unsubmitted"</code> → Triggers token reminder dispatches targeted exclusively to students who have not completed evaluations.</li>
+        <li><code>"flag outliers"</code> / <code>"check collusion"</code> → Navigates directly to Section 3 Anomaly &amp; Collusion Audit.</li>
+        <li><code>"expand all"</code> / <code>"collapse all"</code> → Executes global folding across all dashboard accordion sections.</li>
+        <li><code>"fudge 25"</code> / <code>"scale 100"</code> → Adjusts grading calibrator parameters on the fly.</li>
       </ul>
 
+      <h4>Live Split-Pane Dossier Inspector</h4>
       <p>
-        The <strong>Command Palette</strong> (shortcut: <code>Cmd + K</code> or <code>Ctrl + K</code>, or pressing <code>/</code>) provides a keyboard-driven workflow accelerator. Built-in NLP intent detection matches synonyms instantly.
+        Selecting any search result renders a side-by-side live inspector pane without dismissing the search dialog. The inspector dynamically adapts to the selected entity:
+      </p>
+      <ul>
+        <li><strong>For Students:</strong> Displays avatar/initials, team assignment, verified submission status, raw peer consensus average, calibrated WebPA factor ($R_i$), final adjusted mark ($G_i$), and 1-click action triggers: <strong>Dispute Dossier</strong>, <strong>Mark Excused</strong>, and <strong>Delete Record</strong>.</li>
+        <li><strong>For Teams:</strong> Displays team name, submission progress bar (e.g. <code>4/5 Submitted</code>), member roster with color-coded status badges, group average mark, and 1-click buttons to <em>Filter Dashboard to this Team</em> and <em>Export Team Gradebook</em>.</li>
+        <li><strong>For Commands &amp; Formulas:</strong> Displays keyboard shortcuts, intent scope, mathematical equations, and safety confirmation requirements.</li>
+      </ul>
+
+      <!-- Section 10.2: Excused Absence / Medical Exemption System -->
+      <h3>10.2 Excused Absence &amp; Medical Exemption Architecture</h3>
+      <p>
+        During collaborative group work, students may encounter documented medical emergencies, bereavement, university-approved athletic competition, or late registration adjustments. If an absent student does not submit peer evaluations or receives artificial zero scores from teammates, traditional peer evaluation algorithms distort both the absent student's grade and their teammates' multipliers.
       </p>
 
-      <h3>1-Click Direct Gradebook Exports</h3>
-      <p>Typing <code>export</code>, <code>excel</code>, <code>canvas</code>, <code>moodle</code>, <code>blackboard</code>, <code>brightspace</code>, <code>pdf</code>, or <code>csv</code> immediately surfaces direct download commands:</p>
+      <div class="callout">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          Academic Protection: Mathematical Denominator Neutrality
+        </div>
+        <p style="margin:0; font-size: 11.5px; color: var(--text-secondary);">
+          PeerLens features an academic-grade <strong>Medical Exemption / Excused Absence</strong> system that neutralizes the individual WebPA multiplier to exactly <code>1.000</code>, ensuring the student receives the team's base assignment mark without penalty while isolating the team denominator so active teammates' scores are protected.
+        </p>
+      </div>
+
+      <div class="math-block">
+        <div class="math-block-title">Algorithmic Exemption Neutralization</div>
+        <div class="math-block-inner">
+          <div class="math-eq">
+            <span class="math-var">R</span><span class="math-sub">excused</span>
+            <span class="math-op">=</span>
+            <span>1.000</span>
+          </div>
+          <div class="math-block-divider"></div>
+          <div class="math-eq">
+            <span class="math-var">G</span><span class="math-sub">excused</span>
+            <span class="math-op">=</span>
+            <span><span class="math-var">G</span><span class="math-sub">base</span> · [ (1 − <span class="math-var">f</span>) + <span class="math-var">f</span> · 1.000 ]</span>
+            <span class="math-op">=</span>
+            <span class="math-var">G</span><span class="math-sub">base</span>
+          </div>
+        </div>
+        <div class="formula-note" style="margin-top: 6px;">
+          The excused student's unsubmitted status is omitted from team submission deficits, preventing artificial downgrade penalties across the cohort.
+        </div>
+      </div>
+
+      <h4>Instructor Exemption Procedure</h4>
+      <div class="step-list">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h4>Locate Student via Omni Search</h4>
+            <p>Press <code>Ctrl + K</code> and type <code>@student name</code> to locate the student.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h4>Toggle Medical Exemption</h4>
+            <p>Click <strong>"Mark Excused"</strong> in the preview pane or select <em>Excuse / Medical Exemption</em> from the list. The record is badged with <code>[Excused Absence]</code> and a protective shield icon.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h4>Instant Re-calibration</h4>
+            <p>The WebPA Calibrator, Gradebook Matrix, and LMS export generators instantly re-calculate without requiring page refresh or data re-import.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 10.3: Student Grade Dispute Office Hours Dossier -->
+      <h3>10.3 Student Grade Dispute Office Hours Dossier</h3>
+      <p>
+        Grade dispute conferences during office hours often present challenges when students feel their teammates rated them unfairly. The <strong>Student Grade Dispute Studio</strong> arms instructors with verifiable, multi-rater empirical evidence to navigate office hours objectively and constructively.
+      </p>
+
+      <h4>Invoking the Dispute Dossier</h4>
+      <p>
+        In the Omni Search Bar, type <code>dispute &lt;student name&gt;</code> and press <code>Enter</code>, or click the <strong>"Dispute Dossier"</strong> button in the student's live preview pane.
+      </p>
+
+      <h4>Dossier Audit Components</h4>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Criteria Delta Table (Self vs. Peer Mean)</div>
+          <div class="card-desc">
+            Compares the student's self-evaluation against the peer consensus average for each rubric criterion. Quantifies perception divergence:
+            <span class="math-eq" style="display:block; margin-top:4px; font-size:11.5px;">Δ = <span class="math-var">Score</span><span class="math-sub">self</span> − <span class="math-var">Scorē</span><span class="math-sub">peers</span></span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Inter-Rater Consensus Standard Deviation (σ)</div>
+          <div class="card-desc">
+            Calculates variance among evaluating teammates.
+            <br>• <span class="math-eq">σ ≤ 0.75</span>: High rater agreement.
+            <br>• <span class="math-eq">σ &gt; 1.25</span>: <strong>Friction Alert</strong> (signals sharp peer disagreement requiring instructor mediation).
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Retaliatory Downgrade Detection</div>
+          <div class="card-desc">
+            Audits whether the student awarded retaliatory low marks to teammates. Cross-checks outgoing ratings against cohort norms to identify punitive grading behavior.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Anonymized Praise Badges &amp; Comments</div>
+          <div class="card-desc">
+            Aggregates recognized team strengths (e.g. <em>Creative Problem Solver</em>, <em>Reliable &amp; Punctual</em>) alongside anonymized qualitative growth suggestions.
+          </div>
+        </div>
+      </div>
+
+      <h4>1-Click Automated Response Generator</h4>
+      <p>
+        Clicking <strong>"Copy Response Draft"</strong> generates a complete, professional, institutional email ready to send to the student via email or LMS messaging:
+      </p>
+      <pre><code>Dear [Student Name],
+
+Thank you for meeting during office hours regarding your peer evaluation score for [Course Name].
+
+Below is the multi-rater breakdown of your peer evaluation results:
+- Assigned Team: [Team Name]
+- Team Base Project Mark: [Base Grade]
+- Peer Consensus Average: [Score] / [Max]
+- Calibrated WebPA Multiplier: [Factor]
+- Final Scaled Grade: [Final Grade]
+
+Rubric Dimension Breakdown:
+- Technical Execution: Self = 4.50 | Peer Mean = 3.20 (Gap: +1.30, Consensus StdDev: 0.42)
+- Team Communication: Self = 4.00 | Peer Mean = 2.60 (Gap: +1.40, Consensus StdDev: 0.38)
+
+Peer Recognition &amp; Feedback:
+- Recognized Strengths: [Praise Badges]
+- Opportunities for Growth: [Qualitative Themes]
+
+Please let me know if you would like to discuss strategies for collaborative communication in upcoming milestones.
+
+Sincerely,
+[Course Instructor]</code></pre>
+
+      <!-- Section 10.4: Smart Export Studio -->
+      <h3>10.4 Smart Multi-Format Export Studio ("How" &amp; "Which Cohort")</h3>
+      <p>
+        Typing <code>export</code> into Omni Search launches the interactive <strong>Smart Export Studio</strong> dialog. Instructors can customize both the export format and the target cohort scope:
+      </p>
 
       <div class="table-container">
         <table class="booktabs">
@@ -1643,61 +1841,233 @@ Lukas Weber,l.weber@exchange.edu,Team Alpha,ST-104,Germany,B2,Male</code></pre>
           </colgroup>
           <thead>
             <tr>
-              <th>Export Command</th>
-              <th>Target Format</th>
-              <th>Structure &amp; Compatibility</th>
+              <th>Export Format</th>
+              <th>Target Specification</th>
+              <th>Structure &amp; LMS Interoperability</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td><strong>Export: Excel Gradebook</strong></td>
-              <td><code>.xlsx</code> Workbook</td>
-              <td>2-sheet workbook: Sheet 1 contains final scaled marks and multipliers; Sheet 2 contains complete criterion-by-criterion peer rating breakdown.</td>
+              <td><strong>Excel Gradebook (.xlsx)</strong></td>
+              <td>Master 2-Sheet Workbook</td>
+              <td>Sheet 1 contains final scaled marks, multipliers, and team marks; Sheet 2 contains complete criterion-by-criterion peer rating breakdown with auto-styled headers.</td>
             </tr>
             <tr>
-              <td><strong>Export: Canvas LMS Gradebook</strong></td>
-              <td><code>.csv</code> (SIS User ID)</td>
-              <td>Formatted with Student Name, SIS User ID, Section, and Assignment Points for direct batch import in Canvas Gradebook.</td>
+              <td><strong>Canvas LMS (.csv)</strong></td>
+              <td>SIS User ID Gradebook</td>
+              <td>Standard SIS User ID, Student Name, Section, and Assignment Points ready for direct batch upload into Canvas SpeedGrader.</td>
             </tr>
             <tr>
-              <td><strong>Export: Moodle LMS Gradebook</strong></td>
-              <td><code>.csv</code> / <code>.xml</code></td>
-              <td>Matches Moodle grade import specifications matching email or ID numbers to assignment grade items.</td>
+              <td><strong>Moodle LMS (.csv / .xml)</strong></td>
+              <td>Moodle Grade Items</td>
+              <td>Compatible with Moodle grade import matching institutional email or ID numbers.</td>
             </tr>
             <tr>
-              <td><strong>Export: Blackboard Learn</strong></td>
-              <td><code>.csv</code> Gradebook</td>
-              <td>Blackboard Ultra/Original batch upload format with username mapping and calibrated scores.</td>
+              <td><strong>Blackboard Learn (.csv)</strong></td>
+              <td>Blackboard Batch Upload</td>
+              <td>Compatible with Blackboard Ultra and Original course grade centers.</td>
             </tr>
             <tr>
-              <td><strong>Export: Brightspace / D2L</strong></td>
-              <td><code>.csv</code> Gradebook</td>
-              <td>Desire2Learn format with <code>OrgDefinedId</code> and mandatory End-of-Line indicators.</td>
+              <td><strong>Brightspace / D2L (.csv)</strong></td>
+              <td>D2L OrgDefinedId</td>
+              <td>Formatted with <code>OrgDefinedId</code> and mandatory End-of-Line indicators.</td>
             </tr>
             <tr>
-              <td><strong>Export: Results Summary</strong></td>
-              <td><code>.csv</code> Tabular</td>
-              <td>Tabular comma-separated sheet of student IDs, names, teams, multipliers, and final grades.</td>
+              <td><strong>Results Summary (.csv)</strong></td>
+              <td>Tabular Grade Summary</td>
+              <td>Clean tabular data of IDs, names, teams, multipliers, and adjusted marks.</td>
             </tr>
             <tr>
-              <td><strong>Export: Class Summary PDF</strong></td>
-              <td><code>.pdf</code> Document</td>
-              <td>Vectorized PDF report containing cohort grade distributions, competency radar, and executive summary.</td>
+              <td><strong>Student Reports (.pdf)</strong></td>
+              <td>Batch Vectorized PDF</td>
+              <td>Formal evaluation reports with spider radars, Johari windows, and instructor signature lines.</td>
+            </tr>
+            <tr>
+              <td><strong>Micro-Pulse Longitudinal (.csv)</strong></td>
+              <td>Temporal Progress Data</td>
+              <td>Weekly pulse tracking of team health, morale, and blocker trends over time.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <h3>Quick Filter Jumpers (Single-Keystroke Filtering)</h3>
-      <p>Typing team names or status keywords updates both the Roster Table (Section 1) and Gradebook (Section 3) simultaneously:</p>
+      <h4>Cohort Scoping Options</h4>
       <ul>
-        <li><code>team a</code> / <code>team b</code>: Instantly filters the active cohort to the selected team and navigates to the table view.</li>
-        <li><code>pending</code> / <code>unsubmitted</code>: Isolates students who have not yet submitted evaluations.</li>
-        <li><code>submitted</code> / <code>completed</code>: Displays students with verified submissions.</li>
-        <li><code>unassigned</code>: Flags students without an allocated team.</li>
-        <li><code>duplicate</code>: Highlights colliding email or student ID registrations.</li>
-        <li><code>reset</code>: Clears all active filters back to the complete cohort.</li>
+        <li><strong>Entire Classroom:</strong> Exports evaluation records across all enrolled students and teams in the active classroom.</li>
+        <li><strong>Specific Team Cohort:</strong> Filters exported records strictly to a chosen team (e.g. <em>Team Alpha</em>, <em>Team 4</em>), ideal for team-specific grading sessions or milestone reviews.</li>
+        <li><strong>Completed Submissions Only:</strong> Filters out students with pending submissions to prevent incomplete grades in interim reports.</li>
       </ul>
+
+      <!-- Section 10.5: Quick Action Pill Dock -->
+      <h3>10.5 Quick Action Pill (Persistent Floating Dock)</h3>
+      <p>
+        The <strong>Quick Action Pill</strong> is a floating dock anchored at the bottom center of the screen, providing instant access to essential classroom controls without scrolling:
+      </p>
+      <ul>
+        <li><strong>Workflow Section Jumpers:</strong> Jump instantly to Section 1 (Enrollment &amp; Teams), Section 2 (Review System &amp; Rubrics), or Section 3 (Grading &amp; Analytics) via numeric keys <code>1</code>, <code>2</code>, <code>3</code> (or click the section tabs directly on the pill).</li>
+        <li><strong>Ambient Live Status Ticker (Toggleable):</strong> Displays real-time telemetry: submission completion percentage (<code>87% Submitted</code>), pending reviews (<code>4 Pending</code>), and anomaly alerts. <em>Instructors can click the `Ticker: ON / OFF` micro-toggle in the dock header to switch to a sleek, ultra-minimal pill.</em></li>
+        <li><strong>Master Section Folding:</strong> Expand all accordion cards and tables across the dashboard with one click (<code>⤓ Expand</code>), or collapse all into compact headers (<code>⤒ Collapse</code>).</li>
+        <li><strong>Modular Interface Studio:</strong> Filter dashboard modules by <em>All</em>, <em>Pinned</em>, <em>Visible</em>, or <em>Hidden</em>. Pin high-frequency tools (like WebPA Calibrator) to the top of the dock, or toggle visibility for any of the 52+ dashboard cards. Press <code>V</code> to open the modular view manager directly.</li>
+        <li><strong>Toggle Pill Visibility:</strong> Press <code>Q</code> (or <code>Alt + P</code>) from anywhere on the dashboard to show or hide the floating Quick Action Pill.</li>
+        <li><strong>Custom Layout Profiles:</strong> Click <code>+ Save View</code> to save any customized dashboard arrangement as a named profile (e.g. <em>"Grading Rush"</em>, <em>"Live Presentation"</em>). Custom profiles appear as instant 1-click preset chips alongside <em>Standard</em> and <em>Minimal</em> modes.</li>
+      </ul>
+
+      <!-- Section 10.6: Keyboard Shortcuts Reference -->
+      <h3>10.6 Master Keyboard Shortcuts &amp; Command Reference</h3>
+      <p>PeerLens features a comprehensive single-key and modifier shortcut system configured out-of-the-box (press <code>?</code> in the dashboard to open the live shortcut manager):</p>
+      <div class="table-container">
+        <table class="booktabs">
+          <colgroup>
+            <col style="width: 35%;">
+            <col style="width: 30%;">
+            <col style="width: 35%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Action / Function</th>
+              <th>Windows / Linux Shortcut</th>
+              <th>macOS Shortcut</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Open Omni Search &amp; Command Palette</strong></td>
+              <td><code>Ctrl + K</code></td>
+              <td><code>Cmd + K</code></td>
+            </tr>
+            <tr>
+              <td><strong>Close Active Modal / Dismiss Overlay</strong></td>
+              <td><code>Esc</code></td>
+              <td><code>Esc</code></td>
+            </tr>
+            <tr>
+              <td><strong>Navigate Search Results</strong></td>
+              <td><code>↑</code> / <code>↓</code> Arrow Keys</td>
+              <td><code>↑</code> / <code>↓</code> Arrow Keys</td>
+            </tr>
+            <tr>
+              <td><strong>Select / Execute Result</strong></td>
+              <td><code>Enter</code></td>
+              <td><code>Return</code></td>
+            </tr>
+            <tr>
+              <td><strong>Return to Classroom Hub Overview</strong></td>
+              <td><code>H</code></td>
+              <td><code>H</code></td>
+            </tr>
+            <tr>
+              <td><strong>Jump to Section 1 (Enrollment &amp; Teams)</strong></td>
+              <td><code>1</code></td>
+              <td><code>1</code></td>
+            </tr>
+            <tr>
+              <td><strong>Jump to Section 2 (Review System &amp; Rubrics)</strong></td>
+              <td><code>2</code></td>
+              <td><code>2</code></td>
+            </tr>
+            <tr>
+              <td><strong>Jump to Section 3 (Grading &amp; Analytics)</strong></td>
+              <td><code>3</code></td>
+              <td><code>3</code></td>
+            </tr>
+            <tr>
+              <td><strong>Toggle Floating Quick Action Pill</strong></td>
+              <td><code>Q</code> <em>(or <code>Alt + P</code>)</em></td>
+              <td><code>Q</code> <em>(or <code>Option + P</code>)</em></td>
+            </tr>
+            <tr>
+              <td><strong>Customize View (Modules Manager)</strong></td>
+              <td><code>V</code></td>
+              <td><code>V</code></td>
+            </tr>
+            <tr>
+              <td><strong>Academic Guidance Center &amp; Manual</strong></td>
+              <td><code>M</code></td>
+              <td><code>M</code></td>
+            </tr>
+            <tr>
+              <td><strong>Settings Hub</strong></td>
+              <td><code>S</code></td>
+              <td><code>S</code></td>
+            </tr>
+            <tr>
+              <td><strong>Launch Student Experience Simulator</strong></td>
+              <td><code>J</code></td>
+              <td><code>J</code></td>
+            </tr>
+            <tr>
+              <td><strong>Toggle Dark / Light Theme Mode</strong></td>
+              <td><code>F</code></td>
+              <td><code>F</code></td>
+            </tr>
+            <tr>
+              <td><strong>Interactive Guided Tour</strong></td>
+              <td><code>T</code></td>
+              <td><code>T</code></td>
+            </tr>
+            <tr>
+              <td><strong>Auto-Group Diversity Studio</strong></td>
+              <td><code>G</code></td>
+              <td><code>G</code></td>
+            </tr>
+            <tr>
+              <td><strong>Classroom Email &amp; Link Dispatcher</strong></td>
+              <td><code>E</code></td>
+              <td><code>E</code></td>
+            </tr>
+            <tr>
+              <td><strong>Launch Live Projector View</strong></td>
+              <td><code>P</code></td>
+              <td><code>P</code></td>
+            </tr>
+            <tr>
+              <td><strong>Create New Classroom Group</strong></td>
+              <td><code>C</code></td>
+              <td><code>C</code></td>
+            </tr>
+            <tr>
+              <td><strong>Add New Student Record</strong></td>
+              <td><code>N</code></td>
+              <td><code>N</code></td>
+            </tr>
+            <tr>
+              <td><strong>Open Roster Import Wizard</strong></td>
+              <td><code>I</code></td>
+              <td><code>I</code></td>
+            </tr>
+            <tr>
+              <td><strong>Add Rubric Criterion</strong></td>
+              <td><code>A</code></td>
+              <td><code>A</code></td>
+            </tr>
+            <tr>
+              <td><strong>Export Gradebook Data</strong></td>
+              <td><code>X</code></td>
+              <td><code>X</code></td>
+            </tr>
+            <tr>
+              <td><strong>Undo Last Action (30s Safety Net)</strong></td>
+              <td><code>Ctrl + Z</code></td>
+              <td><code>Cmd + Z</code></td>
+            </tr>
+            <tr>
+              <td><strong>Open Keyboard Shortcuts Cheat-Sheet</strong></td>
+              <td><code>?</code></td>
+              <td><code>?</code></td>
+            </tr>
+            <tr>
+              <td><strong>Cycle Previous / Next Classroom</strong></td>
+              <td><code>[</code> / <code>]</code></td>
+              <td><code>[</code> / <code>]</code></td>
+            </tr>
+            <tr>
+              <td><strong>Scroll to Top of Dashboard</strong></td>
+              <td><code>Home</code></td>
+              <td><code>Home</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <!-- CHAPTER 11: Student Manual -->

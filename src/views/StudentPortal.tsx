@@ -17,6 +17,8 @@ import FeatureInfoButton from '../components/FeatureInfoButton';
 interface StudentPortalProps {
   classId: string;
   studentId: string;
+  isPreview?: boolean;
+  onForcedLogout?: (reason: 'deleted' | 'expired') => void;
 }
 
 // Professional mapping for contribution expectation tiers
@@ -688,7 +690,12 @@ const ConstructiveFeedbackField: React.FC<ConstructiveFeedbackFieldProps> = ({
   );
 };
 
-export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId }) => {
+export const StudentPortal: React.FC<StudentPortalProps> = ({
+  classId,
+  studentId,
+  isPreview = false,
+  onForcedLogout
+}) => {
   const { classes, submitPeerReviews, addToast, enrollStudent, submitPulseResponse } = useClass();
 
   // Active student view: 'dashboard' (home) | 'evaluate' (peer reviews) | 'report' (performance analytics)
@@ -698,6 +705,90 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ classId, studentId
   const activeClass = classes.find((c) => c.id === classId);
   const student = activeClass?.students.find((s) => s.id === studentId);
   const evalControls = getEvaluationControls(activeClass);
+
+  // Immediate real-time deletion listener across tabs and database updates
+  useEffect(() => {
+    if (isPreview) return;
+
+    // 1. Reactive check against updated classes state
+    if (classes.length > 0 && activeClass && !student) {
+      try {
+        localStorage.removeItem('peer_active_student_session');
+        localStorage.removeItem(`peer_enrolled_student_${classId}`);
+        localStorage.removeItem(`peer_draft_${classId}_${studentId}`);
+      } catch (e) {}
+      if (onForcedLogout) {
+        onForcedLogout('deleted');
+      }
+      return;
+    }
+
+    // 2. BroadcastChannel real-time multi-tab listener
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('peerlens_roster_channel');
+        bc.onmessage = (e) => {
+          const data = e.data;
+          if (!data) return;
+          if (
+            (data.type === 'STUDENT_DELETED' && data.classId === classId && data.studentId === studentId) ||
+            (data.type === 'STUDENTS_DELETED' && data.classId === classId && Array.isArray(data.studentIds) && data.studentIds.includes(studentId)) ||
+            (data.type === 'ROSTER_CLEARED' && data.classId === classId)
+          ) {
+            try {
+              localStorage.removeItem('peer_active_student_session');
+              localStorage.removeItem(`peer_enrolled_student_${classId}`);
+              localStorage.removeItem(`peer_draft_${classId}_${studentId}`);
+            } catch (err) {}
+            if (onForcedLogout) {
+              onForcedLogout('deleted');
+            }
+          }
+        };
+      }
+    } catch (err) {}
+
+    // 3. Window CustomEvent listener
+    const handleLocalDeleted = (ev: Event) => {
+      const customEv = ev as CustomEvent;
+      const detail = customEv.detail;
+      if (detail && detail.classId === classId && (detail.studentId === studentId || (Array.isArray(detail.studentIds) && detail.studentIds.includes(studentId)))) {
+        try {
+          localStorage.removeItem('peer_active_student_session');
+          localStorage.removeItem(`peer_enrolled_student_${classId}`);
+          localStorage.removeItem(`peer_draft_${classId}_${studentId}`);
+        } catch (err) {}
+        if (onForcedLogout) {
+          onForcedLogout('deleted');
+        }
+      }
+    };
+    const handleLocalRosterCleared = (ev: Event) => {
+      const customEv = ev as CustomEvent;
+      if (customEv.detail && customEv.detail.classId === classId) {
+        try {
+          localStorage.removeItem('peer_active_student_session');
+          localStorage.removeItem(`peer_enrolled_student_${classId}`);
+          localStorage.removeItem(`peer_draft_${classId}_${studentId}`);
+        } catch (err) {}
+        if (onForcedLogout) {
+          onForcedLogout('deleted');
+        }
+      }
+    };
+
+    window.addEventListener('peerlens_student_deleted', handleLocalDeleted);
+    window.addEventListener('peerlens_students_deleted', handleLocalDeleted);
+    window.addEventListener('peerlens_roster_cleared', handleLocalRosterCleared);
+
+    return () => {
+      if (bc) bc.close();
+      window.removeEventListener('peerlens_student_deleted', handleLocalDeleted);
+      window.removeEventListener('peerlens_students_deleted', handleLocalDeleted);
+      window.removeEventListener('peerlens_roster_cleared', handleLocalRosterCleared);
+    };
+  }, [classes, activeClass, student, classId, studentId, isPreview, onForcedLogout]);
 
   // Profile Edit modal states
   const [isEditingProfile, setIsEditingProfile] = useState(false);

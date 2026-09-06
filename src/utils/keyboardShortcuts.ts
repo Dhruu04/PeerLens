@@ -427,6 +427,22 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     suggestedKey: 'f',
     suggestedModifiers: { alt: true }
   },
+  {
+    id: 'expand_all_sections',
+    label: 'Master Action: Expand All Foldable Sections',
+    category: 'Layout & Presets',
+    description: 'Simultaneously expand Roster Table, Auto-Group Studio, Rubric Controls, Health Pulse, Cohorts, LMS Export, and Audit Matrix.',
+    suggestedKey: 'e',
+    suggestedModifiers: { alt: true }
+  },
+  {
+    id: 'collapse_all_sections',
+    label: 'Master Action: Collapse All Foldable Sections',
+    category: 'Layout & Presets',
+    description: 'Fold all expandable sections across all tabs into clean, compact card headers.',
+    suggestedKey: 'c',
+    suggestedModifiers: { alt: true }
+  },
 
   // --- General ---
   {

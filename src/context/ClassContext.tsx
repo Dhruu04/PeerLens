@@ -90,6 +90,7 @@ import {
     addStudent: (classId: string, student: Omit<Student, 'submitted'>) => void;
     enrollStudent: (classId: string, student: Omit<Student, 'submitted' | 'id'> & { id?: string }) => Promise<{ success: boolean; studentId: string; message?: string }>;
     updateStudent: (classId: string, studentId: string, updatedFields: Partial<Student>) => void;
+    toggleStudentExcused: (classId: string, studentId: string, reason?: string) => void;
     deleteStudent: (classId: string, studentId: string) => void;
     deleteStudents: (classId: string, studentIds: string[]) => void;
     submitPeerReviews: (classId: string, reviewerId: string, reviews: Omit<Review, 'reviewerId'>[]) => Promise<void>;
@@ -793,7 +794,10 @@ import {
           nameChangeCount: typeof s.nameChangeCount === 'number' ? s.nameChangeCount : 0,
           lastProfileEditAt: s.lastProfileEditAt || null,
           flaggedForReview: !!s.flaggedForReview,
-          suspiciousReason: s.suspiciousReason || null
+          suspiciousReason: s.suspiciousReason || null,
+          isExcused: !!s.isExcused,
+          excusedReason: s.excusedReason || '',
+          excusedAt: s.excusedAt || null
         })) : [],
         reviews: Array.isArray(c.reviews) ? c.reviews.map(r => ({
           reviewerId: r.reviewerId || '',
@@ -1475,6 +1479,42 @@ import {
       });
       persistClasses(updatedClasses);
     };
+
+    const toggleStudentExcused = (classId: string, studentId: string, reason?: string) => {
+      const current = getCurrentClasses();
+      const targetClass = current.find(c => c.id === classId);
+      const student = targetClass?.students.find(s => s.id === studentId);
+      if (!student) return;
+
+      const nextExcused = !student.isExcused;
+      const updatedClasses = current.map((c) => {
+        if (c.id === classId) {
+          const updatedStudents = c.students.map((s) => {
+            if (s.id === studentId) {
+              return {
+                ...s,
+                isExcused: nextExcused,
+                excusedReason: nextExcused ? (reason || 'Medical / Extenuating Exemption') : undefined,
+                excusedAt: nextExcused ? Date.now() : undefined
+              };
+            }
+            return s;
+          });
+          return { ...c, students: updatedStudents };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+
+      if (nextExcused) {
+        addToast(
+          `Marked "${student.name}" as Excused. Peer multiplier neutralized to 1.00 & team denominator protected.`,
+          'info'
+        );
+      } else {
+        addToast(`Removed Excused Exemption for "${student.name}".`, 'info');
+      }
+    };
   
     const deleteStudent = (classId: string, studentId: string) => {
       const current = getCurrentClasses();
@@ -1494,6 +1534,15 @@ import {
         return c;
       });
       persistClasses(updatedClasses);
+
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('peerlens_roster_channel');
+          bc.postMessage({ type: 'STUDENT_DELETED', classId, studentId });
+          bc.close();
+        }
+      } catch {}
+      window.dispatchEvent(new CustomEvent('peerlens_student_deleted', { detail: { classId, studentId } }));
 
       const studentName = studentToDelete ? studentToDelete.name : 'Student';
       addToast(`Removed "${studentName}" from class`, 'warning', {
@@ -1524,6 +1573,15 @@ import {
         return c;
       });
       persistClasses(updatedClasses);
+
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('peerlens_roster_channel');
+          bc.postMessage({ type: 'STUDENTS_DELETED', classId, studentIds });
+          bc.close();
+        }
+      } catch {}
+      window.dispatchEvent(new CustomEvent('peerlens_students_deleted', { detail: { classId, studentIds } }));
 
       addToast(`Deleted ${studentIds.length} student${studentIds.length > 1 ? 's' : ''}`, 'warning', {
         duration: 30000,
@@ -1836,6 +1894,15 @@ import {
         return c;
       });
       persistClasses(updatedClasses);
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('peerlens_roster_channel');
+          bc.postMessage({ type: 'ROSTER_CLEARED', classId });
+          bc.close();
+        }
+      } catch {}
+      window.dispatchEvent(new CustomEvent('peerlens_roster_cleared', { detail: { classId } }));
+
       if (!silent) {
         addToast(`Cleared class roster (${studentCount} students)`, 'warning', {
           duration: 30000,
@@ -1905,6 +1972,7 @@ import {
           addStudent,
           enrollStudent,
           updateStudent,
+          toggleStudentExcused,
           deleteStudent,
           deleteStudents,
           submitPeerReviews,

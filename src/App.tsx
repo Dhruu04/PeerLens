@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, LogOut } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { ClassProvider, useClass } from './context/ClassContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
 import AdminDashboard from './views/AdminDashboard';
 import StudentPortal from './views/StudentPortal';
 import StudentEnrollmentPortal from './views/StudentEnrollmentPortal';
+import StudentSessionEnded from './views/StudentSessionEnded';
+import InstructorAccessGate from './components/InstructorAccessGate';
 import ProjectorView from './views/ProjectorView';
 import ToastContainer from './components/Toast';
 
 const AppContent: React.FC = () => {
-  const { activeClass, activeAdminProfile, classes } = useClass();
+  const { activeClass, activeAdminProfile, classes, isCloudSynced, user, addToast } = useClass();
   const [routeParams, setRouteParams] = useState<{
     classId: string | null;
     studentId: string | null;
@@ -21,6 +23,11 @@ const AppContent: React.FC = () => {
     studentId: null,
     enrollClassId: null,
     isProjector: false
+  });
+
+  const [viewOverride, setViewOverride] = useState<'default' | 'session_ended' | 'account_removed'>('default');
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem('peer_admin_unlocked') === 'true';
   });
 
   // Client-side query-based routing with automatic student session persistence
@@ -37,7 +44,9 @@ const AppContent: React.FC = () => {
       if (classId && studentId) {
         try {
           localStorage.setItem('peer_active_student_session', JSON.stringify({ classId, studentId }));
+          sessionStorage.setItem('peer_device_role', 'student');
         } catch (e) {}
+        setViewOverride('default');
       }
 
       // 2. If opened via enrollment link or QR code, check if student already enrolled on this device
@@ -50,7 +59,9 @@ const AppContent: React.FC = () => {
               classId = enrollClassId;
               studentId = parsed.id;
               localStorage.setItem('peer_active_student_session', JSON.stringify({ classId, studentId }));
+              sessionStorage.setItem('peer_device_role', 'student');
               setRouteParams({ classId, studentId, enrollClassId: null, isProjector });
+              setViewOverride('default');
               return;
             }
           }
@@ -81,11 +92,40 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handleUrlChange);
   }, []);
 
-  const handleExitStudentSession = () => {
+  // Reactive Watchdog: If active student is deleted from the class roster, immediately log them out
+  useEffect(() => {
+    if (routeParams.classId && routeParams.studentId && classes.length > 0) {
+      const targetClass = classes.find(c => c.id === routeParams.classId);
+      if (targetClass) {
+        const studentExists = targetClass.students.some(s => s.id === routeParams.studentId);
+        if (!studentExists) {
+          handleForcedStudentLogout('deleted');
+        }
+      }
+    }
+  }, [classes, routeParams.classId, routeParams.studentId]);
+
+  // Handle immediate forced logout when student record is deleted
+  const handleForcedStudentLogout = (reason: 'deleted' | 'expired') => {
+    const affectedClassId = routeParams.classId;
+    const affectedStudentId = routeParams.studentId;
+
     try {
       localStorage.removeItem('peer_active_student_session');
+      if (affectedClassId) {
+        localStorage.removeItem(`peer_enrolled_student_${affectedClassId}`);
+        if (affectedStudentId) {
+          localStorage.removeItem(`peer_draft_${affectedClassId}_${affectedStudentId}`);
+        }
+      }
+      sessionStorage.removeItem('peer_admin_unlocked');
+      sessionStorage.setItem('peer_device_role', 'student');
     } catch (e) {}
-    window.location.href = window.location.origin + window.location.pathname + '?admin=true';
+
+    window.history.replaceState(null, '', window.location.origin + window.location.pathname);
+    setRouteParams({ classId: null, studentId: null, enrollClassId: null, isProjector: false });
+    setViewOverride(reason === 'deleted' ? 'account_removed' : 'session_ended');
+    addToast(reason === 'deleted' ? 'Your student session has ended: student record was removed from the roster.' : 'Your student session has ended.', 'warning');
   };
 
   if (routeParams.isProjector) {
@@ -93,47 +133,39 @@ const AppContent: React.FC = () => {
     return <ProjectorView classData={matchedClass || activeClass || classes[0]} isStandalone={true} />;
   }
 
-  const isStudentPortal = routeParams.classId && routeParams.studentId;
+  const isStudentPortal = !!(routeParams.classId && routeParams.studentId);
   const isEnrollmentPortal = !!routeParams.enrollClassId;
   const enrollmentClass = isEnrollmentPortal ? classes.find(c => c.id === routeParams.enrollClassId) : null;
+
+  // Check if admin is currently authenticated/unlocked
+  const isInstructorAuthorized = isCloudSynced ? !!user : isAdminUnlocked;
 
   return (
     <div className="app-container">
       {/* Dynamic Header for Student/Enrollment Portals */}
       {(isEnrollmentPortal || isStudentPortal) && (
         <header className="app-header">
-          <div className="brand" onClick={() => window.location.href = window.location.origin + window.location.pathname}>
+          <div
+            className="brand"
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              if (isStudentPortal) {
+                // Stay in student portal
+                window.location.href = window.location.origin + window.location.pathname + `?classId=${routeParams.classId}&studentId=${routeParams.studentId}`;
+              } else if (isEnrollmentPortal) {
+                window.location.href = window.location.origin + window.location.pathname + `?enrollClassId=${routeParams.enrollClassId}`;
+              }
+            }}
+          >
             <img src="/PeerGrading.png" alt="Logo" style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'contain' }} />
             <span>PeerLens</span>
           </div>
 
           <div style={{ display: 'flex', gap: '0.55rem', alignItems: 'center' }}>
             {isStudentPortal && (
-              <>
-                <span className="badge badge-teal" style={{ gap: '0.25rem', height: '28px', padding: '0 0.55rem' }}>
-                  <ShieldCheck size={12} /> <span className="header-status-label">Student Session</span>
-                </span>
-
-                <button
-                  type="button"
-                  onClick={handleExitStudentSession}
-                  className="btn btn-secondary btn-sm hide-on-print"
-                  style={{
-                    height: '28px',
-                    padding: '0 0.55rem',
-                    fontSize: '0.72rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-secondary)'
-                  }}
-                  title="Log out of student session and return to administrator dashboard"
-                >
-                  <LogOut size={12} />
-                  <span>Exit Session</span>
-                </button>
-              </>
+              <span className="badge badge-teal" style={{ gap: '0.25rem', height: '28px', padding: '0 0.55rem' }}>
+                <ShieldCheck size={12} /> <span className="header-status-label">Student Session</span>
+              </span>
             )}
 
             {/* Subtle Separator */}
@@ -147,15 +179,33 @@ const AppContent: React.FC = () => {
 
       {/* Main View Router */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
-        {isEnrollmentPortal ? (
+        {viewOverride === 'session_ended' ? (
+          <StudentSessionEnded
+            reason="manual_exit"
+            className={activeClass?.name}
+            onReEnterWithLink={(url) => { window.location.href = url; }}
+          />
+        ) : viewOverride === 'account_removed' ? (
+          <StudentSessionEnded
+            reason="deleted"
+            className={activeClass?.name}
+            onReEnterWithLink={(url) => { window.location.href = url; }}
+          />
+        ) : isEnrollmentPortal ? (
           <StudentEnrollmentPortal classId={routeParams.enrollClassId!} />
         ) : isStudentPortal ? (
           <StudentPortal
             classId={routeParams.classId!}
             studentId={routeParams.studentId!}
+            onForcedLogout={handleForcedStudentLogout}
           />
-        ) : (
+        ) : isInstructorAuthorized ? (
           <AdminDashboard />
+        ) : (
+          <InstructorAccessGate
+            onUnlock={() => setIsAdminUnlocked(true)}
+            onGoToStudentPortal={() => setViewOverride('session_ended')}
+          />
         )}
       </main>
 

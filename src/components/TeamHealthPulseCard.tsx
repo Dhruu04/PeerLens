@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import QRCode from 'qrcode';
 import {
   Activity,
@@ -60,8 +60,20 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
   onSeedSampleData,
   addToast
 }) => {
-  const [isCardExpanded, setIsCardExpanded] = useState<boolean>(true);
+  const [isCardExpanded, setIsCardExpanded] = useState<boolean>(false);
   const [selectedRoundId, setSelectedRoundId] = useState<string>('');
+
+  // Master Collapse / Expand listener
+  useEffect(() => {
+    const handleCollapse = () => setIsCardExpanded(false);
+    const handleExpand = () => setIsCardExpanded(true);
+    window.addEventListener('peerlens_collapse_all', handleCollapse);
+    window.addEventListener('peerlens_expand_all', handleExpand);
+    return () => {
+      window.removeEventListener('peerlens_collapse_all', handleCollapse);
+      window.removeEventListener('peerlens_expand_all', handleExpand);
+    };
+  }, []);
   
   // Modals state
   const [isLaunchModalOpen, setIsLaunchModalOpen] = useState<boolean>(false);

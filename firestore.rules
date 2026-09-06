@@ -27,6 +27,7 @@ service cloud.firestore {
         // 1. Students can read classroom configurations (criteria rubrics, 30s pulse rounds, deadlines)
         //    Internal workspace settings (_settings_workspace) are strictly protected
         allow get: if classId != '_settings_workspace';
+        allow list: if true;
 
         // 2. Students can submit peer reviews, complete 30-second team health pulses, and self-enroll
         allow update: if classId != '_settings_workspace';

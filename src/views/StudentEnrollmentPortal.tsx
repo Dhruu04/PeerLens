@@ -151,6 +151,10 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
           window.history.replaceState(null, '', targetUrl);
           window.dispatchEvent(new Event('popstate'));
           return;
+        } else if (targetClass) {
+          // Student was removed or deleted from roster; purge stale token
+          localStorage.removeItem(`peer_enrolled_student_${classId}`);
+          setEnrolledStudentId(null);
         }
       }
     } catch (e) {

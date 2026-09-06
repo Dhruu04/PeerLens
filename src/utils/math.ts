@@ -29,9 +29,13 @@ export interface Student {
   isInternational?: boolean;
   isExchange?: boolean;
   currentCountry?: string;
+  currentUniversity?: string;
   originalCountry?: string;
   originalUniversity?: string;
-  currentUniversity?: string;
+  // Academic status & exemption fields
+  isExcused?: boolean; // Medical or approved extenuating circumstance exemption
+  excusedReason?: string; // Reason description (e.g. "Medical Leave", "Approved Deferral")
+  excusedAt?: number; // Timestamp of when exemption was granted
   // Discreet audit & identity provenance fields
   originalName?: string;
   originalEmail?: string;
@@ -431,15 +435,32 @@ export function calculateStudentWebPAScore(
   classData: ClassData,
   baseGroupGrade: number = 100,
   fudgeWeight: number = 0.5
-) {
+): {
+  ratio: number;
+  adjustedGrade: number;
+  teamBaseGrade: number;
+  isExcused?: boolean;
+} {
   const effectiveBaseGrade = getTeamBaseGrade(classData, groupName, baseGroupGrade);
+
+  const targetStudent = classData.students.find((s) => s.id === studentId);
+  // 1. If target student is explicitly excused, award neutral multiplier 1.00 and effective base grade
+  if (targetStudent?.isExcused) {
+    return {
+      ratio: 1.0,
+      adjustedGrade: effectiveBaseGrade,
+      teamBaseGrade: effectiveBaseGrade,
+      isExcused: true
+    };
+  }
 
   const groupStudents = classData.students.filter((s) => s.groupName === groupName);
   if (groupStudents.length <= 1) {
     return {
       ratio: 1.0,
       adjustedGrade: effectiveBaseGrade,
-      teamBaseGrade: effectiveBaseGrade
+      teamBaseGrade: effectiveBaseGrade,
+      isExcused: false
     };
   }
 
@@ -463,28 +484,31 @@ export function calculateStudentWebPAScore(
 
     // percentage score
     const pct = totalWeightSum > 0 ? (weightedScoreSum / totalWeightSum) / 100 : null;
-    return { studentId: s.id, pct };
+    return { studentId: s.id, pct, isExcused: !!s.isExcused };
   });
 
-  const validAverages = peerAverages.filter((x) => x.pct !== null) as { studentId: string; pct: number }[];
+  const validAverages = peerAverages.filter((x) => x.pct !== null && !x.isExcused) as { studentId: string; pct: number }[];
   if (validAverages.length === 0) {
     return {
       ratio: 1.0,
       adjustedGrade: effectiveBaseGrade,
-      teamBaseGrade: effectiveBaseGrade
+      teamBaseGrade: effectiveBaseGrade,
+      isExcused: false
     };
   }
 
-  // Group sum of peer average percentages
+  // Group sum of peer average percentages across active, non-excused students
   const groupSum = validAverages.reduce((acc, x) => acc + x.pct, 0);
-  const groupAvg = groupSum / groupStudents.length;
+  const activeStudentCount = groupStudents.filter(s => !s.isExcused).length;
+  const groupAvg = groupSum / Math.max(1, validAverages.length > 0 ? validAverages.length : activeStudentCount);
 
   const studentAvg = validAverages.find((x) => x.studentId === studentId)?.pct ?? null;
   if (studentAvg === null || groupAvg === 0) {
     return {
       ratio: 1.0,
       adjustedGrade: effectiveBaseGrade,
-      teamBaseGrade: effectiveBaseGrade
+      teamBaseGrade: effectiveBaseGrade,
+      isExcused: false
     };
   }
 
@@ -497,7 +521,208 @@ export function calculateStudentWebPAScore(
   return {
     ratio,
     adjustedGrade,
-    teamBaseGrade: effectiveBaseGrade
+    teamBaseGrade: effectiveBaseGrade,
+    isExcused: false
+  };
+}
+
+export interface CriterionDisputeRow {
+  fieldId: string;
+  fieldName: string;
+  maxScore: number;
+  weight: number;
+  selfScore: number | null;
+  peerAverage: number | null;
+  delta: number | null; // self - peerAverage
+  peerScores: number[];
+  stdDev: number | null;
+  consensusLevel: 'strong' | 'moderate' | 'divergent';
+}
+
+export interface StudentDisputeAudit {
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  groupName: string;
+  isExcused: boolean;
+  submitted: boolean;
+  teamBaseGrade: number;
+  webpaRatio: number;
+  adjustedGrade: number;
+  fudgeWeight: number;
+  overallSelfPercentage: number | null;
+  overallPeerPercentage: number | null;
+  overallGapDelta: number | null;
+  criteriaBreakdown: CriterionDisputeRow[];
+  reviewsReceivedCount: number;
+  teammatesCount: number;
+  retaliationRisk: boolean;
+  retaliationDetails?: string;
+  unanimousPeerConsensus: boolean;
+  praiseTags: string[];
+  qualitativeStrengths: string[];
+  qualitativeGrowthSuggestions: string[];
+  suggestedEmailResponse: string;
+}
+
+export function generateStudentDisputeAudit(
+  student: Student,
+  classData: ClassData,
+  baseGroupGrade: number = 100,
+  fudgeWeight: number = 0.5
+): StudentDisputeAudit {
+  const webpa = calculateStudentWebPAScore(student.id, student.groupName, classData, baseGroupGrade, fudgeWeight);
+  const teammates = getTeammates(student.id, student.groupName, classData.students);
+  const teammatesCount = teammates.length;
+
+  // Self review
+  const selfReview = classData.reviews.find(r => r.reviewerId === student.id && r.recipientId === student.id);
+  
+  // Reviews received from teammates
+  const peerReviews = classData.reviews.filter(r => r.recipientId === student.id && teammates.includes(r.reviewerId));
+  const reviewsReceivedCount = peerReviews.length;
+
+  // Reviews written by this student to teammates (for retaliation audit)
+  const writtenToTeammates = classData.reviews.filter(r => r.reviewerId === student.id && teammates.includes(r.recipientId));
+
+  let selfWeightedSum = 0;
+  let selfTotalWeight = 0;
+  let peerWeightedSum = 0;
+  let peerTotalWeight = 0;
+
+  const criteriaBreakdown: CriterionDisputeRow[] = classData.fields.map(field => {
+    const selfScore = selfReview && selfReview.scores[field.id] !== undefined ? selfReview.scores[field.id] : null;
+    const peerScores = peerReviews.map(r => r.scores[field.id]).filter((s): s is number => s !== undefined);
+    const peerAvg = peerScores.length > 0 ? Number((peerScores.reduce((a, b) => a + b, 0) / peerScores.length).toFixed(2)) : null;
+    const delta = selfScore !== null && peerAvg !== null ? Number((selfScore - peerAvg).toFixed(2)) : null;
+    
+    // Std dev among peers
+    let stdDev: number | null = null;
+    if (peerScores.length >= 2) {
+      const mean = peerScores.reduce((a, b) => a + b, 0) / peerScores.length;
+      const variance = peerScores.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / peerScores.length;
+      stdDev = Number(Math.sqrt(variance).toFixed(2));
+    }
+
+    const consensusLevel = stdDev === null || stdDev <= 0.6 ? 'strong' : stdDev <= 1.2 ? 'moderate' : 'divergent';
+
+    const fieldWeight = field.weight !== undefined && field.weight > 0 ? field.weight : (100 / Math.max(1, classData.fields.length));
+
+    if (selfScore !== null && field.max > 0) {
+      selfWeightedSum += (selfScore / field.max) * 100 * fieldWeight;
+      selfTotalWeight += fieldWeight;
+    }
+    if (peerAvg !== null && field.max > 0) {
+      peerWeightedSum += (peerAvg / field.max) * 100 * fieldWeight;
+      peerTotalWeight += fieldWeight;
+    }
+
+    return {
+      fieldId: field.id,
+      fieldName: field.name,
+      maxScore: field.max,
+      weight: fieldWeight,
+      selfScore,
+      peerAverage: peerAvg,
+      delta,
+      peerScores,
+      stdDev,
+      consensusLevel
+    };
+  });
+
+  const overallSelfPercentage = selfTotalWeight > 0 ? Number((selfWeightedSum / selfTotalWeight).toFixed(1)) : null;
+  const overallPeerPercentage = peerTotalWeight > 0 ? Number((peerWeightedSum / peerTotalWeight).toFixed(1)) : null;
+  const overallGapDelta = overallSelfPercentage !== null && overallPeerPercentage !== null ? Number((overallSelfPercentage - overallPeerPercentage).toFixed(1)) : null;
+
+  // Retaliation Check: Did this student rate teammates much lower than what teammates gave each other?
+  let retaliationRisk = false;
+  let retaliationDetails: string | undefined;
+  if (writtenToTeammates.length > 0 && classData.fields.length > 0) {
+    let studentGivenSum = 0, studentGivenMax = 0;
+    writtenToTeammates.forEach(rev => {
+      classData.fields.forEach(f => {
+        studentGivenSum += rev.scores[f.id] ?? 0;
+        studentGivenMax += f.max;
+      });
+    });
+    const studentGivenPct = studentGivenMax > 0 ? (studentGivenSum / studentGivenMax) * 100 : 0;
+    if (studentGivenPct < 60 && (overallPeerPercentage ?? 100) > studentGivenPct + 25) {
+      retaliationRisk = true;
+      retaliationDetails = `Student rated teammates very critically (avg ${studentGivenPct.toFixed(0)}%) compared to the team consensus.`;
+    }
+  }
+
+  // Consensus uniformity
+  const unanimousPeerConsensus = criteriaBreakdown.every(c => c.consensusLevel === 'strong');
+
+  // Qualitative praise & comments
+  const praiseTagsSet = new Set<string>();
+  const qualitativeStrengths: string[] = [];
+  const qualitativeGrowthSuggestions: string[] = [];
+
+  peerReviews.forEach(rev => {
+    rev.praiseTags?.forEach(tag => praiseTagsSet.add(tag));
+    if (rev.strengthsText?.trim()) qualitativeStrengths.push(rev.strengthsText.trim());
+    if (rev.growthText?.trim()) qualitativeGrowthSuggestions.push(rev.growthText.trim());
+  });
+
+  const receivedPraiseTags = Array.from(praiseTagsSet);
+
+  // Ready-to-copy email draft
+  const firstName = student.name.split(' ')[0] || student.name;
+  const selfPctStr = overallSelfPercentage !== null ? `${overallSelfPercentage}%` : 'N/A';
+  const peerPctStr = overallPeerPercentage !== null ? `${overallPeerPercentage}%` : 'N/A';
+  
+  const suggestedEmailResponse = [
+    `Dear ${firstName},`,
+    '',
+    `Thank you for inquiring about your peer evaluation results for ${student.groupName || 'your team'}.`,
+    '',
+    `Here is a summary of the standardized mathematical evaluation breakdown:`,
+    `• Team Base Grade: ${webpa.teamBaseGrade.toFixed(1)} pts`,
+    `• WebPA Contribution Multiplier: ${webpa.ratio.toFixed(2)}${student.isExcused ? ' (Neutralized - Excused Exemption Applied)' : ''}`,
+    `• Calibrated Final Score: ${webpa.adjustedGrade.toFixed(1)} pts`,
+    '',
+    `Audit Summary:`,
+    `• Self-Assessment Overall: ${selfPctStr}`,
+    `• Anonymous Peer Consensus: ${peerPctStr} (based on ${reviewsReceivedCount} submitted peer evaluations from your team)`,
+    overallGapDelta !== null && overallGapDelta > 15
+      ? `• Observed Variance: There is a notable gap (+${overallGapDelta}%) between your self-evaluation and the mutual consensus of your teammates across rubric criteria.`
+      : `• Observed Variance: Teammates evaluated your participation with ${unanimousPeerConsensus ? 'high consensus across all rubric dimensions' : 'moderate variance'}.`,
+    receivedPraiseTags.length > 0 ? `• Peer Recognition Tags: ${receivedPraiseTags.join(', ')}` : '',
+    qualitativeGrowthSuggestions.length > 0 ? `• Primary Constructive Feedback: "${qualitativeGrowthSuggestions[0]}"` : '',
+    '',
+    `All evaluations are collected under strict academic confidentiality and normalized according to the Loughborough WebPA algorithm. If you would like to discuss strategies for future team milestones, please feel free to visit during office hours.`,
+    '',
+    `Best regards,`,
+    `Course Instruction Team`
+  ].filter(line => line !== '').join('\n');
+
+  return {
+    studentId: student.id,
+    studentName: student.name,
+    studentEmail: student.email,
+    groupName: student.groupName,
+    isExcused: !!student.isExcused,
+    submitted: student.submitted,
+    teamBaseGrade: webpa.teamBaseGrade,
+    webpaRatio: webpa.ratio,
+    adjustedGrade: webpa.adjustedGrade,
+    fudgeWeight,
+    overallSelfPercentage,
+    overallPeerPercentage,
+    overallGapDelta,
+    criteriaBreakdown,
+    reviewsReceivedCount,
+    teammatesCount,
+    retaliationRisk,
+    retaliationDetails,
+    unanimousPeerConsensus,
+    praiseTags: receivedPraiseTags,
+    qualitativeStrengths,
+    qualitativeGrowthSuggestions,
+    suggestedEmailResponse
   };
 }
 

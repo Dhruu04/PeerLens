@@ -34,6 +34,17 @@ export const FOCUSED_TOUR_TRACKS: GuidedTourTrack[] = [
     keyTopics: ['Classroom Selector & ID', 'Customize View (Add/Remove Sections)', 'Density Presets', 'Academic Guidance Center', 'Command Palette (Ctrl+K)']
   },
   {
+    id: 'search_pill_dispute_track',
+    title: 'Omni Search, Dispute Studio & Medical Exemptions',
+    category: 'Productivity & Office Hours',
+    stepCount: 4,
+    duration: '45 sec',
+    description: 'Master the universal Omni Search Bar with prefix filters (@students, #teams, >actions, ?help), side-by-side dossier peek, 1-click Medical Exemption WebPA factor neutralization, and the Student Grade Dispute Studio with 1-click response draft generator.',
+    icon: <ShieldCheck size={18} style={{ color: 'var(--primary)' }} />,
+    stepIds: ['command_palette', 'quick_action_dock', 'gradebook_matrix', 'analytics_tab'],
+    keyTopics: ['Omni Search (@, #, >, ?)', 'Split Dossier Peek', 'Excused Absence WebPA Neutralization (1.000)', 'Grade Dispute Studio & Draft Generator', 'Quick Action Floating Dock']
+  },
+  {
     id: 'enrollment_track',
     title: 'Section 1: Student Enrollment & AutoGroup Studio',
     category: 'Roster & Diversity',
@@ -872,16 +883,29 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                     </p>
                   </div>
 
-                  {/* Quick Action Center & Command Palette */}
+                  {/* Quick Action Center */}
                   <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
                       <Zap size={14} style={{ color: 'var(--primary)' }} />
                       <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                        Quick Action Pill &amp; Omni Command Palette
+                        Quick Action Pill &amp; Live Telemetry Dock
                       </span>
                     </div>
                     <p style={{ margin: 0, fontSize: '0.73rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                      Streamline instructor navigation with the floating Quick Action Pill docked at the bottom center. Expand to toggle modules live, switch classrooms, launch tools, or hit <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>Ctrl+K</kbd> to activate the Omni Command Palette for instant keyboard-first workflows.
+                      Persistent floating dock providing 1-click workflow jumps (Alt+1/2/3), optional ambient live status ticker (completion %, pending counts, anomalies), master section expand/collapse, and granular interface module customization with pinning.
+                    </p>
+                  </div>
+
+                  {/* Omni Search & Office Hours Dispute Studio */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
+                      <ShieldCheck size={14} style={{ color: 'var(--accent-teal)' }} />
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        Omni Search, Dispute Studio &amp; Medical Exemptions
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.73rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      Universal search bar (<kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>Ctrl+K</kbd> / <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>/</kbd>) with prefix filters (@students, #teams, &gt;actions, ?help). Includes 1-click Excused Absence WebPA factor neutralization and the Student Grade Dispute Studio with self-vs-peer delta criteria breakdown and automated response email drafting.
                     </p>
                   </div>
                 </div>
@@ -954,6 +978,19 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                     </div>
                     <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
                       Flags ratings deviating &gt;1.5 standard deviations from peer consensus, detecting spiteful grading and reciprocal collusion rings.
+                    </p>
+                  </div>
+
+                  {/* Excused Absence Formula */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
+                      5. Excused Absence / Medical Exemption
+                    </span>
+                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--primary)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
+                      WebPA = 1.000 → Grade = TeamBase
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
+                      Neutralizes the student WebPA factor to 1.000, awards the team base mark without penalty, and isolates team denominators so teammates are not penalized.
                     </p>
                   </div>
                 </div>

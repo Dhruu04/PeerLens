@@ -40,7 +40,12 @@ import {
   Database,
   RotateCcw,
   Share2,
-  Activity
+  Activity,
+  Star,
+  X,
+  ChevronsDown,
+  ChevronsUp,
+  FolderPlus
 } from 'lucide-react';
 import type { ClassData } from '../utils/math';
 import type { FeatureToggles } from '../utils/featurePreferences';
@@ -143,9 +148,118 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [dockTab, setDockTab] = useState<'topbar' | 'modules' | 'tools'>('topbar');
   const [moduleFilter, setModuleFilter] = useState('');
+  const [moduleFilterTab, setModuleFilterTab] = useState<'all' | 'pinned' | 'visible' | 'hidden'>('all');
   const [copiedClassId, setCopiedClassId] = useState(false);
   const [copiedJoinLinkState, setCopiedJoinLinkState] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Pinned / Favorite modules persisted in localStorage
+  const [pinnedKeys, setPinnedKeys] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('peer_pinned_modules');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      'showRosterTable',
+      'showTeamOverviewCards',
+      'showCriterionCards',
+      'showResultsSummarySheet',
+      'showLmsExport',
+      'showTeamHealthPulse'
+    ];
+  });
+
+  const togglePin = (key: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setPinnedKeys((prev) => {
+      const exists = prev.includes(key);
+      const updated = exists ? prev.filter((k) => k !== key) : [...prev, key];
+      try {
+        localStorage.setItem('peer_pinned_modules', JSON.stringify(updated));
+      } catch (err) {}
+      return updated;
+    });
+  };
+
+  // Optional Ambient Live Status Ticker (Default: true, user can toggle off for simple pill)
+  const [showTelemetry, setShowTelemetry] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('peer_pill_telemetry');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch (e) {
+      return true;
+    }
+  });
+
+  const toggleTelemetry = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setShowTelemetry((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('peer_pill_telemetry', JSON.stringify(next));
+      } catch (err) {}
+      return next;
+    });
+  };
+
+  // Custom View Profiles saved by instructor
+  const [customProfiles, setCustomProfiles] = useState<{ id: string; name: string; createdAt: number; toggles: FeatureToggles }[]>(() => {
+    try {
+      const saved = localStorage.getItem('peer_custom_layout_profiles');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+  const [isAddingProfile, setIsAddingProfile] = useState(false);
+  const [profileNameInput, setProfileNameInput] = useState('');
+
+  const saveCurrentProfile = () => {
+    const trimmed = profileNameInput.trim();
+    if (!trimmed) return;
+    const newProf = {
+      id: `prof_${Date.now()}`,
+      name: trimmed,
+      createdAt: Date.now(),
+      toggles: { ...featureToggles }
+    };
+    const updated = [newProf, ...customProfiles.filter(p => p.name.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
+    setCustomProfiles(updated);
+    try {
+      localStorage.setItem('peer_custom_layout_profiles', JSON.stringify(updated));
+    } catch (err) {}
+    setProfileNameInput('');
+    setIsAddingProfile(false);
+  };
+
+  const deleteCustomProfile = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = customProfiles.filter(p => p.id !== id);
+    setCustomProfiles(updated);
+    try {
+      localStorage.setItem('peer_custom_layout_profiles', JSON.stringify(updated));
+    } catch (err) {}
+  };
+
+  const applyCustomProfile = (profile: { id: string; name: string; createdAt: number; toggles: FeatureToggles }) => {
+    Object.entries(profile.toggles).forEach(([k, v]) => {
+      onToggleFeature(k as keyof FeatureToggles, v);
+    });
+  };
+
+  // Master Section Fold / Expand Across All Foldable Cards
+  const handleMasterExpandAll = () => {
+    window.dispatchEvent(new CustomEvent('peerlens_expand_all'));
+  };
+
+  const handleMasterCollapseAll = () => {
+    window.dispatchEvent(new CustomEvent('peerlens_collapse_all'));
+  };
+
+  // Telemetry metrics for optional ambient live status ticker
+  const totalStudents = activeClass?.students.length ?? 0;
+  const submittedStudents = activeClass?.students.filter(s => s.submitted).length ?? 0;
+  const completionPct = totalStudents > 0 ? Math.round((submittedStudents / totalStudents) * 100) : 0;
+  const activePulseCount = (activeClass?.pulseRounds || []).filter(r => r.status === 'active').length;
 
   // Close dock on Escape key or outside click
   useEffect(() => {
@@ -167,6 +281,17 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     };
   }, [isExpanded]);
 
+  // Open modules tab from external command / search
+  useEffect(() => {
+    const handleOpenModules = () => {
+      setIsExpanded(true);
+      setDockTab('modules');
+      setModuleFilterTab('pinned');
+    };
+    window.addEventListener('peerlens_open_quick_pill_modules', handleOpenModules);
+    return () => window.removeEventListener('peerlens_open_quick_pill_modules', handleOpenModules);
+  }, []);
+
   const handleCopyClassId = () => {
     if (activeClass) {
       navigator.clipboard.writeText(activeClass.id);
@@ -179,7 +304,7 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Structured module sections with icons
+  // Comprehensive Structured module sections covering all 52 feature toggles
   const MODULE_SECTIONS: {
     category: string;
     icon: React.ElementType;
@@ -200,7 +325,8 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
         { key: 'showCustomizeViewButton', label: 'Customize View (Sliders) Button', desc: 'Sliders button in top bar' },
         { key: 'showThemeSwitcher', label: 'Theme Mode Switcher', desc: 'Light / dark mode toggle in top bar' },
         { key: 'showProfilePill', label: 'Admin Profile & Account Pill', desc: 'Workspace account center trigger' },
-        { key: 'showCloudStatus', label: 'Cloud Sync Status Dot', desc: 'Real-time database connection badge' }
+        { key: 'showCloudStatus', label: 'Cloud Sync Status Dot', desc: 'Real-time database connection badge' },
+        { key: 'showQuickActionPill', label: 'Floating Quick Action Pill', desc: 'Contractable & expandable dock at bottom of window' }
       ]
     },
     {
@@ -231,8 +357,9 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
         { key: 'showDuplicateDetector', label: 'Duplicate Detection Banner', desc: 'Alert for duplicate names or emails' },
         { key: 'showExportButtons', label: 'Roster Export Action Buttons', desc: 'CSV & Excel export shortcuts' },
         { key: 'showRosterSearchFilter', label: 'Search & Team Filter Bar', desc: 'Student search and group filter' },
-        { key: 'showTeamOverviewCards', label: 'Team Overview Cards Grid', desc: 'Cards summarizing each team roster' },
-        { key: 'showRosterTable', label: 'Enrolled Students Roster Table', desc: 'Main tabular student roster' }
+        { key: 'showTeamOverviewCards', label: 'Team Overview & Formation Cards', desc: 'Collapsible deep-dive cards summarizing each team cohort' },
+        { key: 'showRosterTable', label: 'Enrolled Students Roster Table', desc: 'Main tabular student roster' },
+        { key: 'showAddStudentButton', label: 'Add Student Action Button', desc: 'Manual single-student enrollment button' }
       ]
     },
     {
@@ -255,29 +382,115 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
       category: 'Section 3: Grading & Performance Analytics',
       icon: Award,
       items: [
-        { key: 'showResultsSummarySheet', label: 'Results Summary Sheet', desc: 'Tabular gradebook with WebPA factors' },
-        { key: 'showWebPACalibration', label: 'WebPA Calibration Slider', desc: 'Non-linear penalty weight tuning' },
-        { key: 'showExportReportButtons', label: 'Export Report Action Buttons', desc: 'LMS (Canvas, Moodle), CSV & Excel' },
+        { key: 'showResultsHeaderCard', label: 'Results Overview & Metric Banner', desc: 'Top summary metrics, completion rates, and WebPA spread' },
+        { key: 'showResultsSummarySheet', label: 'Results Summary Sheet (Gradebook)', desc: 'Tabular gradebook with WebPA factors, raw and calibrated scores' },
+        { key: 'showWebPACalibration', label: 'WebPA Calibration Slider', desc: 'Non-linear penalty weight tuning and scaling control' },
+        { key: 'showExportReportButtons', label: 'Export Report Action Buttons', desc: 'PDF dossier, CSV & Excel reports' },
+        { key: 'showLmsExport', label: 'LMS Gradebook Integration & Smart Export Formats', desc: 'Collapsible 1-click export presets for Canvas, Blackboard, Moodle, Brightspace' },
+        { key: 'showDetailedReviewMatrix', label: 'Detailed Cross-Evaluation Review Matrix', desc: 'Interactive peer-to-peer score breakdown table' },
+        { key: 'showTeammateAuditLog', label: 'Teammate Evaluation Audit Log', desc: 'Submission timestamps, member reviews, and completion audits' },
         { key: 'showCompetencyRadar', label: 'Competency Radar Chart', desc: 'Multi-axis radar distribution chart' },
-        { key: 'showJohariMatrix', label: 'Johari Window Matrix', desc: 'Blind spots and perception analysis' },
-        { key: 'showQualitativeFeedback', label: 'Qualitative Written Comments', desc: 'Formative text comment browser' },
-        { key: 'showAnomalyAudit', label: 'Anomaly & Outlier Audit', desc: 'Collusion and outlier detection' },
-        { key: 'showGradebookSearchFilter', label: 'Gradebook Search & Filter', desc: 'Filter final marks by team or student' }
+        { key: 'showJohariMatrix', label: 'Johari Window Matrix', desc: 'Blind spots, hidden strengths, and perception analysis' },
+        { key: 'showQualitativeFeedback', label: 'Qualitative Written Comments', desc: 'Formative text feedback browser with search & filter' },
+        { key: 'showAnomalyAudit', label: 'Anomaly & Outlier Audit', desc: 'Collusion, inflation, and suspicious pattern detection' },
+        { key: 'showMilestonesHistory', label: 'Milestones & Assessment History', desc: 'Sprint archive and historical milestone comparisons' },
+        { key: 'showSubmissionReset', label: 'Submission Reset & Unlock Controls', desc: 'Reset all reviews or unlock submitted evaluations' },
+        { key: 'showGradebookSearchFilter', label: 'Gradebook Search & Filter Bar', desc: 'Filter final marks by team or student name' }
       ]
     }
   ], []);
 
+  // Intelligent synonym aliases for fast semantic search
+  const MODULE_ALIASES: Record<string, string[]> = useMemo(() => ({
+    showLmsExport: ['canvas', 'moodle', 'blackboard', 'brightspace', 'd2l', 'lms', 'sis', 'gradebook', 'export', 'sync', 'csv', 'tsv'],
+    showTeamHealthPulse: ['pulse', 'health', 'morale', 'check-in', 'survey', 'sprint', 'sparkline', 'question', 'feedback', 'blocker'],
+    showAutoGroupStudio: ['group', 'cohort', 'diversity', 'balance', 'formation', 'algorithm', 'team', 'shuffle'],
+    showTeamOverviewCards: ['team', 'cohort', 'deep dive', 'groups', 'members', 'cards'],
+    showRosterTable: ['roster', 'student', 'table', 'enrolled', 'list', 'class'],
+    showSelfEnrollmentCard: ['qr', 'join', 'link', 'enroll', 'self', 'code', 'mobile'],
+    showQuickActionsCard: ['demo', 'sample', '100', 'populate', 'random', 'fast add'],
+    showImportWizardCard: ['import', 'csv', 'excel', 'upload', 'file', 'roster'],
+    showBulkActionBar: ['bulk', 'batch', 'select', 'delete all', 'mass'],
+    showDuplicateDetector: ['duplicate', 'warning', 'same', 'collision', 'detector'],
+    showExportButtons: ['download', 'csv', 'excel', 'export roster'],
+    showRosterSearchFilter: ['search student', 'filter team', 'find'],
+    showRubricHeader: ['rubric', 'title', 'criteria count', 'header'],
+    showRubricPresets: ['ipaf', 'preset', 'standard', 'aacsb', 'rubric'],
+    showTargetScaleCard: ['scale', 'target', 'gpa', 'percentage', 'converter', 'max'],
+    showDeadlineTimer: ['timer', 'deadline', 'countdown', 'date', 'cutoff', 'time'],
+    showWeightBalanceBar: ['weight', 'balance', '100%', 'progress', 'bar'],
+    showCustomCriterionButton: ['add criterion', 'new criterion', 'custom'],
+    showCriterionCards: ['criteria', 'cards', 'rubric sliders', 'criterion'],
+    showEvaluationSimulator: ['simulator', 'preview', 'student view', 'test'],
+    showEvaluationFormControls: ['questions', 'permissions', 'form controls', 'praise', 'tags', 'self review'],
+    showResultsHeaderCard: ['results', 'banner', 'overview', 'stats', 'average'],
+    showResultsSummarySheet: ['matrix', 'sheet', 'gradebook', 'webpa', 'grades', 'scores'],
+    showWebPACalibration: ['webpa', 'calibration', 'fudge', 'factor', 'multiplier', 'weight'],
+    showExportReportButtons: ['pdf', 'report', 'export', 'download report'],
+    showDetailedReviewMatrix: ['matrix', 'cross', 'evaluation', 'peer scores', 'grid'],
+    showTeammateAuditLog: ['audit', 'log', 'teammate', 'timestamp', 'history'],
+    showCompetencyRadar: ['radar', 'spider', 'chart', 'competency', 'visual'],
+    showJohariMatrix: ['johari', 'window', 'blind spot', 'hidden', 'perception'],
+    showQualitativeFeedback: ['comments', 'feedback', 'written', 'qualitative', 'text'],
+    showAnomalyAudit: ['anomaly', 'collusion', 'cheat', 'outlier', 'suspicious'],
+    showMilestonesHistory: ['milestone', 'history', 'sprint', 'archive', 'past'],
+    showSubmissionReset: ['reset', 'unlock', 'clear reviews', 'danger'],
+    showGradebookSearchFilter: ['search gradebook', 'filter results', 'find grade'],
+    showThemeSwitcher: ['theme', 'dark', 'light', 'mode', 'color', 'moon', 'sun'],
+    showCommandSearch: ['search', 'command', 'palette', 'ctrl+k', 'bar'],
+    showProjectorButton: ['projector', 'fullscreen', 'lecture', 'screen'],
+    showClassPicker: ['switch class', 'dropdown', 'course', 'picker'],
+    showSettingsButton: ['settings', 'preferences', 'configuration'],
+    showGuideButton: ['guide', 'help', 'docs', 'documentation', 'academic'],
+    showProfilePill: ['profile', 'account', 'user', 'instructor'],
+    showEmailButton: ['email', 'dispatcher', 'send', 'mail'],
+    showCloudStatus: ['cloud', 'firebase', 'sync', 'online']
+  }), []);
+
+  // Map of all modules for fast O(1) lookup
+  const allModulesMap = useMemo(() => {
+    const map = new Map<string, { key: keyof FeatureToggles; label: string; desc: string; category: string; icon: React.ElementType }>();
+    MODULE_SECTIONS.forEach((sec) => {
+      sec.items.forEach((item) => {
+        map.set(item.key, { ...item, category: sec.category, icon: sec.icon });
+      });
+    });
+    return map;
+  }, [MODULE_SECTIONS]);
+
+  // Pinned items derived list
+  const pinnedItems = useMemo(() => {
+    return pinnedKeys
+      .map((k) => allModulesMap.get(k))
+      .filter((i): i is NonNullable<typeof i> => Boolean(i));
+  }, [pinnedKeys, allModulesMap]);
+
+  // Intelligent filter matcher
   const filteredModuleSections = useMemo(() => {
+    const q = moduleFilter.trim().toLowerCase();
     return MODULE_SECTIONS.map((sec) => ({
       ...sec,
-      items: sec.items.filter(
-        (item) =>
-          item.label.toLowerCase().includes(moduleFilter.toLowerCase()) ||
-          item.desc.toLowerCase().includes(moduleFilter.toLowerCase()) ||
-          sec.category.toLowerCase().includes(moduleFilter.toLowerCase())
-      )
+      items: sec.items.filter((item) => {
+        // Tab filter
+        const isPinned = pinnedKeys.includes(item.key);
+        const isVisible = !!featureToggles[item.key];
+        if (moduleFilterTab === 'pinned' && !isPinned) return false;
+        if (moduleFilterTab === 'visible' && !isVisible) return false;
+        if (moduleFilterTab === 'hidden' && isVisible) return false;
+
+        if (!q) return true;
+
+        // Query match
+        const matchesLabel = item.label.toLowerCase().includes(q);
+        const matchesDesc = item.desc.toLowerCase().includes(q);
+        const matchesCategory = sec.category.toLowerCase().includes(q);
+        const aliases = MODULE_ALIASES[item.key] || [];
+        const matchesAlias = aliases.some((a) => a.includes(q) || q.includes(a));
+
+        return matchesLabel || matchesDesc || matchesCategory || matchesAlias;
+      })
     })).filter((sec) => sec.items.length > 0);
-  }, [MODULE_SECTIONS, moduleFilter]);
+  }, [MODULE_SECTIONS, moduleFilter, moduleFilterTab, pinnedKeys, featureToggles, MODULE_ALIASES]);
 
   const allModuleKeys = useMemo(() => MODULE_SECTIONS.flatMap((sec) => sec.items.map((i) => i.key)), [MODULE_SECTIONS]);
   const activeModuleCount = allModuleKeys.filter((k) => featureToggles[k]).length;
@@ -307,7 +520,7 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
           style={{
             position: 'absolute',
             bottom: '58px',
-            width: 'min(720px, calc(100vw - 28px))',
+            width: 'min(760px, calc(100vw - 24px))',
             maxHeight: 'min(620px, calc(100vh - 90px))',
             backgroundColor: 'var(--bg-surface)',
             border: '1px solid var(--border-color)',
@@ -323,77 +536,178 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
           <div
             style={{
               borderBottom: '1px solid var(--border-color)',
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.09) 0%, rgba(20, 184, 166, 0.07) 100%), var(--bg-app)',
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.07) 0%, rgba(20, 184, 166, 0.05) 100%), var(--bg-app)',
               display: 'flex',
               flexDirection: 'column'
             }}
           >
-            {/* Row 1: Title, Status Chip, Quick Search, Shortcuts, Hide & Contract */}
+            {/* Row 1: Header Branding & Minimalist Action Controls */}
             <div
               style={{
-                padding: '0.8rem 1.15rem 0.6rem 1.15rem',
+                padding: '0.65rem 1rem 0.55rem 1rem',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                gap: '0.75rem',
+                gap: '0.65rem',
                 flexWrap: 'nowrap'
               }}
             >
-              {/* Left: Branding, Q Key & Class Status */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
+              {/* Left: Branding, Title & Active Class Info */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0, flex: 1 }}>
                 <div
                   style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '10px',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
                     background: 'linear-gradient(135deg, var(--primary) 0%, #0d9488 100%)',
                     color: '#fff',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    boxShadow: '0 4px 14px rgba(99, 102, 241, 0.35)',
+                    boxShadow: '0 2px 10px rgba(99, 102, 241, 0.28)',
                     flexShrink: 0
                   }}
                 >
-                  <Compass size={17} />
+                  <Compass size={15} />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'nowrap' }}>
-                    <span style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--text-primary)', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
+                    <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
                       Quick Action Center
                     </span>
                     <span
                       style={{
-                        fontSize: '0.66rem',
+                        fontSize: '0.6rem',
                         fontWeight: 700,
-                        padding: '0.12rem 0.48rem',
-                        borderRadius: '9999px',
+                        padding: '0.06rem 0.35rem',
+                        borderRadius: '5px',
                         backgroundColor: 'var(--bg-surface)',
                         border: '1px solid var(--border-color)',
                         color: 'var(--primary)',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '3px',
+                        gap: '2px',
                         flexShrink: 0
                       }}
                       title="Shortcut key: Q (Press Q to toggle anytime)"
                     >
-                      <Keyboard size={10} /> Q
+                      <Keyboard size={9} /> Q
                     </span>
                   </div>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '1px' }}>
-                    <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981', animation: 'pillPulse 2s infinite' }} />
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '1px', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#10b981', flexShrink: 0 }} />
                     <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                       Active: <strong style={{ color: 'var(--text-primary)' }}>{activeClass.name}</strong>
                     </span>
-                    <span style={{ color: 'var(--border-color)' }}>•</span>
-                    <span>{activeClass.students.length} Students</span>
+                    <span style={{ color: 'var(--border-color)', flexShrink: 0 }}>•</span>
+                    <span style={{ flexShrink: 0 }}>{activeClass.students.length} Students</span>
                   </div>
                 </div>
               </div>
 
-              {/* Right: Search, Shortcuts, Hide & Contract (Pinned to top-right, NEVER wraps) */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+              {/* Right: Sleek, Minimalist Action Buttons */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
+                {/* 1. Ticker Toggle Chip */}
+                <button
+                  type="button"
+                  onClick={toggleTelemetry}
+                  title={showTelemetry ? 'Live status ticker ON on bottom pill (Click to turn off)' : 'Live status ticker OFF on bottom pill (Click to turn on)'}
+                  style={{
+                    height: '26px',
+                    padding: '0 0.42rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: showTelemetry ? 'rgba(16, 185, 129, 0.09)' : 'var(--bg-surface)',
+                    color: showTelemetry ? '#059669' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    fontSize: '0.67rem',
+                    fontWeight: 700,
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Activity size={11} className={showTelemetry ? 'text-teal' : ''} />
+                  <span>Ticker</span>
+                  <span
+                    style={{
+                      fontSize: '0.56rem',
+                      fontWeight: 800,
+                      padding: '0.02rem 0.25rem',
+                      borderRadius: '4px',
+                      backgroundColor: showTelemetry ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-app)',
+                      color: showTelemetry ? '#047857' : 'var(--text-muted)'
+                    }}
+                  >
+                    {showTelemetry ? 'ON' : 'OFF'}
+                  </span>
+                </button>
+
+                {/* 2. Unified Master Section Fold / Expand Group */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    padding: '1px',
+                    gap: '1px'
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={handleMasterExpandAll}
+                    title="Expand all collapsible dashboard sections"
+                    style={{
+                      height: '24px',
+                      padding: '0 0.4rem',
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.2rem',
+                      fontSize: '0.66rem',
+                      fontWeight: 600,
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <ChevronsDown size={11} />
+                    <span>Expand</span>
+                  </button>
+                  <span style={{ width: '1px', height: '12px', backgroundColor: 'var(--border-color)' }} />
+                  <button
+                    type="button"
+                    onClick={handleMasterCollapseAll}
+                    title="Collapse all collapsible dashboard sections"
+                    style={{
+                      height: '24px',
+                      padding: '0 0.4rem',
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.2rem',
+                      fontSize: '0.66rem',
+                      fontWeight: 600,
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <ChevronsUp size={11} />
+                    <span>Collapse</span>
+                  </button>
+                </div>
+
+                <span style={{ width: '1px', height: '14px', backgroundColor: 'var(--border-color)', margin: '0 0.05rem' }} />
+
+                {/* 3. Search Shortcut Button */}
                 <button
                   type="button"
                   onClick={() => {
@@ -402,28 +716,28 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                   }}
                   title="Search commands & actions (Ctrl+K)"
                   style={{
-                    height: '30px',
-                    padding: '0 0.65rem 0 0.5rem',
-                    borderRadius: '8px',
+                    height: '26px',
+                    padding: '0 0.45rem',
+                    borderRadius: '6px',
                     border: '1px solid var(--border-color)',
                     backgroundColor: 'var(--bg-surface)',
                     color: 'var(--text-secondary)',
                     cursor: 'pointer',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.35rem',
-                    fontSize: '0.72rem',
+                    gap: '0.25rem',
+                    fontSize: '0.68rem',
                     fontWeight: 600,
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  <Search size={13} className="text-primary" />
-                  <span>Search</span>
-                  <kbd style={{ fontSize: '0.62rem', padding: '0.08rem 0.3rem', borderRadius: '4px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                  <Search size={11} className="text-primary" />
+                  <kbd style={{ fontSize: '0.58rem', padding: '0.04rem 0.25rem', borderRadius: '3px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
                     ⌘K
                   </kbd>
                 </button>
 
+                {/* 4. Keyboard Shortcuts Icon */}
                 <button
                   type="button"
                   onClick={() => {
@@ -432,9 +746,9 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                   }}
                   title="Keyboard Shortcuts Cheat Sheet (?)"
                   style={{
-                    width: '30px',
-                    height: '30px',
-                    borderRadius: '8px',
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '6px',
                     border: '1px solid var(--border-color)',
                     backgroundColor: 'var(--bg-surface)',
                     color: 'var(--text-secondary)',
@@ -445,11 +759,12 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  <Keyboard size={13} />
+                  <Keyboard size={12} />
                 </button>
 
-                <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-color)', margin: '0 0.1rem' }} />
+                <span style={{ width: '1px', height: '14px', backgroundColor: 'var(--border-color)', margin: '0 0.05rem' }} />
 
+                {/* 5. Hide Pill Button */}
                 <button
                   type="button"
                   onClick={() => {
@@ -458,44 +773,42 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                   }}
                   title="Hide Quick Action Pill (Press Q or enable in Settings anytime)"
                   style={{
-                    background: 'none',
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '6px',
                     border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
                     color: 'var(--text-muted)',
                     cursor: 'pointer',
-                    padding: '0 0.55rem',
-                    height: '30px',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.3rem',
-                    borderRadius: '8px',
-                    fontSize: '0.72rem',
-                    fontWeight: 600,
+                    justifyContent: 'center',
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  <EyeOff size={13} />
-                  <span>Hide</span>
+                  <EyeOff size={12} />
                 </button>
 
+                {/* 6. Contract Dock Button */}
                 <button
                   type="button"
                   onClick={() => setIsExpanded(false)}
-                  title="Contract Quick Action Pill"
+                  title="Contract Quick Action Dock (Q)"
                   style={{
-                    background: 'var(--bg-surface)',
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '6px',
                     border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
                     color: 'var(--text-primary)',
                     cursor: 'pointer',
-                    width: '30px',
-                    height: '30px',
-                    display: 'flex',
+                    display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    borderRadius: '8px',
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  <ChevronDown size={15} />
+                  <ChevronDown size={14} />
                 </button>
               </div>
             </div>
@@ -963,7 +1276,7 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.35rem' }}>
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
                       <button
                         type="button"
                         onClick={() => onApplyPreset('minimal')}
@@ -988,8 +1301,128 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                       >
                         Full Power
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingProfile(true)}
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 700, gap: '0.25rem', color: 'var(--primary)' }}
+                        title="Save current module toggles as a custom view profile"
+                      >
+                        <FolderPlus size={12} />
+                        <span>Save View</span>
+                      </button>
                     </div>
                   </div>
+
+                  {/* Inline Save Custom Profile Form */}
+                  {isAddingProfile && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.45rem',
+                        padding: '0.45rem 0.65rem',
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--bg-surface)',
+                        border: '1px solid var(--primary)'
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={profileNameInput}
+                        onChange={(e) => setProfileNameInput(e.target.value)}
+                        placeholder="Profile name (e.g. Grading Week, Presentation)"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveCurrentProfile();
+                          if (e.key === 'Escape') setIsAddingProfile(false);
+                        }}
+                        style={{
+                          flex: 1,
+                          fontSize: '0.76rem',
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--text-primary)',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={saveCurrentProfile}
+                        className="btn btn-primary btn-sm"
+                        style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem', height: '26px' }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingProfile(false);
+                          setProfileNameInput('');
+                        }}
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', height: '26px' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Custom Saved Profiles Chips */}
+                  {customProfiles.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap', paddingTop: '0.2rem' }}>
+                      <span style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-muted)' }}>Custom Profiles:</span>
+                      {customProfiles.map((prof) => (
+                        <div
+                          key={prof.id}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            padding: '0.12rem 0.45rem',
+                            borderRadius: '6px',
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--border-color)',
+                            fontSize: '0.69rem',
+                            fontWeight: 600
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => applyCustomProfile(prof)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: 0,
+                              color: 'var(--primary)',
+                              fontWeight: 700,
+                              fontSize: '0.69rem'
+                            }}
+                            title="Click to apply this saved module layout"
+                          >
+                            {prof.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => deleteCustomProfile(prof.id, e)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '1px',
+                              color: 'var(--text-muted)',
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}
+                            title="Delete custom view profile"
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Featured Instructor Onboarding Checklist Toggle */}
                   <div
@@ -1121,138 +1554,458 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                   )}
                 </div>
 
-                {/* Instant Module Filter Input */}
-                <div style={{ position: 'relative' }}>
-                  <Search
-                    size={14}
-                    style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Search module toggles by name or keyword..."
-                    value={moduleFilter}
-                    onChange={(e) => setModuleFilter(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.45rem 0.75rem 0.45rem 2.1rem',
-                      fontSize: '0.78rem',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-app)',
-                      color: 'var(--text-primary)',
-                      outline: 'none'
-                    }}
-                  />
-                </div>
-
-                {/* Categorized Module Toggles Accordion List */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                  {filteredModuleSections.map((sec) => {
-                    const SectionIcon = sec.icon;
-                    const secVisibleCount = sec.items.filter((i) => featureToggles[i.key]).length;
-
-                    return (
+                {/* Pinned / Favorites Quick-Access Section */}
+                <div
+                  style={{
+                    backgroundColor: 'var(--bg-app)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    borderRadius: '12px',
+                    padding: '0.75rem 0.9rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.65rem',
+                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(99, 102, 241, 0.04) 100%), var(--bg-app)',
+                    boxShadow: '0 4px 16px rgba(245, 158, 11, 0.06)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                       <div
-                        key={sec.category}
                         style={{
-                          backgroundColor: 'var(--bg-app)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '12px',
-                          overflow: 'hidden'
+                          width: '26px',
+                          height: '26px',
+                          borderRadius: '7px',
+                          backgroundColor: 'rgba(245, 158, 11, 0.18)',
+                          color: '#d97706',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
                         }}
                       >
-                        {/* Section Header */}
-                        <div
-                          style={{
-                            padding: '0.65rem 0.85rem',
-                            borderBottom: '1px solid var(--border-color)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            backgroundColor: 'rgba(0,0,0,0.02)'
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                            <SectionIcon size={14} className="text-primary" />
-                            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                              {sec.category}
-                            </span>
-                          </div>
-                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                            {secVisibleCount}/{sec.items.length} Active
+                        <Star size={14} fill="#f59e0b" color="#f59e0b" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          Pinned &amp; Favorite Modules
+                          <span
+                            style={{
+                              fontSize: '0.66rem',
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: '9999px',
+                              backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                              color: '#d97706',
+                              border: '1px solid rgba(245, 158, 11, 0.3)'
+                            }}
+                          >
+                            {pinnedItems.length} Pinned
                           </span>
                         </div>
+                        <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)' }}>
+                          1-click toggle your most needed modules without scrolling down
+                        </div>
+                      </div>
+                    </div>
 
-                        {/* Items Grid */}
-                        <div style={{ padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                          {sec.items.map((item) => {
-                            const isVisible = !!featureToggles[item.key];
-                            return (
-                              <div
-                                key={item.key}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      {pinnedItems.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const starter = ['showRosterTable', 'showTeamOverviewCards', 'showCriterionCards', 'showResultsSummarySheet', 'showLmsExport', 'showTeamHealthPulse'];
+                            setPinnedKeys(starter);
+                            localStorage.setItem('peer_pinned_modules', JSON.stringify(starter));
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          style={{ fontSize: '0.68rem', padding: '0.2rem 0.5rem', fontWeight: 700, gap: '0.25rem', color: '#d97706' }}
+                        >
+                          <Sparkles size={11} /> Pin Starter Modules
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPinnedKeys([]);
+                            localStorage.setItem('peer_pinned_modules', JSON.stringify([]));
+                          }}
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: '0.66rem', padding: '0.15rem 0.45rem', color: 'var(--text-muted)' }}
+                          title="Clear all pinned modules"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Pinned Items List */}
+                  {pinnedItems.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      {pinnedItems.map((item) => {
+                        const isVisible = !!featureToggles[item.key];
+                        return (
+                          <div
+                            key={`pinned_${item.key}`}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '0.65rem',
+                              padding: '0.35rem 0.55rem',
+                              borderRadius: '8px',
+                              backgroundColor: isVisible ? 'var(--bg-surface)' : 'rgba(0,0,0,0.02)',
+                              border: isVisible ? '1px solid var(--border-color)' : '1px solid transparent',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                              <button
+                                type="button"
+                                onClick={(e) => togglePin(item.key, e)}
                                 style={{
-                                  display: 'flex',
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '0.15rem',
+                                  display: 'inline-flex',
                                   alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  gap: '0.75rem',
-                                  padding: '0.4rem 0.6rem',
-                                  borderRadius: '8px',
-                                  backgroundColor: isVisible ? 'var(--bg-surface)' : 'transparent',
-                                  border: isVisible ? '1px solid var(--border-color)' : '1px solid transparent',
-                                  transition: 'all 0.15s ease'
+                                  justifyContent: 'center',
+                                  flexShrink: 0
                                 }}
+                                title="Unpin from top favorites"
                               >
-                                <div style={{ minWidth: 0 }}>
-                                  <div
+                                <Star size={13} fill="#f59e0b" color="#f59e0b" />
+                              </button>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
+                                  <span
                                     style={{
                                       fontSize: '0.76rem',
                                       fontWeight: isVisible ? 700 : 500,
-                                      color: isVisible ? 'var(--text-primary)' : 'var(--text-muted)'
-                                    }}
-                                  >
-                                    {item.label}
-                                  </div>
-                                  <div
-                                    style={{
-                                      fontSize: '0.66rem',
-                                      color: 'var(--text-secondary)',
+                                      color: isVisible ? 'var(--text-primary)' : 'var(--text-muted)',
                                       whiteSpace: 'nowrap',
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis'
                                     }}
                                   >
-                                    {item.desc}
-                                  </div>
+                                    {item.label}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: '0.6rem',
+                                      fontWeight: 600,
+                                      padding: '0.05rem 0.35rem',
+                                      borderRadius: '4px',
+                                      backgroundColor: 'var(--bg-app)',
+                                      color: 'var(--text-muted)',
+                                      border: '1px solid var(--border-color)',
+                                      flexShrink: 0
+                                    }}
+                                  >
+                                    {item.category.split(':')[0]}
+                                  </span>
                                 </div>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {item.desc}
+                                </div>
+                              </div>
+                            </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() => onToggleFeature(item.key, !isVisible)}
+                            <button
+                              type="button"
+                              onClick={() => onToggleFeature(item.key, !isVisible)}
+                              style={{
+                                padding: '0.22rem 0.6rem',
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                borderRadius: '6px',
+                                border: isVisible ? '1px solid #10b981' : '1px solid var(--border-color)',
+                                backgroundColor: isVisible ? '#ecfdf5' : 'var(--bg-app)',
+                                color: isVisible ? '#047857' : 'var(--text-muted)',
+                                cursor: 'pointer',
+                                flexShrink: 0,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem'
+                              }}
+                            >
+                              {isVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+                              {isVisible ? 'Visible' : 'Hidden'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.2rem 0' }}>
+                      Click the star icon next to any module below to pin it here for immediate 1-click access.
+                    </div>
+                  )}
+                </div>
+
+                {/* Instant Search Bar & Filter Tabs */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <div style={{ position: 'relative' }}>
+                    <Search
+                      size={14}
+                      style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Search 52 modules by keyword (e.g. lms, canvas, moodle, teams, pulse, rubric, gradebook)..."
+                      value={moduleFilter}
+                      onChange={(e) => setModuleFilter(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 2.2rem 0.45rem 2.1rem',
+                        fontSize: '0.78rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-app)',
+                        color: 'var(--text-primary)',
+                        outline: 'none'
+                      }}
+                    />
+                    {moduleFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setModuleFilter('')}
+                        style={{
+                          position: 'absolute',
+                          right: '0.65rem',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: '0.1rem',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filter Pills Strip */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                    {(
+                      [
+                        { id: 'all', label: 'All Modules', count: allModuleKeys.length },
+                        { id: 'pinned', label: 'Pinned', count: pinnedItems.length },
+                        { id: 'visible', label: 'Visible', count: activeModuleCount },
+                        { id: 'hidden', label: 'Hidden', count: allModuleKeys.length - activeModuleCount }
+                      ] as const
+                    ).map((tab) => {
+                      const isActive = moduleFilterTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setModuleFilterTab(tab.id)}
+                          style={{
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '6px',
+                            fontSize: '0.7rem',
+                            fontWeight: isActive ? 800 : 600,
+                            border: isActive ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                            backgroundColor: isActive ? 'var(--primary-light)' : 'var(--bg-surface)',
+                            color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {tab.id === 'pinned' && (
+                            <Star size={11} fill={isActive ? 'currentColor' : '#f59e0b'} color={isActive ? 'currentColor' : '#f59e0b'} />
+                          )}
+                          <span>{tab.label}</span>
+                          <span
+                            style={{
+                              fontSize: '0.62rem',
+                              padding: '0 4px',
+                              borderRadius: '9999px',
+                              backgroundColor: isActive ? 'var(--primary)' : 'var(--bg-app)',
+                              color: isActive ? '#fff' : 'var(--text-muted)',
+                              fontWeight: 700
+                            }}
+                          >
+                            {tab.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Categorized Module Toggles Accordion List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  {filteredModuleSections.length === 0 ? (
+                    <div
+                      style={{
+                        padding: '1.5rem 1rem',
+                        textAlign: 'center',
+                        backgroundColor: 'var(--bg-app)',
+                        borderRadius: '12px',
+                        border: '1px dashed var(--border-color)',
+                        color: 'var(--text-muted)'
+                      }}
+                    >
+                      <Search size={22} style={{ margin: '0 auto 0.4rem', opacity: 0.5 }} />
+                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        No modules found matching "{moduleFilter}"
+                      </div>
+                      <div style={{ fontSize: '0.72rem', marginTop: '0.2rem' }}>
+                        Try searching for keywords like "canvas", "roster", "pulse", "rubric", or reset filters.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModuleFilter('');
+                          setModuleFilterTab('all');
+                        }}
+                        className="btn btn-secondary btn-sm"
+                        style={{ marginTop: '0.75rem', fontSize: '0.72rem' }}
+                      >
+                        Reset All Filters
+                      </button>
+                    </div>
+                  ) : (
+                    filteredModuleSections.map((sec) => {
+                      const SectionIcon = sec.icon;
+                      const secVisibleCount = sec.items.filter((i) => featureToggles[i.key]).length;
+
+                      return (
+                        <div
+                          key={sec.category}
+                          style={{
+                            backgroundColor: 'var(--bg-app)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '12px',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          {/* Section Header */}
+                          <div
+                            style={{
+                              padding: '0.65rem 0.85rem',
+                              borderBottom: '1px solid var(--border-color)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              backgroundColor: 'rgba(0,0,0,0.02)'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                              <SectionIcon size={14} className="text-primary" />
+                              <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                {sec.category}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                              {secVisibleCount}/{sec.items.length} Active
+                            </span>
+                          </div>
+
+                          {/* Items Grid */}
+                          <div style={{ padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            {sec.items.map((item) => {
+                              const isVisible = !!featureToggles[item.key];
+                              const isPinned = pinnedKeys.includes(item.key);
+                              return (
+                                <div
+                                  key={item.key}
                                   style={{
-                                    padding: '0.22rem 0.55rem',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 700,
-                                    borderRadius: '6px',
-                                    border: isVisible ? '1px solid #10b981' : '1px solid var(--border-color)',
-                                    backgroundColor: isVisible ? '#ecfdf5' : 'var(--bg-app)',
-                                    color: isVisible ? '#047857' : 'var(--text-muted)',
-                                    cursor: 'pointer',
-                                    flexShrink: 0,
-                                    display: 'inline-flex',
+                                    display: 'flex',
                                     alignItems: 'center',
-                                    gap: '0.3rem'
+                                    justifyContent: 'space-between',
+                                    gap: '0.75rem',
+                                    padding: '0.4rem 0.6rem',
+                                    borderRadius: '8px',
+                                    backgroundColor: isVisible ? 'var(--bg-surface)' : 'transparent',
+                                    border: isVisible ? '1px solid var(--border-color)' : '1px solid transparent',
+                                    transition: 'all 0.15s ease'
                                   }}
                                 >
-                                  {isVisible ? <Eye size={12} /> : <EyeOff size={12} />}
-                                  {isVisible ? 'Visible' : 'Hidden'}
-                                </button>
-                              </div>
-                            );
-                          })}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                                    {/* Pin / Favorite Star Button */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => togglePin(item.key, e)}
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        padding: '0.2rem',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexShrink: 0,
+                                        color: isPinned ? '#f59e0b' : 'var(--text-muted)',
+                                        transition: 'transform 0.15s ease'
+                                      }}
+                                      title={isPinned ? 'Unpin from Quick Action favorites' : 'Pin to top of Quick Action Center'}
+                                    >
+                                      <Star size={14} fill={isPinned ? '#f59e0b' : 'none'} color={isPinned ? '#f59e0b' : 'currentColor'} />
+                                    </button>
+
+                                    <div style={{ minWidth: 0 }}>
+                                      <div
+                                        style={{
+                                          fontSize: '0.76rem',
+                                          fontWeight: isVisible ? 700 : 500,
+                                          color: isVisible ? 'var(--text-primary)' : 'var(--text-muted)'
+                                        }}
+                                      >
+                                        {item.label}
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '0.66rem',
+                                          color: 'var(--text-secondary)',
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis'
+                                        }}
+                                      >
+                                        {item.desc}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => onToggleFeature(item.key, !isVisible)}
+                                    style={{
+                                      padding: '0.22rem 0.55rem',
+                                      fontSize: '0.7rem',
+                                      fontWeight: 700,
+                                      borderRadius: '6px',
+                                      border: isVisible ? '1px solid #10b981' : '1px solid var(--border-color)',
+                                      backgroundColor: isVisible ? '#ecfdf5' : 'var(--bg-app)',
+                                      color: isVisible ? '#047857' : 'var(--text-muted)',
+                                      cursor: 'pointer',
+                                      flexShrink: 0,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.3rem'
+                                    }}
+                                  >
+                                    {isVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+                                    {isVisible ? 'Visible' : 'Hidden'}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </div>
             )}
@@ -1892,6 +2645,65 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
           transition: 'all 0.24s cubic-bezier(0.16, 1, 0.3, 1)'
         }}
       >
+        {/* Optional Ambient Live Status Ticker (Can be toggled in expanded dock) */}
+        {showTelemetry && activeClass && (
+          <>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.42rem',
+                padding: '0 0.6rem',
+                height: '30px',
+                borderRadius: '9999px',
+                backgroundColor: 'var(--bg-app)',
+                fontSize: '0.72rem',
+                color: 'var(--text-secondary)',
+                fontWeight: 600,
+                border: '1px solid var(--border-color)',
+                userSelect: 'none',
+                cursor: 'pointer'
+              }}
+              title={`Active: ${activeClass.name} • ${totalStudents} students • ${submittedStudents}/${totalStudents} submitted (${completionPct}%) • Click to expand dock`}
+              onClick={() => setIsExpanded(true)}
+            >
+              <span
+                style={{
+                  width: '6.5px',
+                  height: '6.5px',
+                  borderRadius: '50%',
+                  backgroundColor: completionPct >= 80 ? '#10b981' : completionPct >= 40 ? '#f59e0b' : 'var(--primary)',
+                  boxShadow: `0 0 6px ${completionPct >= 80 ? '#10b981' : completionPct >= 40 ? '#f59e0b' : 'var(--primary)'}`,
+                  display: 'inline-block'
+                }}
+              />
+              <span style={{ fontWeight: 800, color: 'var(--text-primary)', maxWidth: '95px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {activeClass.name}
+              </span>
+              <span style={{ color: 'var(--border-color)' }}>•</span>
+              <span style={{ color: completionPct >= 80 ? '#059669' : 'var(--text-secondary)', fontWeight: 700 }}>
+                {submittedStudents}/{totalStudents} ({completionPct}%)
+              </span>
+              {activePulseCount > 0 && (
+                <span
+                  style={{
+                    fontSize: '0.6rem',
+                    padding: '0.04rem 0.32rem',
+                    borderRadius: '9999px',
+                    backgroundColor: 'rgba(13, 148, 136, 0.15)',
+                    color: '#0d9488',
+                    fontWeight: 800
+                  }}
+                  title="Active Team Health Micro-Pulse survey underway"
+                >
+                  Pulse
+                </span>
+              )}
+            </div>
+            <span style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-color)', margin: '0 0.05rem' }} />
+          </>
+        )}
+
         {/* Search Trigger Button */}
         <button
           type="button"

@@ -47,10 +47,10 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = () => {
 
   // Unified 1-click icon dock button matching Settings & Customize View
   return (
-    <div className="theme-toggle-wrapper" ref={popoverRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+    <div className="theme-toggle-wrapper" ref={popoverRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
       <button
         type="button"
-        className="btn btn-secondary btn-sm dock-btn"
+        className="theme-toggle-btn"
         onClick={handleToggleTheme}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -58,19 +58,11 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = () => {
         }}
         title={`Switch to ${effectiveTheme === 'dark' ? 'Light' : 'Dark'} Mode (Current: ${effectiveTheme === 'dark' ? 'Dark' : 'Light'}) • Right-click for palette`}
         aria-label="Toggle light and dark theme"
-        style={{
-          width: '34px',
-          height: '32px',
-          padding: 0,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
       >
         {effectiveTheme === 'dark' ? (
-          <Sun size={15} className="text-primary" />
+          <Sun size={16} style={{ color: '#f59e0b' }} />
         ) : (
-          <Moon size={15} className="text-primary" />
+          <Moon size={16} style={{ color: 'var(--primary)' }} />
         )}
       </button>
 
