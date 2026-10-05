@@ -919,11 +919,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 const filterCategories = [
                   { id: 'all', label: 'All Sections', count: totalItemsCount },
-                  { id: 'header', label: 'Top Navigation', count: MODULE_GROUPS[0].items.length },
-                  { id: 'hub', label: 'Home Hub', count: MODULE_GROUPS[1].items.length },
-                  { id: 'roster', label: '1. Enrollment & Teams', count: MODULE_GROUPS[2].items.length },
-                  { id: 'rubric', label: '2. Review System', count: MODULE_GROUPS[3].items.length },
-                  { id: 'analytics', label: '3. Grading & Analytics', count: MODULE_GROUPS[4].items.length }
+                  { id: 'header', label: 'Top Navigation', count: MODULE_GROUPS.find(g => g.id === 'header')?.items.length || 0 },
+                  { id: 'hub', label: 'Home Hub', count: MODULE_GROUPS.find(g => g.id === 'hub')?.items.length || 0 },
+                  { id: 'roster', label: '1. Enrollment & Teams', count: MODULE_GROUPS.find(g => g.id === 'roster')?.items.length || 0 },
+                  { id: 'rubric', label: '2. Review System', count: MODULE_GROUPS.find(g => g.id === 'rubric')?.items.length || 0 },
+                  { id: 'analytics', label: '3. Grading & Analytics', count: MODULE_GROUPS.find(g => g.id === 'analytics')?.items.length || 0 },
+                  { id: 'footer', label: 'Footer Elements', count: MODULE_GROUPS.find(g => g.id === 'footer')?.items.length || 0 }
                 ];
 
                 // Filter groups based on category filter

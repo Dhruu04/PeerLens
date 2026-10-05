@@ -9,7 +9,7 @@ import {
   Lightbulb, Heart, MessageSquare, Target, Minus,
   ThumbsUp, ShieldCheck, Rocket, Trophy, BarChart2,
   QrCode, Copy, Check, Globe, AlertTriangle, Lock, Unlock,
-  Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X,
+  Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X, UserPlus,
   Settings, Plane, EyeOff, LogOut, Compass, ArrowLeft, ArrowRight, RotateCcw,
   GraduationCap, Filter, ArrowUp, ArrowDown,
   ShieldAlert, History, ChevronDown, ChevronRight, ChevronUp
@@ -860,6 +860,71 @@ export const AdminDashboard: React.FC = () => {
     setIsReportModalOpen(true);
   };
 
+  // QoL: Section 1 Direct Drag-and-Drop Anywhere state
+  const [isSection1Dragging, setIsSection1Dragging] = useState(false);
+  const dragCounterRef = useRef(0);
+
+  const handleSection1DragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsSection1Dragging(true);
+    }
+  };
+
+  const handleSection1DragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsSection1Dragging(false);
+    }
+  };
+
+  const handleSection1DragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleSection1Drop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsSection1Dragging(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      setWizardFileName(file.name);
+      try {
+        addToast(`Parsing "${file.name}"...`, 'info');
+        const matrix = await extractRosterMatrix(file);
+        if (matrix.length < 2) {
+          addToast('Dropped file must contain a header row and at least one student record.', 'warning');
+          return;
+        }
+        handleParsedRawMatrix(matrix);
+        setIsWizardOpen(true);
+        addToast(`Parsed ${matrix.length - 1} records from ${file.name}!`, 'success');
+      } catch (err: any) {
+        addToast(err.message || 'Failed to read dropped file. Please select or paste directly.', 'error');
+      }
+    }
+  };
+
+  // QoL: Sticky Section Action Summary Bar visibility on scroll
+  const [isStickySummaryVisible, setIsStickySummaryVisible] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      setIsStickySummaryVisible(scrollY > 280);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   // Custom Glassmorphic Confirmation Modal state manager
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -1587,43 +1652,43 @@ export const AdminDashboard: React.FC = () => {
       const norm = header.toLowerCase().replace(/[^a-z0-9]/g, '');
 
       // Email
-      if (['email', 'emailid', 'mail', 'emailaddress', 'useremail', 'studentemail', 'address'].some(s => norm.includes(s))) {
+      if (['email', 'emailid', 'mail', 'emailaddress', 'useremail', 'studentemail', 'address', 'contactemail', 'electronicmail', 'learneremail', 'participantemail', 'schoolmail', 'campusmail'].some(s => norm.includes(s))) {
         if (newMapping.email === -1) newMapping.email = idx;
       }
       // Student ID
-      else if (['studentid', 'uniqueid', 'rollno', 'roll', 'matric', 'regno', 'id', 'studentnumber', 'studid'].some(s => norm === s || norm.startsWith('id') || norm.endsWith('id') || norm.includes('studentid'))) {
+      else if (['studentid', 'uniqueid', 'rollno', 'roll', 'matric', 'regno', 'id', 'studentnumber', 'studid', 'matriculation', 'matricno', 'registrationno', 'regnumber', 'orgdefinedid', 'sisuserid', 'usernumber', 'identifier', 'sid', 'uid', 'idnumber'].some(s => norm === s || norm.startsWith('id') || norm.endsWith('id') || norm.includes('studentid') || norm.includes('matric'))) {
         if (newMapping.id === -1) newMapping.id = idx;
       }
       // Full Name
-      else if (['fullname', 'studentname', 'name', 'member', 'student', 'participant', 'firstlast'].some(s => norm.includes(s))) {
+      else if (['fullname', 'studentname', 'name', 'member', 'student', 'participant', 'firstlast', 'learner', 'learnername', 'displayname', 'personname', 'candidate', 'firstandlastname', 'studentfullname'].some(s => norm.includes(s))) {
         if (newMapping.name === -1) newMapping.name = idx;
       }
       // Group / Team
-      else if (['group', 'team', 'groupname', 'teamname', 'classgroup', 'squad', 'cohort', 'projectgroup'].some(s => norm.includes(s))) {
+      else if (['group', 'team', 'groupname', 'teamname', 'classgroup', 'squad', 'cohort', 'projectgroup', 'teamnumber', 'groupnumber', 'assignedteam', 'assignedgroup', 'peergroup', 'syndicate', 'table', 'teamid', 'groupid'].some(s => norm.includes(s))) {
         if (newMapping.groupName === -1) newMapping.groupName = idx;
       }
       // Gender
-      else if (['gender', 'sex', 'pronoun'].some(s => norm.includes(s))) {
+      else if (['gender', 'sex', 'pronoun', 'pronouns', 'demographic', 'genderidentity'].some(s => norm.includes(s))) {
         if (newMapping.gender === -1) newMapping.gender = idx;
       }
-      // Nationality
-      else if (['nationality', 'country', 'citizenship', 'nation', 'origin'].some(s => norm.includes(s))) {
+      // Nationality / Country
+      else if (['nationality', 'country', 'citizenship', 'nation', 'origin', 'homecountry', 'nativecountry', 'countryoforigin', 'domicile', 'region'].some(s => norm.includes(s))) {
         if (newMapping.nationality === -1) newMapping.nationality = idx;
       }
       // English Proficiency
-      else if (['english', 'englishproficiency', 'englishlevel', 'languagelevel', 'proficiency', 'cefr', 'englishskill'].some(s => norm.includes(s))) {
+      else if (['english', 'englishproficiency', 'englishlevel', 'languagelevel', 'proficiency', 'cefr', 'englishskill', 'ielts', 'toefl', 'languagescore', 'englevel', 'language'].some(s => norm.includes(s))) {
         if (newMapping.englishProficiency === -1) newMapping.englishProficiency = idx;
       }
-      // University
-      else if (['university', 'uni', 'college', 'institution', 'school', 'campus', 'institute'].some(s => norm.includes(s))) {
+      // University / Campus
+      else if (['university', 'uni', 'college', 'institution', 'school', 'campus', 'institute', 'faculty', 'dept', 'homeuniversity', 'homeinstitution'].some(s => norm.includes(s))) {
         if (newMapping.university === -1) newMapping.university = idx;
       }
-      // Degree
-      else if (['degree', 'major', 'program', 'course', 'degreefield', 'field', 'branch', 'specialization'].some(s => norm.includes(s))) {
+      // Degree / Major
+      else if (['degree', 'major', 'program', 'programme', 'course', 'degreefield', 'field', 'branch', 'specialization', 'discipline', 'academicprogram', 'curriculum', 'fieldofstudy'].some(s => norm.includes(s))) {
         if (newMapping.degree === -1) newMapping.degree = idx;
       }
-      // Student Type
-      else if (['studenttype', 'type', 'status', 'erasmus', 'enrollmenttype', 'category'].some(s => norm.includes(s))) {
+      // Student Type / Status
+      else if (['studenttype', 'type', 'status', 'erasmus', 'enrollmenttype', 'category', 'exchangestatus', 'studentcategory', 'cohorttype'].some(s => norm.includes(s))) {
         if (newMapping.studentType === -1) newMapping.studentType = idx;
       }
     });
@@ -3883,7 +3948,31 @@ export const AdminDashboard: React.FC = () => {
 
       {/* TAB CONTENT: ROSTER MANAGER */}
       {activeTab === 'roster' && (
-        <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div
+          className="tab-pane"
+          style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', position: 'relative' }}
+          onDragEnter={handleSection1DragEnter}
+          onDragLeave={handleSection1DragLeave}
+          onDragOver={handleSection1DragOver}
+          onDrop={handleSection1Drop}
+        >
+          {/* QoL: Direct Full-Screen Drag-and-Drop Ingestion Overlay */}
+          {isSection1Dragging && (
+            <div className="roster-drag-overlay">
+              <div className="roster-drag-icon-box">
+                <Upload size={36} />
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '0 0 0.35rem 0', color: '#ffffff' }}>
+                  Drop Roster File Anywhere
+                </h2>
+                <p style={{ fontSize: '0.88rem', color: 'rgba(255, 255, 255, 0.85)', margin: 0 }}>
+                  Supports Excel (.xlsx, .xls), CSV, or PDF rosters to open Onboarding Wizard
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Top Auxiliary Cards Row - Only rendered if at least 1 card is enabled, leaving zero blank space when all are hidden */}
           {(isEditMode || featureToggles.showSelfEnrollmentCard || featureToggles.showQuickActionsCard || featureToggles.showImportWizardCard) && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
@@ -3895,86 +3984,124 @@ export const AdminDashboard: React.FC = () => {
                   isVisible={featureToggles.showSelfEnrollmentCard}
                   onToggle={handleToggleModule}
                 >
-                  <div className="card" data-tour="self-enrollment-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
+                  <div className="card" data-tour="self-enrollment-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
+                    {/* Tier 1: Header & Dynamic Description */}
                     <div>
-                      <div className="card-header" style={{ marginBottom: '0.45rem' }}>
-                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                      <div className="card-header" style={{ marginBottom: '0.35rem' }}>
+                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
                           <QrCode size={18} className="text-primary" /> Self-Enrollment
                           <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Self-Enrollment QR Guide" />
                         </h3>
-                        <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
+                        <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
                           QR &amp; Link
                         </span>
                       </div>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                        Share class QR code or direct join link with students for mobile self-registration.
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
+                        {(() => {
+                          const hasQr = isEditMode || featureToggles.showSelfEnrollmentQr !== false;
+                          const hasBtn = isEditMode || featureToggles.showSelfEnrollmentPresentationBtn !== false;
+                          if (hasQr && hasBtn) return 'Share class QR code, direct join link, or launch live presentation mode for student self-registration.';
+                          if (hasQr) return 'Share class QR code or direct join link with students for mobile self-registration.';
+                          if (hasBtn) return 'Launch live full-screen presentation mode for classroom student self-registration.';
+                          return 'Student self-registration portal and direct onboarding link.';
+                        })()}
                       </p>
-
-                      {/* QR Code preview & URL copy box */}
-                      <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.55rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                        {miniQrUrl ? (
-                          <div
-                            onClick={() => setIsQRCodeModalOpen(true)}
-                            style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                            title="Click to expand QR Presentation Mode"
-                          >
-                            <img src={miniQrUrl} alt="Classroom QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => setIsQRCodeModalOpen(true)}
-                            style={{ cursor: 'pointer', flexShrink: 0, width: '58px', height: '58px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}
-                            title="Click to expand QR Presentation Mode"
-                          >
-                            <QrCode size={26} />
-                          </div>
-                        )}
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', gap: '0.3rem' }}>
-                            <input
-                              type="text"
-                              readOnly
-                              className="form-input"
-                              value={getClassEnrollmentUrl(activeClass.id)}
-                              style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '0.3rem 0.5rem', height: '32px', flex: 1 }}
-                              onClick={(e) => (e.target as HTMLInputElement).select()}
-                            />
-                            <button
-                              type="button"
-                              className={`btn ${copiedEnrollLink ? 'btn-teal' : 'btn-secondary'} btn-sm`}
-                              style={{ flexShrink: 0, padding: '0.25rem 0.55rem', height: '32px' }}
-                              onClick={() => {
-                                navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
-                                setCopiedEnrollLink(true);
-                                addToast('Classroom enrollment link copied to clipboard!', 'success');
-                                setTimeout(() => setCopiedEnrollLink(false), 2500);
-                              }}
-                              title="Copy enrollment link to clipboard"
-                            >
-                              {copiedEnrollLink ? <Check size={13} /> : <Copy size={13} />}
-                            </button>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                              <ShieldCheck size={11} className="text-teal" /> Cloud Sync Active
-                            </span>
-                            <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
-                              {activeClass.students.length} Enrolled
-                            </span>
-                          </div>
-                        </div>
-                      </div>
                     </div>
 
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      style={{ width: '100%', justifyContent: 'center', gap: '0.45rem', padding: '0.55rem', fontSize: '0.84rem', fontWeight: 700 }}
-                      onClick={() => setIsQRCodeModalOpen(true)}
-                    >
-                      <QrCode size={14} /> Open QR Presentation Mode
-                    </button>
+                    {/* Tier 2: Interactive QR & URL Canvas */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, justifyContent: 'center' }}>
+                      <EditableModuleSlot
+                        moduleKey="showSelfEnrollmentQr"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showSelfEnrollmentQr !== false}
+                        onToggle={handleToggleModule}
+                        slotType="bar"
+                        style={{ width: '100%' }}
+                      >
+                        <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.55rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', width: '100%', boxSizing: 'border-box', minHeight: '68px' }}>
+                          {miniQrUrl ? (
+                            <div
+                              onClick={() => setIsQRCodeModalOpen(true)}
+                              style={{ cursor: 'pointer', flexShrink: 0, width: '54px', height: '54px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              title="Click to expand QR Presentation Mode"
+                            >
+                              <img src={miniQrUrl} alt="Classroom QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => setIsQRCodeModalOpen(true)}
+                              style={{ cursor: 'pointer', flexShrink: 0, width: '54px', height: '54px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}
+                              title="Click to expand QR Presentation Mode"
+                            >
+                              <QrCode size={24} />
+                            </div>
+                          )}
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', gap: '0.3rem' }}>
+                              <input
+                                type="text"
+                                readOnly
+                                className="form-input"
+                                value={getClassEnrollmentUrl(activeClass.id)}
+                                style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '0.3rem 0.5rem', height: '30px', flex: 1 }}
+                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                              />
+                              <button
+                                type="button"
+                                className={`btn ${copiedEnrollLink ? 'btn-copy-success' : 'btn-secondary'} btn-sm`}
+                                style={{ flexShrink: 0, padding: '0.2rem 0.55rem', height: '30px', position: 'relative' }}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
+                                  setCopiedEnrollLink(true);
+                                  addToast('Classroom enrollment link copied to clipboard!', 'success');
+                                  setTimeout(() => setCopiedEnrollLink(false), 2500);
+                                }}
+                                title="Copy enrollment link to clipboard"
+                              >
+                                {copiedEnrollLink ? <Check size={13} /> : <Copy size={13} />}
+                                {copiedEnrollLink && (
+                                  <span className="copy-badge-pill">
+                                    <Check size={10} /> Copied!
+                                  </span>
+                                )}
+                              </button>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <ShieldCheck size={11} className="text-teal" /> Cloud Sync Active
+                              </span>
+                              <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
+                                {activeClass.students.length} Enrolled
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </EditableModuleSlot>
+                    </div>
+
+                    {/* Tier 3: Bottom Action Dock */}
+                    {(isEditMode || featureToggles.showSelfEnrollmentPresentationBtn !== false) && (
+                      <div style={{ marginTop: 'auto', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', width: '100%' }}>
+                        <EditableModuleSlot
+                          moduleKey="showSelfEnrollmentPresentationBtn"
+                          isEditMode={isEditMode}
+                          isVisible={featureToggles.showSelfEnrollmentPresentationBtn !== false}
+                          onToggle={handleToggleModule}
+                          slotType="button"
+                          style={{ width: '100%', display: 'flex' }}
+                        >
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            style={{ width: '100%', height: '36px', justifyContent: 'center', gap: '0.45rem', padding: '0.45rem', fontSize: '0.82rem', fontWeight: 700 }}
+                            onClick={() => setIsQRCodeModalOpen(true)}
+                          >
+                            <QrCode size={14} /> Open QR Presentation Mode
+                          </button>
+                        </EditableModuleSlot>
+                      </div>
+                    )}
                   </div>
                 </EditableModuleSlot>
               )}
@@ -3987,29 +4114,62 @@ export const AdminDashboard: React.FC = () => {
                   isVisible={featureToggles.showQuickActionsCard}
                   onToggle={handleToggleModule}
                 >
-                  <div className="card" data-tour="quick-actions-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
+                  <div className="card" data-tour="quick-actions-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
+                    {/* Tier 1: Header & Dynamic Description */}
                     <div>
-                      <div className="card-header" style={{ marginBottom: '0.45rem' }}>
-                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                      <div className="card-header" style={{ marginBottom: '0.35rem' }}>
+                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
                           <Sliders size={18} className="text-indigo" /> Quick Actions
                         </h3>
-                        <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
+                        <span className="badge badge-secondary" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
                           Tools
                         </span>
                       </div>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                        Add individual members, load diverse demo datasets, or export roster records.
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
+                        {(() => {
+                          const hasAdd = isEditMode || featureToggles.showAddStudentButton !== false;
+                          const hasDemo = isEditMode || !!featureToggles.showDemoSampleButton;
+                          const hasClear = isEditMode || featureToggles.showClearRosterButton !== false;
+                          if (hasAdd && hasDemo && hasClear) return 'Add students manually, populate with 100 sample records, or clear class records.';
+                          if (hasAdd && hasDemo) return 'Add students manually or populate class with 100 diverse sample student records.';
+                          if (hasAdd && hasClear) return 'Add individual students manually to the active roster or clear class records.';
+                          if (hasAdd) return 'Manually enroll individual students with email and team assignments.';
+                          if (hasDemo && hasClear) return 'Populate class with 100 demo records or clear active roster records.';
+                          if (hasDemo) return 'Populate class with 100 diverse sample student records to test evaluation workflows.';
+                          if (hasClear) return 'Manage and clear active class student roster records.';
+                          return 'Classroom roster shortcuts and enrollment actions.';
+                        })()}
                       </p>
+                    </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-                          <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => setIsAddStudentModalOpen(true)}
-                            style={{ justifyContent: 'center', gap: '0.35rem', padding: '0.45rem 0.35rem', fontSize: '0.78rem' }}
-                          >
-                            <Plus size={13} /> Add Member
-                          </button>
+                    {/* Tier 2: Interactive Actions Canvas */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', flex: 1, justifyContent: 'center' }}>
+                      <EditableModuleSlot
+                        moduleKey="showAddStudentButton"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showAddStudentButton !== false}
+                        onToggle={handleToggleModule}
+                        slotType="button"
+                        style={{ width: '100%', display: 'flex' }}
+                      >
+                        <button
+                          className="btn btn-primary"
+                          onClick={() => setIsAddStudentModalOpen(true)}
+                          style={{ justifyContent: 'center', gap: '0.45rem', padding: '0.55rem 0.65rem', fontSize: '0.84rem', fontWeight: 700, width: '100%', minHeight: '38px' }}
+                        >
+                          <UserPlus size={15} /> Add Student Manually
+                        </button>
+                      </EditableModuleSlot>
+
+                      {(isEditMode || !!featureToggles.showDemoSampleButton) && (
+                        <EditableModuleSlot
+                          moduleKey="showDemoSampleButton"
+                          isEditMode={isEditMode}
+                          isVisible={!!featureToggles.showDemoSampleButton}
+                          onToggle={handleToggleModule}
+                          slotType="button"
+                          style={{ width: '100%', display: 'flex' }}
+                        >
                           <button
                             type="button"
                             className="btn btn-teal btn-sm"
@@ -4017,25 +4177,147 @@ export const AdminDashboard: React.FC = () => {
                               importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
                               addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
                             }}
-                            style={{ fontSize: '0.78rem', gap: '0.35rem', justifyContent: 'center', padding: '0.45rem 0.35rem' }}
+                            style={{ fontSize: '0.8rem', gap: '0.35rem', justifyContent: 'center', padding: '0.45rem', fontWeight: 600, width: '100%', minHeight: '34px' }}
                             title="Populate classroom with a diverse dataset of 100 students to test app features"
                           >
                             <Sparkles size={13} /> 100 Demo Sample
                           </button>
-                        </div>
+                        </EditableModuleSlot>
+                      )}
+                    </div>
 
-                        {/* Export & Download Hub */}
-                        <div style={{ padding: '0.5rem 0.65rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                              Export &amp; Download Center
-                            </span>
-                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                              CSV &bull; Excel
-                            </span>
+                    {/* Tier 3: Bottom Action Dock */}
+                    {(isEditMode || featureToggles.showClearRosterButton !== false) && (
+                      <div style={{ marginTop: 'auto', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', width: '100%' }}>
+                        <EditableModuleSlot
+                          moduleKey="showClearRosterButton"
+                          isEditMode={isEditMode}
+                          isVisible={featureToggles.showClearRosterButton !== false}
+                          onToggle={handleToggleModule}
+                          slotType="button"
+                          style={{ width: '100%', display: 'flex' }}
+                        >
+                          <button
+                            type="button"
+                            className="btn btn-secondary text-rose btn-sm"
+                            style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--accent-rose)', fontSize: '0.78rem', height: '36px', padding: '0.45rem', justifyContent: 'center', gap: '0.35rem', width: '100%', fontWeight: 600 }}
+                            onClick={() => {
+                              triggerConfirm(
+                                'Clear Class Roster',
+                                'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
+                                () => {
+                                  clearClassRoster(activeClass.id);
+                                },
+                                'Clear Roster',
+                                'Cancel'
+                              );
+                            }}
+                            title="Clear all students from this classroom"
+                          >
+                            <Trash2 size={13} /> Clear Class Roster
+                          </button>
+                        </EditableModuleSlot>
+                      </div>
+                    )}
+                  </div>
+                </EditableModuleSlot>
+              )}
+
+              {/* 3. Import & Export Hub Card */}
+              {(isEditMode || featureToggles.showImportWizardCard) && (
+                <EditableModuleSlot
+                  moduleKey="showImportWizardCard"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showImportWizardCard}
+                  onToggle={handleToggleModule}
+                >
+                  <div className="card" data-tour="import-wizard-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
+                    {/* Tier 1: Header & Dynamic Description */}
+                    <div>
+                      <div className="card-header" style={{ marginBottom: '0.35rem' }}>
+                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
+                          <Upload size={18} className="text-teal" /> Import &amp; Export Hub
+                          <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import &amp; Export Hub Guide" />
+                        </h3>
+                        <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                          Hub
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
+                        {(() => {
+                          const hasDropzone = isEditMode || featureToggles.showImportDropzone !== false;
+                          const hasExport = isEditMode || featureToggles.showExportRosterBtn !== false;
+                          const hasTemplate = isEditMode || !!featureToggles.showDownloadTemplateBtn;
+                          if (hasDropzone && hasExport && hasTemplate) return 'Onboard rosters from CSV, Excel, PDF, or clipboard, export active records, and download templates.';
+                          if (hasDropzone && hasExport) return 'Onboard student rosters from CSV, Excel, PDF, or clipboard, and export active roster records.';
+                          if (hasDropzone && hasTemplate) return 'Onboard student rosters from files or clipboard and download spreadsheet templates.';
+                          if (hasDropzone) return 'Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema mapping.';
+                          if (hasExport && hasTemplate) return 'Export active class roster records and download spreadsheet templates.';
+                          if (hasExport) return 'Export active classroom student roster and team assignments to Excel (.xlsx).';
+                          if (hasTemplate) return 'Download sample student roster spreadsheet templates (.xlsx).';
+                          return 'Roster data import and export hub for CSV, Excel, and PDF formats.';
+                        })()}
+                      </p>
+                    </div>
+
+                    {/* Tier 2: Interactive Dropzone Canvas */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, justifyContent: 'center' }}>
+                      <EditableModuleSlot
+                        moduleKey="showImportDropzone"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showImportDropzone !== false}
+                        onToggle={handleToggleModule}
+                        slotType="banner"
+                      >
+                        <div
+                          onClick={() => {
+                            setWizardStep(1);
+                            setIsWizardOpen(true);
+                          }}
+                          style={{
+                            padding: '0.55rem 0.65rem',
+                            borderRadius: '8px',
+                            border: '1.5px dashed var(--accent-teal)',
+                            backgroundColor: 'rgba(20, 184, 166, 0.04)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.35rem',
+                            textAlign: 'center',
+                            transition: 'all 0.2s ease',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            minHeight: '68px'
+                          }}
+                          title="Click to launch Roster Onboarding Wizard"
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent-teal)' }}>
+                            <Upload size={13} /> Click to Upload or Paste File
                           </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem', width: '100%' }}>
+                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-teal)' }}>XLSX</span>
+                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-rose)' }}>PDF</span>
+                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}>CSV</span>
+                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-amber)' }}>PASTE</span>
+                          </div>
+                        </div>
+                      </EditableModuleSlot>
+                    </div>
 
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem' }}>
+                    {/* Tier 3: Bottom Action Dock */}
+                    {(isEditMode || featureToggles.showExportRosterBtn !== false || !!featureToggles.showDownloadTemplateBtn) && (
+                      <div style={{ marginTop: 'auto', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', width: '100%' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: (featureToggles.showExportRosterBtn !== false && (isEditMode || !!featureToggles.showDownloadTemplateBtn)) ? '1fr 1fr' : '1fr', gap: '0.4rem', width: '100%' }}>
+                          <EditableModuleSlot
+                            moduleKey="showExportRosterBtn"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showExportRosterBtn !== false}
+                            onToggle={handleToggleModule}
+                            slotType="button"
+                            style={{ width: '100%', display: 'flex' }}
+                          >
                             <button
                               type="button"
                               className="btn btn-secondary btn-sm"
@@ -4047,120 +4329,39 @@ export const AdminDashboard: React.FC = () => {
                                 exportRosterToExcel(activeClass);
                                 addToast('Class roster exported to Excel (.xlsx)!', 'success');
                               }}
-                              style={{ fontSize: '0.72rem', padding: '0.3rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
+                              style={{ fontSize: '0.78rem', height: '36px', padding: '0.45rem 0.4rem', justifyContent: 'center', gap: '0.3rem', fontWeight: 600, width: '100%' }}
                               title="Export current classroom roster to Excel"
                             >
-                              <Download size={11} className="text-teal" /> Export Roster
+                              <Download size={13} className="text-teal" /> Export Roster
                             </button>
+                          </EditableModuleSlot>
 
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => {
-                                downloadSampleStudentsFile('xlsx');
-                                addToast('Downloaded diverse student template spreadsheet (.xlsx)!', 'success');
-                              }}
-                              style={{ fontSize: '0.72rem', padding: '0.3rem 0.4rem', justifyContent: 'center', gap: '0.25rem' }}
-                              title="Download sample spreadsheet template with 100 diverse students"
+                          {(isEditMode || !!featureToggles.showDownloadTemplateBtn) && (
+                            <EditableModuleSlot
+                              moduleKey="showDownloadTemplateBtn"
+                              isEditMode={isEditMode}
+                              isVisible={!!featureToggles.showDownloadTemplateBtn}
+                              onToggle={handleToggleModule}
+                              slotType="button"
+                              style={{ width: '100%', display: 'flex' }}
                             >
-                              <Download size={11} className="text-indigo" /> Template
-                            </button>
-                          </div>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                  downloadSampleStudentsFile('xlsx');
+                                  addToast('Downloaded diverse student template spreadsheet (.xlsx)!', 'success');
+                                }}
+                                style={{ fontSize: '0.78rem', height: '36px', padding: '0.45rem 0.4rem', justifyContent: 'center', gap: '0.3rem', fontWeight: 600, width: '100%' }}
+                                title="Download sample spreadsheet template with student headers"
+                              >
+                                <Download size={13} className="text-indigo" /> Template
+                              </button>
+                            </EditableModuleSlot>
+                          )}
                         </div>
                       </div>
-                    </div>
-
-                    {/* Clear Roster Action */}
-                    <button
-                      type="button"
-                      className="btn btn-secondary text-rose btn-sm"
-                      style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', fontSize: '0.72rem', padding: '0.4rem', justifyContent: 'center', gap: '0.3rem', width: '100%' }}
-                      onClick={() => {
-                        triggerConfirm(
-                          'Clear Class Roster',
-                          'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
-                          () => {
-                            clearClassRoster(activeClass.id);
-                          },
-                          'Clear Roster',
-                          'Cancel'
-                        );
-                      }}
-                      title="Clear all students from this classroom"
-                    >
-                      <Trash2 size={11} /> Clear Class Roster
-                    </button>
-                  </div>
-                </EditableModuleSlot>
-              )}
-
-              {/* 3. Import Wizard Card */}
-              {(isEditMode || featureToggles.showImportWizardCard) && (
-                <EditableModuleSlot
-                  moduleKey="showImportWizardCard"
-                  isEditMode={isEditMode}
-                  isVisible={featureToggles.showImportWizardCard}
-                  onToggle={handleToggleModule}
-                >
-                  <div className="card" data-tour="import-wizard-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', gap: '0.85rem' }}>
-                    <div>
-                      <div className="card-header" style={{ marginBottom: '0.45rem' }}>
-                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
-                          <Upload size={18} className="text-teal" /> Import Wizard
-                          <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import Wizard Guide" />
-                        </h3>
-                        <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                          Smart Mapper
-                        </span>
-                      </div>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                        Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema header mapping.
-                      </p>
-
-                      {/* Interactive Dropzone / Format Trigger */}
-                      <div
-                        onClick={() => {
-                          setWizardStep(1);
-                          setIsWizardOpen(true);
-                        }}
-                        style={{
-                          padding: '0.75rem 0.65rem',
-                          borderRadius: '8px',
-                          border: '1.5px dashed var(--accent-teal)',
-                          backgroundColor: 'rgba(20, 184, 166, 0.04)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '0.45rem',
-                          textAlign: 'center',
-                          transition: 'all 0.2s ease'
-                        }}
-                        title="Click to launch Roster Onboarding Wizard"
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-teal)' }}>
-                          <Upload size={14} /> Click to Upload or Paste File
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem', width: '100%' }}>
-                          <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-teal)' }}>XLSX</span>
-                          <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-rose)' }}>PDF</span>
-                          <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}>CSV</span>
-                          <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.2rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-amber)' }}>PASTE</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => {
-                        setWizardStep(1);
-                        setIsWizardOpen(true);
-                      }}
-                      style={{ width: '100%', justifyContent: 'center', padding: '0.55rem', gap: '0.45rem', fontWeight: 700, fontSize: '0.84rem' }}
-                    >
-                      <Sparkles size={15} /> Open Onboarding Wizard
-                    </button>
+                    )}
                   </div>
                 </EditableModuleSlot>
               )}
@@ -4311,11 +4512,11 @@ export const AdminDashboard: React.FC = () => {
                     </EditableModuleSlot>
                   )}
 
-                  {(isEditMode || featureToggles.showAddStudentButton) && (
+                  {(isEditMode || featureToggles.showRosterAddStudentBtn) && (
                     <EditableModuleSlot
-                      moduleKey="showAddStudentButton"
+                      moduleKey="showRosterAddStudentBtn"
                       isEditMode={isEditMode}
-                      isVisible={featureToggles.showAddStudentButton}
+                      isVisible={featureToggles.showRosterAddStudentBtn}
                       onToggle={handleToggleModule}
                       inline
                       slotType="button"
@@ -9294,14 +9495,14 @@ export const AdminDashboard: React.FC = () => {
             </div>
             {/* ── End Format Guide ────────────────────────────────────────── */}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '1.25rem', marginTop: '0.25rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginTop: '0.25rem' }}>
               {/* Option A: File Selector */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>Option A: Upload Roster File</span>
-                <label className="csv-dropzone" style={{ minHeight: '170px', padding: '1.5rem' }}>
-                  <Upload size={28} className="text-teal" />
-                  <span style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: '0.35rem' }}>Select Spreadsheet / PDF</span>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>Accepts XLSX, XLS, PDF, or CSV formats</span>
+                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>Option A: Upload Roster File</span>
+                <label className="csv-dropzone" style={{ minHeight: '170px', padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                  <Upload size={30} className="text-teal" />
+                  <span style={{ fontSize: '0.84rem', fontWeight: 700, marginTop: '0.45rem' }}>Select Spreadsheet / PDF</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.3, marginTop: '0.15rem' }}>Accepts XLSX, XLS, PDF, or CSV formats</span>
                   <input
                     type="file"
                     accept=".csv,.xlsx,.xls,.pdf"
@@ -9313,82 +9514,75 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Option B: Direct Paste Area */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>Option B: Paste Spreadsheet Cells</span>
-                <textarea
-                  className="wizard-paste-area"
-                  placeholder={`Paste columns from Excel or Google Sheets here...\ne.g.\n101\tAlice\talice@univ.edu\tTeam A\n102\tBob\tbob@univ.edu\tTeam B`}
-                  value={wizardPasteText}
-                  onChange={(e) => setWizardPasteText(e.target.value)}
-                  style={{ minHeight: '115px', padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}
-                />
+                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>Option B: Paste Spreadsheet Cells</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', height: '100%' }}>
+                  <textarea
+                    className="wizard-paste-area"
+                    placeholder={`Paste columns from Excel or Google Sheets here...\ne.g.\n101\tAlice\talice@univ.edu\tTeam A\n102\tBob\tbob@univ.edu\tTeam B`}
+                    value={wizardPasteText}
+                    onChange={(e) => setWizardPasteText(e.target.value)}
+                    style={{ minHeight: '115px', flex: 1, padding: '0.55rem 0.75rem', fontSize: '0.8rem', resize: 'vertical' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-teal"
+                    onClick={handleWizardPasteSubmit}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.82rem', justifyContent: 'center', fontWeight: 700 }}
+                  >
+                    Parse Clipboard Data
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Compact Helper Action Strip: Demo Sample & Templates */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', padding: '0.7rem 1rem', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', marginTop: '0.15rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                <Sparkles size={14} className="text-teal" />
+                <span>Need test data or a spreadsheet template?</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  className="btn btn-teal"
-                  onClick={handleWizardPasteSubmit}
-                  style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    const csv = getSampleStudentsCSV();
+                    const parsed = parseRawPastedText(csv);
+                    if (parsed.length > 0) {
+                      setWizardFileName('diverse_100_students_sample.csv');
+                      handleParsedRawMatrix(parsed);
+                      addToast('Loaded 100-student diverse sample dataset into wizard!', 'success');
+                    }
+                  }}
+                  style={{ fontSize: '0.76rem', padding: '0.35rem 0.65rem', gap: '0.35rem', fontWeight: 600 }}
+                  title="Populate wizard with 100 diverse demo student records"
                 >
-                  Parse Clipboard Data
+                  <Sparkles size={12} className="text-primary" /> Load 100 Demo Sample
                 </button>
-              </div>
-
-              {/* Option C: Pre-built Diverse Sample Dataset */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>Option C: Demo Sample Dataset</span>
-                <div style={{ minHeight: '170px', padding: '1.25rem', border: '1px dashed var(--accent-teal)', borderRadius: 'var(--radius-md)', backgroundColor: 'rgba(20, 184, 166, 0.04)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-teal)', fontWeight: 800, fontSize: '0.88rem' }}>
-                      <Sparkles size={16} /> 100 Diverse Students
-                    </div>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0.35rem 0 0 0', lineHeight: 1.4 }}>
-                      Pre-generated diverse dataset with 35+ nationalities, gender balance, and English levels.
-                    </p>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.75rem' }}>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => {
-                        const csv = getSampleStudentsCSV();
-                        const parsed = parseRawPastedText(csv);
-                        if (parsed.length > 0) {
-                          setWizardFileName('diverse_100_students_sample.csv');
-                          handleParsedRawMatrix(parsed);
-                          addToast('Loaded 100-student diverse sample dataset into wizard!', 'success');
-                        }
-                      }}
-                      style={{ fontSize: '0.78rem', justifyContent: 'center', gap: '0.35rem' }}
-                    >
-                      <Sparkles size={13} /> Load Sample into Wizard
-                    </button>
-                    <div style={{ display: 'flex', gap: '0.35rem' }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          downloadSampleStudentsFile('xlsx');
-                          addToast('Downloaded sample spreadsheet template (.xlsx)!', 'success');
-                        }}
-                        style={{ flex: 1, fontSize: '0.74rem', padding: '0.35rem 0.4rem', justifyContent: 'center', gap: '0.3rem' }}
-                        title="Download sample student spreadsheet (.xlsx)"
-                      >
-                        <Download size={12} className="text-teal" /> Excel Template
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          downloadSampleStudentsFile('csv');
-                          addToast('Downloaded sample CSV template (.csv)!', 'success');
-                        }}
-                        style={{ flex: 1, fontSize: '0.74rem', padding: '0.35rem 0.4rem', justifyContent: 'center', gap: '0.3rem' }}
-                        title="Download sample CSV file (.csv)"
-                      >
-                        <Download size={12} className="text-indigo" /> CSV Template
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    downloadSampleStudentsFile('xlsx');
+                    addToast('Downloaded sample spreadsheet template (.xlsx)!', 'success');
+                  }}
+                  style={{ fontSize: '0.76rem', padding: '0.35rem 0.65rem', gap: '0.3rem', fontWeight: 600 }}
+                  title="Download sample student spreadsheet (.xlsx)"
+                >
+                  <Download size={12} className="text-teal" /> Excel Template
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    downloadSampleStudentsFile('csv');
+                    addToast('Downloaded sample CSV template (.csv)!', 'success');
+                  }}
+                  style={{ fontSize: '0.76rem', padding: '0.35rem 0.65rem', gap: '0.3rem', fontWeight: 600 }}
+                  title="Download sample CSV file (.csv)"
+                >
+                  <Download size={12} className="text-indigo" /> CSV Template
+                </button>
               </div>
             </div>
           </div>
@@ -11586,6 +11780,77 @@ export const AdminDashboard: React.FC = () => {
         }}
         onToast={(msg, type) => addToast(msg, type || 'info')}
       />
+
+      {/* QoL: Sticky Section Action Summary Bar (Appears on scroll in Roster and Grading sections) */}
+      {isStickySummaryVisible && (activeTab === 'roster' || activeTab === 'results') && (
+        <div className="sticky-action-summary-bar">
+          <div className="sticky-summary-stat">
+            {activeTab === 'roster' ? (
+              <>
+                <Users size={14} className="text-primary" />
+                <span>{filteredStudents.length} of {activeClass.students.length} Students ({new Set(activeClass.students.map(s => s.groupName)).size} Teams)</span>
+              </>
+            ) : (
+              <>
+                <Award size={14} className="text-teal" />
+                <span>{stats.submittedCount}/{stats.totalStudents} Reviews Submitted ({stats.completionRate}%)</span>
+              </>
+            )}
+          </div>
+
+          <div className="sticky-summary-divider" />
+
+          {activeTab === 'roster' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <div style={{ position: 'relative', width: '160px' }}>
+                <Search size={12} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Quick filter..."
+                  className="form-input"
+                  style={{ paddingLeft: '1.75rem', height: '28px', fontSize: '0.74rem', borderRadius: '14px', background: 'var(--bg-app)', paddingRight: '0.5rem' }}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setIsAddStudentModalOpen(true)}
+                style={{ height: '28px', padding: '0 0.65rem', fontSize: '0.74rem', borderRadius: '14px', gap: '0.25rem', fontWeight: 700 }}
+              >
+                <Plus size={12} /> Add Student
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'results' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <button
+                type="button"
+                className="btn btn-teal btn-sm"
+                onClick={handleExportExcel}
+                style={{ height: '28px', padding: '0 0.65rem', fontSize: '0.74rem', borderRadius: '14px', gap: '0.3rem', fontWeight: 700 }}
+              >
+                <Download size={12} /> Excel Report
+              </button>
+            </div>
+          )}
+
+          <div className="sticky-summary-divider" />
+
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            style={{ width: '28px', height: '28px', padding: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            title="Scroll back to top"
+          >
+            <ArrowUp size={13} />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

@@ -4835,3 +4835,128 @@ kbd {
 .edit-mode-submodule-hidden:hover {
   box-shadow: 0 2px 10px rgba(16, 185, 129, 0.22);
 }
+
+/* --- QoL: FULLSCREEN ROSTER DRAG-AND-DROP OVERLAY --- */
+.roster-drag-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background-color: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 16px;
+  border: 2.5px dashed var(--accent-teal, #14b8a6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: #ffffff;
+  pointer-events: none;
+  animation: fadeInOverlay 0.18s ease forwards;
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.roster-drag-icon-box {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: rgba(20, 184, 166, 0.2);
+  border: 1px solid rgba(20, 184, 166, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-teal, #14b8a6);
+  box-shadow: 0 0 24px rgba(20, 184, 166, 0.35);
+  animation: bouncePulse 1.2s infinite ease-in-out;
+}
+
+@keyframes bouncePulse {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* --- QoL: COPY BUTTON ANIMATED FEEDBACK & RIPPLE --- */
+.btn-copy-success {
+  background-color: var(--accent-teal, #14b8a6) !important;
+  color: #ffffff !important;
+  border-color: var(--accent-teal, #14b8a6) !important;
+  animation: copyPulse 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes copyPulse {
+  0% { transform: scale(0.92); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+.copy-badge-pill {
+  position: absolute;
+  top: -26px;
+  right: 0;
+  background: var(--accent-teal, #14b8a6);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0.18rem 0.5rem;
+  border-radius: 12px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  animation: badgePop 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  z-index: 50;
+  white-space: nowrap;
+}
+
+@keyframes badgePop {
+  0% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* --- QoL: STICKY SECTION ACTION SUMMARY BAR --- */
+.sticky-action-summary-bar {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.55rem 1.1rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: slideUpSticky 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  max-width: 92vw;
+}
+
+@keyframes slideUpSticky {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.sticky-summary-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.sticky-summary-divider {
+  width: 1px;
+  height: 18px;
+  background-color: var(--border-color);
+}

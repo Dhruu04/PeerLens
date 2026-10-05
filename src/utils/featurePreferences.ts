@@ -31,12 +31,20 @@ export interface FeatureToggles {
 
   // --- Section 1: Enrollment & Teams ---
   showSelfEnrollmentCard: boolean;
+  showSelfEnrollmentQr: boolean;
+  showSelfEnrollmentPresentationBtn: boolean;
   showQuickActionsCard: boolean;
-  showImportWizardCard: boolean;
-  showAutoGroupStudio: boolean;
   showAddStudentButton: boolean;
+  showDemoSampleButton: boolean;
+  showClearRosterButton: boolean;
+  showImportWizardCard: boolean;
+  showImportDropzone: boolean;
+  showExportRosterBtn: boolean;
+  showDownloadTemplateBtn: boolean;
+  showAutoGroupStudio: boolean;
   showExportButtons: boolean;
   showRosterSearchFilter: boolean;
+  showRosterAddStudentBtn: boolean;
   showBulkActionBar: boolean;
   showDuplicateDetector: boolean;
   showRosterTable: boolean;
@@ -69,27 +77,36 @@ export interface FeatureToggles {
   showGradebookSearchFilter: boolean;
   showDetailedReviewMatrix: boolean;
   showTeammateAuditLog: boolean;
+
+  // --- Section 4: Footer Elements ---
+  showFooterBrandLogo: boolean;
+  showFooterBrandName: boolean;
+  showFooterBrandTagline: boolean;
+  showFooterWorkspaceContext: boolean;
+  showFooterDoubleBlindBadge: boolean;
+  showFooterSecurePrivateBadge: boolean;
+  showFooterCopyright: boolean;
 }
 
 export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
-  // Header & Top Navigation
-  showClassPicker: true,
-  showDeleteClassButton: true,
-  showNewClassButton: true,
+  // Header & Top Navigation (Clean header: Logo on left, Settings gear on right)
+  showClassPicker: false,
+  showDeleteClassButton: false,
+  showNewClassButton: false,
   showSettingsButton: true,
   showThemeSwitcher: false,
-  showProfilePill: true,
+  showProfilePill: false,
   showProjectorButton: false,
-  showCommandSearch: true,
+  showCommandSearch: false,
   showEmailButton: false,
-  showGuideButton: true,
+  showGuideButton: false,
   showCloudStatus: false,
-  showCustomizeViewButton: true,
+  showCustomizeViewButton: false,
   showEditModeButton: false,
   showQuickActionPill: false,
 
   // Home Hub & Sub-Bar Navigation
-  showPresetsBanner: true,
+  showPresetsBanner: false,
   showHubOverviewBanner: false,
   showHubOverviewStats: false,
   showSectionNavBreadcrumbs: false,
@@ -97,17 +114,25 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showEnrollmentCard: true,
   showReviewSystemCard: true,
   showGradingAnalyticsCard: true,
-  showHubCardMetrics: true,
-  showHubQuickActions: true,
+  showHubCardMetrics: false,
+  showHubQuickActions: false,
 
   // Section 1: Enrollment & Teams
   showSelfEnrollmentCard: true,
+  showSelfEnrollmentQr: true,
+  showSelfEnrollmentPresentationBtn: false, // Hidden by default as shown in photo
   showQuickActionsCard: true,
+  showAddStudentButton: true,
+  showDemoSampleButton: false, // Hidden by default as shown in photo
+  showClearRosterButton: false, // Hidden by default as shown in photo
   showImportWizardCard: true,
+  showImportDropzone: true,
+  showExportRosterBtn: false, // Hidden by default as shown in photo
+  showDownloadTemplateBtn: false, // Hidden by default as shown in photo
   showAutoGroupStudio: true,
-  showAddStudentButton: false,
-  showExportButtons: true,
-  showRosterSearchFilter: true,
+  showExportButtons: false, // Hidden by default as shown in photo
+  showRosterSearchFilter: false, // Hidden by default as shown in photo
+  showRosterAddStudentBtn: false, // Hidden by default as shown in photo (seperately togglable from quick action)
   showBulkActionBar: true,
   showDuplicateDetector: false,
   showRosterTable: true,
@@ -140,11 +165,20 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showGradebookSearchFilter: true,
   showDetailedReviewMatrix: false,
   showTeammateAuditLog: false,
+
+  // Section 4: Footer Elements (Logo + Name on Left, Copyright on Right)
+  showFooterBrandLogo: true,
+  showFooterBrandName: true,
+  showFooterBrandTagline: false,
+  showFooterWorkspaceContext: false,
+  showFooterDoubleBlindBadge: false,
+  showFooterSecurePrivateBadge: false,
+  showFooterCopyright: true,
 };
 
 export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   // Header & Top Navigation
-  showClassPicker: true,
+  showClassPicker: false,
   showDeleteClassButton: false,
   showNewClassButton: true,
   showSettingsButton: true,
@@ -173,12 +207,20 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
 
   // Section 1: Enrollment & Teams
   showSelfEnrollmentCard: true,
+  showSelfEnrollmentQr: true,
+  showSelfEnrollmentPresentationBtn: false,
   showQuickActionsCard: true,
+  showAddStudentButton: true,
+  showDemoSampleButton: false,
+  showClearRosterButton: false,
   showImportWizardCard: true,
+  showImportDropzone: true,
+  showExportRosterBtn: false,
+  showDownloadTemplateBtn: false,
   showAutoGroupStudio: true,
-  showAddStudentButton: false,
   showExportButtons: false,
-  showRosterSearchFilter: true,
+  showRosterSearchFilter: false,
+  showRosterAddStudentBtn: false,
   showBulkActionBar: true,
   showDuplicateDetector: false,
   showRosterTable: true,
@@ -211,6 +253,15 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showGradebookSearchFilter: true,
   showDetailedReviewMatrix: false,
   showTeammateAuditLog: false,
+
+  // Section 4: Footer Elements
+  showFooterBrandLogo: false,
+  showFooterBrandName: false,
+  showFooterBrandTagline: false,
+  showFooterWorkspaceContext: false,
+  showFooterDoubleBlindBadge: false,
+  showFooterSecurePrivateBadge: false,
+  showFooterCopyright: false,
 };
 
 export const FULL_FEATURE_TOGGLES: FeatureToggles = {
@@ -242,12 +293,20 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showHubQuickActions: true,
 
   showSelfEnrollmentCard: true,
+  showSelfEnrollmentQr: true,
+  showSelfEnrollmentPresentationBtn: true,
   showQuickActionsCard: true,
-  showImportWizardCard: true,
-  showAutoGroupStudio: true,
   showAddStudentButton: true,
+  showDemoSampleButton: true,
+  showClearRosterButton: true,
+  showImportWizardCard: true,
+  showImportDropzone: true,
+  showExportRosterBtn: true,
+  showDownloadTemplateBtn: true,
+  showAutoGroupStudio: true,
   showExportButtons: true,
   showRosterSearchFilter: true,
+  showRosterAddStudentBtn: true,
   showBulkActionBar: true,
   showDuplicateDetector: true,
   showRosterTable: true,
@@ -278,14 +337,23 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showGradebookSearchFilter: true,
   showDetailedReviewMatrix: true,
   showTeammateAuditLog: true,
+
+  // Section 4: Footer Elements
+  showFooterBrandLogo: true,
+  showFooterBrandName: true,
+  showFooterBrandTagline: true,
+  showFooterWorkspaceContext: true,
+  showFooterDoubleBlindBadge: true,
+  showFooterSecurePrivateBadge: true,
+  showFooterCopyright: true,
 };
 
-const STORAGE_KEY = 'peerlens_feature_toggles';
+const STORAGE_KEY = 'peerlens_feature_toggles_v4';
 const EVENT_KEY = 'peerlens_features_changed';
 
 export const loadFeatureToggles = (): FeatureToggles => {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('peer_feature_toggles_v2');
+    const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       return { ...DEFAULT_FEATURE_TOGGLES, ...parsed };
@@ -299,7 +367,6 @@ export const loadFeatureToggles = (): FeatureToggles => {
 export const saveFeatureToggles = (toggles: FeatureToggles): void => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toggles));
-    localStorage.setItem('peer_feature_toggles_v2', JSON.stringify(toggles));
     window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: toggles }));
   } catch (e) {
     console.error('Failed to save feature toggles to localStorage', e);

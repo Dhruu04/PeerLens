@@ -4,11 +4,11 @@ import {
   Compass, Database, Sliders, LayoutGrid, CheckSquare, QrCode, 
   Sparkles, Users, CheckCircle, Download, ShieldCheck, Clock, 
   SlidersHorizontal, Activity, Award, RefreshCw, MessageSquare, 
-  Key, Zap, Edit3, Plus
+  Key, Zap, Edit3, Plus, Type
 } from 'lucide-react';
 import type { FeatureToggles } from './featurePreferences';
 
-export type ModuleCategory = 'header' | 'hub' | 'roster' | 'rubric' | 'analytics';
+export type ModuleCategory = 'header' | 'hub' | 'roster' | 'rubric' | 'analytics' | 'footer';
 export type ModuleSlotType = 'card' | 'button' | 'bar' | 'table' | 'banner' | 'dock';
 
 export interface ModuleItem {
@@ -245,22 +245,94 @@ export const MODULE_ITEMS: ModuleItem[] = [
     defaultHeight: 140
   },
   {
+    key: 'showSelfEnrollmentQr',
+    title: 'Self-Enrollment QR & URL Link Box',
+    desc: 'Displays the interactive QR code preview and direct class join URL.',
+    icon: QrCode,
+    category: 'roster',
+    slotType: 'bar',
+    parentKey: 'showSelfEnrollmentCard'
+  },
+  {
+    key: 'showSelfEnrollmentPresentationBtn',
+    title: 'QR Presentation Mode Button',
+    desc: 'Full-screen projector presentation button for live classroom onboarding.',
+    icon: Maximize2,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showSelfEnrollmentCard'
+  },
+  {
     key: 'showQuickActionsCard',
-    title: 'Quick Actions & Demo 100 Sample Card',
-    desc: 'Card with quick member creation, 100 sample student population, and Excel export.',
+    title: 'Quick Actions Card',
+    desc: 'Card containing manual participant enrollment, demo roster loading, and roster reset.',
     icon: Sparkles,
     category: 'roster',
     slotType: 'card',
     defaultHeight: 140
   },
   {
+    key: 'showAddStudentButton',
+    title: 'Add Member / Participant Button',
+    desc: 'Primary button to manually enroll an individual student or participant into the active roster.',
+    icon: Users,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showQuickActionsCard'
+  },
+  {
+    key: 'showDemoSampleButton',
+    title: 'Load 100 Demo Sample Button',
+    desc: 'One-click action to populate the class with 100 diverse sample student records and teams.',
+    icon: Sparkles,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showQuickActionsCard'
+  },
+  {
+    key: 'showClearRosterButton',
+    title: 'Clear Class Roster Button',
+    desc: 'Action button to wipe the current student roster and reset team assignments.',
+    icon: Trash2,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showQuickActionsCard'
+  },
+  {
     key: 'showImportWizardCard',
-    title: 'Smart Roster Import Wizard Card',
-    desc: 'Drag-and-drop dropzone card to onboard rosters from CSV, XLSX, or clipboard.',
+    title: 'Import & Export Hub Card',
+    desc: 'Unified hub to drag-and-drop rosters from CSV/Excel/PDF/clipboard, export rosters, or download templates.',
     icon: Download,
     category: 'roster',
     slotType: 'card',
     defaultHeight: 140
+  },
+  {
+    key: 'showImportDropzone',
+    title: 'Roster File Dropzone Area',
+    desc: 'Interactive drag-and-drop upload zone for XLSX, PDF, CSV, and clipboard data.',
+    icon: Download,
+    category: 'roster',
+    slotType: 'banner',
+    parentKey: 'showImportWizardCard'
+  },
+  {
+    key: 'showExportRosterBtn',
+    title: 'Export Roster Action Button',
+    desc: 'Exports current student roster and team assignments to CSV / Excel.',
+    icon: Download,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showImportWizardCard'
+  },
+  {
+    key: 'showDownloadTemplateBtn',
+    title: 'Download Template Action Button',
+    desc: 'Downloads a clean CSV/Excel template ready for student roster population.',
+    icon: Download,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showImportWizardCard'
   },
   {
     key: 'showAutoGroupStudio',
@@ -307,9 +379,9 @@ export const MODULE_ITEMS: ModuleItem[] = [
     parentKey: 'showRosterTable'
   },
   {
-    key: 'showAddStudentButton',
-    title: 'Manual Add Participant Button',
-    desc: '+ Enroll Participant button inside the roster table toolbar.',
+    key: 'showRosterAddStudentBtn',
+    title: 'Roster Header Add Student Button',
+    desc: '+ Add Student action button inside the Classroom Roster header toolbar.',
     icon: Users,
     category: 'roster',
     slotType: 'button',
@@ -550,6 +622,64 @@ export const MODULE_ITEMS: ModuleItem[] = [
     slotType: 'card',
     defaultHeight: 160,
     parentKey: 'showResultsSummarySheet'
+  },
+
+  // --- Section 4: Footer Elements ---
+  {
+    key: 'showFooterBrandLogo',
+    title: 'Footer Brand Logo Icon',
+    desc: 'Display the circular PeerLens icon on the bottom-left of the application footer.',
+    icon: Sparkles,
+    category: 'footer',
+    slotType: 'button'
+  },
+  {
+    key: 'showFooterBrandName',
+    title: 'Footer Brand Name (PeerLens)',
+    desc: 'Display the bold "PeerLens" brand name in the bottom-left of the application footer.',
+    icon: Type,
+    category: 'footer',
+    slotType: 'button'
+  },
+  {
+    key: 'showFooterBrandTagline',
+    title: 'Footer Tagline Subtitle',
+    desc: 'Display "Intelligent Peer Assessment, Simplified" underneath the brand name.',
+    icon: MessageSquare,
+    category: 'footer',
+    slotType: 'button'
+  },
+  {
+    key: 'showFooterWorkspaceContext',
+    title: 'Footer Workspace & Active Course Capsule',
+    desc: 'Display the center pill badge showing the active workspace profile and course name.',
+    icon: Users,
+    category: 'footer',
+    slotType: 'banner'
+  },
+  {
+    key: 'showFooterDoubleBlindBadge',
+    title: 'Footer Double-Blind Anonymity Trust Badge',
+    desc: 'Display the double-blind privacy shield indicator on the bottom-right of the footer.',
+    icon: Zap,
+    category: 'footer',
+    slotType: 'button'
+  },
+  {
+    key: 'showFooterSecurePrivateBadge',
+    title: 'Footer Secure & Private Trust Badge',
+    desc: 'Display the verified client-side privacy & security badge on the bottom-right.',
+    icon: ShieldCheck,
+    category: 'footer',
+    slotType: 'button'
+  },
+  {
+    key: 'showFooterCopyright',
+    title: 'Footer Copyright Notice',
+    desc: 'Display the legal copyright notice (e.g. © 2026 PeerLens) on the far right.',
+    icon: Clock,
+    category: 'footer',
+    slotType: 'button'
   }
 ];
 
@@ -596,5 +726,12 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     icon: Award,
     keys: MODULE_ITEMS.filter(m => m.category === 'analytics').map(m => m.key),
     items: MODULE_ITEMS.filter(m => m.category === 'analytics')
+  },
+  {
+    id: 'footer',
+    title: 'Footer Elements',
+    icon: Compass,
+    keys: MODULE_ITEMS.filter(m => m.category === 'footer').map(m => m.key),
+    items: MODULE_ITEMS.filter(m => m.category === 'footer')
   }
 ];

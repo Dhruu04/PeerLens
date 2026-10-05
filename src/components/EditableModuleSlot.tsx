@@ -49,26 +49,29 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
 
   // Edit Mode: Module is currently VISIBLE -> Highlighted with 1-click Hide capability
   if (isVisible) {
-    const isSmall = slotType === 'button' || inline;
+    const isFloatingBadge = !inline && slotType !== 'button';
 
     return (
       <div
         className={`edit-mode-slot edit-mode-slot-visible ${isSubmodule ? 'edit-mode-submodule' : ''} ${className}`}
         style={{
           position: 'relative',
-          display: inline || isSmall ? 'inline-flex' : 'block',
-          verticalAlign: inline || isSmall ? 'middle' : undefined,
-          borderRadius: isSmall ? '8px' : '12px',
+          display: inline ? 'inline-flex' : 'flex',
+          flexDirection: 'column',
+          width: inline ? 'auto' : '100%',
+          boxSizing: 'border-box',
+          verticalAlign: inline ? 'middle' : undefined,
+          borderRadius: slotType === 'button' || inline ? '8px' : '12px',
           outline: isHovered
             ? '2px dashed var(--accent-rose, #ef4444)'
             : isSubmodule
               ? '1.5px dashed var(--primary, #6366f1)'
               : '2px dashed rgba(99, 102, 241, 0.65)',
-          outlineOffset: isSmall ? '1px' : '3px',
+          outlineOffset: slotType === 'button' || inline ? '1px' : '3px',
           transition: 'outline 150ms ease, transform 150ms ease',
           cursor: 'pointer',
           pointerEvents: 'auto',
-          flexShrink: isSmall ? 0 : undefined,
+          flexShrink: inline ? 0 : undefined,
           zIndex: isHovered ? (isSubmodule ? 40 : 25) : (isSubmodule ? 15 : undefined),
           ...style
         }}
@@ -93,16 +96,18 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
             pointerEvents: 'none',
             opacity: isHovered ? 0.6 : 1,
             transition: 'opacity 150ms ease',
-            display: inline || isSmall ? 'inline-flex' : 'block',
-            alignItems: inline || isSmall ? 'center' : undefined,
-            width: inline || isSmall ? 'auto' : '100%'
+            display: inline ? 'inline-flex' : 'flex',
+            flexDirection: 'column',
+            width: inline ? 'auto' : '100%',
+            boxSizing: 'border-box',
+            flex: inline ? undefined : 1
           }}
         >
           {children}
         </div>
 
         {/* Floating Edit Mode Badge for cards & bars */}
-        {!isSmall && (
+        {isFloatingBadge && (
           <div
             style={{
               position: 'absolute',
@@ -143,7 +148,7 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
         )}
 
         {/* Small button badge overlay */}
-        {isSmall && isHovered && (
+        {!isFloatingBadge && isHovered && (
           <div
             style={{
               position: 'absolute',
@@ -183,15 +188,17 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
       className={`edit-mode-slot edit-mode-slot-hidden ${isSubmodule ? 'edit-mode-submodule-hidden' : ''} ${className}`}
       style={{
         position: 'relative',
-        display: isButtonSlot || inline ? 'inline-flex' : 'flex',
-        flexDirection: isButtonSlot || inline ? 'row' : 'column',
+        display: inline ? 'inline-flex' : 'flex',
+        flexDirection: inline ? 'row' : 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: isButtonSlot || inline ? '0.35rem' : '0.45rem',
-        minHeight: isButtonSlot || inline ? '34px' : `${defaultMinHeight}px`,
-        height: isButtonSlot || inline ? (style.height || '36px') : undefined,
-        padding: isButtonSlot || inline ? '0 0.65rem' : '1rem',
-        borderRadius: isButtonSlot || inline ? '8px' : '12px',
+        gap: inline ? '0.35rem' : '0.45rem',
+        minHeight: inline ? '34px' : (isButtonSlot ? '36px' : isBarSlot ? '48px' : `${defaultMinHeight}px`),
+        height: isButtonSlot ? (style.height || '36px') : undefined,
+        padding: inline ? '0 0.65rem' : (isButtonSlot ? '0.45rem 0.65rem' : '1rem'),
+        borderRadius: inline || isButtonSlot ? '8px' : '12px',
+        width: inline ? 'auto' : '100%',
+        boxSizing: 'border-box',
         border: isHovered
           ? '1.5px dashed var(--accent-teal, #10b981)'
           : isSubmodule
@@ -204,11 +211,11 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
             : 'var(--bg-surface-hover, rgba(0, 0, 0, 0.02))',
         cursor: 'pointer',
         transition: 'all 160ms cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: isHovered ? 'scale(1.02)' : 'scale(1)',
+        transform: isHovered ? 'scale(1.01)' : 'scale(1)',
         boxShadow: isHovered ? '0 4px 14px rgba(16, 185, 129, 0.15)' : 'none',
         userSelect: 'none',
-        verticalAlign: isButtonSlot || inline ? 'middle' : undefined,
-        flexShrink: 0,
+        verticalAlign: inline ? 'middle' : undefined,
+        flexShrink: inline ? 0 : undefined,
         pointerEvents: 'auto',
         zIndex: 20,
         ...style,

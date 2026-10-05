@@ -10,9 +10,15 @@ import StudentSessionEnded from './views/StudentSessionEnded';
 import InstructorAccessGate from './components/InstructorAccessGate';
 import ProjectorView from './views/ProjectorView';
 import ToastContainer from './components/Toast';
+import { loadFeatureToggles, subscribeFeatureToggles, type FeatureToggles } from './utils/featurePreferences';
 
 const AppContent: React.FC = () => {
   const { activeClass, activeAdminProfile, classes, isCloudSynced, user, addToast } = useClass();
+  const [featureToggles, setFeatureToggles] = useState<FeatureToggles>(loadFeatureToggles);
+
+  useEffect(() => {
+    return subscribeFeatureToggles((updated) => setFeatureToggles(updated));
+  }, []);
   const [routeParams, setRouteParams] = useState<{
     classId: string | null;
     studentId: string | null;
@@ -209,63 +215,95 @@ const AppContent: React.FC = () => {
         )}
       </main>
 
-      {/* Dynamic Footer */}
-      <footer className="app-footer">
-        {/* Left: brand identity */}
-        <div className="app-footer-brand">
-          <img src="/PeerGrading.png" alt="PeerLens Logo" className="app-footer-logo" />
-          <div className="app-footer-brand-text">
-            <span className="app-footer-name">PeerLens</span>
-            <span className="app-footer-tagline">Intelligent Peer Assessment, Simplified</span>
-          </div>
-        </div>
-
-        {/* Centre: dynamic context */}
-        <div className="app-footer-center">
-          {isEnrollmentPortal ? (
-            <span className="app-footer-context">
-              <span className="app-footer-context-label">Enrolling into</span>
-              <span className="app-footer-context-divider" />
-              <span className="app-footer-context-value">{enrollmentClass?.name ?? routeParams.enrollClassId}</span>
-            </span>
-          ) : isStudentPortal ? (
-            <span className="app-footer-context">
-              <span className="app-footer-context-label">Viewing Class</span>
-              <span className="app-footer-context-divider" />
-              <span className="app-footer-context-value">{activeClass?.name ?? routeParams.classId}</span>
-            </span>
-          ) : activeClass ? (
-            <span className="app-footer-context">
-              <span className="app-footer-context-label">
-                {activeAdminProfile === 'default' ? 'Default Workspace' : `Workspace: ${activeAdminProfile.charAt(0).toUpperCase()}${activeAdminProfile.slice(1)}`}
-              </span>
-              <span className="app-footer-context-divider" />
-              <span className="app-footer-context-value">{activeClass.name}</span>
-            </span>
-          ) : (
-            <span className="app-footer-context app-footer-context--muted">
-              No classroom selected
-            </span>
+      {/* Dynamic Modular Footer */}
+      {(featureToggles.showFooterBrandLogo ||
+        featureToggles.showFooterBrandName ||
+        featureToggles.showFooterBrandTagline ||
+        featureToggles.showFooterWorkspaceContext ||
+        featureToggles.showFooterDoubleBlindBadge ||
+        featureToggles.showFooterSecurePrivateBadge ||
+        featureToggles.showFooterCopyright) && (
+        <footer className="app-footer">
+          {/* Left: brand identity */}
+          {(featureToggles.showFooterBrandLogo || featureToggles.showFooterBrandName || featureToggles.showFooterBrandTagline) && (
+            <div className="app-footer-brand">
+              {featureToggles.showFooterBrandLogo && (
+                <img src="/PeerGrading.png" alt="PeerLens Logo" className="app-footer-logo" />
+              )}
+              {(featureToggles.showFooterBrandName || featureToggles.showFooterBrandTagline) && (
+                <div className="app-footer-brand-text">
+                  {featureToggles.showFooterBrandName && (
+                    <span className="app-footer-name">PeerLens</span>
+                  )}
+                  {featureToggles.showFooterBrandTagline && (
+                    <span className="app-footer-tagline">Intelligent Peer Assessment, Simplified</span>
+                  )}
+                </div>
+              )}
+            </div>
           )}
-        </div>
 
-        {/* Right: trust badges */}
-        <div className="app-footer-badges">
-          <span className="app-footer-badge">
-            <svg width="11" height="11" viewBox="0 0 48 46" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-              <path fill="currentColor" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" />
-            </svg>
-            Double-Blind Anonymity
-          </span>
-          <span className="app-footer-divider" />
-          <span className="app-footer-badge app-footer-badge--teal">
-            <ShieldCheck size={11} />
-            Secure &amp; Private
-          </span>
-          <span className="app-footer-divider" />
-          <span className="app-footer-copy">© {new Date().getFullYear()} PeerLens</span>
-        </div>
-      </footer>
+          {/* Centre: dynamic context */}
+          {featureToggles.showFooterWorkspaceContext && (
+            <div className="app-footer-center">
+              {isEnrollmentPortal ? (
+                <span className="app-footer-context">
+                  <span className="app-footer-context-label">Enrolling into</span>
+                  <span className="app-footer-context-divider" />
+                  <span className="app-footer-context-value">{enrollmentClass?.name ?? routeParams.enrollClassId}</span>
+                </span>
+              ) : isStudentPortal ? (
+                <span className="app-footer-context">
+                  <span className="app-footer-context-label">Viewing Class</span>
+                  <span className="app-footer-context-divider" />
+                  <span className="app-footer-context-value">{activeClass?.name ?? routeParams.classId}</span>
+                </span>
+              ) : activeClass ? (
+                <span className="app-footer-context">
+                  <span className="app-footer-context-label">
+                    {activeAdminProfile === 'default' ? 'Default Workspace' : `Workspace: ${activeAdminProfile.charAt(0).toUpperCase()}${activeAdminProfile.slice(1)}`}
+                  </span>
+                  <span className="app-footer-context-divider" />
+                  <span className="app-footer-context-value">{activeClass.name}</span>
+                </span>
+              ) : (
+                <span className="app-footer-context app-footer-context--muted">
+                  No classroom selected
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Right: trust badges */}
+          {(featureToggles.showFooterDoubleBlindBadge || featureToggles.showFooterSecurePrivateBadge || featureToggles.showFooterCopyright) && (
+            <div className="app-footer-badges">
+              {featureToggles.showFooterDoubleBlindBadge && (
+                <span className="app-footer-badge">
+                  <svg width="11" height="11" viewBox="0 0 48 46" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                    <path fill="currentColor" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" />
+                  </svg>
+                  Double-Blind Anonymity
+                </span>
+              )}
+              {featureToggles.showFooterDoubleBlindBadge && (featureToggles.showFooterSecurePrivateBadge || featureToggles.showFooterCopyright) && (
+                <span className="app-footer-divider" />
+              )}
+              {featureToggles.showFooterSecurePrivateBadge && (
+                <span className="app-footer-badge app-footer-badge--teal">
+                  <ShieldCheck size={11} />
+                  Secure &amp; Private
+                </span>
+              )}
+              {featureToggles.showFooterSecurePrivateBadge && featureToggles.showFooterCopyright && (
+                <span className="app-footer-divider" />
+              )}
+              {featureToggles.showFooterCopyright && (
+                <span className="app-footer-copy">© {new Date().getFullYear()} PeerLens</span>
+              )}
+            </div>
+          )}
+        </footer>
+      )}
 
       {/* Global Toast Notification System */}
       <ToastContainer />

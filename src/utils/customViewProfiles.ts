@@ -9,13 +9,13 @@ export interface CustomViewProfile {
 }
 
 const STORAGE_KEY_PROFILES = 'peer_custom_layout_profiles';
-const STORAGE_KEY_SHORTCUTS_ENABLED = 'peerlens_shortcuts_enabled';
+const STORAGE_KEY_SHORTCUTS_ENABLED = 'peerlens_shortcuts_enabled_v2';
 const EVENT_PROFILES_CHANGED = 'peerlens_custom_profiles_changed';
 const EVENT_SHORTCUTS_ENABLED_CHANGED = 'peerlens_shortcuts_enabled_changed';
 
 /**
  * Get whether keyboard shortcuts are enabled globally.
- * Default is FALSE (disabled by default as per user request).
+ * Default is TRUE (enabled by default).
  */
 export const getShortcutsEnabled = (): boolean => {
   try {
@@ -26,7 +26,7 @@ export const getShortcutsEnabled = (): boolean => {
   } catch (e) {
     console.warn('Failed to read shortcuts enabled state from storage:', e);
   }
-  return false; // Disabled by default
+  return true; // Enabled by default
 };
 
 /**
