@@ -71,9 +71,15 @@ graph TD
 PeerLens is structured around three sequential operational sections and a powerful workflow accelerator suite:
 
 ### Section 1: Student Enrollment and AutoGroup Studio
-* **Multi-Format Roster Ingestion**: Drag-and-drop Excel (`.xlsx`), CSV, or syllabus PDF rosters. The heuristic column matcher auto-associates columns for Student Name, Email, Team, Student ID, Nationality, Gender, and CEFR English level.
+* **Multi-Format Roster Ingestion**: Drag-and-drop Excel (`.xlsx`), CSV, or syllabus PDF rosters. The heuristic schema matcher auto-associates columns for Student ID, Full Name, Email, Group/Team, University, Degree, Student Mobility Status, Gender, Nationality, and CEFR English proficiency.
 * **Live Classroom QR Self-Enrollment**: Project a high-contrast QR code during lecture sessions for students to register with their mobile devices, capturing geographic origin, exchange status, and degree details.
-* **AutoGroup Diversity Studio**: Combinatorial team formation powered by a **Simulated Annealing** multi-objective optimizer. Simultaneously balances gender parity, cross-cultural representation across 195+ countries, CEFR language skills, and historical partner avoidance to prevent insular cliques.
+* **Intelligent AutoGroup Diversity Studio**: Combinatorial team formation powered by a multi-objective **Simulated Annealing** optimizer:
+  * *Standard Criteria Optimization*: Simultaneously balances gender parity (50/50 ratio), cross-cultural representation across 195+ countries, campus/institutional dispersion, academic degrees, and CEFR language skills.
+  * *Dynamic Cohort Attribute Discovery*: Automatically inspects active student rosters and surfaces all populated attributes (majors, mobility categories, custom tags) for 1-click rule creation.
+  * *Dual Optimization Modes*: Toggle between **Disperse / Mix Evenly** (distributing diverse skills/majors evenly across teams) and **Cluster Similar** (grouping similar timezones or project tracks together).
+  * *Custom Diversity Strategy & Weight Matrix*: Granular weight sliders ($0 - 50$) allowing instructors to build custom diversity models tailored to course learning outcomes.
+  * *Interactive Confirmation Safeguards*: Modal confirmation dialogs with before/after parameter summaries preventing accidental roster reshuffles or assignments.
+  * *Dual Presentation Views*: Seamlessly switch between structured Grid Cards and interactive Drag-and-Drop Kanban boards with live diversity compliance metrics.
 * **Automated Collision Protection**: Scans incoming enrollments for duplicate IDs or emails, providing single-click options to update existing records, merge profiles, or discard duplicate rows safely.
 * **Batch Roster Actions**: Multi-select toolbar supporting 1-click team transfers, individual resend tokens, and bulk roster pruning.
 

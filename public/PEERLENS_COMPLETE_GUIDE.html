@@ -1312,63 +1312,124 @@ Lukas Weber,l.weber@exchange.edu,Team Alpha,ST-104,Germany,B2,Male</code></pre>
       </div>
     </section>
 
-    <!-- CHAPTER 5: AutoGroup Diversity Studio -->
+        <!-- CHAPTER 5: Intelligent AutoGroup & Diversity Studio -->
     <section class="chapter-block" id="ch5-autogroup">
       <div class="chapter-header">
         <span class="chapter-tag">Part 2: Instructor Manual</span>
         <h2>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-          5. AutoGroup Diversity Studio
+          5. Intelligent AutoGroup &amp; Diversity Studio
         </h2>
       </div>
 
       <p>
-        Student self-selection commonly produces homogenous cliques, leaving solo international or underrepresented students isolated. The <strong>AutoGroup Diversity Studio</strong> incorporates a multi-objective heuristic solver that systematically constructs equitable, diverse teams across three simultaneous dimensions:
+        Student self-selection commonly produces homogenous cliques, leaving solo international or underrepresented students isolated. The <strong>Intelligent AutoGroup &amp; Diversity Studio</strong> incorporates a multi-objective <em>Simulated Annealing</em> heuristic solver that systematically constructs equitable, pedagogically sound teams across both standard demographic dimensions and instructor-defined custom criteria.
       </p>
 
+      <h3>6 Standard Continuous Diversity Dimensions</h3>
+      <p>Instructors can fine-tune the optimization balance using continuous percentage sliders (0% – 100%):</p>
       <div class="grid-3">
         <div class="card">
           <div class="card-title">Gender Balance</div>
-          <div class="card-desc">Prevents gender isolation by maintaining equitable male, female, and non-binary representation across all project groups.</div>
+          <div class="card-desc">Prevents gender isolation by maintaining equitable male, female, and non-binary representation across all teams (quadratic penalty on demographic imbalances).</div>
         </div>
         <div class="card">
-          <div class="card-title">Intercultural Mixing</div>
-          <div class="card-desc">Distributes 195+ nationalities, deliberately pairing domestic students with international exchange and Erasmus peers.</div>
+          <div class="card-title">Intercultural Mixing (195+ Nations)</div>
+          <div class="card-desc">Distributes global nationalities using Erasmus-aware intelligence: domestic and exchange peers are paired without penalizing multi-institution diversity.</div>
         </div>
         <div class="card">
-          <div class="card-title">Language Scaffolding</div>
-          <div class="card-desc">Spreads CEFR English tiers (A1 to C2) to ensure mutual peer communication support and equitable speaking opportunities.</div>
+          <div class="card-title">Language Scaffolding (CEFR A1–C2)</div>
+          <div class="card-desc">Balances CEFR English proficiency tiers to provide mutual peer communication support while avoiding communication silos.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Prior Achievement / GPA Mix</div>
+          <div class="card-desc">Distributes high-performing and developing students evenly across project groups to foster peer mentoring and balanced team capabilities.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Academic Discipline / Major</div>
+          <div class="card-desc">Maximizes cross-disciplinary breadth by mixing distinct study programs (e.g., Computer Science, UX Design, Business Administration).</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Technical Skill &amp; Experience</div>
+          <div class="card-desc">Prevents clustering of expert programmers or senior practitioners, ensuring all teams possess baseline implementation capacity.</div>
         </div>
       </div>
 
-      <h3>Running the AutoGroup Studio</h3>
+      <h3>Dynamic Cohort Attribute Discovery &amp; Custom Strategy Builder</h3>
+      <p>
+        Every cohort is unique. Rather than constraining group formation to static schemas, PeerLens features <strong>Dynamic Cohort Attribute Discovery</strong> (<code>discoverRosterFields</code>). When a roster is imported, the engine automatically scans all imported records and highlights detected non-standard attributes (such as <em>Timezone</em>, <em>Track / Specialization</em>, <em>Coding Experience</em>, or <em>Tools Proficiency</em>) in an interactive badge grid.
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Disperse Mode (Diversity Maximization)</div>
+          <div class="card-desc">
+            Minimizes duplicate occurrences of the same attribute within any single group. Use for attributes where maximum variety is desired (e.g., project roles, varied software skills, background domains).
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Cluster Mode (Affinity Grouping)</div>
+          <div class="card-desc">
+            Minimizes intra-group dispersion, intentionally grouping students sharing matching attributes together. Essential for operational constraints like <strong>synchronous timezones</strong>, language cohorts, or specialized project tracks.
+          </div>
+        </div>
+      </div>
+
+      <div class="callout callout-tip">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          Single-Click Strategy Injection
+        </div>
+        <p>
+          Clicking any detected attribute chip instantly adds it into your active <strong>Diversity Strategy Matrix</strong>. You can configure custom weight multipliers (1x – 20x) and toggle between <em>Disperse</em> and <em>Cluster</em> modes with zero configuration friction.
+        </p>
+      </div>
+
+      <h3>Simulated Annealing Optimization &amp; Composite Diversity Score (CDS)</h3>
+      <p>
+        The formation engine executes 3,000 perturbation iterations combining stratified snake partitioning with an exponential temperature cooling schedule. The algorithm evaluates team quality using the <strong>Composite Diversity Score (CDS)</strong>:
+      </p>
+
+      <div class="math-block">
+        <div class="math-block-title">Composite Diversity Score (CDS) Specification</div>
+        <div class="math-eq">
+          <span class="math-var">CDS</span>
+          <span class="math-op">=</span>
+          <span>100</span>
+          <span class="math-op">−</span>
+          <span>( <span class="math-var">P</span><span class="math-sub">gender</span> + <span class="math-var">P</span><span class="math-sub">nat</span> + <span class="math-var">P</span><span class="math-sub">cefr</span> + <span class="math-var">P</span><span class="math-sub">uni</span> + <span class="math-var">P</span><span class="math-sub">custom</span> )</span>
+        </div>
+        <div class="formula-note" style="margin-top: 6px;">Calculated in real-time across both individual teams and cohort-wide aggregate averages.</div>
+      </div>
+
+      <h3>Step-by-Step Workflow in the AutoGroup Studio</h3>
       <div class="step-list">
         <div class="step-card">
           <div class="step-num">1</div>
           <div class="step-body">
-            <h4>Select Cohort Target Team Size</h4>
-            <p>Specify desired team capacity (e.g. 4 or 5 students). The engine calculates the ideal team distribution to avoid single-student orphan groups.</p>
+            <h4>Set Target Team Size</h4>
+            <p>Specify desired team capacity (e.g., 4 or 5 students). The engine calculates optimal group counts to avoid single-student orphan groups.</p>
           </div>
         </div>
         <div class="step-card">
           <div class="step-num">2</div>
           <div class="step-body">
-            <h4>Configure Objective Weighting</h4>
-            <p>Choose between <em>Multi-Dimensional (Balanced All)</em>, <em>Gender Parity Priority</em>, <em>Intercultural Mixing First</em>, or <em>Randomized Distribution</em>.</p>
+            <h4>Configure Strategy Sliders &amp; Custom Fields</h4>
+            <p>Adjust the 6 standard criteria sliders or add discovered custom fields (Timezone, Track, Skills) with custom Disperse/Cluster objectives.</p>
           </div>
         </div>
         <div class="step-card">
           <div class="step-num">3</div>
           <div class="step-body">
-            <h4>Fine-Tune in Kanban Studio</h4>
-            <p>Inspect generated teams in <strong>Kanban View</strong>. Drag and drop student cards between teams; the live Composite Diversity Score (CDS) recalculates immediately.</p>
+            <h4>Interactive Kanban Studio &amp; Live Drag-and-Drop</h4>
+            <p>Inspect generated teams in Kanban columns. Drag and drop student cards between teams; demographic badges and the live CDS metric recalculate immediately.</p>
           </div>
         </div>
         <div class="step-card">
           <div class="step-num">4</div>
           <div class="step-body">
-            <h4>Commit Allocations to Roster</h4>
-            <p>Click <strong>"Apply Groups"</strong> to write team assignments to the class roster permanently, with immediate Excel/CSV export options.</p>
+            <h4>Confirmation Safeguard &amp; Roster Commit</h4>
+            <p>Click <strong>"Assign to Roster"</strong>. An institutional confirmation modal prevents accidental roster overwrite, verifying student allocations before committing changes permanently.</p>
           </div>
         </div>
       </div>

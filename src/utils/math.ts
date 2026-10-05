@@ -44,6 +44,7 @@ export interface Student {
   lastProfileEditAt?: number;
   flaggedForReview?: boolean;
   suspiciousReason?: string | null;
+  customFields?: Record<string, string>;
 }
 
 /**

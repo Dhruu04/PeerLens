@@ -1,18 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Users, Sparkles, Check, RefreshCw, Globe, 
-  ShieldCheck, X, Shuffle, BarChart2,
-  Languages, UserCheck, Layers, Download, FileSpreadsheet,
-  FileText, GraduationCap, Building2, Plane,
-  Mail, BookOpen
+  X, Shuffle,
+  Languages, UserCheck, Layers, Download,
+  GraduationCap, Plane,
+  Sliders, Plus, Trash2, CheckCircle2, Settings2,
+  Compass
 } from 'lucide-react';
 import type { Student } from '../utils/math';
 import { 
   generateDiverseGroups, 
+  discoverRosterFields,
   type DiversityStrategy, 
   type DiversityGroupingResult,
-  type GroupDiversityReport
+  type GroupDiversityReport,
+  type CustomDiversityField,
+  type GroupingWeights
 } from '../utils/grouping';
 import { exportSingleTeamToCSV, exportSingleTeamToExcel } from '../utils/csv';
 import CustomSelect from './CustomSelect';
@@ -25,9 +29,11 @@ interface AutoGroupModalProps {
 }
 
 const STRATEGY_OPTIONS = [
-  { value: 'balanced_all', label: 'Balanced Multi-Dimensional (Gender + Nationality + University + English)' },
+  { value: 'balanced_all', label: 'Multi-Dimensional (Gender + Nationality + University + English)' },
   { value: 'gender_first', label: 'Gender Parity First (50/50 Male-Female Priority)' },
   { value: 'nationality_first', label: 'Nationality & University Mixing First' },
+  { value: 'degree_first', label: 'Degree & Field of Study Mixing First' },
+  { value: 'custom', label: 'Custom Diversity Strategy (Custom Weights & Fields)' },
   { value: 'random_fast', label: 'Equal-Size Standard Distribution' }
 ];
 
@@ -53,7 +59,29 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
   const [groupingResult, setGroupingResult] = useState<DiversityGroupingResult | null>(null);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
 
-  // Student bifurcation detail card modal
+  // Custom Strategy & Weights State
+  const [showCustomConfig, setShowCustomConfig] = useState<boolean>(false);
+  const [weights, setWeights] = useState<GroupingWeights>({
+    gender: 12,
+    nationality: 8,
+    university: 16,
+    english: 6,
+    degree: 10,
+    studentType: 6
+  });
+  const [customFields, setCustomFields] = useState<CustomDiversityField[]>([]);
+
+  // New Custom Field Builder Form
+  const [newFieldName, setNewFieldName] = useState<string>('');
+  const [newFieldKey, setNewFieldKey] = useState<string>('');
+  const [newFieldWeight, setNewFieldWeight] = useState<number>(15);
+  const [newFieldMode, setNewFieldMode] = useState<'disperse' | 'cluster'>('disperse');
+
+  // Confirmation Popups State
+  const [showReshuffleModal, setShowReshuffleModal] = useState<boolean>(false);
+  const [showAssignModal, setShowAssignModal] = useState<boolean>(false);
+
+  // Student detail modal
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
   // Export single team modal
@@ -69,6 +97,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     scope: 'diversity_card'
   });
 
+  const discoveredFields = useMemo(() => discoverRosterFields(students), [students]);
   const effectivePrefix = prefix === 'custom' ? (customPrefix.trim() || 'Team') : prefix;
 
   // Automatically compute initial balanced partition upon opening or parameter changes
@@ -76,7 +105,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     if (isOpen && students.length > 0) {
       runOptimization();
     }
-  }, [isOpen, students, targetSize, strategy, prefix, customPrefix]);
+  }, [isOpen, students.length, targetSize, strategy, prefix, customPrefix, weights, customFields]);
 
   // Disable background scrolling when modal is open
   useEffect(() => {
@@ -95,17 +124,60 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
       const result = generateDiverseGroups(students, {
         targetSize,
         strategy,
-        prefix: effectivePrefix
+        prefix: effectivePrefix,
+        weights: strategy === 'custom' ? weights : undefined,
+        customFields: (strategy === 'custom' || customFields.length > 0) ? customFields : undefined
       });
       setGroupingResult(result);
       setIsGenerating(false);
     }, 80);
   };
 
-  const handleApply = () => {
+  const handleConfirmReshuffle = () => {
+    setShowReshuffleModal(false);
+    runOptimization();
+  };
+
+  const handleConfirmAssign = () => {
+    setShowAssignModal(false);
     if (!groupingResult) return;
     onApplyGroups(groupingResult.updatedStudents);
     onClose();
+  };
+
+  const handleAddCustomField = () => {
+    if (!newFieldName.trim()) return;
+    const finalKey = newFieldKey.trim() || newFieldName.trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const newField: CustomDiversityField = {
+      id: `cf_${Date.now()}`,
+      name: newFieldName.trim(),
+      key: finalKey,
+      weight: newFieldWeight,
+      mode: newFieldMode
+    };
+    setCustomFields(prev => [...prev, newField]);
+    setNewFieldName('');
+    setNewFieldKey('');
+    setNewFieldWeight(15);
+    setNewFieldMode('disperse');
+    if (strategy !== 'custom') setStrategy('custom');
+  };
+
+  const handleRemoveCustomField = (id: string) => {
+    setCustomFields(prev => prev.filter(f => f.id !== id));
+  };
+
+  const handleAddDiscoveredField = (df: { key: string; name: string }, mode: 'disperse' | 'cluster' = 'disperse') => {
+    if (customFields.some(f => f.key === df.key)) return;
+    const newField: CustomDiversityField = {
+      id: `cf_${Date.now()}`,
+      name: df.name,
+      key: df.key,
+      weight: 15,
+      mode
+    };
+    setCustomFields(prev => [...prev, newField]);
+    if (strategy !== 'custom') setStrategy('custom');
   };
 
   const handleExecuteExport = () => {
@@ -122,6 +194,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
 
   const totalMembers = students.length;
   const numTeams = groupingResult ? groupingResult.groups.length : Math.ceil(totalMembers / targetSize);
+  const activeStrategyObj = STRATEGY_OPTIONS.find(s => s.value === strategy);
 
   // Helper to format student university text cleanly
   const renderStudentUniText = (student: Student) => {
@@ -160,7 +233,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
       <div 
         className="modal-content" 
         style={{ 
-          maxWidth: '1000px', 
+          maxWidth: '1020px', 
           width: '95%', 
           maxHeight: '92vh', 
           display: 'flex', 
@@ -169,7 +242,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
           padding: 0,
           overflow: 'hidden',
           borderRadius: 'var(--radius-lg)',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)'
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)'
         }}
       >
         {/* Modal Header */}
@@ -193,7 +266,8 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                 color: 'var(--accent-teal)', 
                 display: 'flex', 
                 alignItems: 'center', 
-                justifyContent: 'center' 
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(20, 184, 166, 0.2)'
               }}
             >
               <Sparkles size={22} />
@@ -203,7 +277,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                 Intelligent Auto-Group Diversity Studio
               </h2>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-                Algorithmic team balancing with gender parity, cross-cultural nationality mixing, and balanced English levels.
+                Combinatorial multi-objective balancing across gender parity, origins, academic majors, and custom criteria.
               </p>
             </div>
           </div>
@@ -235,7 +309,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
             style={{ 
               display: 'flex', 
               flexDirection: 'column', 
-              gap: '1.25rem', 
+              gap: '1.1rem', 
               backgroundColor: 'var(--bg-app)', 
               padding: '1.25rem', 
               borderRadius: 'var(--radius-md)', 
@@ -246,7 +320,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
             <div 
               style={{ 
                 display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', 
                 gap: '1.25rem', 
                 alignItems: 'flex-start' 
               }}
@@ -264,7 +338,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                     max={Math.max(2, totalMembers)}
                     value={targetSize}
                     onChange={(e) => setTargetSize(Math.max(2, Number(e.target.value)))}
-                    style={{ fontWeight: 700, textAlign: 'center', minHeight: '42px', width: '90px' }}
+                    style={{ fontWeight: 700, textAlign: 'center', minHeight: '40px', width: '90px' }}
                   />
                   <span className="badge badge-secondary" style={{ fontSize: '0.76rem', padding: '0.4rem 0.65rem' }}>
                     {numTeams} {numTeams === 1 ? 'Team' : 'Teams'} will be created
@@ -274,20 +348,33 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
 
               {/* Strategy Select */}
               <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
-                <label className="form-label" style={{ fontWeight: 700, fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.45rem' }}>
-                  <Sparkles size={15} className="text-primary" /> Diversity Optimization Model
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '0.4rem', margin: 0 }}>
+                    <Sparkles size={15} className="text-primary" /> Optimization Model
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomConfig(prev => !prev)}
+                    style={{ border: 'none', background: 'transparent', color: showCustomConfig ? 'var(--primary)' : 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem', padding: 0 }}
+                  >
+                    <Sliders size={12} /> {showCustomConfig ? 'Hide Custom' : 'Custom Rules'}{customFields.length > 0 ? ` (${customFields.length})` : ''}
+                  </button>
+                </div>
                 <CustomSelect
                   options={STRATEGY_OPTIONS}
                   value={strategy}
-                  onChange={(val) => setStrategy(val as DiversityStrategy)}
+                  onChange={(val) => {
+                    const newStrat = val as DiversityStrategy;
+                    setStrategy(newStrat);
+                    if (newStrat === 'custom') setShowCustomConfig(true);
+                  }}
                 />
               </div>
 
               {/* Prefix Select + Custom Option */}
               <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
                 <label className="form-label" style={{ fontWeight: 700, fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.45rem' }}>
-                  <Layers size={15} className="text-indigo" /> Group Title Format
+                  <Layers size={15} className="text-teal" /> Group Title Format
                 </label>
                 <CustomSelect
                   options={PREFIX_OPTIONS}
@@ -307,6 +394,173 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
               </div>
             </div>
 
+            {/* Custom Diversity Configuration Panel */}
+            {(showCustomConfig || strategy === 'custom') && (
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <b style={{ fontSize: '0.86rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Settings2 size={15} className="text-primary" /> Custom Diversity Weights &amp; Cohort Rules
+                  </b>
+                  {strategy !== 'custom' && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setStrategy('custom')}
+                      style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
+                    >
+                      Set Strategy to Custom
+                    </button>
+                  )}
+                </div>
+
+                {/* Discovered Roster Fields */}
+                {discoveredFields.length > 0 && (
+                  <div style={{ backgroundColor: 'var(--bg-surface)', padding: '0.65rem 0.8rem', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.4rem' }}>
+                      <Compass size={13} className="text-teal" />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        Detected Data Attributes in Cohort:
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      {discoveredFields.map(df => {
+                        const isAdded = customFields.some(f => f.key === df.key);
+                        return (
+                          <div key={df.key} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', backgroundColor: isAdded ? 'rgba(20, 184, 166, 0.12)' : 'var(--bg-app)', border: `1px solid ${isAdded ? 'var(--accent-teal)' : 'var(--border-color)'}`, borderRadius: '5px', padding: '0.2rem 0.45rem', fontSize: '0.7rem' }}>
+                            <span style={{ fontWeight: 700 }}>{df.name}</span>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>({df.distinctCount} vals)</span>
+                            {!isAdded ? (
+                              <button
+                                type="button"
+                                onClick={() => handleAddDiscoveredField(df, 'disperse')}
+                                style={{ border: 'none', background: 'rgba(20, 184, 166, 0.15)', color: 'var(--accent-teal)', borderRadius: '3px', padding: '0.05rem 0.3rem', fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                + Add
+                              </button>
+                            ) : (
+                              <span style={{ color: 'var(--accent-teal)', fontWeight: 800, fontSize: '0.65rem' }}>✓</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Standard Weights Matrix */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.65rem', backgroundColor: 'var(--bg-surface)', padding: '0.75rem', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '2px' }}>
+                      <span>Gender Parity</span>
+                      <span style={{ color: 'var(--primary)', fontWeight: 800 }}>{weights.gender ?? 12}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={40}
+                      value={weights.gender ?? 12}
+                      onChange={(e) => setWeights(prev => ({ ...prev, gender: Number(e.target.value) }))}
+                      style={{ width: '100%', accentColor: 'var(--primary)' }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '2px' }}>
+                      <span>Campus Separation</span>
+                      <span style={{ color: 'var(--accent-teal)', fontWeight: 800 }}>{weights.university ?? 16}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={40}
+                      value={weights.university ?? 16}
+                      onChange={(e) => setWeights(prev => ({ ...prev, university: Number(e.target.value) }))}
+                      style={{ width: '100%', accentColor: 'var(--accent-teal)' }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '2px' }}>
+                      <span>Origin Dispersion</span>
+                      <span style={{ color: '#10b981', fontWeight: 800 }}>{weights.nationality ?? 8}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={40}
+                      value={weights.nationality ?? 8}
+                      onChange={(e) => setWeights(prev => ({ ...prev, nationality: Number(e.target.value) }))}
+                      style={{ width: '100%', accentColor: '#10b981' }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '2px' }}>
+                      <span>English Proficiency</span>
+                      <span style={{ color: 'var(--accent-amber)', fontWeight: 800 }}>{weights.english ?? 6}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={40}
+                      value={weights.english ?? 6}
+                      onChange={(e) => setWeights(prev => ({ ...prev, english: Number(e.target.value) }))}
+                      style={{ width: '100%', accentColor: 'var(--accent-amber)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Inline New Custom Field Form */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Custom Field Name"
+                    value={newFieldName}
+                    onChange={(e) => setNewFieldName(e.target.value)}
+                    style={{ height: '32px', fontSize: '0.78rem', flex: '1 1 160px' }}
+                  />
+                  <select
+                    value={newFieldMode}
+                    onChange={(e) => setNewFieldMode(e.target.value as 'disperse' | 'cluster')}
+                    className="form-input"
+                    style={{ height: '32px', fontSize: '0.78rem', flex: '1 1 150px', padding: '0 0.4rem' }}
+                  >
+                    <option value="disperse">Disperse / Mix Evenly</option>
+                    <option value="cluster">Cluster Similar Together</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-teal btn-sm"
+                    onClick={handleAddCustomField}
+                    disabled={!newFieldName.trim()}
+                    style={{ height: '32px', fontSize: '0.78rem', padding: '0 0.75rem', fontWeight: 700 }}
+                  >
+                    <Plus size={13} /> Add
+                  </button>
+                </div>
+
+                {/* Custom Fields List */}
+                {customFields.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {customFields.map(cf => (
+                      <span 
+                        key={cf.id}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', backgroundColor: 'var(--bg-surface)', padding: '0.3rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.74rem' }}
+                      >
+                        <b>{cf.name}</b>
+                        <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>({cf.mode})</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCustomField(cf.id)}
+                          style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Actions Bar */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
@@ -315,8 +569,9 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                onClick={runOptimization}
-                style={{ minHeight: '38px', padding: '0.35rem 0.85rem', fontSize: '0.8rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                onClick={() => setShowReshuffleModal(true)}
+                disabled={totalMembers === 0 || isGenerating}
+                style={{ minHeight: '38px', padding: '0.35rem 0.95rem', fontSize: '0.8rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
               >
                 <Shuffle size={14} /> Re-Calculate Permutation
               </button>
@@ -333,7 +588,8 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                 backgroundColor: 'var(--bg-surface)',
                 border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-md)',
-                padding: '0.85rem 1rem'
+                padding: '0.85rem 1.1rem',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
               }}
             >
               {/* Overall Score */}
@@ -348,53 +604,53 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                     display: 'flex', 
                     alignItems: 'center', 
                     justifyContent: 'center', 
-                    fontWeight: 800,
-                    fontSize: '0.9rem'
+                    fontWeight: 800, 
+                    fontSize: '0.85rem' 
                   }}
                 >
                   {groupingResult.overallDiversityScore}%
                 </div>
-                <div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>Diversity Index</div>
+                <div style={{ lineHeight: 1.25 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>Diversity Index</div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 600 }}>
-                    {groupingResult.overallDiversityScore >= 80 ? 'Highly Balanced' : 'Well Distributed'}
+                    {groupingResult.overallDiversityScore >= 80 ? 'Optimal Mix' : 'Balanced Spread'}
                   </div>
                 </div>
               </div>
 
-              {/* Gender Balance */}
+              {/* Gender */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                 <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <UserCheck size={18} />
                 </div>
-                <div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>Gender Parity</div>
+                <div style={{ lineHeight: 1.25 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>Gender Parity</div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 600 }}>
-                    {groupingResult.genderBalanceRating} Ratio
+                    {groupingResult.genderBalanceRating}
                   </div>
                 </div>
               </div>
 
-              {/* Nationality Mixing */}
+              {/* Origin */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                 <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Globe size={18} />
                 </div>
-                <div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>Nationality Mix</div>
+                <div style={{ lineHeight: 1.25 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>Origin Dispersion</div>
                   <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
                     {groupingResult.nationalityMixRating}
                   </div>
                 </div>
               </div>
 
-              {/* English Level Balance */}
+              {/* English */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                 <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'rgba(245, 158, 11, 0.12)', color: 'var(--accent-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Languages size={18} />
                 </div>
-                <div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>English Distribution</div>
+                <div style={{ lineHeight: 1.25 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>Language Spread</div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--accent-amber)', fontWeight: 600 }}>
                     {groupingResult.englishMixRating}
                   </div>
@@ -403,661 +659,430 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
             </div>
           )}
 
-          {/* Generated Groups Grid Preview */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <BarChart2 size={16} className="text-teal" />
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                  Generated Team Rosters ({numTeams} Teams, {totalMembers} Students)
-                </h3>
-              </div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Click any student name to inspect their bifurcation card
-              </span>
+          {/* Teams Grid */}
+          {isGenerating ? (
+            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+              <RefreshCw size={24} className="spin" style={{ margin: '0 auto 0.5rem', display: 'block', color: 'var(--primary)' }} />
+              Simulating optimal group permutations...
             </div>
-
-            {isGenerating ? (
-              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                <RefreshCw size={24} className="spin" style={{ margin: '0 auto 0.5rem', display: 'block', color: 'var(--primary)' }} />
-                Optimizing multi-criteria diversity permutations...
-              </div>
-            ) : (
-              <div 
-                style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))', 
-                  gap: '1rem',
-                  maxHeight: '440px',
-                  overflowY: 'auto',
-                  paddingRight: '0.35rem'
-                }}
-              >
-                {groupingResult?.groups.map((grp, gIdx) => (
-                  <div 
-                    key={gIdx}
-                    style={{ 
-                      backgroundColor: 'var(--bg-app)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '10px',
-                      padding: '0.95rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.65rem',
-                      boxShadow: 'var(--shadow-sm)'
-                    }}
-                  >
-                    {/* Clean Single-Line Header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
-                        <span style={{ fontWeight: 800, fontSize: '0.96rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {grp.groupName}
-                        </span>
-                        <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.12rem 0.45rem', flexShrink: 0, fontWeight: 600 }}>
-                          {grp.studentCount} {grp.studentCount === 1 ? 'member' : 'members'}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                        <span className="badge badge-teal" style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.45rem' }}>
-                          {grp.diversityScore}% Diverse
-                        </span>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => setExportModal({ isOpen: true, team: grp, format: 'xlsx', scope: 'diversity_card' })}
-                          title={`Export ${grp.groupName} roster`}
-                          style={{ padding: '0.2rem 0.5rem', height: '25px', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem', fontWeight: 600 }}
-                        >
-                          <Download size={11} /> Export
-                        </button>
-                      </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+              {groupingResult?.groups.map((grp) => (
+                <div 
+                  key={grp.groupName} 
+                  className="card" 
+                  style={{ 
+                    padding: '0.85rem', 
+                    margin: 0, 
+                    backgroundColor: 'var(--bg-app)', 
+                    border: '1px solid var(--border-color)', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '0.65rem',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <b style={{ fontSize: '0.94rem', color: 'var(--text-primary)' }}>{grp.groupName}</b>
+                      <span className="badge badge-secondary" style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem' }}>
+                        {grp.studentCount} Students
+                      </span>
                     </div>
 
-                    {/* Clean 3-Item Metric Ribbon */}
-                    <div 
-                      style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: 'repeat(3, 1fr)', 
-                        gap: '0.35rem',
-                        backgroundColor: 'var(--bg-surface)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '6px',
-                        padding: '0.35rem 0.5rem',
-                        fontSize: '0.72rem'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap' }} title={Object.entries(grp.genderCounts).map(([g, c]) => `${c} ${g}`).join(', ')}>
-                        <Users size={12} className="text-primary" style={{ flexShrink: 0 }} />
-                        <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {Object.entries(grp.genderCounts).map(([g, c]) => `${c} ${g === 'Female' ? 'F' : g === 'Male' ? 'M' : 'NB'}`).join(' • ')}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'center' }} title={`${grp.uniqueUniversityCount || grp.studentCount} Universities • ${grp.uniqueNationalityCount} Nationalities`}>
-                        <Globe size={12} className="text-teal" style={{ flexShrink: 0 }} />
-                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                          {grp.uniqueNationalityCount} {grp.uniqueNationalityCount === 1 ? 'Nationality' : 'Nationalities'}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--accent-amber)', overflow: 'hidden', whiteSpace: 'nowrap', justifyContent: 'flex-end' }} title={`Avg English CEFR Level: ${grp.avgEnglishCEFR || 'C1 (Fluent)'}`}>
-                        <Languages size={12} style={{ flexShrink: 0 }} />
-                        <span style={{ fontWeight: 700 }}>
-                          Avg: {grp.avgEnglishCEFR?.split(' ')[0] || 'C1'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Clean Student Roster Cards */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                      {grp.students.map((s, sIdx) => {
-                        const isF = s.gender?.toLowerCase() === 'female';
-                        const isM = s.gender?.toLowerCase() === 'male';
-                        const gBg = isF ? 'rgba(236, 72, 153, 0.12)' : isM ? 'rgba(99, 102, 241, 0.12)' : 'rgba(168, 85, 247, 0.12)';
-                        const gColor = isF ? '#ec4899' : isM ? 'var(--primary)' : '#a855f7';
-
-                        return (
-                          <div 
-                            key={sIdx}
-                            onClick={() => setSelectedStudent(s)}
-                            style={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center',
-                              padding: '0.5rem 0.65rem',
-                              backgroundColor: 'var(--bg-surface)',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-color)',
-                              fontSize: '0.78rem',
-                              cursor: 'pointer',
-                              transition: 'all 120ms ease',
-                              gap: '0.5rem'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = 'var(--primary)';
-                              e.currentTarget.style.backgroundColor = 'var(--primary-light)';
-                              e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.06)';
-                              e.currentTarget.style.transform = 'translateY(-1px)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = 'var(--border-color)';
-                              e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                              e.currentTarget.style.boxShadow = 'none';
-                              e.currentTarget.style.transform = 'translateY(0)';
-                            }}
-                            title="Click to view full bifurcation card profile"
-                          >
-                            {/* Left: Name + University subtitle */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', overflow: 'hidden', minWidth: 0, flex: 1 }}>
-                              <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.84rem' }}>
-                                {s.name}
-                              </span>
-                              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {renderStudentUniText(s)}
-                              </div>
-                            </div>
-
-                            {/* Right: Badges */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-                              {s.nationality && (
-                                <span 
-                                  style={{ 
-                                    fontSize: '0.7rem', 
-                                    padding: '0.15rem 0.45rem', 
-                                    backgroundColor: 'var(--bg-app)', 
-                                    border: '1px solid var(--border-color)', 
-                                    borderRadius: '4px', 
-                                    color: 'var(--text-secondary)',
-                                    fontWeight: 500,
-                                    maxWidth: '90px',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                  title={s.nationality}
-                                >
-                                  {s.nationality}
-                                </span>
-                              )}
-                              <span 
-                                style={{ 
-                                  fontSize: '0.7rem', 
-                                  padding: '0.15rem 0.45rem', 
-                                  backgroundColor: gBg, 
-                                  color: gColor, 
-                                  borderRadius: '4px', 
-                                  fontWeight: 700 
-                                }}
-                              >
-                                {s.gender || 'Female'}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span className="badge badge-teal" style={{ fontSize: '0.7rem', fontWeight: 800 }}>
+                        {grp.diversityScore}%
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setExportModal({ isOpen: true, team: grp, format: 'xlsx', scope: 'diversity_card' })}
+                        title={`Export ${grp.groupName} roster`}
+                        style={{ padding: '0.2rem 0.45rem', height: '24px', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.68rem' }}
+                      >
+                        <Download size={11} /> Export
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    {grp.students.map((student) => (
+                      <div 
+                        key={student.id} 
+                        onClick={() => setSelectedStudent(student)}
+                        style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center', 
+                          padding: '0.45rem 0.6rem', 
+                          backgroundColor: 'var(--bg-surface)', 
+                          borderRadius: '6px', 
+                          border: '1px solid var(--border-color)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem', minWidth: 0 }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {student.name}
+                          </span>
+                          {student.degree && (
+                            <span style={{ fontSize: '0.68rem', color: 'var(--primary)', fontWeight: 600 }}>
+                              {student.degree}
+                            </span>
+                          )}
+                          {renderStudentUniText(student)}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                          <span 
+                            style={{ 
+                              fontSize: '0.65rem', 
+                              fontWeight: 700, 
+                              padding: '0.1rem 0.35rem', 
+                              borderRadius: '4px', 
+                              backgroundColor: student.gender?.toLowerCase() === 'female' ? 'rgba(236, 72, 153, 0.12)' : 'rgba(59, 130, 246, 0.12)', 
+                              color: student.gender?.toLowerCase() === 'female' ? '#ec4899' : '#3b82f6' 
+                            }}
+                          >
+                            {student.gender || 'N/A'}
+                          </span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                            {student.nationality || 'Unspecified'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Custom Fields Summary Badges */}
+                  {grp.customFieldSummaries && Object.keys(grp.customFieldSummaries).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', paddingTop: '0.3rem', borderTop: '1px dashed var(--border-color)' }}>
+                      {Object.values(grp.customFieldSummaries).map((cfSum, idx) => (
+                        <span 
+                          key={idx}
+                          style={{ fontSize: '0.64rem', padding: '0.1rem 0.35rem', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
+                        >
+                          <b>{cfSum.fieldName}:</b> {cfSum.uniqueCount} unique
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
         </div>
 
-        {/* Modal Footer Controls */}
+        {/* Modal Footer */}
         <div 
           style={{ 
-            padding: '1rem 1.5rem', 
+            padding: '1.25rem 1.5rem', 
             borderTop: '1px solid var(--border-color)', 
             display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            backgroundColor: 'var(--bg-surface)',
-            flexWrap: 'wrap',
-            gap: '0.75rem'
+            justifyContent: 'flex-end', 
+            alignItems: 'center', 
+            gap: '0.75rem',
+            backgroundColor: 'var(--bg-app)'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-            <ShieldCheck size={16} className="text-teal" />
-            <span>Mathematical round-robin optimization with simulated diversity annealing.</span>
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button 
-              type="button"
-              className="btn btn-secondary"
-              onClick={onClose}
-            >
-              Cancel
-            </button>
-            <button 
-              type="button"
-              className="btn btn-primary"
-              onClick={handleApply}
-              style={{ fontWeight: 700, gap: '0.4rem' }}
-            >
-              <Check size={16} /> Apply Balanced Teams to Classroom
-            </button>
-          </div>
+          <button 
+            type="button" 
+            className="btn btn-secondary" 
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          
+          <button 
+            type="button" 
+            className="btn btn-primary" 
+            onClick={() => setShowAssignModal(true)}
+            disabled={!groupingResult || isGenerating}
+            style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <Check size={16} /> Assign {numTeams} Teams to Course
+          </button>
         </div>
       </div>
 
-      {/* --- STUDENT BIFURCATION INFORMATION CARD MODAL --- */}
-      {selectedStudent && (
-        <div className="modal-overlay" style={{ animation: 'fadeIn 150ms ease', zIndex: 1100 }} onClick={() => setSelectedStudent(null)}>
+      {/* --- CONFIRMATION POPUP: RESHUFFLE TEAMS --- */}
+      {showReshuffleModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            padding: '1rem'
+          }}
+          onClick={() => setShowReshuffleModal(false)}
+        >
           <div 
-            className="modal-content" 
-            style={{ 
-              maxWidth: '520px', 
-              width: '94%', 
-              backgroundColor: 'var(--bg-surface)', 
-              borderRadius: 'var(--radius-lg)', 
-              boxShadow: 'var(--shadow-premium)', 
-              padding: 0, 
-              overflow: 'hidden',
-              zIndex: 1101
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--border-color)',
+              maxWidth: '460px',
+              width: '100%',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
+              overflow: 'hidden'
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header Banner */}
-            <div 
-              style={{ 
-                padding: '1.25rem 1.35rem', 
-                background: 'linear-gradient(135deg, var(--bg-surface), var(--primary-light))', 
-                borderBottom: '1px solid var(--border-color)', 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center' 
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div 
-                  style={{ 
-                    width: '44px', 
-                    height: '44px', 
-                    borderRadius: '12px', 
-                    backgroundColor: 'var(--primary)', 
-                    color: '#ffffff', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    fontWeight: 800, 
-                    fontSize: '1.15rem',
-                    boxShadow: 'var(--shadow-sm)'
-                  }}
-                >
-                  {selectedStudent.name ? selectedStudent.name.charAt(0).toUpperCase() : 'S'}
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      {selectedStudent.name}
-                    </h3>
-                    <span className="badge badge-primary" style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}>
-                      {selectedStudent.groupName || 'Unassigned'}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    Student ID: {selectedStudent.id}
-                  </span>
-                </div>
+            <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.14)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Shuffle size={20} />
               </div>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                Reshuffle Team Allocations?
+              </h3>
+            </div>
 
-              <button 
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+              <p style={{ margin: 0 }}>
+                This will run a fresh multi-criteria combinatorial search to generate a newly balanced cohort grouping.
+              </p>
+              <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.75rem', borderRadius: '7px', border: '1px solid var(--border-color)', fontSize: '0.76rem' }}>
+                <div>Strategy: <b>{activeStrategyObj?.label.split('(')[0].trim()}</b></div>
+                <div>Students: <b>{totalMembers}</b> | Teams: <b>{numTeams}</b></div>
+                {customFields.length > 0 && <div>Active Custom Criteria: <b>{customFields.length}</b></div>}
+              </div>
+            </div>
+
+            <div style={{ padding: '0.85rem 1.25rem', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-app)', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button
                 type="button"
-                onClick={() => setSelectedStudent(null)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.4rem', borderRadius: '6px' }}
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowReshuffleModal(false)}
               >
-                <X size={18} />
+                Cancel
               </button>
-            </div>
-
-            {/* Modal Body: Bifurcation Attributes */}
-            <div style={{ padding: '1.35rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '75vh', overflowY: 'auto' }}>
-              
-              {/* Email & Degree */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.75rem' }}>
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.2rem' }}>
-                    <Mail size={12} className="text-primary" /> Institutional Email
-                  </div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-all' }}>
-                    {selectedStudent.email || 'N/A'}
-                  </div>
-                </div>
-
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.2rem' }}>
-                    <BookOpen size={12} className="text-teal" /> Degree / Major
-                  </div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {selectedStudent.degree || 'General Degree'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Gender & English CEFR Level */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.75rem' }}>
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.2rem' }}>
-                    <UserCheck size={12} className="text-indigo" /> Gender Demographics
-                  </div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {selectedStudent.gender || 'Prefer not to say'}
-                  </div>
-                </div>
-
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.2rem' }}>
-                    <Languages size={12} className="text-amber" /> English Proficiency
-                  </div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {selectedStudent.englishProficiency || 'Fluent (C1/C2)'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Geographic & International Status */}
-              <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.4rem' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem', textTransform: 'uppercase' }}>
-                    <Globe size={13} className="text-teal" /> Geographic &amp; Student Status
-                  </div>
-                  {selectedStudent.isExchange ? (
-                    <span className="badge badge-teal" style={{ fontSize: '0.68rem', fontWeight: 700 }}>
-                      <Plane size={11} /> Exchange / Erasmus
-                    </span>
-                  ) : (
-                    <span className="badge badge-secondary" style={{ fontSize: '0.68rem', fontWeight: 700 }}>
-                      {selectedStudent.studentType || 'Regular Student'}
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-                  <div>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>Nationality / Origin</span>
-                    <b style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
-                      {selectedStudent.nationality || 'Unspecified'}
-                    </b>
-                  </div>
-
-                  <div>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>Current Country (Host/Resident)</span>
-                    <b style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
-                      {selectedStudent.currentCountry || selectedStudent.nationality || 'Unspecified'}
-                    </b>
-                  </div>
-                </div>
-              </div>
-
-              {/* University & Exchange Institution Card */}
-              <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem', textTransform: 'uppercase', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.4rem' }}>
-                  <GraduationCap size={14} className="text-indigo" /> Academic Institution
-                </div>
-
-                {selectedStudent.isExchange ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}>
-                      <Building2 size={13} className="text-primary" />
-                      <span style={{ color: 'var(--text-muted)' }}>Home University:</span>
-                      <b style={{ color: 'var(--text-primary)' }}>{selectedStudent.originalUniversity || selectedStudent.university || 'N/A'}</b>
-                      {selectedStudent.originalCountry && (
-                        <span className="badge badge-secondary" style={{ fontSize: '0.66rem' }}>({selectedStudent.originalCountry})</span>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}>
-                      <GraduationCap size={13} className="text-teal" />
-                      <span style={{ color: 'var(--text-muted)' }}>Host University:</span>
-                      <b style={{ color: 'var(--text-primary)' }}>{selectedStudent.currentUniversity || selectedStudent.university || 'N/A'}</b>
-                      {selectedStudent.currentCountry && (
-                        <span className="badge badge-teal" style={{ fontSize: '0.66rem' }}>({selectedStudent.currentCountry})</span>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>University / College</span>
-                    <b style={{ fontSize: '0.88rem', color: 'var(--text-primary)' }}>
-                      {selectedStudent.university || selectedStudent.currentUniversity || 'University Unspecified'}
-                    </b>
-                  </div>
-                )}
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div style={{ padding: '0.85rem 1.35rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end' }}>
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
-                onClick={() => setSelectedStudent(null)}
-                style={{ fontSize: '0.85rem', padding: '0.4rem 1rem' }}
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleConfirmReshuffle}
               >
-                Close Profile
+                Yes, Reshuffle
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- EXPORT INDIVIDUAL TEAM MODAL --- */}
-      {exportModal.isOpen && exportModal.team && (
-        <div className="modal-overlay" style={{ animation: 'fadeIn 150ms ease', zIndex: 1100 }} onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))}>
+      {/* --- CONFIRMATION POPUP: ASSIGN TEAMS --- */}
+      {showAssignModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            padding: '1rem'
+          }}
+          onClick={() => setShowAssignModal(false)}
+        >
           <div 
-            className="modal-content" 
-            style={{ 
-              maxWidth: '480px', 
-              width: '94%', 
-              backgroundColor: 'var(--bg-surface)', 
-              borderRadius: 'var(--radius-lg)', 
-              boxShadow: 'var(--shadow-premium)', 
-              padding: 0, 
-              overflow: 'hidden',
-              zIndex: 1101
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--border-color)',
+              maxWidth: '480px',
+              width: '100%',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
+              overflow: 'hidden'
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div 
-              style={{ 
-                padding: '1.15rem 1.35rem', 
-                borderBottom: '1px solid var(--border-color)', 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center' 
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Download size={18} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Export {exportModal.team.groupName} Roster
-                  </h3>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    {exportModal.team.studentCount} members assigned to this team
-                  </span>
-                </div>
+            <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'rgba(20, 184, 166, 0.14)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CheckCircle2 size={20} />
               </div>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                Assign Teams to Course Roster?
+              </h3>
+            </div>
 
-              <button 
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+              <p style={{ margin: 0 }}>
+                You are about to assign <b>{numTeams} teams</b> across <b>{totalMembers} students</b> in your active course roster.
+              </p>
+              {groupingResult && (
+                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.75rem', borderRadius: '7px', border: '1px solid var(--border-color)', fontSize: '0.76rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                  <div>Diversity Index: <b style={{ color: 'var(--accent-teal)' }}>{groupingResult.overallDiversityScore}%</b></div>
+                  <div>Gender Balance: <b style={{ color: 'var(--primary)' }}>{groupingResult.genderBalanceRating}</b></div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '0.85rem 1.25rem', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-app)', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button
                 type="button"
-                onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.4rem', borderRadius: '6px' }}
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowAssignModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleConfirmAssign}
+              >
+                Confirm &amp; Assign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Detail Modal */}
+      {selectedStudent && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100001,
+            padding: '1rem'
+          }}
+          onClick={() => setSelectedStudent(null)}
+        >
+          <div 
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--border-color)',
+              maxWidth: '480px',
+              width: '100%',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
+              overflow: 'hidden'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                {selectedStudent.name}
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setSelectedStudent(null)}
+                style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
               >
                 <X size={18} />
               </button>
             </div>
-
-            {/* Modal Body */}
-            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
-              
-              {/* Export Format Selector */}
-              <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem', display: 'block' }}>
-                  1. Choose Export Format
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-                  <label 
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '0.6rem', 
-                      padding: '0.75rem 0.85rem', 
-                      borderRadius: '8px', 
-                      border: `2px solid ${exportModal.format === 'xlsx' ? 'var(--accent-teal)' : 'var(--border-color)'}`,
-                      backgroundColor: exportModal.format === 'xlsx' ? 'rgba(20, 184, 166, 0.08)' : 'var(--bg-app)',
-                      cursor: 'pointer',
-                      transition: 'all 120ms ease'
-                    }}
-                  >
-                    <input 
-                      type="radio" 
-                      name="modalExportFormat" 
-                      value="xlsx" 
-                      checked={exportModal.format === 'xlsx'}
-                      onChange={() => setExportModal(prev => ({ ...prev, format: 'xlsx' }))}
-                      style={{ accentColor: 'var(--accent-teal)' }}
-                    />
-                    <div>
-                      <b style={{ fontSize: '0.84rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <FileSpreadsheet size={14} className="text-teal" /> Excel Workbook
-                      </b>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>.xlsx format</span>
-                    </div>
-                  </label>
-
-                  <label 
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '0.6rem', 
-                      padding: '0.75rem 0.85rem', 
-                      borderRadius: '8px', 
-                      border: `2px solid ${exportModal.format === 'csv' ? 'var(--primary)' : 'var(--border-color)'}`,
-                      backgroundColor: exportModal.format === 'csv' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-app)',
-                      cursor: 'pointer',
-                      transition: 'all 120ms ease'
-                    }}
-                  >
-                    <input 
-                      type="radio" 
-                      name="modalExportFormat" 
-                      value="csv" 
-                      checked={exportModal.format === 'csv'}
-                      onChange={() => setExportModal(prev => ({ ...prev, format: 'csv' }))}
-                      style={{ accentColor: 'var(--primary)' }}
-                    />
-                    <div>
-                      <b style={{ fontSize: '0.84rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <FileText size={14} className="text-primary" /> CSV Document
-                      </b>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>.csv format</span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Data Scope Selector */}
-              <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem', display: 'block' }}>
-                  2. Choose Data Content to Include
-                </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                  <label 
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'flex-start', 
-                      gap: '0.65rem', 
-                      padding: '0.75rem 0.85rem', 
-                      borderRadius: '8px', 
-                      border: `2px solid ${exportModal.scope === 'diversity_card' ? 'var(--accent-teal)' : 'var(--border-color)'}`,
-                      backgroundColor: exportModal.scope === 'diversity_card' ? 'rgba(20, 184, 166, 0.08)' : 'var(--bg-app)',
-                      cursor: 'pointer',
-                      transition: 'all 120ms ease'
-                    }}
-                  >
-                    <input 
-                      type="radio" 
-                      name="modalExportScope" 
-                      value="diversity_card" 
-                      checked={exportModal.scope === 'diversity_card'}
-                      onChange={() => setExportModal(prev => ({ ...prev, scope: 'diversity_card' }))}
-                      style={{ marginTop: '2px', accentColor: 'var(--accent-teal)' }}
-                    />
-                    <div>
-                      <b style={{ fontSize: '0.84rem', color: 'var(--text-primary)', display: 'block' }}>
-                        Diversity Studio Card Info Only
-                      </b>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.35, display: 'block', marginTop: '2px' }}>
-                        Includes Name, Team, Gender, English CEFR level, Nationality, Current Country, Original/Current Universities, Degree, and Exchange status.
-                      </span>
-                    </div>
-                  </label>
-
-                  <label 
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'flex-start', 
-                      gap: '0.65rem', 
-                      padding: '0.75rem 0.85rem', 
-                      borderRadius: '8px', 
-                      border: `2px solid ${exportModal.scope === 'all' ? 'var(--primary)' : 'var(--border-color)'}`,
-                      backgroundColor: exportModal.scope === 'all' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-app)',
-                      cursor: 'pointer',
-                      transition: 'all 120ms ease'
-                    }}
-                  >
-                    <input 
-                      type="radio" 
-                      name="modalExportScope" 
-                      value="all" 
-                      checked={exportModal.scope === 'all'}
-                      onChange={() => setExportModal(prev => ({ ...prev, scope: 'all' }))}
-                      style={{ marginTop: '2px', accentColor: 'var(--primary)' }}
-                    />
-                    <div>
-                      <b style={{ fontSize: '0.84rem', color: 'var(--text-primary)', display: 'block' }}>
-                        All Data About These Students
-                      </b>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.35, display: 'block', marginTop: '2px' }}>
-                        Includes all student attributes plus submission status, peer reviews count, expected reviews, and grade metrics.
-                      </span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.65rem', fontSize: '0.8rem' }}>
+              <div>Email: <b>{selectedStudent.email}</b></div>
+              <div>Team: <b>{selectedStudent.groupName || 'Unassigned'}</b></div>
+              <div>Gender: <b>{selectedStudent.gender || 'Unspecified'}</b></div>
+              <div>Nationality: <b>{selectedStudent.nationality || 'Unspecified'}</b></div>
+              <div>University: <b>{selectedStudent.university || 'Unspecified'}</b></div>
+              <div>Degree: <b>{selectedStudent.degree || 'Unspecified'}</b></div>
             </div>
-
-            {/* Modal Footer */}
-            <div style={{ padding: '0.9rem 1.25rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+            <div style={{ padding: '0.8rem 1.25rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end' }}>
               <button 
                 type="button" 
-                className="btn btn-secondary" 
+                className="btn btn-secondary btn-sm" 
+                onClick={() => setSelectedStudent(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Single Team Modal */}
+      {exportModal.isOpen && exportModal.team && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100001,
+            padding: '1rem'
+          }}
+          onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
+        >
+          <div 
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--border-color)',
+              maxWidth: '460px',
+              width: '100%',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
+              overflow: 'hidden'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                Export {exportModal.team.groupName}
+              </h3>
+              <button 
+                type="button" 
                 onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
-                style={{ fontSize: '0.85rem', padding: '0.4rem 0.9rem' }}
+                style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>Format</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setExportModal(prev => ({ ...prev, format: 'xlsx' }))}
+                  style={{ padding: '0.5rem', borderRadius: '6px', border: `2px solid ${exportModal.format === 'xlsx' ? 'var(--accent-teal)' : 'var(--border-color)'}`, background: 'var(--bg-app)', cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem' }}
+                >
+                  Excel (.xlsx)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExportModal(prev => ({ ...prev, format: 'csv' }))}
+                  style={{ padding: '0.5rem', borderRadius: '6px', border: `2px solid ${exportModal.format === 'csv' ? 'var(--accent-teal)' : 'var(--border-color)'}`, background: 'var(--bg-app)', cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem' }}
+                >
+                  CSV Format
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: '0.85rem 1.25rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary btn-sm" 
+                onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
               >
                 Cancel
               </button>
               <button 
                 type="button" 
-                className="btn btn-primary" 
+                className="btn btn-primary btn-sm" 
                 onClick={handleExecuteExport}
-                style={{ fontSize: '0.85rem', padding: '0.4rem 1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
               >
-                <Download size={14} /> Download Roster
+                Download
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>,
     document.body
   );
