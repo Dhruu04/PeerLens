@@ -787,6 +787,7 @@ import {
           gender: s.gender || 'Prefer not to say',
           nationality: s.nationality || '',
           englishProficiency: s.englishProficiency || '',
+          customFields: (s.customFields && typeof s.customFields === 'object') ? s.customFields : {},
           isInternational: !!s.isInternational,
           isExchange: !!s.isExchange,
           currentCountry: s.currentCountry || '',
