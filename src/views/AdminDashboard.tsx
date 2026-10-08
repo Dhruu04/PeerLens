@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import {
   Users, Plus, Trash2, Download, Upload, Sliders, Mail,
-  Database, RefreshCw, CheckCircle, Clock, BookOpen,
+  Database, RefreshCw, CheckCircle, CheckCircle2, Clock, BookOpen,
   Award, TrendingUp, AlertCircle, FileText,
   Search, Eye, Sparkles, Edit2, User, Info,
   Lightbulb, Heart, MessageSquare, Target, Minus,
@@ -11,7 +11,7 @@ import {
   QrCode, Copy, Check, Globe, AlertTriangle, Lock, Unlock,
   Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X, UserPlus,
   Settings, Plane, EyeOff, LogOut, Compass, ArrowLeft, ArrowRight, RotateCcw,
-  GraduationCap, Filter, ArrowUp, ArrowDown,
+  GraduationCap, Filter, ArrowUp, ArrowDown, Printer,
   ShieldAlert, History, ChevronDown, ChevronRight, ChevronUp
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
@@ -86,7 +86,9 @@ import { KeyboardShortcutsModal } from '../components/KeyboardShortcutsModal';
 import { TeamCohortsOverview } from '../components/TeamCohortsOverview';
 import { TeamHealthPulseCard } from '../components/TeamHealthPulseCard';
 import { GuidedSandboxHUD, type SandboxMission } from '../components/GuidedSandboxHUD';
-import { Smartphone, Edit3 } from 'lucide-react';
+import { LivePresentationScoringModal } from '../components/LivePresentationScoringModal';
+import { TeamKickoffModal } from '../components/TeamKickoffModal';
+import { Smartphone, Edit3, Presentation } from 'lucide-react';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
 import { EditableModuleSlot } from '../components/EditableModuleSlot';
 import { LayoutEditBar } from '../components/LayoutEditBar';
@@ -444,7 +446,17 @@ export const AdminDashboard: React.FC = () => {
   const [newProfileName, setNewProfileName] = useState('');
   const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
   const [isAutoGroupModalOpen, setIsAutoGroupModalOpen] = useState(false);
+  const [isLivePresentationModalOpen, setIsLivePresentationModalOpen] = useState(false);
+  const [isTeamKickoffModalOpen, setIsTeamKickoffModalOpen] = useState(false);
   const [copiedEnrollLink, setCopiedEnrollLink] = useState(false);
+  const [teamKickoffInitialTab, setTeamKickoffInitialTab] = useState<'roles_config' | 'icebreakers' | 'charters'>('roles_config');
+  const [teamKickoffAutoPrint, setTeamKickoffAutoPrint] = useState(false);
+
+  const handleOpenTeamKickoff = (tab: 'roles_config' | 'icebreakers' | 'charters' = 'roles_config', autoPrint = false) => {
+    setTeamKickoffInitialTab(tab);
+    setTeamKickoffAutoPrint(autoPrint);
+    setIsTeamKickoffModalOpen(true);
+  };
   const [miniQrUrl, setMiniQrUrl] = useState<string>('');
   const [isMobileProfileModalOpen, setIsMobileProfileModalOpen] = useState(false);
   const [isTourOpen, setIsTourOpen] = useState(false);
@@ -681,6 +693,35 @@ export const AdminDashboard: React.FC = () => {
   const [showOnlyDuplicates, setShowOnlyDuplicates] = useState(false);
   const [ignoredDuplicatePairs, setIgnoredDuplicatePairs] = useState<Set<string>>(new Set());
 
+  // Power Search States
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('peer_roster_search_history_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed.slice(0, 6);
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [activeQuickFilter, setActiveQuickFilter] = useState<'all' | 'pending' | 'submitted' | 'unassigned' | 'with_role' | 'erasmus' | 'duplicates'>('all');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
+
+  const saveSearchToHistory = (term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed || trimmed.length < 2) return;
+    setSearchHistory(prev => {
+      const filtered = prev.filter(t => t.toLowerCase() !== trimmed.toLowerCase());
+      const next = [trimmed, ...filtered].slice(0, 6);
+      try {
+        localStorage.setItem('peer_roster_search_history_v1', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  };
+
   // Table expansion/contraction states (contracted by default so large tables consume minimal vertical space)
   const [isRosterTableExpanded, setIsRosterTableExpanded] = useState<boolean>(false);
   const [isResultsTableExpanded, setIsResultsTableExpanded] = useState<boolean>(false);
@@ -807,6 +848,9 @@ export const AdminDashboard: React.FC = () => {
 
   // Settings Modal & Keyboard Shortcuts States
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [hasExploredSettings, setHasExploredSettings] = useState<boolean>(() => {
+    return localStorage.getItem('peer_has_explored_settings_v1') === 'true';
+  });
   const [isEvaluationControlsModalOpen, setIsEvaluationControlsModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'email' | 'cloud' | 'shortcuts' | 'appearance' | 'modules'>('email');
   const [shortcuts, setShortcuts] = useState<KeyboardShortcut[]>(() => getStoredShortcuts());
@@ -860,20 +904,26 @@ export const AdminDashboard: React.FC = () => {
     setIsReportModalOpen(true);
   };
 
-  // QoL: Section 1 Direct Drag-and-Drop Anywhere state
+  // QoL: Section 1 Direct Drag-and-Drop Anywhere state (Only for external OS file drops)
   const [isSection1Dragging, setIsSection1Dragging] = useState(false);
   const dragCounterRef = useRef(0);
 
+  const isExternalFileDrag = (e: React.DragEvent) => {
+    if (!e.dataTransfer || !e.dataTransfer.types) return false;
+    const types = Array.from(e.dataTransfer.types);
+    return types.includes('Files') && !types.includes('text/plain');
+  };
+
   const handleSection1DragEnter = (e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     dragCounterRef.current += 1;
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setIsSection1Dragging(true);
-    }
+    setIsSection1Dragging(true);
   };
 
   const handleSection1DragLeave = (e: React.DragEvent) => {
+    if (!isExternalFileDrag(e) && !isSection1Dragging) return;
     e.preventDefault();
     e.stopPropagation();
     dragCounterRef.current -= 1;
@@ -884,11 +934,13 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleSection1DragOver = (e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
   };
 
   const handleSection1Drop = async (e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     dragCounterRef.current = 0;
@@ -1059,34 +1111,153 @@ export const AdminDashboard: React.FC = () => {
     });
   }, [classTeams, teamSearchQuery, activeClass?.students]);
 
+  const quickFilterCounts = useMemo(() => {
+    if (!activeClass?.students) return { total: 0, pending: 0, submitted: 0, unassigned: 0, with_role: 0, erasmus: 0, duplicates: 0 };
+    const students = activeClass.students;
+    return {
+      total: students.length,
+      pending: students.filter(s => !s.submitted).length,
+      submitted: students.filter(s => !!s.submitted).length,
+      unassigned: students.filter(s => !s.groupName || s.groupName.toLowerCase() === 'unassigned').length,
+      with_role: students.filter(s => !!s.role).length,
+      erasmus: students.filter(s => s.studentType === 'Erasmus' || s.studentType === 'International' || s.isExchange).length,
+      duplicates: students.filter(s => duplicateFlagsMap.has(s.id)).length
+    };
+  }, [activeClass?.students, duplicateFlagsMap]);
+
   const filteredStudents = useMemo(() => {
     if (!activeClass?.students) return [];
+
     return activeClass.students.filter(student => {
+      // 1. Check duplicate filter
       if (showOnlyDuplicates && !duplicateFlagsMap.has(student.id)) {
         return false;
       }
-      const term = searchTerm.toLowerCase().trim();
-      const isPendingFilter = term === 'pending' || term === 'unsubmitted';
-      const isSubmittedFilter = term === 'submitted' || term === 'completed';
-      const isUnassignedFilter = term === 'unassigned' || term === 'no team';
 
-      let statusMatch = false;
-      if (isPendingFilter) statusMatch = !student.submitted;
-      else if (isSubmittedFilter) statusMatch = !!student.submitted;
-      else if (isUnassignedFilter) statusMatch = !student.groupName || student.groupName.toLowerCase() === 'unassigned';
+      // 2. Check quick filter preset
+      if (activeQuickFilter === 'pending' && student.submitted) return false;
+      if (activeQuickFilter === 'submitted' && !student.submitted) return false;
+      if (activeQuickFilter === 'unassigned' && (student.groupName && student.groupName.toLowerCase() !== 'unassigned')) return false;
+      if (activeQuickFilter === 'with_role' && !student.role) return false;
+      if (activeQuickFilter === 'erasmus' && student.studentType !== 'Erasmus' && student.studentType !== 'International' && !student.isExchange) return false;
+      if (activeQuickFilter === 'duplicates' && !duplicateFlagsMap.has(student.id)) return false;
 
-      const matchesSearch = !term || statusMatch ||
-        student.name.toLowerCase().includes(term) ||
-        student.email.toLowerCase().includes(term) ||
-        student.id.toLowerCase().includes(term) ||
-        (student.nationality && student.nationality.toLowerCase().includes(term)) ||
-        (student.gender && student.gender.toLowerCase().includes(term)) ||
-        (student.englishProficiency && student.englishProficiency.toLowerCase().includes(term)) ||
-        (student.university && student.university.toLowerCase().includes(term)) ||
-        (student.degree && student.degree.toLowerCase().includes(term)) ||
-        (student.studentType && student.studentType.toLowerCase().includes(term));
-      const matchesGroup = groupFilter === 'All Groups' || student.groupName === groupFilter;
-      return matchesSearch && matchesGroup;
+      // 3. Check group dropdown filter
+      if (groupFilter !== 'All Groups' && student.groupName !== groupFilter) {
+        return false;
+      }
+
+      const rawTerm = searchTerm.trim();
+      if (!rawTerm) return true;
+
+      // 4. Multi-token search parser with prefix operators
+      const tokens = rawTerm.split(/\s+/).filter(Boolean);
+
+      return tokens.every(token => {
+        const lowerToken = token.toLowerCase();
+
+        // Prefix: role:<query>
+        if (lowerToken.startsWith('role:')) {
+          const val = lowerToken.slice(5).trim();
+          if (!val || val === 'none' || val === 'unassigned') return !student.role;
+          return !!student.role && student.role.toLowerCase().includes(val);
+        }
+
+        // Prefix: group:<query> or team:<query>
+        if (lowerToken.startsWith('group:') || lowerToken.startsWith('team:')) {
+          const prefixLen = lowerToken.startsWith('group:') ? 6 : 5;
+          const val = lowerToken.slice(prefixLen).trim();
+          if (val === 'unassigned' || val === 'none') return !student.groupName || student.groupName.toLowerCase() === 'unassigned';
+          return !!student.groupName && student.groupName.toLowerCase().includes(val);
+        }
+
+        // Prefix: status:<query>
+        if (lowerToken.startsWith('status:')) {
+          const val = lowerToken.slice(7).trim();
+          if (val === 'pending' || val === 'unsubmitted') return !student.submitted;
+          if (val === 'submitted' || val === 'completed' || val === 'done') return !!student.submitted;
+          if (val === 'excused') return !!student.isExcused;
+          return false;
+        }
+
+        // Prefix: type:<query>
+        if (lowerToken.startsWith('type:')) {
+          const val = lowerToken.slice(5).trim();
+          return !!student.studentType && student.studentType.toLowerCase().includes(val);
+        }
+
+        // Prefix: country:<query> or nat:<query>
+        if (lowerToken.startsWith('country:') || lowerToken.startsWith('nat:')) {
+          const prefixLen = lowerToken.startsWith('country:') ? 8 : 4;
+          const val = lowerToken.slice(prefixLen).trim();
+          return (
+            (!!student.nationality && student.nationality.toLowerCase().includes(val)) ||
+            (!!student.originalCountry && student.originalCountry.toLowerCase().includes(val)) ||
+            (!!student.currentCountry && student.currentCountry.toLowerCase().includes(val))
+          );
+        }
+
+        // Prefix: uni:<query> or univ:<query>
+        if (lowerToken.startsWith('uni:') || lowerToken.startsWith('univ:') || lowerToken.startsWith('university:')) {
+          const colonIdx = lowerToken.indexOf(':');
+          const val = lowerToken.slice(colonIdx + 1).trim();
+          return (
+            (!!student.university && student.university.toLowerCase().includes(val)) ||
+            (!!student.originalUniversity && student.originalUniversity.toLowerCase().includes(val)) ||
+            (!!student.currentUniversity && student.currentUniversity.toLowerCase().includes(val))
+          );
+        }
+
+        // Prefix: degree:<query> or major:<query>
+        if (lowerToken.startsWith('degree:') || lowerToken.startsWith('major:')) {
+          const colonIdx = lowerToken.indexOf(':');
+          const val = lowerToken.slice(colonIdx + 1).trim();
+          return !!student.degree && student.degree.toLowerCase().includes(val);
+        }
+
+        // Prefix: flag:<query>
+        if (lowerToken.startsWith('flag:')) {
+          const val = lowerToken.slice(5).trim();
+          if (val === 'dup' || val === 'duplicate') return duplicateFlagsMap.has(student.id);
+          if (val === 'excused') return !!student.isExcused;
+          return false;
+        }
+
+        // Negations: -pending, -submitted, -unassigned, -groupName
+        if (lowerToken.startsWith('-')) {
+          const negVal = lowerToken.slice(1).trim();
+          if (negVal === 'pending') return !!student.submitted;
+          if (negVal === 'submitted') return !student.submitted;
+          if (negVal === 'unassigned') return !!student.groupName && student.groupName.toLowerCase() !== 'unassigned';
+          if (student.groupName && student.groupName.toLowerCase().includes(negVal)) return false;
+          if (student.name.toLowerCase().includes(negVal)) return false;
+          return true;
+        }
+
+        // Keyword standalone filters
+        if (lowerToken === 'pending' || lowerToken === 'unsubmitted') return !student.submitted;
+        if (lowerToken === 'submitted' || lowerToken === 'completed') return !!student.submitted;
+        if (lowerToken === 'unassigned' || lowerToken === 'noteam') return !student.groupName || student.groupName.toLowerCase() === 'unassigned';
+        if (lowerToken === 'excused') return !!student.isExcused;
+        if (lowerToken === 'duplicate' || lowerToken === 'duplicates') return duplicateFlagsMap.has(student.id);
+
+        // General multi-field text search
+        return (
+          student.name.toLowerCase().includes(lowerToken) ||
+          student.email.toLowerCase().includes(lowerToken) ||
+          student.id.toLowerCase().includes(lowerToken) ||
+          (student.groupName && student.groupName.toLowerCase().includes(lowerToken)) ||
+          (student.role && student.role.toLowerCase().includes(lowerToken)) ||
+          (student.roleDetails && student.roleDetails.toLowerCase().includes(lowerToken)) ||
+          (student.nationality && student.nationality.toLowerCase().includes(lowerToken)) ||
+          (student.gender && student.gender.toLowerCase().includes(lowerToken)) ||
+          (student.englishProficiency && student.englishProficiency.toLowerCase().includes(lowerToken)) ||
+          (student.university && student.university.toLowerCase().includes(lowerToken)) ||
+          (student.degree && student.degree.toLowerCase().includes(lowerToken)) ||
+          (student.studentType && student.studentType.toLowerCase().includes(lowerToken)) ||
+          (student.originalCountry && student.originalCountry.toLowerCase().includes(lowerToken))
+        );
+      });
     }).sort((a, b) => {
       const gA = (a.groupName && a.groupName.trim()) ? a.groupName.trim() : 'Unassigned';
       const gB = (b.groupName && b.groupName.trim()) ? b.groupName.trim() : 'Unassigned';
@@ -1102,7 +1273,7 @@ export const AdminDashboard: React.FC = () => {
 
       return a.name.localeCompare(b.name);
     });
-  }, [activeClass?.students, showOnlyDuplicates, duplicateFlagsMap, searchTerm, groupFilter]);
+  }, [activeClass?.students, showOnlyDuplicates, duplicateFlagsMap, searchTerm, groupFilter, activeQuickFilter]);
 
   const profileOptions = useMemo(() => [
     ...adminProfiles.map(p => ({ value: p, label: `Admin: ${p.toUpperCase()}` })),
@@ -1200,6 +1371,35 @@ export const AdminDashboard: React.FC = () => {
     localStorage.setItem('peer_custom_email_subject', customEmailSubject);
     localStorage.setItem('peer_custom_email_body', customEmailBody);
   }, [emailService, emailjsServiceId, emailjsTemplateId, emailjsUserId, brevoApiKey, brevoSenderEmail, brevoSenderName, customEmailSubject, customEmailBody]);
+
+  // Search dropdown outside-click handler
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        searchInputRef.current &&
+        !searchInputRef.current.contains(e.target as Node) &&
+        searchDropdownRef.current &&
+        !searchDropdownRef.current.contains(e.target as Node)
+      ) {
+        setIsSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Top matching students for search autocomplete dropdown
+  const searchMatchingStudents = useMemo(() => {
+    if (!searchTerm.trim() || !activeClass?.students) return [];
+    return filteredStudents.slice(0, 4);
+  }, [searchTerm, filteredStudents, activeClass?.students]);
+
+  // Top matching teams for search autocomplete dropdown
+  const searchMatchingTeams = useMemo(() => {
+    if (!searchTerm.trim() || !activeClass?.students) return [];
+    const term = searchTerm.toLowerCase().trim();
+    return uniqueGroups.filter(g => g.toLowerCase().includes(term) && g !== 'All Groups').slice(0, 3);
+  }, [searchTerm, uniqueGroups, activeClass?.students]);
 
   // Synchronize Firebase Config panel input states when active profile or config changes
   React.useEffect(() => {
@@ -1335,6 +1535,16 @@ export const AdminDashboard: React.FC = () => {
       }
 
       if (isInputFocused) return;
+
+      // / or Ctrl + F to focus Classroom Roster Power Searchbar
+      if (e.key === '/' || (e.ctrlKey && e.key.toLowerCase() === 'f')) {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsRosterTableExpanded(true);
+        searchInputRef.current?.focus();
+        setIsSearchFocused(true);
+        return;
+      }
 
       // Check if general single-key shortcuts (e, c, n, 1, 2, 3, etc.) are enabled globally
       if (!shortcutsEnabled) return;
@@ -3075,18 +3285,46 @@ export const AdminDashboard: React.FC = () => {
                 onClick={() => {
                   setSettingsInitialTab('modules');
                   setIsSettingsModalOpen(true);
+                  if (!hasExploredSettings) {
+                    setHasExploredSettings(true);
+                    localStorage.setItem('peer_has_explored_settings_v1', 'true');
+                  }
                 }}
-                title="Workspace Settings"
+                title="Settings & Feature Studio (40+ Tools)"
                 style={{
-                  width: '34px',
                   height: '32px',
-                  padding: 0,
+                  padding: !hasExploredSettings ? '0 0.65rem' : '0',
+                  width: !hasExploredSettings ? 'auto' : '34px',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  gap: '0.35rem',
+                  position: 'relative',
+                  border: !hasExploredSettings ? '1px solid rgba(99, 102, 241, 0.45)' : undefined,
+                  backgroundColor: !hasExploredSettings ? 'rgba(99, 102, 241, 0.08)' : undefined,
+                  transition: 'all 0.2s ease'
                 }}
               >
                 <Settings size={15} className="text-primary" />
+                {!hasExploredSettings && (
+                  <span style={{ fontSize: '0.72rem', fontWeight: 750, color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', whiteSpace: 'nowrap' }}>
+                    <Sparkles size={11} /> Explore 40+ Features
+                  </span>
+                )}
+                {!hasExploredSettings && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-3px',
+                      right: '-3px',
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: '#f59e0b',
+                      border: '2px solid var(--bg-surface)'
+                    }}
+                  />
+                )}
               </button>
             </EditableModuleSlot>
           )}
@@ -3656,6 +3894,17 @@ export const AdminDashboard: React.FC = () => {
                                 title="Launch Team Generator Studio"
                               >
                                 <Users size={11} /> <span>Team Studio</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="hub-quick-action-pill hub-quick-pill-indigo"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenTeamKickoff('roles_config');
+                                }}
+                                title="Launch Team Charter, Role Allocator & Icebreakers"
+                              >
+                                <Sparkles size={11} /> <span>Team Charters</span>
                               </button>
                             </div>
                           </EditableModuleSlot>
@@ -4389,7 +4638,262 @@ export const AdminDashboard: React.FC = () => {
                     importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
                     addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
                   }}
+                  onOpenTeamCharter={() => handleOpenTeamKickoff('charters')}
                 />
+              </div>
+            </EditableModuleSlot>
+          )}
+
+          {/* Team Charter, Role Allocator & Icebreaker Studio Showcase Card */}
+          {(isEditMode || featureToggles.showTeamKickoffAndRoles) && (
+            <EditableModuleSlot
+              moduleKey="showTeamKickoffAndRoles"
+              isEditMode={isEditMode}
+              isVisible={featureToggles.showTeamKickoffAndRoles}
+              onToggle={handleToggleModule}
+            >
+              <div
+                className="card"
+                style={{
+                  padding: '1.5rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1.15rem',
+                  background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(99, 102, 241, 0.035) 100%)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '16px',
+                  boxShadow: 'var(--shadow-xs)'
+                }}
+              >
+                {/* Header Row */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem', minWidth: '280px', flex: 1 }}>
+                    <div
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '12px',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        color: 'var(--primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}
+                    >
+                      <UserCheck size={22} />
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                          Team Charter &amp; Role Allocator Studio
+                        </h3>
+                        <span className="badge badge-primary" style={{ fontSize: '0.66rem', padding: '0.12rem 0.5rem' }}>
+                          Pedagogical Alignment
+                        </span>
+                      </div>
+                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                        Prevent free-riding and align team expectations before reviews begin. Define sprint responsibilities, set working agreements, and run 5-minute kickoff icebreakers.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Actions & Launch Button */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleOpenTeamKickoff('charters', true)}
+                      style={{ gap: '0.35rem', fontWeight: 650, fontSize: '0.8rem', padding: '0.55rem 0.95rem' }}
+                      title="Open Team Charters & trigger quick print view"
+                    >
+                      <Printer size={13} /> Print Charters
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleOpenTeamKickoff('roles_config', false)}
+                      style={{ gap: '0.45rem', fontWeight: 750, fontSize: '0.82rem', padding: '0.55rem 1.15rem' }}
+                    >
+                      <Sparkles size={14} /> Open Full Studio
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3 Value Pillars - Each leads to its tailored tab */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                  
+                  {/* Pillar 1: Custom Roles -> opens 'roles_config' */}
+                  <div
+                    onClick={() => handleOpenTeamKickoff('roles_config')}
+                    style={{
+                      padding: '0.95rem 1rem',
+                      borderRadius: '12px',
+                      backgroundColor: 'var(--bg-app)',
+                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '0.65rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-app)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <Sliders size={14} style={{ color: 'var(--primary)' }} /> 1. Custom Roles &amp; Allocation
+                        </span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--primary)', backgroundColor: 'rgba(99, 102, 241, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                          Tab 1
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                        Create activity roles (Tech Lead, Scribe, Presenter) &amp; auto-allocate balanced responsibilities across all teams in 1-click.
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--primary)' }}>
+                        Manage Roles &rarr;
+                      </span>
+                      <ArrowRight size={12} style={{ color: 'var(--primary)' }} />
+                    </div>
+                  </div>
+
+                  {/* Pillar 2: 5-Min Icebreakers -> opens 'icebreakers' */}
+                  <div
+                    onClick={() => handleOpenTeamKickoff('icebreakers')}
+                    style={{
+                      padding: '0.95rem 1rem',
+                      borderRadius: '12px',
+                      backgroundColor: 'var(--bg-app)',
+                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '0.65rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-app)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <MessageSquare size={14} style={{ color: '#0d9488' }} /> 2. 5-Min Kickoff Icebreakers
+                        </span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#0d9488', backgroundColor: 'rgba(13, 148, 136, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                          Tab 2
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                        Build psychological safety and empathy. Craft custom prompts (superpowers, anti-goals, cultural passport) with a built-in timer.
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#0d9488' }}>
+                        Configure Prompts &rarr;
+                      </span>
+                      <ArrowRight size={12} style={{ color: '#0d9488' }} />
+                    </div>
+                  </div>
+
+                  {/* Pillar 3: Team Charters & Norms -> opens 'charters' */}
+                  <div
+                    onClick={() => handleOpenTeamKickoff('charters')}
+                    style={{
+                      padding: '0.95rem 1rem',
+                      borderRadius: '12px',
+                      backgroundColor: 'var(--bg-app)',
+                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '0.65rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#d97706'; e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-app)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <FileText size={14} style={{ color: '#d97706' }} /> 3. Working Agreements &amp; Print
+                        </span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#d97706', backgroundColor: 'rgba(217, 119, 6, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                          Tab 3
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                        Define response-time norms, dispute protocols, and generate formatted team table cards ready for in-class print or PDF export.
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#d97706' }}>
+                        Preview &amp; Print Charters &rarr;
+                      </span>
+                      <ArrowRight size={12} style={{ color: '#d97706' }} />
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Status & Quick-Tab Navigation Strip */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', fontSize: '0.74rem', color: 'var(--text-muted)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Users size={12} className="text-primary" /> {activeClass.students.length} Students in {new Set(activeClass.students.map(s => s.groupName || 'Unassigned')).size} Teams
+                    </span>
+                    <span>&bull;</span>
+                    <span
+                      onClick={() => handleOpenTeamKickoff('roles_config')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        cursor: 'pointer',
+                        color: activeClass.students.filter(s => !!s.role).length === activeClass.students.length ? '#10b981' : '#f59e0b',
+                        fontWeight: 650
+                      }}
+                      title="Click to manage role allocations"
+                    >
+                      <CheckCircle2 size={12} /> {activeClass.students.filter(s => !!s.role).length} of {activeClass.students.length} Roles Assigned
+                    </span>
+                  </div>
+
+                  {/* Direct Jump Pills */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Jump to:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenTeamKickoff('roles_config')}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: 'auto', lineHeight: '1.4' }}
+                    >
+                      Roles
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenTeamKickoff('icebreakers')}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: 'auto', lineHeight: '1.4' }}
+                    >
+                      Icebreakers
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenTeamKickoff('charters')}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: 'auto', lineHeight: '1.4' }}
+                    >
+                      Working Agreements
+                    </button>
+                  </div>
+                </div>
               </div>
             </EditableModuleSlot>
           )}
@@ -4434,27 +4938,373 @@ export const AdminDashboard: React.FC = () => {
                       slotType="bar"
                     >
                       <div style={{ display: 'inline-flex', gap: '0.45rem', alignItems: 'center', flexWrap: 'nowrap' }}>
-                        <div style={{ position: 'relative', width: '220px' }}>
-                          <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                        {/* Power Search Bar with Autocomplete Dropdown */}
+                        <div style={{ position: 'relative', width: '280px' }}>
+                          <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: searchTerm ? 'var(--primary)' : 'var(--text-muted)', pointerEvents: 'none' }} />
                           <input
+                            ref={searchInputRef}
                             type="text"
-                            placeholder="Search by ID, Name, Country, Email..."
+                            placeholder="Search name, ID, role, group, country..."
                             className="form-input"
-                            style={{ paddingLeft: '2.1rem', paddingRight: searchTerm ? '2rem' : '0.75rem', height: '36px', fontSize: '0.82rem', borderRadius: '8px' }}
+                            style={{
+                              paddingLeft: '2.2rem',
+                              paddingRight: searchTerm ? '2.2rem' : '2.4rem',
+                              height: '36px',
+                              fontSize: '0.82rem',
+                              borderRadius: '8px',
+                              borderColor: isSearchFocused || searchTerm ? 'var(--primary)' : 'var(--border-color)',
+                              boxShadow: isSearchFocused ? '0 0 0 3px rgba(99, 102, 241, 0.15)' : 'none'
+                            }}
                             value={searchTerm}
+                            onFocus={() => setIsSearchFocused(true)}
                             onChange={(e) => setSearchTerm(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveSearchToHistory(searchTerm);
+                                setIsSearchFocused(false);
+                              } else if (e.key === 'Escape') {
+                                setSearchTerm('');
+                                setIsSearchFocused(false);
+                              }
+                            }}
                           />
-                          {searchTerm && (
+
+                          {/* Right Action: Clear Button or Keyboard Hint */}
+                          {searchTerm ? (
                             <button
                               type="button"
-                              onClick={() => setSearchTerm('')}
-                              style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.2rem' }}
-                              title="Clear search"
+                              onClick={() => {
+                                setSearchTerm('');
+                                searchInputRef.current?.focus();
+                              }}
+                              style={{
+                                position: 'absolute',
+                                right: '0.5rem',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'var(--bg-app)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '50%',
+                                width: '20px',
+                                height: '20px',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: 0
+                              }}
+                              title="Clear search (Esc)"
                             >
-                              <X size={13} />
+                              <X size={11} />
                             </button>
+                          ) : (
+                            <kbd
+                              style={{
+                                position: 'absolute',
+                                right: '0.55rem',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                fontSize: '0.68rem',
+                                color: 'var(--text-muted)',
+                                backgroundColor: 'var(--bg-app)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                padding: '0.1rem 0.35rem',
+                                pointerEvents: 'none',
+                                fontWeight: 700
+                              }}
+                            >
+                              /
+                            </kbd>
+                          )}
+
+                          {/* Autocomplete & Smart Suggestions Dropdown */}
+                          {isSearchFocused && (
+                            <div
+                              ref={searchDropdownRef}
+                              className="card"
+                              style={{
+                                position: 'absolute',
+                                top: 'calc(100% + 6px)',
+                                left: 0,
+                                width: '380px',
+                                maxHeight: '380px',
+                                overflowY: 'auto',
+                                zIndex: 1000,
+                                backgroundColor: 'var(--bg-surface)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '12px',
+                                boxShadow: 'var(--shadow-xl)',
+                                padding: '0.75rem',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.65rem',
+                                animation: 'fadeIn 0.15s ease'
+                              }}
+                            >
+                              {/* Matching Student Results */}
+                              {searchMatchingStudents.length > 0 && (
+                                <div>
+                                  <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '0.35rem' }}>
+                                    Matching Students ({filteredStudents.length})
+                                  </span>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                    {searchMatchingStudents.map(student => (
+                                      <div
+                                        key={student.id}
+                                        onClick={() => {
+                                          setSearchTerm(student.name);
+                                          saveSearchToHistory(student.name);
+                                          setIsSearchFocused(false);
+                                        }}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          padding: '0.4rem 0.55rem',
+                                          borderRadius: '7px',
+                                          cursor: 'pointer',
+                                          backgroundColor: 'var(--bg-app)',
+                                          border: '1px solid transparent',
+                                          transition: 'all 0.12s ease'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.borderColor = 'var(--primary)';
+                                          e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.borderColor = 'transparent';
+                                          e.currentTarget.style.backgroundColor = 'var(--bg-app)';
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                          <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: '#fff', fontSize: '0.65rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {student.name.charAt(0)}
+                                          </div>
+                                          <div>
+                                            <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block' }}>
+                                              {student.name}
+                                            </strong>
+                                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                              ID: {student.id} &bull; {student.groupName || 'Unassigned'}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        {student.role && (
+                                          <span className="badge badge-primary" style={{ fontSize: '0.64rem', padding: '0.1rem 0.35rem' }}>
+                                            {student.role}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Matching Teams */}
+                              {searchMatchingTeams.length > 0 && (
+                                <div>
+                                  <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '0.35rem' }}>
+                                    Matching Teams
+                                  </span>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                    {searchMatchingTeams.map(team => {
+                                      const teamCount = activeClass.students.filter(s => s.groupName === team).length;
+                                      return (
+                                        <button
+                                          key={team}
+                                          type="button"
+                                          onClick={() => {
+                                            setGroupFilter(team);
+                                            setSearchTerm('');
+                                            setIsSearchFocused(false);
+                                          }}
+                                          style={{
+                                            fontSize: '0.72rem',
+                                            fontWeight: 700,
+                                            padding: '0.25rem 0.55rem',
+                                            borderRadius: '6px',
+                                            backgroundColor: 'var(--bg-app)',
+                                            border: '1px solid var(--border-color)',
+                                            color: 'var(--primary)',
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.25rem'
+                                          }}
+                                        >
+                                          <Users size={11} /> {team} ({teamCount})
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Quick-Apply Filter Presets */}
+                              <div>
+                                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '0.35rem' }}>
+                                  Filter Presets &amp; Operators
+                                </span>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSearchTerm('status:pending');
+                                      setIsSearchFocused(false);
+                                    }}
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontWeight: 650,
+                                      padding: '0.3rem 0.5rem',
+                                      borderRadius: '6px',
+                                      backgroundColor: 'var(--bg-app)',
+                                      border: '1px solid var(--border-color)',
+                                      color: 'var(--text-primary)',
+                                      cursor: 'pointer',
+                                      textAlign: 'left',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.35rem'
+                                    }}
+                                  >
+                                    <Clock size={12} className="text-amber" /> Pending Reviews
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSearchTerm('status:submitted');
+                                      setIsSearchFocused(false);
+                                    }}
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontWeight: 650,
+                                      padding: '0.3rem 0.5rem',
+                                      borderRadius: '6px',
+                                      backgroundColor: 'var(--bg-app)',
+                                      border: '1px solid var(--border-color)',
+                                      color: 'var(--text-primary)',
+                                      cursor: 'pointer',
+                                      textAlign: 'left',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.35rem'
+                                    }}
+                                  >
+                                    <CheckCircle size={12} className="text-teal" /> Submitted Reviews
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSearchTerm('group:unassigned');
+                                      setIsSearchFocused(false);
+                                    }}
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontWeight: 650,
+                                      padding: '0.3rem 0.5rem',
+                                      borderRadius: '6px',
+                                      backgroundColor: 'var(--bg-app)',
+                                      border: '1px solid var(--border-color)',
+                                      color: 'var(--text-primary)',
+                                      cursor: 'pointer',
+                                      textAlign: 'left',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.35rem'
+                                    }}
+                                  >
+                                    <Users size={12} className="text-rose" /> Unassigned Members
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSearchTerm('type:erasmus');
+                                      setIsSearchFocused(false);
+                                    }}
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontWeight: 650,
+                                      padding: '0.3rem 0.5rem',
+                                      borderRadius: '6px',
+                                      backgroundColor: 'var(--bg-app)',
+                                      border: '1px solid var(--border-color)',
+                                      color: 'var(--text-primary)',
+                                      cursor: 'pointer',
+                                      textAlign: 'left',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.35rem'
+                                    }}
+                                  >
+                                    <Globe size={12} className="text-indigo" /> Erasmus / Int'l
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Recent Searches */}
+                              {searchHistory.length > 0 && (
+                                <div style={{ paddingTop: '0.35rem', borderTop: '1px solid var(--border-color)' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+                                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                      Recent Searches
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSearchHistory([]);
+                                        localStorage.removeItem('peer_roster_search_history_v1');
+                                      }}
+                                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.65rem', cursor: 'pointer' }}
+                                    >
+                                      Clear History
+                                    </button>
+                                  </div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                                    {searchHistory.map(hist => (
+                                      <button
+                                        key={hist}
+                                        type="button"
+                                        onClick={() => {
+                                          setSearchTerm(hist);
+                                          setIsSearchFocused(false);
+                                        }}
+                                        style={{
+                                          fontSize: '0.7rem',
+                                          fontWeight: 600,
+                                          padding: '0.2rem 0.5rem',
+                                          borderRadius: '5px',
+                                          backgroundColor: 'var(--bg-app)',
+                                          border: '1px solid var(--border-color)',
+                                          color: 'var(--text-secondary)',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        {hist}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Syntax Tip Strip */}
+                              <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.35rem 0.55rem', borderRadius: '6px', fontSize: '0.67rem', color: 'var(--text-muted)', display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
+                                <b>Syntax Tips:</b>
+                                <code>role:lead</code>
+                                <code>group:1</code>
+                                <code>status:pending</code>
+                                <code>country:spain</code>
+                                <code>-submitted</code>
+                              </div>
+                            </div>
                           )}
                         </div>
+
                         <CustomSelect
                           options={groupOptions}
                           value={groupFilter}
@@ -4630,6 +5480,301 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
 
+            {/* Quick-Filter Chips Bar & Active Search Status Strip */}
+            {isRosterTableExpanded && activeClass.students.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '1rem' }}>
+                {/* 1-Click Quick Filter Chips */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveQuickFilter('all');
+                      setShowOnlyDuplicates(false);
+                    }}
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: activeQuickFilter === 'all' && !showOnlyDuplicates ? 750 : 600,
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '8px',
+                      backgroundColor: activeQuickFilter === 'all' && !showOnlyDuplicates ? 'var(--primary)' : 'var(--bg-app)',
+                      color: activeQuickFilter === 'all' && !showOnlyDuplicates ? '#fff' : 'var(--text-secondary)',
+                      border: `1px solid ${activeQuickFilter === 'all' && !showOnlyDuplicates ? 'var(--primary)' : 'var(--border-color)'}`,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    All ({quickFilterCounts.total})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveQuickFilter(activeQuickFilter === 'pending' ? 'all' : 'pending');
+                      setShowOnlyDuplicates(false);
+                    }}
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: activeQuickFilter === 'pending' ? 750 : 600,
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '8px',
+                      backgroundColor: activeQuickFilter === 'pending' ? '#f59e0b' : 'var(--bg-app)',
+                      color: activeQuickFilter === 'pending' ? '#fff' : 'var(--text-secondary)',
+                      border: `1px solid ${activeQuickFilter === 'pending' ? '#f59e0b' : 'var(--border-color)'}`,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <Clock size={11} className={activeQuickFilter === 'pending' ? '' : 'text-amber'} /> Pending ({quickFilterCounts.pending})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveQuickFilter(activeQuickFilter === 'submitted' ? 'all' : 'submitted');
+                      setShowOnlyDuplicates(false);
+                    }}
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: activeQuickFilter === 'submitted' ? 750 : 600,
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '8px',
+                      backgroundColor: activeQuickFilter === 'submitted' ? '#0d9488' : 'var(--bg-app)',
+                      color: activeQuickFilter === 'submitted' ? '#fff' : 'var(--text-secondary)',
+                      border: `1px solid ${activeQuickFilter === 'submitted' ? '#0d9488' : 'var(--border-color)'}`,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <CheckCircle size={11} className={activeQuickFilter === 'submitted' ? '' : 'text-teal'} /> Submitted ({quickFilterCounts.submitted})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveQuickFilter(activeQuickFilter === 'unassigned' ? 'all' : 'unassigned');
+                      setShowOnlyDuplicates(false);
+                    }}
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: activeQuickFilter === 'unassigned' ? 750 : 600,
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '8px',
+                      backgroundColor: activeQuickFilter === 'unassigned' ? '#e11d48' : 'var(--bg-app)',
+                      color: activeQuickFilter === 'unassigned' ? '#fff' : 'var(--text-secondary)',
+                      border: `1px solid ${activeQuickFilter === 'unassigned' ? '#e11d48' : 'var(--border-color)'}`,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <Users size={11} className={activeQuickFilter === 'unassigned' ? '' : 'text-rose'} /> Unassigned ({quickFilterCounts.unassigned})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveQuickFilter(activeQuickFilter === 'with_role' ? 'all' : 'with_role');
+                      setShowOnlyDuplicates(false);
+                    }}
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: activeQuickFilter === 'with_role' ? 750 : 600,
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '8px',
+                      backgroundColor: activeQuickFilter === 'with_role' ? '#8b5cf6' : 'var(--bg-app)',
+                      color: activeQuickFilter === 'with_role' ? '#fff' : 'var(--text-secondary)',
+                      border: `1px solid ${activeQuickFilter === 'with_role' ? '#8b5cf6' : 'var(--border-color)'}`,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <UserCheck size={11} className={activeQuickFilter === 'with_role' ? '' : 'text-purple'} /> With Role ({quickFilterCounts.with_role})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveQuickFilter(activeQuickFilter === 'erasmus' ? 'all' : 'erasmus');
+                      setShowOnlyDuplicates(false);
+                    }}
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: activeQuickFilter === 'erasmus' ? 750 : 600,
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '8px',
+                      backgroundColor: activeQuickFilter === 'erasmus' ? '#0284c7' : 'var(--bg-app)',
+                      color: activeQuickFilter === 'erasmus' ? '#fff' : 'var(--text-secondary)',
+                      border: `1px solid ${activeQuickFilter === 'erasmus' ? '#0284c7' : 'var(--border-color)'}`,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <Globe size={11} className={activeQuickFilter === 'erasmus' ? '' : 'text-sky'} /> Erasmus / Int'l ({quickFilterCounts.erasmus})
+                  </button>
+
+                  {quickFilterCounts.duplicates > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowOnlyDuplicates(prev => !prev);
+                        if (!showOnlyDuplicates) setActiveQuickFilter('all');
+                      }}
+                      style={{
+                        fontSize: '0.74rem',
+                        fontWeight: showOnlyDuplicates ? 750 : 600,
+                        padding: '0.25rem 0.65rem',
+                        borderRadius: '8px',
+                        backgroundColor: showOnlyDuplicates ? '#f59e0b' : 'var(--bg-app)',
+                        color: showOnlyDuplicates ? '#fff' : '#b45309',
+                        border: `1px solid ${showOnlyDuplicates ? '#f59e0b' : '#fcd34d'}`,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <AlertTriangle size={11} /> Duplicates ({quickFilterCounts.duplicates})
+                    </button>
+                  )}
+                </div>
+
+                {/* Active Filter Strip (when any search/filter is active) */}
+                {(searchTerm || groupFilter !== 'All Groups' || activeQuickFilter !== 'all' || showOnlyDuplicates) && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      backgroundColor: 'var(--bg-app)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '8px',
+                      padding: '0.4rem 0.75rem',
+                      fontSize: '0.75rem',
+                      gap: '0.5rem',
+                      flexWrap: 'wrap'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 650 }}>
+                        Showing <b>{filteredStudents.length}</b> of <b>{activeClass.students.length}</b> students
+                      </span>
+
+                      {searchTerm && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            color: 'var(--primary)',
+                            border: '1px solid rgba(99, 102, 241, 0.25)',
+                            padding: '0.1rem 0.45rem',
+                            borderRadius: '5px',
+                            fontSize: '0.7rem',
+                            fontWeight: 700
+                          }}
+                        >
+                          Query: "{searchTerm}"
+                          <X
+                            size={10}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => setSearchTerm('')}
+                          />
+                        </span>
+                      )}
+
+                      {groupFilter !== 'All Groups' && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            backgroundColor: 'var(--bg-surface)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            padding: '0.1rem 0.45rem',
+                            borderRadius: '5px',
+                            fontSize: '0.7rem',
+                            fontWeight: 700
+                          }}
+                        >
+                          Group: {groupFilter}
+                          <X
+                            size={10}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => setGroupFilter('All Groups')}
+                          />
+                        </span>
+                      )}
+
+                      {activeQuickFilter !== 'all' && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            backgroundColor: 'var(--bg-surface)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            padding: '0.1rem 0.45rem',
+                            borderRadius: '5px',
+                            fontSize: '0.7rem',
+                            fontWeight: 700
+                          }}
+                        >
+                          Filter: {activeQuickFilter}
+                          <X
+                            size={10}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => setActiveQuickFilter('all')}
+                          />
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm('');
+                        setGroupFilter('All Groups');
+                        setActiveQuickFilter('all');
+                        setShowOnlyDuplicates(false);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--primary)',
+                        cursor: 'pointer',
+                        fontSize: '0.72rem',
+                        fontWeight: 750,
+                        padding: '0.1rem 0.35rem'
+                      }}
+                    >
+                      Reset All Filters
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeClass.students.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
                 <div style={{ width: '60px', height: '60px', borderRadius: '18px', background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.25rem' }}>
@@ -4766,7 +5911,7 @@ export const AdminDashboard: React.FC = () => {
                                       cursor: 'help'
                                     }}
                                     title={
-                                      `⚠️ Identity Modification Detected:\n` +
+                                      `[Audit Alert] Identity Modification Detected:\n` +
                                       `Enrolled Name: ${s.originalName || s.name}\n` +
                                       `Enrolled Email: ${s.originalEmail || s.email}\n` +
                                       (s.suspiciousReason ? `Audit note: ${s.suspiciousReason}\n` : '') +
@@ -5807,6 +6952,73 @@ export const AdminDashboard: React.FC = () => {
                     }}
                     addToast={addToast}
                   />
+                </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Live Presentation Day Scoring Cockpit - Togglable in Settings */}
+            {(isEditMode || featureToggles.showLivePresentationScoring) && (
+              <EditableModuleSlot
+                moduleKey="showLivePresentationScoring"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showLivePresentationScoring}
+                onToggle={handleToggleModule}
+              >
+                <div
+                  id="live-presentation-scoring-card"
+                  style={{
+                    marginTop: '1.5rem',
+                    padding: '1.25rem 1.5rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '1rem',
+                    background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(13, 148, 136, 0.05) 100%)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-lg)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                    <div
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '12px',
+                        backgroundColor: 'rgba(13, 148, 136, 0.12)',
+                        color: 'var(--accent-teal, #0d9488)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <Presentation size={22} />
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          Live Presentation Day Scoring Cockpit
+                        </h3>
+                        <span className="badge badge-teal" style={{ fontSize: '0.68rem' }}>
+                          Mobile QR Live Scoring
+                        </span>
+                      </div>
+                      <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                        Display interactive QR code on projector for real-time audience voting, presentation countdown timer, and dynamic leaderboard rankings.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className="btn btn-teal btn-sm"
+                      onClick={() => setIsLivePresentationModalOpen(true)}
+                      style={{ gap: '0.4rem', fontWeight: 700, padding: '0.45rem 0.95rem' }}
+                    >
+                      <Presentation size={14} /> Open Live Scoring Cockpit
+                    </button>
+                  </div>
                 </div>
               </EditableModuleSlot>
             )}
@@ -10785,6 +11997,7 @@ export const AdminDashboard: React.FC = () => {
           const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
           addToast(`Successfully organized ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
         }}
+        onOpenTeamCharter={() => handleOpenTeamKickoff('charters')}
       />
 
       {/* MODAL: INDIVIDUAL STUDENT PDF REPORT CARDS & PREVIEWS */}
@@ -10878,6 +12091,8 @@ export const AdminDashboard: React.FC = () => {
           setIsSettingsModalOpen(true);
         }}
         onOpenAddStudent={() => setIsAddStudentModalOpen(true)}
+        onOpenTeamCharter={() => handleOpenTeamKickoff('charters')}
+        onOpenLivePresentation={() => setIsLivePresentationModalOpen(true)}
         onOpenReportModal={(studentId) => openReportModal(studentId)}
         onExportExcel={handleExportExcel}
         onOpenTour={() => setIsTourOpen(true)}
@@ -11756,6 +12971,36 @@ export const AdminDashboard: React.FC = () => {
           onToggleShortcutsEnabled={(val) => {
             setShortcutsEnabled(val);
             saveShortcutsEnabled(val);
+          }}
+        />
+      )}
+
+      {/* MODAL: LIVE PRESENTATION DAY SCORING COCKPIT */}
+      {activeClass && (
+        <LivePresentationScoringModal
+          isOpen={isLivePresentationModalOpen}
+          onClose={() => setIsLivePresentationModalOpen(false)}
+          classData={activeClass}
+          onUpdateSession={(session) => {
+            if (activeClass) {
+              activeClass.presentationSession = session;
+              addToast('Updated live presentation session!', 'info');
+            }
+          }}
+        />
+      )}
+
+      {/* MODAL: TEAM CHARTER, ROLES & ICEBREAKER STUDIO */}
+      {activeClass && (
+        <TeamKickoffModal
+          isOpen={isTeamKickoffModalOpen}
+          onClose={() => setIsTeamKickoffModalOpen(false)}
+          classData={activeClass}
+          initialTab={teamKickoffInitialTab}
+          autoPrint={teamKickoffAutoPrint}
+          onSaveStudents={(updatedStudents) => {
+            importRoster(activeClass.id, updatedStudents, true);
+            addToast('Saved customized team roles to student roster!', 'success');
           }}
         />
       )}

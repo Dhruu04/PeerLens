@@ -45,6 +45,8 @@ export interface Student {
   flaggedForReview?: boolean;
   suspiciousReason?: string | null;
   customFields?: Record<string, string>;
+  role?: string; // Assigned team charter role (e.g. "Tech Specialist", "Project Lead")
+  roleDetails?: string; // Specific responsibility note or charter agreement
 }
 
 /**
@@ -232,6 +234,126 @@ export const PULSE_SCALE_PRESETS: Record<PulseScaleType, { title: string; descri
   }
 };
 
+export interface PresentationCriterion {
+  id: string;
+  name: string;
+  description: string;
+  weight: number; // e.g. 25 (%)
+  maxScore: number; // default 5
+}
+
+export interface PresentationScoreSubmission {
+  id: string;
+  teamName: string;
+  voterName?: string;
+  scores: Record<string, number>; // criterionId -> score (1-5)
+  constructiveFeedback?: string;
+  timestamp: number;
+}
+
+export interface PresentationDaySession {
+  activeTeamName: string;
+  criteria: PresentationCriterion[];
+  submissions: PresentationScoreSubmission[];
+  timerDurationSeconds: number;
+  isOpenForVoting: boolean;
+}
+
+export interface TeamCharterRole {
+  id: string;
+  title: string;
+  iconName?: string; // Lucide icon identifier
+  color: string;
+  description: string;
+  responsibilities: string[];
+}
+
+export const DEFAULT_TEAM_ROLES: TeamCharterRole[] = [
+  {
+    id: 'role_lead',
+    title: 'Project Lead',
+    color: '#3b82f6',
+    description: 'Coordinates sprint deliverables, milestone tracking, and task delegation.',
+    responsibilities: ['Sprint planning', 'Milestone tracking', 'Team check-ins']
+  },
+  {
+    id: 'role_tech',
+    title: 'Technical Specialist',
+    color: '#0d9488',
+    description: 'Oversees technical architecture, data structures, and implementation quality.',
+    responsibilities: ['System schema', 'Quality reviews', 'Technical execution']
+  },
+  {
+    id: 'role_scribe',
+    title: 'Scribe & Documentarian',
+    color: '#f59e0b',
+    description: 'Maintains meeting notes, project documentation, and submission deliverables.',
+    responsibilities: ['Meeting notes', 'Project documentation', 'Deliverable writeup']
+  },
+  {
+    id: 'role_presenter',
+    title: 'Pitch & Presentation Lead',
+    color: '#ec4899',
+    description: 'Prepares slide deck, visual storyline, and leads the final oral presentation.',
+    responsibilities: ['Slide design', 'Presentation narrative', 'Q&A leadership']
+  },
+  {
+    id: 'role_qa',
+    title: 'Quality & Research Auditor',
+    color: '#8b5cf6',
+    description: 'Validates research findings, checks rubric alignment, and tests edge cases.',
+    responsibilities: ['Rubric validation', 'Fact checking', 'Edge-case testing']
+  }
+];
+
+export interface CustomIcebreakerTask {
+  id: string;
+  title: string;
+  duration: string;
+  prompt: string;
+  outcome: string;
+}
+
+export const DEFAULT_CUSTOM_ICEBREAKERS: CustomIcebreakerTask[] = [
+  {
+    id: 'ice_multicultural',
+    title: 'Cross-Cultural Passport & Working Style',
+    duration: '5 Minutes',
+    prompt: 'Each member shares: (1) One cultural tradition, local custom, or favorite comfort dish from their home culture, and (2) Their preferred style of giving and receiving constructive peer feedback.',
+    outcome: 'Builds cross-cultural empathy, bridges communication differences, and creates psychological safety.'
+  },
+  {
+    id: 'ice_superpowers',
+    title: 'Personal Superpower & Team "Anti-Goal"',
+    duration: '5 Minutes',
+    prompt: 'Each member shares 1 unique personal strength or latent superpower they bring to this project, plus 1 "Anti-Goal" (the single biggest pitfall this team must avoid this semester).',
+    outcome: 'Clarifies individual strengths and aligns expectations on project quality and team accountability.'
+  },
+  {
+    id: 'ice_problem_framing',
+    title: 'Vision Alignment & "A+ Outcome" Definition',
+    duration: '5 Minutes',
+    prompt: 'Each student writes down what an "A+ grade project" looks like in their own words, then the team collaboratively synthesizes a unified 1-sentence team mission statement.',
+    outcome: 'Aligns the entire group around shared high standards and clear project ambitions.'
+  }
+];
+
+export interface TeamCharterConfig {
+  selectedRoleIds: string[];
+  customRoles?: TeamCharterRole[];
+  icebreakerTopic?: 'multicultural' | 'working_norms' | 'superpower' | 'problem_framing' | 'fun_trivia';
+  selectedIcebreakerId?: string;
+  customIcebreakers?: CustomIcebreakerTask[];
+  teamNorms: string[];
+}
+
+export const DEFAULT_PRESENTATION_CRITERIA: PresentationCriterion[] = [
+  { id: 'pres_clarity', name: 'Delivery & Communication Clarity', description: 'Articulation, vocal pacing, eye contact, and audience engagement.', weight: 25, maxScore: 5 },
+  { id: 'pres_visuals', name: 'Slide Deck & Visual Structure', description: 'Clear hierarchy, impactful visuals, data graphs, and clean slide design.', weight: 25, maxScore: 5 },
+  { id: 'pres_technical', name: 'Technical Depth & Evidence', description: 'Substantive methodology, thorough analysis, rigor, and factual defense.', weight: 25, maxScore: 5 },
+  { id: 'pres_qa', name: 'Q&A Defense & Time Mastery', description: 'Poise, mastery of unexpected questions, and respecting the time limit.', weight: 25, maxScore: 5 }
+];
+
 export interface ClassData {
   id: string;
   name: string;
@@ -244,6 +366,8 @@ export interface ClassData {
   teamBaseGrades?: Record<string, number>;
   evaluationControls?: EvaluationFormControls;
   pulseRounds?: PulseRound[];
+  presentationSession?: PresentationDaySession;
+  teamCharterConfig?: TeamCharterConfig;
 }
 
 /**

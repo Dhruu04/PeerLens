@@ -989,7 +989,9 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
                     }}
                   >
                     <Plane size={16} style={{ flexShrink: 0 }} />
-                    <span>Exchange / Erasmus Academic Journey (Home ➔ Host)</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      Exchange / Erasmus Academic Journey (Home <ArrowRight size={13} style={{ display: 'inline' }} /> Host)
+                    </span>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>

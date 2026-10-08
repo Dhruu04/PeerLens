@@ -46,12 +46,25 @@ const AppContent: React.FC = () => {
       const isProjector = params.get('projector') === 'true' || params.get('present') === 'true';
       const isAdminForced = params.get('admin') === 'true';
 
-      // 1. If explicitly opened with student credentials, persist active session
+      // If admin requested via query param, clean student session and enforce Instructor Access Gate
+      if (isAdminForced) {
+        try {
+          localStorage.removeItem('peer_active_student_session');
+          sessionStorage.removeItem('peer_device_role');
+        } catch (e) {}
+        setViewOverride('default');
+        setRouteParams({ classId: null, studentId: null, enrollClassId: null, isProjector: false });
+        return;
+      }
+
+      // 1. If explicitly opened with student credentials, persist active session and revoke admin permissions
       if (classId && studentId) {
         try {
           localStorage.setItem('peer_active_student_session', JSON.stringify({ classId, studentId }));
           sessionStorage.setItem('peer_device_role', 'student');
+          sessionStorage.removeItem('peer_admin_unlocked');
         } catch (e) {}
+        setIsAdminUnlocked(false);
         setViewOverride('default');
       }
 
@@ -66,6 +79,8 @@ const AppContent: React.FC = () => {
               studentId = parsed.id;
               localStorage.setItem('peer_active_student_session', JSON.stringify({ classId, studentId }));
               sessionStorage.setItem('peer_device_role', 'student');
+              sessionStorage.removeItem('peer_admin_unlocked');
+              setIsAdminUnlocked(false);
               setRouteParams({ classId, studentId, enrollClassId: null, isProjector });
               setViewOverride('default');
               return;
@@ -83,6 +98,8 @@ const AppContent: React.FC = () => {
             if (parsed.classId && parsed.studentId) {
               classId = parsed.classId;
               studentId = parsed.studentId;
+              sessionStorage.removeItem('peer_admin_unlocked');
+              setIsAdminUnlocked(false);
             }
           }
         } catch (e) {}
@@ -148,7 +165,7 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="app-container">
-      {/* Dynamic Header for Student/Enrollment Portals */}
+      {/* Dynamic Header for Student/Enrollment Portals (No Admin Escape for Students) */}
       {(isEnrollmentPortal || isStudentPortal) && (
         <header className="app-header">
           <div

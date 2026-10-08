@@ -49,6 +49,7 @@ export interface FeatureToggles {
   showDuplicateDetector: boolean;
   showRosterTable: boolean;
   showTeamOverviewCards: boolean;
+  showTeamKickoffAndRoles: boolean;
 
   // --- Section 2: Review System ---
   showRubricHeader: boolean;
@@ -61,6 +62,7 @@ export interface FeatureToggles {
   showEvaluationSimulator: boolean;
   showEvaluationFormControls: boolean;
   showTeamHealthPulse: boolean;
+  showLivePresentationScoring: boolean;
 
   // --- Section 3: Grading & Performance Analytics ---
   showResultsHeaderCard: boolean;
@@ -137,6 +139,7 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showDuplicateDetector: false,
   showRosterTable: true,
   showTeamOverviewCards: false,
+  showTeamKickoffAndRoles: false,
 
   // Section 2: Review System
   showRubricHeader: true,
@@ -149,6 +152,7 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showEvaluationSimulator: false,
   showEvaluationFormControls: false,
   showTeamHealthPulse: false,
+  showLivePresentationScoring: false,
 
   // Section 3: Grading & Performance Analytics
   showResultsHeaderCard: false,
@@ -225,6 +229,7 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showDuplicateDetector: false,
   showRosterTable: true,
   showTeamOverviewCards: false,
+  showTeamKickoffAndRoles: false,
 
   // Section 2: Review System
   showRubricHeader: true,
@@ -237,6 +242,7 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showEvaluationSimulator: false,
   showEvaluationFormControls: false,
   showTeamHealthPulse: false,
+  showLivePresentationScoring: false,
 
   // Section 3: Grading & Performance Analytics
   showResultsHeaderCard: false,
@@ -311,6 +317,7 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showDuplicateDetector: true,
   showRosterTable: true,
   showTeamOverviewCards: true,
+  showTeamKickoffAndRoles: true,
 
   showRubricHeader: true,
   showRubricPresets: true,
@@ -322,6 +329,7 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showEvaluationSimulator: true,
   showEvaluationFormControls: true,
   showTeamHealthPulse: true,
+  showLivePresentationScoring: true,
 
   showResultsHeaderCard: true,
   showExportReportButtons: true,

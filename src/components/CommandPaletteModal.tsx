@@ -9,7 +9,8 @@ import {
   Filter, Mail, Cloud, GraduationCap, Activity, Trash2, Star,
   ChevronsDown, ChevronsUp, CheckCircle2, ShieldCheck, Scale, Copy, Check,
   AlertTriangle,
-  Edit3
+  Edit3,
+  Presentation
 } from 'lucide-react';
 import type { ClassData } from '../utils/math';
 import { generateStudentDisputeAudit } from '../utils/math';
@@ -180,6 +181,7 @@ const FL: Record<keyof FeatureToggles, { label: string; desc: string; section: s
   showDuplicateDetector:    { label: 'Duplicate Detector',        desc: 'Flags duplicate emails or student IDs',        section: 'Section 1',  icon: HelpCircle },
   showRosterTable:          { label: 'Roster Table',              desc: 'Main student list table view',                 section: 'Section 1',  icon: FileText },
   showTeamOverviewCards:    { label: 'Team Overview Cards',       desc: 'Card grid showing each team and its members',  section: 'Section 1',  icon: Globe },
+  showTeamKickoffAndRoles:  { label: 'Team Charter & Roles Studio', desc: 'Customizable role allocator & 5-min icebreaker generator', section: 'Section 1', icon: UserPlus },
   showRubricHeader:         { label: 'Rubric Header',             desc: 'Header bar at top of the Review System',      section: 'Section 2',  icon: Sliders },
   showRubricPresets:        { label: 'Rubric Presets Bar',        desc: 'Research-based one-click rubric presets',      section: 'Section 2',  icon: Sparkles },
   showTargetScaleCard:      { label: 'Target Scale Card',         desc: 'Grade scale converter (%, GPA, rubric max)',   section: 'Section 2',  icon: Gauge },
@@ -190,6 +192,7 @@ const FL: Record<keyof FeatureToggles, { label: string; desc: string; section: s
   showEvaluationSimulator:  { label: 'Evaluation Simulator',      desc: 'Live preview of student evaluation portal',    section: 'Section 2',  icon: Eye },
   showEvaluationFormControls:{ label: 'Form Controls Card',       desc: 'Card in Section 2 for questions & permissions',section: 'Section 2',  icon: Sliders },
   showTeamHealthPulse:      { label: 'Team Health Micro-Pulse',   desc: 'On-demand 30-second pulse surveys & sparklines',section: 'Section 2', icon: Activity },
+  showLivePresentationScoring:{ label: 'Live Presentation Scoring Cockpit', desc: 'Mobile QR code, presentation timer, live ratings & leaderboard', section: 'Section 2', icon: Tv },
   showResultsHeaderCard:    { label: 'Results Header Card',       desc: 'Overview stats card in Section 3',             section: 'Section 3',  icon: BarChart2 },
   showExportReportButtons:  { label: 'Export Report Buttons',     desc: 'PDF, Excel, and CSV export action buttons',    section: 'Section 3',  icon: Download },
   showSubmissionReset:      { label: 'Submission Reset Button',   desc: 'Dangerous reset-all-reviews action button',    section: 'Section 3',  icon: RefreshCw },
@@ -262,14 +265,14 @@ export type CommandPaletteAction = CPAction;
 
 type CategoryId = 'all' | 'actions' | 'features' | 'modes' | 'students' | 'teams' | 'help' | 'appearance';
 
-const CATEGORY_TABS: { id: CategoryId; label: string; icon: React.ElementType; cats: string[] }[] = [
+const CATEGORY_TABS: { id: CategoryId; label: string; icon: React.ElementType; cats: string[]; prefix?: string }[] = [
   { id: 'all',        label: 'All',        icon: Layers,      cats: [] },
-  { id: 'actions',    label: 'Actions',    icon: Zap,         cats: ['Actions', 'Navigation'] },
+  { id: 'actions',    label: 'Actions',    icon: Zap,         cats: ['Actions', 'Navigation'], prefix: '>' },
   { id: 'features',   label: 'Features',   icon: ToggleLeft,  cats: ['Features'] },
   { id: 'modes',      label: 'Modes',      icon: Cpu,         cats: ['Modes'] },
-  { id: 'students',   label: 'Students',   icon: Users,       cats: ['Students'] },
-  { id: 'teams',      label: 'Teams',      icon: Tag,         cats: ['Teams'] },
-  { id: 'help',       label: 'Help',       icon: HelpCircle,  cats: ['Help'] },
+  { id: 'students',   label: 'Students',   icon: Users,       cats: ['Students'], prefix: '#' },
+  { id: 'teams',      label: 'Teams',      icon: Tag,         cats: ['Teams'], prefix: '@' },
+  { id: 'help',       label: 'Guides',     icon: HelpCircle,  cats: ['Help'], prefix: '?' },
   { id: 'appearance', label: 'Theme',      icon: Palette,     cats: ['Appearance'] },
 ];
 
@@ -337,6 +340,8 @@ export interface CommandPaletteModalProps {
   onOpenEditMode?: () => void;
   shortcutsEnabled?: boolean;
   onToggleShortcutsEnabled?: (enabled: boolean) => void;
+  onOpenTeamCharter?: () => void;
+  onOpenLivePresentation?: () => void;
 }
 
 // ── RESULT ROW COMPONENT (MINIMAL & POLISHED) ─────────────────────────────────
@@ -351,7 +356,7 @@ interface ResultRowProps {
 const ResultRow: React.FC<ResultRowProps> = ({ item, isSelected, query, onSelect, onExecute }) => {
   const IconComp = item.icon;
   const catColor = CAT_COLOR[item.category] ?? '#6366f1';
-  const isPositiveBadge = item.badge?.includes('✓') || item.badge?.includes('Visible') || item.badge === 'Submitted';
+  const isPositiveBadge = item.badge === 'Active' || item.badge?.includes('Visible') || item.badge === 'Submitted';
 
   return (
     <div
@@ -495,7 +500,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenNewClass, onOpenImportWizard, onOpenAutoGroup,
   onOpenQRCode, onOpenDeadline, onResetSubmissions, onClearRoster, onDeleteStudent, onDeleteClass, onToast,
   onOpenEvaluationControls, onToggleExcused,
-  onOpenEditMode, shortcutsEnabled, onToggleShortcutsEnabled
+  onOpenEditMode, shortcutsEnabled, onToggleShortcutsEnabled,
+  onOpenTeamCharter, onOpenLivePresentation
 }) => {
   const { setThemeMode, themeMode } = useTheme();
   const [query,            setQuery]            = useState('');
@@ -1167,12 +1173,47 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         icon: Users,
         badge: 'Teams',
         badgeColor: '#3b82f6',
-        keywords: ['cohorts', 'team cohorts', 'teams overview', 'inspect team', 'group cards', 'team members', 'cohort hub', 'balance teams', 'formation'],
         onExecute: () => {
           onClose();
           onNavigateTab('roster');
           if (!featureToggles.showTeamOverviewCards && onToggleFeature) {
             onToggleFeature('showTeamOverviewCards', true);
+          }
+        },
+      },
+      {
+        id: 'act_team_charters_roles',
+        title: 'Team Charter, Role Allocator & Icebreaker Studio',
+        category: 'Actions',
+        subtitle: 'Select activity roles (Tech Lead, Scribe, Presenter), auto-allocate based on background, and generate tailored 5-min icebreakers',
+        icon: UserPlus,
+        badge: 'Team Kickoff',
+        badgeColor: '#10b981',
+        keywords: ['team charter', 'charter', 'role allocator', 'roles', 'icebreaker', 'team kickoff', 'multicultural icebreaker', 'tech lead', 'scribe', 'presenter', 'activity roles', 'assign roles'],
+        onExecute: () => {
+          onClose();
+          if (onOpenTeamCharter) {
+            onOpenTeamCharter();
+          } else {
+            onNavigateTab('roster');
+          }
+        },
+      },
+      {
+        id: 'act_live_presentation_scoring',
+        title: 'Live Presentation Day Scoring & Mobile QR Mode',
+        category: 'Actions',
+        subtitle: 'Display live mobile scoring QR code on projector, collect audience rubric ratings, and render dynamic leaderboard',
+        icon: Presentation,
+        badge: 'Live Scoring',
+        badgeColor: '#0d9488',
+        keywords: ['live presentation', 'presentation scoring', 'qr scoring', 'mobile qr', 'projector scoring', 'presentation day', 'audience vote', 'presentation leaderboard', 'presentation timer'],
+        onExecute: () => {
+          onClose();
+          if (onOpenLivePresentation) {
+            onOpenLivePresentation();
+          } else {
+            onNavigateTab('grading');
           }
         },
       },
@@ -1374,16 +1415,16 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
     // APPEARANCE
     list.push(
-      { id: 'theme_dark',   title: 'Switch to Dark Mode',         category: 'Appearance', subtitle: 'Deep obsidian, eye-friendly for low-light',        icon: Moon,     badge: themeMode === 'dark'   ? '✓ Active' : undefined, keywords: ['dark mode','theme','black','night','obsidian'], onExecute: () => { setThemeMode('dark');   if (onToast) onToast('Switched to Dark Mode', 'info'); onClose(); } },
-      { id: 'theme_light',  title: 'Switch to Light Mode',        category: 'Appearance', subtitle: 'Crisp, high-contrast academic surfaces',           icon: Sun,      badge: themeMode === 'light'  ? '✓ Active' : undefined, keywords: ['light mode','theme','white','day','bright'],    onExecute: () => { setThemeMode('light');  if (onToast) onToast('Switched to Light Mode', 'info'); onClose(); } },
-      { id: 'theme_system', title: 'Sync Theme with System Auto', category: 'Appearance', subtitle: 'Follow your OS theme preference automatically',    icon: Sparkles, badge: themeMode === 'system' ? '✓ Active' : undefined, keywords: ['system theme','auto theme','os','automatic'],   onExecute: () => { setThemeMode('system'); if (onToast) onToast('Theme set to System Auto', 'info'); onClose(); } },
+      { id: 'theme_dark',   title: 'Switch to Dark Mode',         category: 'Appearance', subtitle: 'Deep obsidian, eye-friendly for low-light',        icon: Moon,     badge: themeMode === 'dark'   ? 'Active' : undefined, keywords: ['dark mode','theme','black','night','obsidian'], onExecute: () => { setThemeMode('dark');   if (onToast) onToast('Switched to Dark Mode', 'info'); onClose(); } },
+      { id: 'theme_light',  title: 'Switch to Light Mode',        category: 'Appearance', subtitle: 'Crisp, high-contrast academic surfaces',           icon: Sun,      badge: themeMode === 'light'  ? 'Active' : undefined, keywords: ['light mode','theme','white','day','bright'],    onExecute: () => { setThemeMode('light');  if (onToast) onToast('Switched to Light Mode', 'info'); onClose(); } },
+      { id: 'theme_system', title: 'Sync Theme with System Auto', category: 'Appearance', subtitle: 'Follow your OS theme preference automatically',    icon: Sparkles, badge: themeMode === 'system' ? 'Active' : undefined, keywords: ['system theme','auto theme','os','automatic'],   onExecute: () => { setThemeMode('system'); if (onToast) onToast('Theme set to System Auto', 'info'); onClose(); } },
     );
 
     // MODES
     list.push(
-      { id: 'mode_minimal',  title: 'Apply Minimal Mode',           category: 'Modes', subtitle: 'Clean, distraction-free — hides advanced tools',  icon: LayoutDashboard, badge: activeMode === 'minimal'  ? '✓ Active' : 'Minimal',  badgeColor: activeMode === 'minimal'  ? '#10b981' : undefined, keywords: ['minimal','simple','basic','clean','lite','beginner','hide extras'],   onExecute: () => { onApplyMode('minimal');  if (onToast) onToast('Minimal Mode activated', 'success'); onClose(); } },
-      { id: 'mode_standard', title: 'Apply Standard Mode',          category: 'Modes', subtitle: 'Default balanced — recommended for instructors',   icon: Gauge,           badge: activeMode === 'standard' ? '✓ Active' : 'Standard', badgeColor: activeMode === 'standard' ? '#10b981' : undefined, keywords: ['standard','default','normal','balanced','moderate','recommended'],     onExecute: () => { onApplyMode('standard'); if (onToast) onToast('Standard Mode activated', 'success'); onClose(); } },
-      { id: 'mode_full',     title: 'Apply Full / Power User Mode', category: 'Modes', subtitle: 'All features on — radar, LMS export, audit & more', icon: Cpu,             badge: activeMode === 'full'     ? '✓ Active' : 'Full',     badgeColor: activeMode === 'full'     ? '#10b981' : undefined, keywords: ['full','power user','advanced','all features','everything','expert','pro'],onExecute: () => { onApplyMode('full');     if (onToast) onToast('Full Mode activated — everything visible', 'success'); onClose(); } },
+      { id: 'mode_minimal',  title: 'Apply Minimal Mode',           category: 'Modes', subtitle: 'Clean, distraction-free — hides advanced tools',  icon: LayoutDashboard, badge: activeMode === 'minimal'  ? 'Active' : 'Minimal',  badgeColor: activeMode === 'minimal'  ? '#10b981' : undefined, keywords: ['minimal','simple','basic','clean','lite','beginner','hide extras'],   onExecute: () => { onApplyMode('minimal');  if (onToast) onToast('Minimal Mode activated', 'success'); onClose(); } },
+      { id: 'mode_standard', title: 'Apply Standard Mode',          category: 'Modes', subtitle: 'Default balanced — recommended for instructors',   icon: Gauge,           badge: activeMode === 'standard' ? 'Active' : 'Standard', badgeColor: activeMode === 'standard' ? '#10b981' : undefined, keywords: ['standard','default','normal','balanced','moderate','recommended'],     onExecute: () => { onApplyMode('standard'); if (onToast) onToast('Standard Mode activated', 'success'); onClose(); } },
+      { id: 'mode_full',     title: 'Apply Full / Power User Mode', category: 'Modes', subtitle: 'All features on — radar, LMS export, audit & more', icon: Cpu,             badge: activeMode === 'full'     ? 'Active' : 'Full',     badgeColor: activeMode === 'full'     ? '#10b981' : undefined, keywords: ['full','power user','advanced','all features','everything','expert','pro'],onExecute: () => { onApplyMode('full');     if (onToast) onToast('Full Mode activated — everything visible', 'success'); onClose(); } },
     );
 
     // FEATURE TOGGLES
@@ -1394,7 +1435,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         id: `feat_show_${key}`,
         title: `Show ${m.label}`,
         category: 'Features',
-        subtitle: `${m.desc} · ${m.section} · Currently ${isOn ? 'visible ✓' : 'hidden'}`,
+        subtitle: `${m.desc} · ${m.section} · Currently ${isOn ? 'visible' : 'hidden'}`,
         icon: isOn ? Eye : EyeOff,
         badge: isOn ? 'Visible' : 'Hidden',
         badgeColor: isOn ? '#10b981' : '#94a3b8',
@@ -1410,7 +1451,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         id: `feat_hide_${key}`,
         title: `Hide ${m.label}`,
         category: 'Features',
-        subtitle: `${m.desc} · ${m.section} · Currently ${isOn ? 'visible' : 'hidden ✓'}`,
+        subtitle: `${m.desc} · ${m.section} · Currently ${isOn ? 'visible' : 'hidden'}`,
         icon: EyeOff,
         badge: isOn ? 'Visible' : 'Hidden',
         badgeColor: isOn ? '#10b981' : '#94a3b8',
@@ -2021,7 +2062,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         )}
 
         {/* Search input bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.75rem 1.15rem', backgroundColor: 'var(--bg-surface)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.85rem 1.15rem', backgroundColor: 'var(--bg-surface)' }}>
           <Search size={18} style={{ color: 'var(--primary)', flexShrink: 0 }} />
           <input
             ref={inputRef}
@@ -2033,7 +2074,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               if (isExportDialogOpen) setIsExportDialogOpen(false);
               if (activeDisputeStudentId) setActiveDisputeStudentId(null);
             }}
-            placeholder="Search commands, micro-pulse, cohorts, rubrics, students (@teams, #students, >actions, ?guides)..."
+            placeholder="Search commands, actions, students, teams, or guides (or type @, #, >, ?)..."
             style={{
               border: 'none',
               background: 'transparent',
@@ -2049,170 +2090,44 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           {query && (
             <button
               type="button"
-              onClick={() => setQuery('')}
+              onClick={() => {
+                setQuery('');
+                setSelectedCategory('all');
+                inputRef.current?.focus();
+              }}
               style={{
-                background: 'transparent',
-                border: 'none',
+                background: 'var(--bg-app)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '50%',
+                width: '22px',
+                height: '22px',
                 color: 'var(--text-muted)',
                 cursor: 'pointer',
-                padding: '0.2rem',
+                padding: 0,
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
               }}
               title="Clear search"
             >
-              <X size={15} />
+              <X size={13} />
             </button>
           )}
           <span
             style={{
               fontSize: '0.62rem',
               fontWeight: 700,
-              padding: '0.12rem 0.35rem',
-              borderRadius: '4px',
-              backgroundColor: 'var(--border-color)',
+              padding: '0.12rem 0.38rem',
+              borderRadius: '5px',
+              backgroundColor: 'var(--bg-app)',
+              border: '1px solid var(--border-color)',
               color: 'var(--text-secondary)',
               flexShrink: 0,
             }}
           >
             ESC
           </span>
-        </div>
-
-        {/* Smart Filter Prefixes Bar: All, @ Teams, # Students, > Commands, ? Guides */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.35rem',
-            padding: '0.35rem 1.15rem',
-            backgroundColor: 'var(--bg-app)',
-            borderBottom: '1px solid var(--border-color)',
-            overflowX: 'auto',
-            flexShrink: 0
-          }}
-        >
-          <span style={{ fontSize: '0.62rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', marginRight: '0.2rem' }}>
-            Filter:
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setQuery(cleanQuery);
-              inputRef.current?.focus();
-            }}
-            style={{
-              padding: '0.14rem 0.5rem',
-              borderRadius: '9999px',
-              border: !prefix ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-              backgroundColor: !prefix ? 'var(--primary-light)' : 'var(--bg-surface)',
-              color: !prefix ? 'var(--primary)' : 'var(--text-secondary)',
-              fontSize: '0.68rem',
-              fontWeight: !prefix ? 800 : 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.25rem'
-            }}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setQuery(prefix === '@' ? cleanQuery : `@ ${cleanQuery}`);
-              inputRef.current?.focus();
-            }}
-            style={{
-              padding: '0.14rem 0.5rem',
-              borderRadius: '9999px',
-              border: prefix === '@' ? '1px solid #10b981' : '1px solid var(--border-color)',
-              backgroundColor: prefix === '@' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-surface)',
-              color: prefix === '@' ? '#059669' : 'var(--text-secondary)',
-              fontSize: '0.68rem',
-              fontWeight: prefix === '@' ? 800 : 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.25rem'
-            }}
-            title="Filter exclusively by Teams & Cohorts (@)"
-          >
-            <Globe size={11} />
-            <span>@ Teams</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setQuery(prefix === '#' ? cleanQuery : `# ${cleanQuery}`);
-              inputRef.current?.focus();
-            }}
-            style={{
-              padding: '0.14rem 0.5rem',
-              borderRadius: '9999px',
-              border: prefix === '#' ? '1px solid #f59e0b' : '1px solid var(--border-color)',
-              backgroundColor: prefix === '#' ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-surface)',
-              color: prefix === '#' ? '#d97706' : 'var(--text-secondary)',
-              fontSize: '0.68rem',
-              fontWeight: prefix === '#' ? 800 : 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.25rem'
-            }}
-            title="Filter exclusively by Students & IDs (#)"
-          >
-            <Users size={11} />
-            <span># Students</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setQuery(prefix === '>' ? cleanQuery : `> ${cleanQuery}`);
-              inputRef.current?.focus();
-            }}
-            style={{
-              padding: '0.14rem 0.5rem',
-              borderRadius: '9999px',
-              border: prefix === '>' ? '1px solid #6366f1' : '1px solid var(--border-color)',
-              backgroundColor: prefix === '>' ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-surface)',
-              color: prefix === '>' ? '#4f46e5' : 'var(--text-secondary)',
-              fontSize: '0.68rem',
-              fontWeight: prefix === '>' ? 800 : 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.25rem'
-            }}
-            title="Filter exclusively by Commands & Actions (>)"
-          >
-            <Zap size={11} />
-            <span>&gt; Commands</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setQuery(prefix === '?' ? cleanQuery : `? ${cleanQuery}`);
-              inputRef.current?.focus();
-            }}
-            style={{
-              padding: '0.14rem 0.5rem',
-              borderRadius: '9999px',
-              border: prefix === '?' ? '1px solid #8b5cf6' : '1px solid var(--border-color)',
-              backgroundColor: prefix === '?' ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-surface)',
-              color: prefix === '?' ? '#7c3aed' : 'var(--text-secondary)',
-              fontSize: '0.68rem',
-              fontWeight: prefix === '?' ? 800 : 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.25rem'
-            }}
-            title="Filter exclusively by Academic Guides & Formulas (?)"
-          >
-            <HelpCircle size={11} />
-            <span>? Guides</span>
-          </button>
         </div>
 
         {/* NLP intent feedback strip */}
@@ -2222,26 +2137,26 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '0.4rem',
-              padding: '0.3rem 1.15rem',
+              padding: '0.35rem 1.15rem',
               backgroundColor: 'rgba(99,102,241,0.06)',
               borderBottom: '1px solid rgba(99,102,241,0.1)',
-              fontSize: '0.7rem',
+              fontSize: '0.72rem',
               fontWeight: 600,
               color: 'var(--primary)',
             }}
           >
-            <Lightbulb size={11} style={{ flexShrink: 0 }} />
+            <Lightbulb size={12} style={{ flexShrink: 0 }} />
             <span>{intentFeedback}</span>
           </div>
         )}
 
-        {/* Category filter pills (when no prefix is used) */}
-        {!prefix && !isExportDialogOpen && !activeHelpArticle && (
+        {/* Unified Category & Prefix Filter Pills Bar */}
+        {!isExportDialogOpen && !activeHelpArticle && (
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '0.25rem',
+              gap: '0.35rem',
               padding: '0.45rem 1.15rem',
               overflowX: 'auto',
               borderBottom: '1px solid var(--border-color)',
@@ -2250,7 +2165,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             }}
           >
             {CATEGORY_TABS.map(tab => {
-              const isSel = selectedCategory === tab.id;
+              const isPrefixed = prefix === tab.prefix && tab.prefix !== undefined;
+              const isSel = isPrefixed || (!prefix && selectedCategory === tab.id);
               const Icon = tab.icon;
               const cnt = categoryCounts[tab.id] || 0;
               return (
@@ -2258,14 +2174,29 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => {
-                    setSelectedCategory(tab.id);
+                    if (tab.id === 'all') {
+                      setQuery(cleanQuery);
+                      setSelectedCategory('all');
+                    } else if (tab.prefix) {
+                      if (prefix === tab.prefix) {
+                        setQuery(cleanQuery);
+                        setSelectedCategory('all');
+                      } else {
+                        setQuery(`${tab.prefix} ${cleanQuery}`.trim());
+                        setSelectedCategory(tab.id);
+                      }
+                    } else {
+                      setQuery(cleanQuery);
+                      setSelectedCategory(tab.id);
+                    }
                     if (activeHelpArticle) setActiveHelpArticle(null);
+                    inputRef.current?.focus();
                   }}
                   style={{
-                    padding: '0.18rem 0.55rem',
-                    borderRadius: '6px',
-                    fontSize: '0.69rem',
-                    fontWeight: isSel ? 700 : 500,
+                    padding: '0.22rem 0.6rem',
+                    borderRadius: '7px',
+                    fontSize: '0.72rem',
+                    fontWeight: isSel ? 750 : 550,
                     border: isSel ? '1px solid var(--primary)' : '1px solid var(--border-color)',
                     backgroundColor: isSel ? 'var(--primary-light)' : 'var(--bg-surface)',
                     color: isSel ? 'var(--primary)' : 'var(--text-secondary)',
@@ -2273,20 +2204,38 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                     whiteSpace: 'nowrap',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.28rem',
-                    transition: 'all 80ms ease',
+                    gap: '0.32rem',
+                    transition: 'all 0.1s ease',
                     flexShrink: 0,
+                    boxShadow: isSel ? '0 1px 2px rgba(99, 102, 241, 0.12)' : 'none'
                   }}
+                  title={tab.prefix ? `Filter by ${tab.label} (Type "${tab.prefix}")` : `Filter by ${tab.label}`}
                 >
-                  <Icon size={11} />
+                  <Icon size={12} style={{ flexShrink: 0 }} />
                   <span>{tab.label}</span>
+                  {tab.prefix && (
+                    <span
+                      style={{
+                        fontSize: '0.62rem',
+                        fontWeight: 750,
+                        padding: '0.02rem 0.25rem',
+                        borderRadius: '4px',
+                        backgroundColor: isSel ? 'rgba(99, 102, 241, 0.18)' : 'var(--bg-app)',
+                        color: isSel ? 'var(--primary)' : 'var(--text-muted)',
+                        fontFamily: 'monospace',
+                        border: '1px solid var(--border-color)'
+                      }}
+                    >
+                      {tab.prefix}
+                    </span>
+                  )}
                   {cnt > 0 && (
                     <span
                       style={{
-                        padding: '0.02rem 0.25rem',
-                        borderRadius: '6px',
-                        fontSize: '0.58rem',
-                        fontWeight: 700,
+                        padding: '0.02rem 0.32rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.62rem',
+                        fontWeight: 750,
                         backgroundColor: isSel ? 'var(--primary)' : 'var(--border-color)',
                         color: isSel ? '#fff' : 'var(--text-secondary)',
                       }}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShieldCheck, Send, AlertCircle, TrendingUp, 
   ThumbsUp, Rocket, Trophy, Lightbulb, Clock, Heart, 
@@ -7,10 +7,14 @@ import {
   Check, Star, AlertTriangle, ChevronLeft, ChevronRight, WifiOff,
   Layers, ListFilter, Sparkles, CheckSquare, SlidersHorizontal, Wand2, RefreshCw,
   ChevronDown, ChevronUp, Edit3, LayoutDashboard, ArrowRight, Globe, Mail, X,
-  Activity, Frown, Meh, Smile, Flame
+  Activity, Frown, Meh, Smile, Flame, Sliders, UserCheck, Shield
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
-import { calculateStudentMetrics, getTargetScale, normalizeNationality, getEvaluationControls, type Student, PULSE_SCALE_PRESETS } from '../utils/math';
+import { 
+  calculateStudentMetrics, getTargetScale, normalizeNationality, getEvaluationControls, 
+  type Student, PULSE_SCALE_PRESETS, DEFAULT_TEAM_ROLES, type TeamCharterRole,
+  DEFAULT_CUSTOM_ICEBREAKERS, type CustomIcebreakerTask 
+} from '../utils/math';
 import FeatureInfoButton from '../components/FeatureInfoButton';
 
 
@@ -696,7 +700,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   isPreview = false,
   onForcedLogout
 }) => {
-  const { classes, submitPeerReviews, addToast, enrollStudent, submitPulseResponse } = useClass();
+  const { classes, submitPeerReviews, addToast, enrollStudent, submitPulseResponse, updateStudent } = useClass();
 
   // Active student view: 'dashboard' (home) | 'evaluate' (peer reviews) | 'report' (performance analytics)
   const [portalTab, setPortalTab] = useState<'dashboard' | 'evaluate' | 'report'>('dashboard');
@@ -826,6 +830,112 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const teammates = activeClass && student
     ? activeClass.students.filter((s) => s.groupName === student.groupName && s.id !== student.id)
     : [];
+
+  // All team members in current student's group (including self)
+  const allTeamMembers = useMemo(() => {
+    if (!activeClass || !student || !student.groupName || student.groupName === 'Unassigned' || student.groupName === 'General Team') return [];
+    return activeClass.students.filter((s) => s.groupName === student.groupName);
+  }, [activeClass?.students, student?.groupName]);
+
+  // Available roles configured for class (or defaults)
+  const availableRoles: TeamCharterRole[] = useMemo(() => {
+    if (activeClass?.teamCharterConfig?.customRoles && activeClass.teamCharterConfig.customRoles.length > 0) {
+      return activeClass.teamCharterConfig.customRoles;
+    }
+    try {
+      const saved = localStorage.getItem('peer_custom_charter_roles_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_TEAM_ROLES;
+  }, [activeClass?.teamCharterConfig]);
+
+  // Role selector UI modal state
+  const [isRoleSelectorOpen, setIsRoleSelectorOpen] = useState(false);
+  const [customRoleInput, setCustomRoleInput] = useState('');
+  const [customRoleDetailsInput, setCustomRoleDetailsInput] = useState('');
+  const [isCreatingCustomRole, setIsCreatingCustomRole] = useState(false);
+
+  // Helper to find who on the team has taken a given role
+  const getRoleOccupants = (roleTitle: string): Student[] => {
+    return allTeamMembers.filter(m => m.role?.trim().toLowerCase() === roleTitle.trim().toLowerCase());
+  };
+
+  const handleSelectRole = (roleTitle: string, roleDetails?: string) => {
+    if (!activeClass || !student) return;
+    triggerHaptic(15);
+    updateStudent(classId, student.id, {
+      role: roleTitle,
+      roleDetails: roleDetails || ''
+    });
+    addToast(`You are now the ${roleTitle} for ${student.groupName}!`, 'success');
+    setIsRoleSelectorOpen(false);
+    setIsCreatingCustomRole(false);
+    setCustomRoleInput('');
+    setCustomRoleDetailsInput('');
+  };
+
+  const handleClearRole = () => {
+    if (!activeClass || !student) return;
+    triggerHaptic(10);
+    updateStudent(classId, student.id, {
+      role: '',
+      roleDetails: ''
+    });
+    addToast('Your team role has been unassigned.', 'info');
+    setIsRoleSelectorOpen(false);
+  };
+
+  // Icebreaker Tasks configured for class (or defaults)
+  const availableIcebreakers: CustomIcebreakerTask[] = useMemo(() => {
+    if (activeClass?.teamCharterConfig?.customIcebreakers && activeClass.teamCharterConfig.customIcebreakers.length > 0) {
+      return activeClass.teamCharterConfig.customIcebreakers;
+    }
+    try {
+      const saved = localStorage.getItem('peer_custom_icebreakers_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_CUSTOM_ICEBREAKERS;
+  }, [activeClass?.teamCharterConfig]);
+
+  // Active Icebreaker ID with reactive sync to classData.teamCharterConfig
+  const [selectedIcebreakerId, setSelectedIcebreakerId] = useState<string>(() => {
+    return activeClass?.teamCharterConfig?.selectedIcebreakerId || availableIcebreakers[0]?.id || 'ice_multicultural';
+  });
+
+  // Keep selected icebreaker updated in real-time if instructor changes it in Admin Studio
+  useEffect(() => {
+    if (activeClass?.teamCharterConfig?.selectedIcebreakerId) {
+      setSelectedIcebreakerId(activeClass.teamCharterConfig.selectedIcebreakerId);
+    }
+  }, [activeClass?.teamCharterConfig?.selectedIcebreakerId]);
+
+  const currentTopicId = activeClass?.teamCharterConfig?.selectedIcebreakerId || selectedIcebreakerId;
+  const activeIcebreaker = useMemo(() => {
+    return availableIcebreakers.find(i => i.id === currentTopicId) || availableIcebreakers[0] || DEFAULT_CUSTOM_ICEBREAKERS[0];
+  }, [availableIcebreakers, currentTopicId]);
+
+  // Icebreaker discussion and speaker rotation state
+  const [currentSpeakerIndex, setCurrentSpeakerIndex] = useState(0);
+  const [isIcebreakerDone, setIsIcebreakerDone] = useState(false);
+  const [isIcebreakerBrowserOpen, setIsIcebreakerBrowserOpen] = useState(false);
+
+  const formatPromptForTeam = (promptText: string) => {
+    if (!promptText) return '';
+    const nationalities = Array.from(new Set(allTeamMembers.map(m => m.nationality).filter(Boolean)));
+    const degrees = Array.from(new Set(allTeamMembers.map(m => m.degree).filter(Boolean)));
+
+    return promptText
+      .replace(/{teamName}/g, student?.groupName || 'Your Team')
+      .replace(/{memberCount}/g, String(allTeamMembers.length || 4))
+      .replace(/{nationalities}/g, nationalities.join(', ') || 'Global backgrounds')
+      .replace(/{degrees}/g, degrees.join(', ') || 'Diverse disciplines');
+  };
 
   // Selected peer for viewing their profile details modal
   const [viewingPeer, setViewingPeer] = useState<Student | null>(null);
@@ -2491,6 +2601,493 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     );
   };
 
+  const renderRoleSelectorModal = () => {
+    if (!student) return null;
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 99999,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          animation: 'fadeIn 0.2s ease'
+        }}
+        onClick={() => setIsRoleSelectorOpen(false)}
+      >
+        <div
+          className="card"
+          style={{
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            borderRadius: '18px',
+            border: '1px solid var(--border-color)',
+            backgroundColor: 'var(--bg-surface)',
+            boxShadow: 'var(--shadow-xl)',
+            padding: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.25rem'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <Sliders size={20} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  <h2 style={{ fontSize: '1.15rem', fontWeight: 850, margin: 0, color: 'var(--text-primary)' }}>
+                    Choose Your Sprint Role
+                  </h2>
+                  <span className="badge badge-teal" style={{ fontSize: '0.68rem', fontWeight: 800 }}>
+                    Group {student.groupName}
+                  </span>
+                </div>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Pick your primary project responsibility. All teammates in your group will see your role live in real-time.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsRoleSelectorOpen(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '0.4rem',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Current Selection Status Banner */}
+          <div
+            style={{
+              padding: '0.75rem 1rem',
+              borderRadius: '10px',
+              backgroundColor: student.role ? 'rgba(99, 102, 241, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+              border: `1px solid ${student.role ? 'rgba(99, 102, 241, 0.25)' : 'rgba(245, 158, 11, 0.25)'}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              flexWrap: 'wrap'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <UserCheck size={16} style={{ color: student.role ? 'var(--primary)' : '#f59e0b' }} />
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                {student.role ? (
+                  <>Current Role: <strong style={{ color: 'var(--primary)' }}>{student.role}</strong></>
+                ) : (
+                  <>You currently have <strong>no role selected</strong> for this sprint.</>
+                )}
+              </span>
+            </div>
+
+            {student.role && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleClearRole}
+                style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', height: 'auto', color: 'var(--accent-rose)' }}
+              >
+                Clear My Role
+              </button>
+            )}
+          </div>
+
+          {/* Role Cards Grid */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Available Activity Roles ({availableRoles.length})
+            </span>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem' }}>
+              {availableRoles.map((role) => {
+                const occupants = getRoleOccupants(role.title);
+                const isSelectedByMe = student.role?.toLowerCase() === role.title.toLowerCase();
+                const otherOccupants = occupants.filter(o => o.id !== student.id);
+                const isTakenByOther = otherOccupants.length > 0;
+
+                return (
+                  <div
+                    key={role.id}
+                    onClick={() => handleSelectRole(role.title, role.responsibilities?.join(', '))}
+                    style={{
+                      padding: '1rem',
+                      borderRadius: '12px',
+                      backgroundColor: isSelectedByMe ? 'var(--primary-light)' : 'var(--bg-app)',
+                      border: `1.5px solid ${isSelectedByMe ? 'var(--primary)' : 'var(--border-color)'}`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '0.65rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelectedByMe) {
+                        e.currentTarget.style.borderColor = role.color || 'var(--primary)';
+                        e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelectedByMe) {
+                        e.currentTarget.style.borderColor = 'var(--border-color)';
+                        e.currentTarget.style.backgroundColor = 'var(--bg-app)';
+                      }
+                    }}
+                  >
+                    <div>
+                      {/* Title & Badge */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: role.color || 'var(--primary)', flexShrink: 0 }} />
+                          <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                            {role.title}
+                          </strong>
+                        </div>
+
+                        {isSelectedByMe ? (
+                          <span className="badge badge-primary" style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem' }}>
+                            Your Role &bull; Active
+                          </span>
+                        ) : isTakenByOther ? (
+                          <span className="badge badge-amber" style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.15rem 0.45rem' }}>
+                            Held by {otherOccupants.map(o => cleanStudentName(o.name).split(' ')[0]).join(', ')}
+                          </span>
+                        ) : (
+                          <span className="badge badge-teal" style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.15rem 0.45rem' }}>
+                            Available
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Description */}
+                      <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                        {role.description}
+                      </p>
+
+                      {/* Responsibilities list */}
+                      {role.responsibilities && role.responsibilities.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.5rem' }}>
+                          {role.responsibilities.map((resp, idx) => (
+                            <span
+                              key={idx}
+                              style={{
+                                fontSize: '0.68rem',
+                                color: 'var(--text-secondary)',
+                                backgroundColor: 'var(--bg-surface)',
+                                border: '1px solid var(--border-color)',
+                                padding: '0.12rem 0.4rem',
+                                borderRadius: '4px'
+                              }}
+                            >
+                              &bull; {resp}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action button */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '0.4rem', borderTop: '1px dashed var(--border-color)' }}>
+                      {isSelectedByMe ? (
+                        <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <CheckCircle2 size={13} /> Selected
+                        </span>
+                      ) : isTakenByOther ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectRole(role.title, role.responsibilities?.join(', '));
+                          }}
+                          style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem' }}
+                        >
+                          Co-Lead / Take Role
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectRole(role.title, role.responsibilities?.join(', '));
+                          }}
+                          style={{ fontSize: '0.72rem', padding: '0.2rem 0.75rem', fontWeight: 750 }}
+                        >
+                          Claim this Role &rarr;
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom Role Section */}
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+            {!isCreatingCustomRole ? (
+              <button
+                type="button"
+                onClick={() => setIsCreatingCustomRole(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--primary)',
+                  fontWeight: 750,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: 0
+                }}
+              >
+                <Plus size={14} /> Or define a custom role title &amp; responsibilities...
+              </button>
+            ) : (
+              <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ fontSize: '0.82rem', color: 'var(--text-primary)' }}>
+                    Custom Role Specification
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingCustomRole(false)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.74rem' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="e.g. Data Pipeline Lead, UX/UI Designer, Ethics Reviewer"
+                  value={customRoleInput}
+                  onChange={(e) => setCustomRoleInput(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.45rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.82rem'
+                  }}
+                />
+
+                <input
+                  type="text"
+                  placeholder="Key responsibilities (e.g. Data cleaning, Figma wireframes, schema design)"
+                  value={customRoleDetailsInput}
+                  onChange={(e) => setCustomRoleDetailsInput(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.45rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.82rem'
+                  }}
+                />
+
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={!customRoleInput.trim()}
+                  onClick={() => handleSelectRole(customRoleInput.trim(), customRoleDetailsInput.trim())}
+                  style={{ alignSelf: 'flex-end', fontSize: '0.78rem', fontWeight: 750, padding: '0.35rem 0.85rem' }}
+                >
+                  Save &amp; Claim Custom Role
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderIcebreakerBrowserModal = () => {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 99999,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          animation: 'fadeIn 0.2s ease'
+        }}
+        onClick={() => setIsIcebreakerBrowserOpen(false)}
+      >
+        <div
+          className="card"
+          style={{
+            width: '100%',
+            maxWidth: '650px',
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            borderRadius: '18px',
+            border: '1px solid var(--border-color)',
+            backgroundColor: 'var(--bg-surface)',
+            boxShadow: 'var(--shadow-xl)',
+            padding: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.25rem'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                  color: '#d97706',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <MessageSquare size={18} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 850, margin: 0, color: 'var(--text-primary)' }}>
+                  Choose Kickoff Icebreaker Topic
+                </h2>
+                <p style={{ margin: '0.15rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Select a discussion prompt for your team's 5-minute kickoff conversation.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsIcebreakerBrowserOpen(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '0.35rem',
+                borderRadius: '6px'
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Icebreakers List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {availableIcebreakers.map((ice) => {
+              const isSelected = ice.id === activeIcebreaker.id;
+
+              return (
+                <div
+                  key={ice.id}
+                  onClick={() => {
+                    triggerHaptic(12);
+                    setSelectedIcebreakerId(ice.id);
+                    setIsIcebreakerBrowserOpen(false);
+                    addToast(`Selected "${ice.title}" for your team!`, 'success');
+                  }}
+                  style={{
+                    padding: '1rem',
+                    borderRadius: '12px',
+                    backgroundColor: isSelected ? 'rgba(245, 158, 11, 0.08)' : 'var(--bg-app)',
+                    border: `1.5px solid ${isSelected ? '#f59e0b' : 'var(--border-color)'}`,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.45rem',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'var(--primary)';
+                      e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'var(--border-color)';
+                      e.currentTarget.style.backgroundColor = 'var(--bg-app)';
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                    <strong style={{ fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                      {ice.title}
+                    </strong>
+                    <span className={isSelected ? 'badge badge-amber' : 'badge'} style={{ fontSize: '0.65rem', fontWeight: 750 }}>
+                      {isSelected ? 'Active Topic' : ice.duration || '5 Minutes'}
+                    </span>
+                  </div>
+
+                  <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    {formatPromptForTeam(ice.prompt)}
+                  </p>
+
+                  {ice.outcome && (
+                    <span style={{ fontSize: '0.68rem', color: '#0d9488', fontWeight: 650, display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.2rem' }}>
+                      <Target size={11} /> {ice.outcome}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderDashboard = () => {
     const isUnassigned = !student.groupName || student.groupName === 'Unassigned' || student.groupName === 'General Team';
 
@@ -3210,16 +3807,22 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             gap: '1rem'
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
               <Users size={17} className="text-primary" />
               <h2 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                My Assigned Team Roster
+                Team Roster &amp; Role Allocation
               </h2>
             </div>
-            <span className="badge badge-teal" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', borderRadius: '6px' }}>
-              {isUnassigned ? 'Unassigned' : `${teammates.length + 1} Members`}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+              <span className="badge badge-indigo" style={{ fontSize: '0.7rem', padding: '0.2rem 0.55rem', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                <CheckCircle2 size={11} /> {allTeamMembers.filter(m => !!m.role).length} of {allTeamMembers.length} Roles Claimed
+              </span>
+              <span className="badge badge-teal" style={{ fontSize: '0.7rem', padding: '0.2rem 0.55rem', borderRadius: '6px' }}>
+                {isUnassigned ? 'Unassigned' : `${allTeamMembers.length} Members`}
+              </span>
+            </div>
           </div>
 
           {isUnassigned ? (
@@ -3229,93 +3832,430 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 Team Assignment in Progress
               </h3>
               <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
-                Your instructor is currently organizing student groups. Once assigned, your teammates will appear here and you will be able to evaluate them.
-              </p>
-            </div>
-          ) : teammates.length === 0 ? (
-            <div style={{ backgroundColor: 'var(--bg-app)', border: '1px dashed var(--border-color)', borderRadius: '12px', padding: '1.25rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              <p style={{ margin: 0, fontSize: '0.82rem' }}>
-                No other teammates are currently enrolled in <b>{student.groupName}</b>.
+                Your instructor is currently organizing student groups. Once assigned, your teammates and role options will appear here.
               </p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
-              {teammates.map((t) => {
-                const hasReview = evaluations[t.id] && Object.keys(evaluations[t.id]).length > 0;
-                return (
-                  <div 
-                    key={t.id}
-                    onClick={() => { triggerHaptic(8); setViewingPeer(t); }}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              
+              {/* Personal Role Spotlight / Claim Banner */}
+              <div
+                style={{
+                  padding: '0.9rem 1.1rem',
+                  borderRadius: '12px',
+                  backgroundColor: student.role ? 'rgba(99, 102, 241, 0.06)' : 'rgba(245, 158, 11, 0.07)',
+                  border: `1.5px solid ${student.role ? 'rgba(99, 102, 241, 0.25)' : 'rgba(245, 158, 11, 0.3)'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.85rem',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  <div
                     style={{
-                      backgroundColor: 'var(--bg-app)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '12px',
-                      padding: '0.85rem 1rem',
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '10px',
+                      backgroundColor: student.role ? 'rgba(99, 102, 241, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      color: student.role ? 'var(--primary)' : '#f59e0b',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '0.75rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
+                      justifyContent: 'center',
+                      flexShrink: 0
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--primary)';
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--border-color)';
-                      e.currentTarget.style.transform = 'none';
-                    }}
-                    title={`Click to view ${cleanStudentName(t.name)}'s profile`}
                   >
-                    <div 
-                      style={{ 
-                        width: '42px', 
-                        height: '42px', 
-                        borderRadius: '50%', 
-                        background: getAvatarColor(t.name || t.id), 
-                        color: '#fff', 
-                        fontSize: '0.95rem', 
-                        fontWeight: 800, 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        flexShrink: 0 
-                      }}
-                    >
-                      {getInitials(t.name)}
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <strong style={{ fontSize: '0.88rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {cleanStudentName(t.name)}
-                        </strong>
-                        <Info size={12} className="text-muted" style={{ flexShrink: 0 }} />
-                      </div>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {t.degree || t.university || 'Teammate'}
+                    <Sliders size={18} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        {student.role ? `Your Sprint Role: ${student.role}` : 'You have not claimed a team role yet'}
+                      </span>
+                      <span className={student.role ? 'badge badge-primary' : 'badge badge-amber'} style={{ fontSize: '0.62rem', fontWeight: 750 }}>
+                        {student.role ? 'Active Role' : 'Action Recommended'}
                       </span>
                     </div>
-                    <div style={{ flexShrink: 0 }}>
-                      {(student.submitted || isSubmitted) ? (
-                        <span className="badge badge-teal" style={{ fontSize: '0.66rem', padding: '0.2rem 0.45rem', borderRadius: '6px', gap: '0.25rem' }}>
-                          <Check size={10} /> Evaluated
-                        </span>
-                      ) : hasReview ? (
-                        <span className="badge badge-indigo" style={{ fontSize: '0.66rem', padding: '0.2rem 0.45rem', borderRadius: '6px' }}>
-                          Drafted
-                        </span>
-                      ) : (
-                        <span className="badge" style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.66rem', padding: '0.2rem 0.45rem', borderRadius: '6px' }}>
-                          Pending
-                        </span>
-                      )}
-                    </div>
+                    <p style={{ margin: '0.12rem 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                      {student.role
+                        ? (student.roleDetails || 'Responsibilities mapped. Your entire team sees your assigned role in real-time.')
+                        : 'Choose your activity role (Tech Lead, Scribe, Presenter) to align sprint responsibilities with your teammates.'}
+                    </p>
                   </div>
-                );
-              })}
+                </div>
+
+                <button
+                  type="button"
+                  className={student.role ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
+                  onClick={() => {
+                    triggerHaptic(12);
+                    setIsRoleSelectorOpen(true);
+                  }}
+                  style={{ fontSize: '0.78rem', fontWeight: 750, padding: '0.4rem 0.95rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  {student.role ? (
+                    <>
+                      <Edit3 size={13} /> Change My Role
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={13} /> Choose My Role &rarr;
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* All Team Members Grid (You + Teammates) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
+                {allTeamMembers.map((member) => {
+                  const isSelf = member.id === student.id;
+                  const memberRole = member.role;
+                  const roleTemplate = availableRoles.find(r => r.title.toLowerCase() === memberRole?.toLowerCase());
+                  const hasReview = evaluations[member.id] && Object.keys(evaluations[member.id]).length > 0;
+
+                  return (
+                    <div
+                      key={member.id}
+                      onClick={() => {
+                        if (isSelf) {
+                          setIsRoleSelectorOpen(true);
+                        } else {
+                          triggerHaptic(8);
+                          setViewingPeer(member);
+                        }
+                      }}
+                      style={{
+                        backgroundColor: isSelf ? 'rgba(99, 102, 241, 0.03)' : 'var(--bg-app)',
+                        border: `1px solid ${isSelf ? 'rgba(99, 102, 241, 0.35)' : 'var(--border-color)'}`,
+                        borderRadius: '12px',
+                        padding: '0.85rem 1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '0.65rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--primary)';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = isSelf ? 'rgba(99, 102, 241, 0.35)' : 'var(--border-color)';
+                        e.currentTarget.style.transform = 'none';
+                      }}
+                      title={isSelf ? 'Click to change your role' : `Click to view ${cleanStudentName(member.name)}'s profile`}
+                    >
+                      {/* Member Info Row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                        <div 
+                          style={{ 
+                            width: '38px', 
+                            height: '38px', 
+                            borderRadius: '50%', 
+                            background: getAvatarColor(member.name || member.id), 
+                            color: '#fff', 
+                            fontSize: '0.9rem', 
+                            fontWeight: 800, 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            flexShrink: 0 
+                          }}
+                        >
+                          {getInitials(member.name)}
+                        </div>
+
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                            <strong style={{ fontSize: '0.86rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {cleanStudentName(member.name)}
+                            </strong>
+                            {isSelf && (
+                              <span className="badge badge-primary" style={{ fontSize: '0.6rem', padding: '0.08rem 0.35rem', fontWeight: 800 }}>
+                                You
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {member.degree || member.university || 'Student'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Role & Status Row */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem', paddingTop: '0.45rem', borderTop: '1px dashed var(--border-color)', flexWrap: 'wrap' }}>
+                        {memberRole ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              fontSize: '0.72rem',
+                              fontWeight: 750,
+                              color: roleTemplate?.color || 'var(--primary)',
+                              backgroundColor: 'var(--bg-surface)',
+                              border: `1px solid ${roleTemplate?.color || 'var(--primary)'}40`,
+                              padding: '0.18rem 0.5rem',
+                              borderRadius: '6px'
+                            }}
+                          >
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: roleTemplate?.color || 'var(--primary)' }} />
+                            {memberRole}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                            Role Unassigned
+                          </span>
+                        )}
+
+                        {isSelf ? (
+                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--primary)' }}>
+                            {memberRole ? 'Change Role' : '+ Select Role'}
+                          </span>
+                        ) : (
+                          <div>
+                            {(student.submitted || isSubmitted) ? (
+                              <span className="badge badge-teal" style={{ fontSize: '0.64rem', padding: '0.15rem 0.4rem', borderRadius: '5px' }}>
+                                <Check size={10} /> Evaluated
+                              </span>
+                            ) : hasReview ? (
+                              <span className="badge badge-indigo" style={{ fontSize: '0.64rem', padding: '0.15rem 0.4rem', borderRadius: '5px' }}>
+                                Drafted
+                              </span>
+                            ) : (
+                              <span className="badge" style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.64rem', padding: '0.15rem 0.4rem', borderRadius: '5px' }}>
+                                Review Pending
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Team Norms & Agreements Quick Strip if configured */}
+              {activeClass?.teamCharterConfig?.teamNorms && activeClass.teamCharterConfig.teamNorms.length > 0 && (
+                <div style={{ marginTop: '0.35rem', padding: '0.75rem 0.95rem', borderRadius: '10px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
+                    <Shield size={13} style={{ color: 'var(--accent-teal)' }} />
+                    <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Team Working Norms &amp; Agreements
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {activeClass.teamCharterConfig.teamNorms.map((norm, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          fontSize: '0.7rem',
+                          color: 'var(--text-secondary)',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '5px'
+                        }}
+                      >
+                        &bull; {norm}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
+
+        {/* Team Kickoff Icebreaker Activity Card */}
+        {!isUnassigned && allTeamMembers.length > 1 && (
+          <div
+            className="card"
+            style={{
+              padding: '1.35rem 1.4rem',
+              borderRadius: '16px',
+              border: '1.5px solid rgba(245, 158, 11, 0.35)',
+              borderLeft: '5px solid #f59e0b',
+              backgroundColor: 'var(--bg-surface)',
+              boxShadow: 'var(--shadow-sm)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '11px',
+                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%)',
+                    color: '#d97706',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  <Sparkles size={19} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                    <h2 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                      Team Kickoff Icebreaker
+                    </h2>
+                    <span className="badge badge-amber" style={{ fontSize: '0.65rem', fontWeight: 800 }}>
+                      Team Activity
+                    </span>
+                    {isIcebreakerDone && (
+                      <span className="badge badge-teal" style={{ fontSize: '0.65rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <CheckCircle2 size={11} /> Discussion Completed
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ margin: '0.12rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    Take a few moments with your teammates in <b>{student.groupName}</b> to break the ice and align working styles.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    triggerHaptic(10);
+                    setIsIcebreakerBrowserOpen(true);
+                  }}
+                  style={{ fontSize: '0.74rem', height: '30px', padding: '0 0.7rem', borderRadius: '7px', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <SlidersHorizontal size={13} /> Switch Topic
+                </button>
+              </div>
+            </div>
+
+            {/* Prompt Box */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-app)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '12px',
+                padding: '1.1rem 1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.65rem'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+                  <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                    {activeIcebreaker.title}
+                  </strong>
+                </div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  Round-Robin Sharing
+                </span>
+              </div>
+
+              <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-primary)', lineHeight: 1.55, fontWeight: 550 }}>
+                {formatPromptForTeam(activeIcebreaker.prompt)}
+              </p>
+
+              {activeIcebreaker.outcome && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', paddingTop: '0.45rem', borderTop: '1px dashed var(--border-color)', fontSize: '0.74rem', color: 'var(--accent-teal)', fontWeight: 650 }}>
+                  <Target size={13} />
+                  <span><b>Purpose:</b> {activeIcebreaker.outcome}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Speaker Flow & Completion Bar */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-app)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '12px',
+                padding: '0.75rem 1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.85rem',
+                flexWrap: 'wrap'
+              }}
+            >
+              {allTeamMembers.length > 0 ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                  <div 
+                    style={{ 
+                      width: '28px', 
+                      height: '28px', 
+                      borderRadius: '50%', 
+                      background: getAvatarColor(allTeamMembers[currentSpeakerIndex % allTeamMembers.length]?.name || 'Member'), 
+                      color: '#fff', 
+                      fontSize: '0.75rem', 
+                      fontWeight: 800, 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center' 
+                    }}
+                  >
+                    {getInitials(allTeamMembers[currentSpeakerIndex % allTeamMembers.length]?.name)}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>Current Turn:</span>
+                    <strong style={{ fontSize: '0.82rem', color: 'var(--text-primary)' }}>
+                      {cleanStudentName(allTeamMembers[currentSpeakerIndex % allTeamMembers.length]?.name)}
+                      {allTeamMembers[currentSpeakerIndex % allTeamMembers.length]?.id === student.id && ' (You)'}
+                    </strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      triggerHaptic(10);
+                      setCurrentSpeakerIndex(prev => (prev + 1) % allTeamMembers.length);
+                    }}
+                    style={{ fontSize: '0.7rem', padding: '0.2rem 0.55rem', height: 'auto', fontWeight: 700 }}
+                    title="Pass to next teammate"
+                  >
+                    Next Turn &rarr;
+                  </button>
+                </div>
+              ) : (
+                <div />
+              )}
+
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  triggerHaptic(20);
+                  setIsIcebreakerDone(prev => !prev);
+                  if (!isIcebreakerDone) {
+                    addToast('Icebreaker completed! Your team is aligned and ready.', 'success');
+                  }
+                }}
+                style={{
+                  fontSize: '0.76rem',
+                  fontWeight: 750,
+                  padding: '0.35rem 0.8rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  color: isIcebreakerDone ? 'var(--accent-teal)' : 'var(--text-primary)'
+                }}
+              >
+                <CheckCircle2 size={14} style={{ color: isIcebreakerDone ? 'var(--accent-teal)' : 'var(--text-muted)' }} />
+                <span>{isIcebreakerDone ? 'Marked as Done' : 'Mark Icebreaker Done'}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Performance & Analytics Preview Hub */}
         <div 
@@ -5289,6 +6229,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       {/* Modals */}
       {isEditingProfile && renderProfileEditModal()}
       {viewingPeer && renderPeerProfileModal()}
+      {isRoleSelectorOpen && renderRoleSelectorModal()}
+      {isIcebreakerBrowserOpen && renderIcebreakerBrowserModal()}
 
       {/* Main Dynamic View */}
       {portalTab === 'dashboard' && renderDashboard()}

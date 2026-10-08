@@ -4,7 +4,7 @@ import {
   Compass, Database, Sliders, LayoutGrid, CheckSquare, QrCode, 
   Sparkles, Users, CheckCircle, Download, ShieldCheck, Clock, 
   SlidersHorizontal, Activity, Award, RefreshCw, MessageSquare, 
-  Key, Zap, Edit3, Plus, Type
+  Key, Zap, Edit3, Plus, Type, UserCheck, Presentation
 } from 'lucide-react';
 import type { FeatureToggles } from './featurePreferences';
 
@@ -405,6 +405,15 @@ export const MODULE_ITEMS: ModuleItem[] = [
     slotType: 'card',
     defaultHeight: 160
   },
+  {
+    key: 'showTeamKickoffAndRoles',
+    title: 'Team Charter, Roles & Icebreaker Studio',
+    desc: 'Customizable role allocator (Tech Lead, Scribe, Presenter) & tailored 5-minute multicultural team icebreaker activity generator.',
+    icon: UserCheck,
+    category: 'roster',
+    slotType: 'card',
+    defaultHeight: 120
+  },
 
   // --- Section 2: Review System ---
   {
@@ -494,6 +503,15 @@ export const MODULE_ITEMS: ModuleItem[] = [
     category: 'rubric',
     slotType: 'card',
     defaultHeight: 110
+  },
+  {
+    key: 'showLivePresentationScoring',
+    title: 'Live Presentation Day Scoring Cockpit',
+    desc: 'Mobile QR code for real-time audience voting, presentation countdown timer, live criteria analytics, and leaderboard.',
+    icon: Presentation,
+    category: 'rubric',
+    slotType: 'card',
+    defaultHeight: 120
   },
 
   // --- Section 3: Grading & Performance Analytics ---

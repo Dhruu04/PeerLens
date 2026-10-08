@@ -80,6 +80,7 @@ export const StudentSessionEnded: React.FC<StudentSessionEndedProps> = ({
             <ShieldCheck size={13} />
             <span>Student Portal</span>
           </span>
+
           <ThemeSwitcher />
         </div>
       </header>

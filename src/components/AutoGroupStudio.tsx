@@ -1,112 +1,123 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
-  Users, Sparkles, Check, RefreshCw, Globe, 
-  Shuffle, BarChart2,
-  Languages, UserCheck, Layers, ChevronDown, ChevronUp,
+  Users, Sparkles, Check, Globe, 
+  Shuffle, Languages, Layers, ChevronDown, ChevronUp,
   LayoutGrid, Kanban, GripVertical, Download, FileSpreadsheet,
-  FileText, X, GraduationCap, Plane,
+  FileText, X, GraduationCap, Plane, Table, Columns3, ArrowRightLeft,
   Sliders, Plus, Trash2, AlertCircle, CheckCircle2,
-  Settings2, Split, Merge, Compass
+  Settings2, Compass, ShieldAlert, Search, RotateCcw,
+  Pin, PinOff, Undo2, Redo2, Target, Zap, ArrowRight
 } from 'lucide-react';
 import type { Student } from '../utils/math';
 import { 
   generateDiverseGroups, 
   calculateGroupReport,
   discoverRosterFields,
-  type DiversityStrategy, 
+  DEFAULT_GROUPING_RULES,
+  type GroupingRule,
+  type GroupingRuleMode,
   type DiversityGroupingResult,
-  type GroupDiversityReport,
-  type CustomDiversityField,
-  type GroupingWeights,
-  getStudentFieldValue
+  type GroupDiversityReport
 } from '../utils/grouping';
 import { exportSingleTeamToCSV, exportSingleTeamToExcel } from '../utils/csv';
 import CustomSelect from './CustomSelect';
-import FeatureInfoButton from './FeatureInfoButton';
 
 interface AutoGroupStudioProps {
   students: Student[];
   onApplyGroups: (updatedStudents: Student[]) => void;
   onLoadSampleStudents?: () => void;
   defaultExpanded?: boolean;
+  onOpenTeamCharter?: () => void;
 }
 
-const STRATEGY_OPTIONS = [
-  { value: 'balanced_all', label: 'Multi-Dimensional (Gender + Origin + Campus + Language)' },
-  { value: 'gender_first', label: 'Gender Parity First (50/50 Male-Female Priority)' },
-  { value: 'nationality_first', label: 'Nationality & Cross-Border Mixing First' },
-  { value: 'degree_first', label: 'Degree & Field of Study Mixing First' },
-  { value: 'custom', label: 'Custom Diversity Strategy (Custom Weights & Fields)' },
-  { value: 'random_fast', label: 'Standard Equal-Size Distribution' }
-];
-
 const PREFIX_OPTIONS = [
-  { value: 'Team', label: 'Team (1, 2...)' },
-  { value: 'Group', label: 'Group (1, 2...)' },
-  { value: 'Squad', label: 'Squad (1, 2...)' },
-  { value: 'Cohort', label: 'Cohort (1, 2...)' },
-  { value: 'Project Group', label: 'Project Group' },
+  { value: 'Team', label: 'Team (e.g. Team 1, Team 2)' },
+  { value: 'Group', label: 'Group (e.g. Group 1, Group 2)' },
+  { value: 'Squad', label: 'Squad (e.g. Squad 1, Squad 2)' },
+  { value: 'Cohort', label: 'Cohort (e.g. Cohort 1, Cohort 2)' },
+  { value: 'Project Group', label: 'Project Group (e.g. Project Group 1)' },
   { value: 'custom', label: 'Custom Prefix...' }
 ];
+
+const RULE_PALETTE = [
+  '#0d9488', // Teal
+  '#3b82f6', // Blue
+  '#8b5cf6', // Purple
+  '#f59e0b', // Amber
+  '#ec4899', // Pink
+  '#10b981', // Emerald
+  '#06b6d4', // Cyan
+  '#f97316'  // Orange
+];
+
+
 
 export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
   students,
   onApplyGroups,
   onLoadSampleStudents,
-  defaultExpanded = false
+  defaultExpanded = false,
+  onOpenTeamCharter
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
   const [targetSize, setTargetSize] = useState<number>(4);
-  const [strategy, setStrategy] = useState<DiversityStrategy>('balanced_all');
   const [prefix, setPrefix] = useState<string>('Team');
   const [customPrefix, setCustomPrefix] = useState<string>('Pod');
-  const [groupingResult, setGroupingResult] = useState<DiversityGroupingResult | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'table' | 'compact'>('grid');
+  const [kanbanLayout, setKanbanLayout] = useState<'wrap' | 'scroll' | 'compact'>('wrap');
+  const [isRulesExpanded, setIsRulesExpanded] = useState<boolean>(true);
+  const [searchFilter, setSearchFilter] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'kanban'>('grid');
   const [draggedStudentId, setDraggedStudentId] = useState<string | null>(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
 
-  // Custom Strategy & Dynamic Weights State
-  const [showCustomConfig, setShowCustomConfig] = useState<boolean>(false);
-  const [weights, setWeights] = useState<GroupingWeights>({
-    gender: 12,
-    nationality: 8,
-    university: 16,
-    english: 6,
-    degree: 10,
-    studentType: 6
+  // Custom Rules State with LocalStorage Persistence
+  const [rules, setRules] = useState<GroupingRule[]>(() => {
+    try {
+      const saved = localStorage.getItem('peerlens_custom_grouping_rules_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to load grouping rules from storage', e);
+    }
+    return DEFAULT_GROUPING_RULES;
   });
-  const [customFields, setCustomFields] = useState<CustomDiversityField[]>([]);
 
-  // New Custom Field Builder Form
-  const [newFieldName, setNewFieldName] = useState<string>('');
-  const [newFieldKey, setNewFieldKey] = useState<string>('');
-  const [newFieldWeight, setNewFieldWeight] = useState<number>(15);
-  const [newFieldMode, setNewFieldMode] = useState<'disperse' | 'cluster'>('disperse');
 
-  // Confirmation Popups State
+
+  // Pinned / Locked Students State
+  const [pinnedStudentIds, setPinnedStudentIds] = useState<Set<string>>(new Set());
+  const [history, setHistory] = useState<Student[][]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+
+  // Grouping Calculation Result
+  const [groupingResult, setGroupingResult] = useState<DiversityGroupingResult | null>(null);
+
+  // Weight Control Mode: Simplified Tiers vs Precise Sliders
+  const [weightControlMode, setWeightControlMode] = useState<'simplified' | 'precise'>(() => {
+    try {
+      return (localStorage.getItem('peerlens_weight_control_mode') as 'simplified' | 'precise') || 'simplified';
+    } catch {
+      return 'simplified';
+    }
+  });
+
+  const handleSetWeightControlMode = (mode: 'simplified' | 'precise') => {
+    setWeightControlMode(mode);
+    try {
+      localStorage.setItem('peerlens_weight_control_mode', mode);
+    } catch (e) {
+      console.error('Failed to save weight control mode', e);
+    }
+  };
+
+  // Modals State
   const [showReshuffleModal, setShowReshuffleModal] = useState<boolean>(false);
   const [showAssignModal, setShowAssignModal] = useState<boolean>(false);
-
-  // Discover populated fields from current roster
-  const discoveredFields = useMemo(() => discoverRosterFields(students), [students]);
-
-  // Master Collapse / Expand listener
-  useEffect(() => {
-    const handleCollapse = () => setIsExpanded(false);
-    const handleExpand = () => setIsExpanded(true);
-    window.addEventListener('peerlens_collapse_all', handleCollapse);
-    window.addEventListener('peerlens_expand_all', handleExpand);
-    return () => {
-      window.removeEventListener('peerlens_collapse_all', handleCollapse);
-      window.removeEventListener('peerlens_expand_all', handleExpand);
-    };
-  }, []);
-
-  // Student detail modal
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-
-  // Export single team modal
   const [exportModal, setExportModal] = useState<{
     isOpen: boolean;
     team: GroupDiversityReport | null;
@@ -119,32 +130,212 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
     scope: 'diversity_card'
   });
 
+  const discoveredFields = useMemo(() => discoverRosterFields(students), [students]);
   const effectivePrefix = prefix === 'custom' ? (customPrefix.trim() || 'Team') : prefix;
 
-  // Run calculation whenever parameters or custom fields change
+  const activeRules = useMemo(() => rules.filter(r => r.enabled && r.weight > 0), [rules]);
+  const totalActiveWeight = useMemo(() => activeRules.reduce((sum, r) => sum + r.weight, 0), [activeRules]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('peerlens_custom_grouping_rules_v2', JSON.stringify(rules));
+    } catch (e) {
+      console.error('Failed to save grouping rules', e);
+    }
+  }, [rules]);
+
+  useEffect(() => {
+    const handleCollapse = () => setIsExpanded(false);
+    const handleExpand = () => setIsExpanded(true);
+    window.addEventListener('peerlens_collapse_all', handleCollapse);
+    window.addEventListener('peerlens_expand_all', handleExpand);
+    return () => {
+      window.removeEventListener('peerlens_collapse_all', handleCollapse);
+      window.removeEventListener('peerlens_expand_all', handleExpand);
+    };
+  }, []);
+
   useEffect(() => {
     if (students.length > 0) {
       runOptimization();
     }
-  }, [students.length, targetSize, strategy, prefix, customPrefix, weights, customFields]);
+  }, [students.length, targetSize, prefix, customPrefix, rules]);
+
+  // Global Keyboard Shortcuts for Undo / Redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z')) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [historyIndex, history]);
+
+  // Global window drag listeners to cleanly reset states
+  useEffect(() => {
+    const handleGlobalDragEnd = () => {
+      setDraggedStudentId(null);
+      setDragOverGroupId(null);
+    };
+    window.addEventListener('dragend', handleGlobalDragEnd);
+    window.addEventListener('drop', handleGlobalDragEnd);
+    return () => {
+      window.removeEventListener('dragend', handleGlobalDragEnd);
+      window.removeEventListener('drop', handleGlobalDragEnd);
+    };
+  }, []);
 
   const runOptimization = () => {
     if (students.length === 0) return;
     setIsGenerating(true);
+
+    // Build pinned student map (studentId -> current groupName)
+    const pinnedStudentMap: Record<string, string> = {};
+    if (groupingResult && pinnedStudentIds.size > 0) {
+      groupingResult.updatedStudents.forEach(s => {
+        if (pinnedStudentIds.has(s.id) && s.groupName) {
+          pinnedStudentMap[s.id] = s.groupName;
+        }
+      });
+    }
+
     setTimeout(() => {
       const result = generateDiverseGroups(students, {
         targetSize,
-        strategy,
         prefix: effectivePrefix,
-        weights: strategy === 'custom' ? weights : undefined,
-        customFields: (strategy === 'custom' || customFields.length > 0) ? customFields : undefined
+        rules,
+        pinnedStudentMap: Object.keys(pinnedStudentMap).length > 0 ? pinnedStudentMap : undefined
       });
       setGroupingResult(result);
+      setHistory([result.updatedStudents]);
+      setHistoryIndex(0);
       setIsGenerating(false);
     }, 60);
   };
 
-  // Move student between groups manually in Kanban
+  const handleToggleRule = (id: string) => {
+    setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+  };
+
+  const handleWeightChange = (id: string, weight: number) => {
+    setRules(prev => prev.map(r => r.id === id ? { ...r, weight } : r));
+  };
+
+  const handleModeChange = (id: string, mode: GroupingRuleMode) => {
+    setRules(prev => prev.map(r => r.id === id ? { ...r, mode } : r));
+  };
+
+  const handleDeleteRule = (id: string) => {
+    setRules(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleResetToDefaults = () => {
+    setRules(DEFAULT_GROUPING_RULES);
+  };
+
+  const handleClearAllRules = () => {
+    setRules([]);
+  };
+
+
+
+  const handleQuickAddDiscoveredField = (df: { key: string; name: string }) => {
+    if (rules.some(r => r.fieldKey === df.key)) return;
+    const newRule: GroupingRule = {
+      id: `discovered_rule_${Date.now()}_${df.key}`,
+      name: `${df.name} Diversity`,
+      fieldKey: df.key,
+      mode: 'disperse',
+      weight: 18,
+      enabled: true,
+      description: `Disperse students by ${df.name} across teams`
+    };
+    setRules(prev => [...prev, newRule]);
+  };
+
+  // Pinning Handlers
+  const handleTogglePin = (studentId: string) => {
+    setPinnedStudentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(studentId)) {
+        next.delete(studentId);
+      } else {
+        next.add(studentId);
+      }
+      return next;
+    });
+  };
+
+  const handleUnpinAll = () => {
+    setPinnedStudentIds(new Set());
+  };
+
+  const applyNewStudentAssignment = (newStudents: Student[], pushToHistory = true) => {
+    if (!groupingResult) return;
+
+    const groupMap: Record<string, Student[]> = {};
+    newStudents.forEach(s => {
+      const gName = s.groupName || 'Unassigned';
+      if (!groupMap[gName]) groupMap[gName] = [];
+      groupMap[gName].push(s);
+    });
+
+    const allGroupNames = groupingResult.groups.map(g => g.groupName);
+    const newGroups: GroupDiversityReport[] = allGroupNames.map(gName => {
+      const sList = groupMap[gName] || [];
+      return calculateGroupReport(gName, sList, 3.5, activeRules);
+    });
+
+    const avgScore = newGroups.length > 0 
+      ? Math.round(newGroups.reduce((acc, g) => acc + g.diversityScore, 0) / newGroups.length)
+      : 0;
+
+    setGroupingResult({
+      groups: newGroups,
+      updatedStudents: newStudents,
+      overallDiversityScore: avgScore,
+      activeRulesCount: activeRules.length,
+      overallRuleBreakdown: groupingResult.overallRuleBreakdown,
+      genderBalanceRating: groupingResult.genderBalanceRating,
+      nationalityMixRating: groupingResult.nationalityMixRating,
+      englishMixRating: groupingResult.englishMixRating,
+      customFieldRating: groupingResult.customFieldRating
+    });
+
+    if (pushToHistory) {
+      setHistory(prev => {
+        const next = [...prev.slice(0, historyIndex + 1), newStudents];
+        setHistoryIndex(next.length - 1);
+        return next;
+      });
+    }
+  };
+
+  // Undo / Redo Handlers
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const prevIndex = historyIndex - 1;
+      const targetState = history[prevIndex];
+      setHistoryIndex(prevIndex);
+      applyNewStudentAssignment(targetState, false);
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      const nextIndex = historyIndex + 1;
+      const targetState = history[nextIndex];
+      setHistoryIndex(nextIndex);
+      applyNewStudentAssignment(targetState, false);
+    }
+  };
+
   const handleMoveStudent = (studentId: string, targetGroupName: string) => {
     if (!groupingResult) return;
 
@@ -155,31 +346,30 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
       s.id === studentId ? { ...s, groupName: targetGroupName } : s
     );
 
-    const groupMap: Record<string, Student[]> = {};
-    newStudents.forEach(s => {
-      const gName = s.groupName || 'Unassigned';
-      if (!groupMap[gName]) groupMap[gName] = [];
-      groupMap[gName].push(s);
-    });
-
-    const newGroups: GroupDiversityReport[] = Object.entries(groupMap).map(([gName, sList]) => 
-      calculateGroupReport(gName, sList, 3.5, customFields)
-    );
-
-    const avgScore = newGroups.length > 0 
-      ? Math.round(newGroups.reduce((acc, g) => acc + g.diversityScore, 0) / newGroups.length)
-      : 0;
-
-    setGroupingResult({
-      groups: newGroups,
-      updatedStudents: newStudents,
-      overallDiversityScore: avgScore,
-      genderBalanceRating: groupingResult.genderBalanceRating,
-      nationalityMixRating: groupingResult.nationalityMixRating,
-      englishMixRating: groupingResult.englishMixRating,
-      customFieldRating: groupingResult.customFieldRating
-    });
+    applyNewStudentAssignment(newStudents, true);
   };
+
+  // What-If Group Balancing Simulator
+  const simulationReports = useMemo(() => {
+    if (!draggedStudentId || !groupingResult) return null;
+    const student = groupingResult.updatedStudents.find(s => s.id === draggedStudentId);
+    if (!student) return null;
+    const currentGroupName = student.groupName;
+    const result: Record<string, { currentScore: number; simulatedScore: number; delta: number }> = {};
+    groupingResult.groups.forEach(group => {
+      const currentScore = group.diversityScore;
+      let simulatedStudents: Student[];
+      if (group.groupName === currentGroupName) {
+        simulatedStudents = group.students.filter(s => s.id !== draggedStudentId);
+      } else {
+        simulatedStudents = [...group.students, { ...student, groupName: group.groupName }];
+      }
+      const simulatedReport = calculateGroupReport(group.groupName, simulatedStudents, 3.5, activeRules);
+      const delta = simulatedReport.diversityScore - currentScore;
+      result[group.groupName] = { currentScore, simulatedScore: simulatedReport.diversityScore, delta };
+    });
+    return result;
+  }, [draggedStudentId, groupingResult, activeRules]);
 
   const handleConfirmReshuffle = () => {
     setShowReshuffleModal(false);
@@ -202,61 +392,34 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
     setExportModal(prev => ({ ...prev, isOpen: false }));
   };
 
-  const handleAddCustomField = () => {
-    if (!newFieldName.trim()) return;
-    const finalKey = newFieldKey.trim() || newFieldName.trim().toLowerCase().replace(/[\s_-]+/g, '');
-    const newField: CustomDiversityField = {
-      id: `cf_${Date.now()}`,
-      name: newFieldName.trim(),
-      key: finalKey,
-      weight: newFieldWeight,
-      mode: newFieldMode
-    };
-    setCustomFields(prev => [...prev, newField]);
-    setNewFieldName('');
-    setNewFieldKey('');
-    setNewFieldWeight(15);
-    setNewFieldMode('disperse');
-    if (strategy !== 'custom') {
-      setStrategy('custom');
-    }
-  };
-
-  const handleRemoveCustomField = (id: string) => {
-    setCustomFields(prev => prev.filter(f => f.id !== id));
-  };
-
-  const handleAddDiscoveredField = (df: { key: string; name: string }, mode: 'disperse' | 'cluster' = 'disperse') => {
-    if (customFields.some(f => f.key === df.key)) {
-      return;
-    }
-    const newField: CustomDiversityField = {
-      id: `cf_${Date.now()}`,
-      name: df.name,
-      key: df.key,
-      weight: 15,
-      mode
-    };
-    setCustomFields(prev => [...prev, newField]);
-    if (strategy !== 'custom') {
-      setStrategy('custom');
-    }
-  };
-
   const totalMembers = students.length;
   const numTeams = groupingResult ? groupingResult.groups.length : Math.ceil(totalMembers / targetSize);
-  const activeStrategyObj = STRATEGY_OPTIONS.find(s => s.value === strategy);
 
-  // Helper to format student university text cleanly
+  const getRuleIcon = (fieldKey: string) => {
+    switch (fieldKey) {
+      case 'gender': return <Users size={16} className="text-primary" />;
+      case 'university': return <GraduationCap size={16} className="text-teal" />;
+      case 'nationality': return <Globe size={16} style={{ color: '#10b981' }} />;
+      case 'englishProficiency': return <Languages size={16} style={{ color: '#f59e0b' }} />;
+      case 'degree': return <Layers size={16} style={{ color: '#ec4899' }} />;
+      case 'studentType': return <Plane size={16} style={{ color: '#06b6d4' }} />;
+      default: return <Sliders size={16} style={{ color: 'var(--primary)' }} />;
+    }
+  };
+
+
+
   const renderStudentUniText = (student: Student) => {
     if (student.isExchange && student.originalUniversity && student.currentUniversity) {
       return (
         <span 
           style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} 
-          title={`Exchange Student: ${student.originalUniversity} (${student.originalCountry || 'Home'}) ➔ ${student.currentUniversity} (${student.currentCountry || 'Host'})`}
+          title={`Exchange: ${student.originalUniversity} (${student.originalCountry || 'Home'}) to ${student.currentUniversity} (${student.currentCountry || 'Host'})`}
         >
           <Plane size={11} className="text-teal" style={{ flexShrink: 0 }} />
-          <span>{student.originalUniversity} ➔ {student.currentUniversity}</span>
+          <span>{student.originalUniversity}</span>
+          <ArrowRight size={10} style={{ opacity: 0.7, flexShrink: 0 }} />
+          <span>{student.currentUniversity}</span>
         </span>
       );
     }
@@ -280,339 +443,468 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
   };
 
   return (
-    <div 
-      className="card" 
-      style={{ 
-        borderLeft: '4px solid var(--accent-teal)', 
-        backgroundColor: 'var(--bg-surface)',
-        padding: '1.25rem',
-        boxShadow: 'var(--shadow-md)',
-        transition: 'all 200ms ease',
-        position: 'relative'
-      }}
-    >
+    <div className="accordion-item" style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'visible', backgroundColor: 'var(--bg-surface)', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)', marginBottom: '1.25rem' }}>
       {/* Studio Header Bar */}
       <div 
+        onClick={() => setIsExpanded(!isExpanded)}
         style={{ 
+          padding: '1rem 1.25rem', 
+          cursor: 'pointer', 
           display: 'flex', 
-          justifyContent: 'space-between', 
           alignItems: 'center', 
-          flexWrap: 'wrap', 
-          gap: '0.75rem',
-          cursor: 'pointer'
+          justifyContent: 'space-between',
+          backgroundColor: isExpanded ? 'var(--bg-app)' : 'var(--bg-surface)',
+          borderBottom: isExpanded ? '1px solid var(--border-color)' : 'none',
+          borderTopLeftRadius: 'calc(var(--radius-lg) - 1px)',
+          borderTopRightRadius: 'calc(var(--radius-lg) - 1px)',
+          borderBottomLeftRadius: isExpanded ? '0' : 'calc(var(--radius-lg) - 1px)',
+          borderBottomRightRadius: isExpanded ? '0' : 'calc(var(--radius-lg) - 1px)',
+          transition: 'background-color 0.15s ease'
         }}
-        onClick={() => setIsExpanded(prev => !prev)}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
           <div 
             style={{ 
-              width: '40px', 
-              height: '40px', 
+              width: '38px', 
+              height: '38px', 
               borderRadius: '10px', 
-              backgroundColor: 'rgba(20, 184, 166, 0.12)', 
-              color: 'var(--accent-teal)', 
+              backgroundColor: 'var(--primary-light)', 
+              color: 'var(--primary)', 
               display: 'flex', 
               alignItems: 'center', 
               justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(20, 184, 166, 0.2)',
-              flexShrink: 0
+              flexShrink: 0,
+              boxShadow: '0 2px 8px var(--primary-glow)'
             }}
           >
-            <Sparkles size={22} />
+            <Sparkles size={20} />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <h3 className="card-title" style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
+              <span style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 Intelligent Auto-Group &amp; Diversity Studio
-              </h3>
-              <FeatureInfoButton featureId="auto-group-studio" size="sm" tooltipText="Learn about Auto-Group Studio" />
-              {groupingResult && (
-                <span 
-                  className="badge badge-teal" 
-                  style={{ 
-                    fontSize: '0.74rem', 
-                    fontWeight: 800,
-                    padding: '0.2rem 0.6rem',
-                    boxShadow: '0 2px 6px rgba(20, 184, 166, 0.15)'
-                  }}
-                >
-                  {groupingResult.overallDiversityScore}% Balance Score
-                </span>
-              )}
-              {customFields.length > 0 && (
-                <span 
-                  className="badge badge-indigo" 
-                  style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem' }}
-                >
-                  {customFields.length} Custom Rule{customFields.length > 1 ? 's' : ''} Active
+              </span>
+              {activeRules.length > 0 && (
+                <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem' }}>
+                  {activeRules.length} Active {activeRules.length === 1 ? 'Rule' : 'Rules'}
                 </span>
               )}
             </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
-              Multi-objective combinatorial optimization: balances gender parity, international origins, academic majors, English proficiency, and custom cohort criteria.
+            <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0' }}>
+              Create custom multi-attribute grouping rules, adjust individual weightages, and balance teams with simulated annealing optimization.
             </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+          {groupingResult && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'var(--bg-surface)', padding: '0.35rem 0.75rem', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Rule Compliance:</span>
+              <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--primary)' }}>
+                {groupingResult.overallDiversityScore}%
+              </span>
+            </div>
+          )}
           <button
             type="button"
-            className="btn btn-secondary btn-sm"
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsExpanded(prev => !prev);
-            }}
+            className="btn btn-icon btn-secondary btn-sm"
+            style={{ borderRadius: '50%' }}
+            aria-label={isExpanded ? 'Collapse Studio' : 'Expand Studio'}
           >
-            {isExpanded ? (
-              <>
-                <ChevronUp size={14} /> Collapse Studio
-              </>
-            ) : (
-              <>
-                <ChevronDown size={14} /> Open Studio ({numTeams} Teams)
-              </>
-            )}
+            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
         </div>
       </div>
 
-      {/* Expandable Workbench Deck */}
+      {/* Studio Expanded Body */}
       {isExpanded && (
-        <div style={{ marginTop: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+        <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
-          {/* Unified Controls & Diversity Health Deck */}
+          {/* Main Controls Deck: Target Team Size & Group Naming Format */}
           <div 
-            style={{
-              backgroundColor: 'var(--bg-app)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-lg)',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)'
+            style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', 
+              gap: '1rem',
+              alignItems: 'stretch'
             }}
           >
-            {/* 1. Top Controls & Strategy Bar */}
+            {/* Tile 1: Target Size with Steppers & Quick Presets */}
             <div 
               style={{
-                padding: '0.9rem 1.1rem',
+                backgroundColor: 'var(--bg-app)',
+                padding: '1.05rem 1.25rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-color)',
                 display: 'flex',
-                flexWrap: 'wrap',
-                gap: '0.85rem',
-                alignItems: 'flex-end',
-                width: '100%',
-                boxSizing: 'border-box'
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                gap: '0.75rem',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
               }}
             >
-              {/* Target Size with Quick Stepper */}
-              <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem', flexShrink: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)' }}>
-                  <Users size={13} className="text-teal" /> Target Team Size
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
+                  <Users size={16} className="text-teal" /> Target Team Size
                 </label>
-                <div style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '6px', height: '36px', padding: '2px' }}>
+                <span className="badge badge-teal" style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 800 }}>
+                  {numTeams} {numTeams === 1 ? 'Team' : 'Teams'} planned
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {/* Stepper Input */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
                   <button
                     type="button"
                     onClick={() => setTargetSize(prev => Math.max(2, prev - 1))}
                     disabled={targetSize <= 2}
-                    style={{ width: '28px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', cursor: targetSize <= 2 ? 'not-allowed' : 'pointer', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '1rem', borderRadius: '4px' }}
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      border: 'none',
+                      background: 'transparent',
+                      color: targetSize <= 2 ? 'var(--text-muted)' : 'var(--text-primary)',
+                      cursor: targetSize <= 2 ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 800,
+                      fontSize: '1rem',
+                      transition: 'background 0.15s'
+                    }}
                     title="Decrease team size"
                   >
                     -
                   </button>
-                  <span style={{ minWidth: '38px', textAlign: 'center', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    {targetSize}
-                  </span>
+                  <input 
+                    type="number" 
+                    min={2} 
+                    max={Math.max(2, totalMembers)}
+                    value={targetSize}
+                    onChange={(e) => setTargetSize(Math.max(2, Number(e.target.value)))}
+                    style={{ 
+                      fontWeight: 800, 
+                      textAlign: 'center', 
+                      height: '34px', 
+                      width: '46px', 
+                      border: 'none', 
+                      background: 'transparent',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.92rem'
+                    }}
+                  />
                   <button
                     type="button"
                     onClick={() => setTargetSize(prev => Math.min(Math.max(2, totalMembers), prev + 1))}
-                    disabled={targetSize >= Math.max(2, totalMembers)}
-                    style={{ width: '28px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '1rem', borderRadius: '4px' }}
+                    disabled={targetSize >= totalMembers}
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      border: 'none',
+                      background: 'transparent',
+                      color: targetSize >= totalMembers ? 'var(--text-muted)' : 'var(--text-primary)',
+                      cursor: targetSize >= totalMembers ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 800,
+                      fontSize: '1rem',
+                      transition: 'background 0.15s'
+                    }}
                     title="Increase team size"
                   >
                     +
                   </button>
                 </div>
-              </div>
 
-              {/* Diversity Strategy */}
-              <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: '1 1 210px', minWidth: '170px', maxWidth: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)' }}>
-                    <Sparkles size={13} className="text-primary" /> Diversity Strategy
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomConfig(prev => !prev)}
-                    style={{ 
-                      border: 'none', 
-                      background: 'transparent', 
-                      color: showCustomConfig || strategy === 'custom' ? 'var(--primary)' : 'var(--text-muted)', 
-                      fontSize: '0.72rem', 
-                      fontWeight: 700, 
-                      cursor: 'pointer', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '0.25rem', 
-                      padding: '0 2px' 
-                    }}
-                    title="Customize criteria weights and custom fields"
-                  >
-                    <Sliders size={12} /> {showCustomConfig ? 'Hide Custom Rules' : 'Customize Criteria'}{customFields.length > 0 ? ` (${customFields.length})` : ''}
-                  </button>
+                {/* Quick Presets */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Preset:</span>
+                  {[2, 3, 4, 5, 6, 8].map(size => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => setTargetSize(size)}
+                      className={`btn btn-sm ${targetSize === size ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{
+                        padding: '0.2rem 0.5rem',
+                        fontSize: '0.74rem',
+                        fontWeight: targetSize === size ? 800 : 600,
+                        minWidth: '28px',
+                        height: '28px',
+                        borderRadius: '6px'
+                      }}
+                    >
+                      {size}
+                    </button>
+                  ))}
                 </div>
-                <CustomSelect
-                  options={STRATEGY_OPTIONS}
-                  value={strategy}
-                  onChange={(val) => {
-                    const newStrat = val as DiversityStrategy;
-                    setStrategy(newStrat);
-                    if (newStrat === 'custom') {
-                      setShowCustomConfig(true);
-                    }
-                  }}
-                  style={{ width: '100%' }}
-                  triggerStyle={{ height: '36px', fontSize: '0.8rem', padding: '0.35rem 0.65rem', width: '100%' }}
-                />
               </div>
 
-              {/* Group Naming Prefix + Custom Option */}
-              <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: '1 1 160px', minWidth: '130px', maxWidth: '100%' }}>
-                <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)' }}>
-                  <Layers size={13} className="text-teal" /> Naming Style
+              <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>
+                Distributing {totalMembers} students into {numTeams} teams (~{targetSize} members per team)
+              </div>
+            </div>
+
+            {/* Tile 2: Team Prefix & Group Naming Format */}
+            <div 
+              style={{
+                backgroundColor: 'var(--bg-app)',
+                padding: '1.05rem 1.25rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                gap: '0.75rem',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
+                  <Layers size={16} className="text-teal" /> Group Naming Format
                 </label>
-                <div style={{ display: 'flex', gap: '0.35rem', width: '100%' }}>
+                <span style={{ 
+                  fontSize: '0.7rem', 
+                  color: 'var(--primary)', 
+                  fontWeight: 700,
+                  backgroundColor: 'var(--primary-light)',
+                  padding: '0.15rem 0.5rem',
+                  borderRadius: '4px'
+                }}>
+                  Preview: {effectivePrefix} 1, {effectivePrefix} 2...
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
                   <CustomSelect
                     options={PREFIX_OPTIONS}
                     value={prefix}
                     onChange={(val) => setPrefix(val)}
-                    triggerStyle={{ height: '36px', fontSize: '0.8rem', padding: '0.35rem 0.65rem' }}
-                    style={{ flex: prefix === 'custom' ? '0 0 110px' : '1', minWidth: 0 }}
                   />
-                  {prefix === 'custom' && (
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. Pod..."
-                      value={customPrefix}
-                      onChange={(e) => setCustomPrefix(e.target.value)}
-                      style={{ height: '36px', fontSize: '0.8rem', fontWeight: 600, flex: 1, minWidth: '60px', padding: '0.35rem 0.6rem' }}
-                    />
-                  )}
+                </div>
+                {prefix === 'custom' && (
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Pod, Squad, Lab..."
+                    value={customPrefix}
+                    onChange={(e) => setCustomPrefix(e.target.value)}
+                    style={{ height: '38px', fontSize: '0.82rem', fontWeight: 600, width: '130px' }}
+                  />
+                )}
+              </div>
+
+              <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>
+                Generated teams will be sequentially numbered with this naming prefix
+              </div>
+            </div>
+          </div>
+
+          {/* ── CUSTOM RULES & CONSTRAINTS STUDIO CARD (CONTRACTABLE) ───────────────────── */}
+          <div 
+            style={{ 
+              backgroundColor: 'var(--bg-surface)', 
+              borderRadius: 'var(--radius-md)', 
+              border: '1px solid var(--border-color)', 
+              padding: isRulesExpanded ? '1.25rem' : '0.85rem 1.25rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: isRulesExpanded ? '1rem' : '0.45rem',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {/* Rules Header with Utilities & Collapse Toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.6rem' }}>
+              <div 
+                onClick={() => setIsRulesExpanded(!isRulesExpanded)}
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                title={isRulesExpanded ? 'Click to collapse rules' : 'Click to expand rules'}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <Settings2 size={16} className="text-teal" />
+                  <span style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Active Custom Grouping Rules &amp; Weightages
+                  </span>
+                  <span className="badge badge-teal" style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem' }}>
+                    {activeRules.length} Active / {rules.length} Total
+                  </span>
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="form-group" style={{ margin: 0, display: 'flex', gap: '0.45rem', height: '36px', flexShrink: 0, marginTop: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                {isRulesExpanded && (
+                  <>
+                    {/* Simplified vs Precise Mode Switcher */}
+                    <div className="autogroup-weight-mode-switch" title="Toggle between simplified 1-click priority tiers and precise numeric sliders">
+                      <button
+                        type="button"
+                        className={`autogroup-weight-mode-btn ${weightControlMode === 'simplified' ? 'active' : ''}`}
+                        onClick={() => handleSetWeightControlMode('simplified')}
+                      >
+                        <Sparkles size={11} /> Simplified
+                      </button>
+                      <button
+                        type="button"
+                        className={`autogroup-weight-mode-btn ${weightControlMode === 'precise' ? 'active' : ''}`}
+                        onClick={() => handleSetWeightControlMode('precise')}
+                      >
+                        <Sliders size={11} /> Precise Sliders
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleResetToDefaults}
+                      title="Reset to recommended balanced rules"
+                      style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                    >
+                      <RotateCcw size={12} /> Reset Defaults
+                    </button>
+                    {rules.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={handleClearAllRules}
+                        title="Clear all rules"
+                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem', color: 'var(--text-muted)' }}
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {/* Contract / Expand Button */}
                 <button
                   type="button"
+                  onClick={() => setIsRulesExpanded(!isRulesExpanded)}
                   className="btn btn-secondary btn-sm"
-                  onClick={() => setShowReshuffleModal(true)}
-                  disabled={totalMembers === 0 || isGenerating}
-                  style={{ height: '36px', padding: '0 0.85rem', fontSize: '0.8rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}
-                  title="Re-calculate a new optimal permutation"
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '0.35rem 0.75rem',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    backgroundColor: isRulesExpanded ? 'transparent' : 'var(--primary-light)',
+                    color: isRulesExpanded ? 'var(--text-secondary)' : 'var(--primary)',
+                    borderColor: isRulesExpanded ? 'var(--border-color)' : 'var(--primary)'
+                  }}
+                  title={isRulesExpanded ? 'Hide rules section to optimize screen space' : 'Show and configure grouping rules'}
                 >
-                  <Shuffle size={13} /> Re-Shuffle
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={() => setShowAssignModal(true)}
-                  disabled={totalMembers === 0 || isGenerating}
-                  style={{ height: '36px', padding: '0 1rem', fontSize: '0.82rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap' }}
-                  title="Assign generated groups to active roster"
-                >
-                  <Check size={14} /> Assign Teams
+                  {isRulesExpanded ? (
+                    <>
+                      <ChevronUp size={14} /> Hide Rules
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown size={14} /> Show Rules ({activeRules.length})
+                    </>
+                  )}
                 </button>
               </div>
             </div>
 
-            {/* Custom Diversity Strategy & Custom Fields Deck */}
-            {(showCustomConfig || strategy === 'custom') && (
+            {/* Collapsed Compact Summary Preview Strip */}
+            {!isRulesExpanded && (
               <div 
+                onClick={() => setIsRulesExpanded(true)}
                 style={{ 
-                  borderTop: '1px solid var(--border-color)', 
-                  backgroundColor: 'var(--bg-surface)', 
-                  padding: '1.15rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '1.1rem'
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between', 
+                  gap: '0.75rem', 
+                  cursor: 'pointer',
+                  padding: '0.45rem 0.75rem',
+                  backgroundColor: 'var(--bg-app)',
+                  borderRadius: '6px',
+                  border: '1px dashed var(--border-color)',
+                  flexWrap: 'wrap'
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                      <Settings2 size={16} className="text-primary" /> Custom Diversity Strategy &amp; Attribute Matrix
-                    </h4>
-                    <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Fine-tune optimization weights for standard criteria or configure custom student fields to steer team composition.
-                    </p>
-                  </div>
-                  {strategy !== 'custom' && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => setStrategy('custom')}
-                      style={{ fontSize: '0.74rem', padding: '0.25rem 0.65rem' }}
-                    >
-                      Set Strategy to Custom
-                    </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  {activeRules.map((rule, idx) => {
+                    const color = RULE_PALETTE[idx % RULE_PALETTE.length];
+                    const pct = totalActiveWeight > 0 ? Math.round((rule.weight / totalActiveWeight) * 100) : 0;
+                    return (
+                      <span 
+                        key={rule.id} 
+                        style={{ 
+                          fontSize: '0.71rem', 
+                          fontWeight: 600, 
+                          color: 'var(--text-primary)', 
+                          display: 'inline-flex', 
+                          alignItems: 'center', 
+                          gap: '0.3rem',
+                          backgroundColor: 'var(--bg-surface)',
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color)'
+                        }}
+                      >
+                        <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: color }} />
+                        {rule.name} ({pct}%)
+                      </span>
+                    );
+                  })}
+                  {activeRules.length === 0 && (
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      No active rules configured (random distribution)
+                    </span>
                   )}
                 </div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 700 }}>
+                  Click to expand & edit &rarr;
+                </span>
+              </div>
+            )}
 
-                {/* Detected Roster Attributes (Smart Discovery) */}
-                {discoveredFields.length > 0 && (
-                  <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
-                      <Compass size={14} className="text-teal" />
-                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                        Detected Data Attributes in Your Roster ({discoveredFields.length})
+            {/* Expanded Rules Content */}
+            {isRulesExpanded && (
+              <>
+                <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '-0.35rem 0 0 0' }}>
+                  Each enabled rule contributes proportionally to the multi-objective optimization function. Adjust sliders to fine-tune prioritization.
+                </p>
+
+                {/* Proportional Weight Breakdown Bar */}
+                {activeRules.length > 0 && totalActiveWeight > 0 && (
+                  <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                        Overall Optimization Weight Distribution
                       </span>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>— click to add as active diversity rule:</span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        {activeRules.length} active criteria balancing 100% of cohort formation
+                      </span>
                     </div>
-
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
-                      {discoveredFields.map(df => {
-                        const isAlreadyAdded = customFields.some(f => f.key === df.key);
+                    <div className="autogroup-weight-bar-container">
+                      {activeRules.map((rule, idx) => {
+                        const pct = Math.round((rule.weight / totalActiveWeight) * 100);
+                        const color = RULE_PALETTE[idx % RULE_PALETTE.length];
                         return (
                           <div
-                            key={df.key}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.4rem',
-                              backgroundColor: isAlreadyAdded ? 'rgba(20, 184, 166, 0.12)' : 'var(--bg-surface)',
-                              border: `1px solid ${isAlreadyAdded ? 'var(--accent-teal)' : 'var(--border-color)'}`,
-                              borderRadius: '6px',
-                              padding: '0.25rem 0.55rem',
-                              fontSize: '0.72rem'
-                            }}
-                          >
-                            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{df.name}</span>
-                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', backgroundColor: 'var(--bg-app)', padding: '0.05rem 0.3rem', borderRadius: '4px' }}>
-                              {df.distinctCount} values ({df.count} students)
-                            </span>
-                            {!isAlreadyAdded ? (
-                              <div style={{ display: 'flex', gap: '0.2rem' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddDiscoveredField(df, 'disperse')}
-                                  style={{ border: 'none', background: 'rgba(20, 184, 166, 0.15)', color: 'var(--accent-teal)', borderRadius: '3px', padding: '0.1rem 0.35rem', fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.15rem' }}
-                                  title={`Disperse & mix ${df.name} evenly across teams`}
-                                >
-                                  <Split size={10} /> Disperse
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddDiscoveredField(df, 'cluster')}
-                                  style={{ border: 'none', background: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary)', borderRadius: '3px', padding: '0.1rem 0.35rem', fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.15rem' }}
-                                  title={`Cluster & keep students with same ${df.name} together`}
-                                >
-                                  <Merge size={10} /> Cluster
-                                </button>
-                              </div>
-                            ) : (
-                              <span style={{ fontSize: '0.65rem', color: 'var(--accent-teal)', fontWeight: 800 }}>✓ Active</span>
-                            )}
+                            key={rule.id}
+                            className="autogroup-weight-bar-segment"
+                            style={{ width: `${pct}%`, backgroundColor: color }}
+                            title={`${rule.name}: ${pct}% of total grouping focus`}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: '0.1rem' }}>
+                      {activeRules.map((rule, idx) => {
+                        const pct = Math.round((rule.weight / totalActiveWeight) * 100);
+                        const color = RULE_PALETTE[idx % RULE_PALETTE.length];
+                        return (
+                          <div key={rule.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: color, display: 'inline-block' }} />
+                            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{rule.name}</span>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600 }}>({pct}%)</span>
                           </div>
                         );
                       })}
@@ -620,735 +912,1861 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
                   </div>
                 )}
 
-                {/* Standard Weights Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', backgroundColor: 'var(--bg-app)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  {/* Gender Weight */}
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', fontWeight: 700, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>
-                      <span>Gender Parity (50/50)</span>
-                      <span style={{ color: 'var(--primary)', fontWeight: 800 }}>{weights.gender ?? 12}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={40}
-                      value={weights.gender ?? 12}
-                      onChange={(e) => setWeights(prev => ({ ...prev, gender: Number(e.target.value) }))}
-                      style={{ width: '100%', accentColor: 'var(--primary)' }}
-                    />
-                  </div>
 
-                  {/* University Weight */}
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', fontWeight: 700, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>
-                      <span>Campus / Uni Separation</span>
-                      <span style={{ color: 'var(--accent-teal)', fontWeight: 800 }}>{weights.university ?? 16}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={40}
-                      value={weights.university ?? 16}
-                      onChange={(e) => setWeights(prev => ({ ...prev, university: Number(e.target.value) }))}
-                      style={{ width: '100%', accentColor: 'var(--accent-teal)' }}
-                    />
-                  </div>
 
-                  {/* Nationality Weight */}
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', fontWeight: 700, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>
-                      <span>Origin &amp; Country Dispersion</span>
-                      <span style={{ color: '#10b981', fontWeight: 800 }}>{weights.nationality ?? 8}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={40}
-                      value={weights.nationality ?? 8}
-                      onChange={(e) => setWeights(prev => ({ ...prev, nationality: Number(e.target.value) }))}
-                      style={{ width: '100%', accentColor: '#10b981' }}
-                    />
-                  </div>
-
-                  {/* English Weight */}
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', fontWeight: 700, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>
-                      <span>CEFR English Balance</span>
-                      <span style={{ color: 'var(--accent-amber)', fontWeight: 800 }}>{weights.english ?? 6}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={40}
-                      value={weights.english ?? 6}
-                      onChange={(e) => setWeights(prev => ({ ...prev, english: Number(e.target.value) }))}
-                      style={{ width: '100%', accentColor: 'var(--accent-amber)' }}
-                    />
-                  </div>
-
-                  {/* Degree / Major Weight */}
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', fontWeight: 700, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>
-                      <span>Degree / Field of Study</span>
-                      <span style={{ color: '#8b5cf6', fontWeight: 800 }}>{weights.degree ?? 10}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={40}
-                      value={weights.degree ?? 10}
-                      onChange={(e) => setWeights(prev => ({ ...prev, degree: Number(e.target.value) }))}
-                      style={{ width: '100%', accentColor: '#8b5cf6' }}
-                    />
-                  </div>
-
-                  {/* Student Type Weight */}
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', fontWeight: 700, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>
-                      <span>Mobility (Erasmus / Regular)</span>
-                      <span style={{ color: '#ec4899', fontWeight: 800 }}>{weights.studentType ?? 6}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={40}
-                      value={weights.studentType ?? 6}
-                      onChange={(e) => setWeights(prev => ({ ...prev, studentType: Number(e.target.value) }))}
-                      style={{ width: '100%', accentColor: '#ec4899' }}
-                    />
-                  </div>
-                </div>
-
-                {/* Custom Fields Builder & Active List */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Add Custom Cohort Field / Custom Criteria
-                  </span>
-
-                  {/* Add New Custom Field Form */}
-                  <div 
-                    style={{ 
-                      display: 'flex', 
-                      flexWrap: 'wrap', 
-                      gap: '0.55rem', 
-                      alignItems: 'center', 
-                      backgroundColor: 'var(--bg-app)', 
-                      padding: '0.75rem 0.9rem', 
-                      borderRadius: '8px', 
-                      border: '1px dashed var(--border-color)' 
-                    }}
-                  >
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Field Name (e.g. Specialization, Track, Skill)"
-                      value={newFieldName}
-                      onChange={(e) => setNewFieldName(e.target.value)}
-                      style={{ height: '34px', fontSize: '0.8rem', flex: '1 1 180px', minWidth: '150px' }}
-                    />
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Property Key (e.g. skill, track)"
-                      value={newFieldKey}
-                      onChange={(e) => setNewFieldKey(e.target.value)}
-                      style={{ height: '34px', fontSize: '0.8rem', flex: '1 1 140px', minWidth: '120px' }}
-                    />
-                    <select
-                      value={newFieldMode}
-                      onChange={(e) => setNewFieldMode(e.target.value as 'disperse' | 'cluster')}
-                      className="form-input"
-                      style={{ height: '34px', fontSize: '0.8rem', flex: '1 1 190px', minWidth: '160px', padding: '0 0.5rem' }}
-                    >
-                      <option value="disperse">Disperse / Mix Evenly across teams</option>
-                      <option value="cluster">Cluster / Keep similar members together</option>
-                    </select>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>Weight:</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={newFieldWeight}
-                        onChange={(e) => setNewFieldWeight(Number(e.target.value))}
-                        className="form-input"
-                        style={{ width: '54px', height: '34px', fontSize: '0.8rem', padding: '2px 4px', textAlign: 'center' }}
-                      />
-                    </div>
-
+            {/* Quick-Add Discovered Cohort Attributes Strip */}
+            {discoveredFields.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', padding: '0.4rem 0' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <Compass size={12} style={{ color: 'var(--primary)' }} /> Discovered in Roster:
+                </span>
+                {discoveredFields.map(df => {
+                  const alreadyConfigured = rules.some(r => r.fieldKey === df.key);
+                  if (alreadyConfigured) return null;
+                  return (
                     <button
+                      key={df.key}
                       type="button"
-                      className="btn btn-teal btn-sm"
-                      onClick={handleAddCustomField}
-                      disabled={!newFieldName.trim()}
-                      style={{ height: '34px', padding: '0 0.85rem', fontSize: '0.8rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                      className="autogroup-discovered-chip"
+                      onClick={() => handleQuickAddDiscoveredField(df)}
+                      title={`Add rule for ${df.name} (${df.distinctCount} unique values across ${df.count} students)`}
                     >
-                      <Plus size={14} /> Add Criterion
+                      <Plus size={11} style={{ color: 'var(--primary)' }} />
+                      <span>{df.name}</span>
+                      <span style={{ opacity: 0.6, fontSize: '0.65rem' }}>({df.distinctCount} vals)</span>
                     </button>
-                  </div>
-
-                  {/* Active Custom Fields List */}
-                  {customFields.length > 0 && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.6rem' }}>
-                      {customFields.map((field) => {
-                        const populatedCount = students.filter(s => getStudentFieldValue(s, field.key, field.name)).length;
-                        return (
-                          <div 
-                            key={field.id}
-                            style={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center', 
-                              padding: '0.6rem 0.85rem', 
-                              borderRadius: '8px', 
-                              backgroundColor: 'var(--bg-surface)', 
-                              border: '1px solid var(--border-color)',
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-                              gap: '0.5rem'
-                            }}
-                          >
-                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '0.15rem' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                <b style={{ fontSize: '0.82rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {field.name}
-                                </b>
-                                <span 
-                                  className={`badge ${field.mode === 'disperse' ? 'badge-teal' : 'badge-amber'}`}
-                                  style={{ fontSize: '0.62rem', padding: '0.05rem 0.4rem', textTransform: 'uppercase', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
-                                >
-                                  {field.mode === 'disperse' ? <Split size={10} /> : <Merge size={10} />}
-                                  {field.mode}
-                                </span>
-                              </div>
-                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                                Property: <code style={{ fontSize: '0.68rem', padding: '1px 4px', backgroundColor: 'var(--bg-app)', borderRadius: '3px' }}>{field.key}</code> • {populatedCount}/{totalMembers} students populated
-                              </span>
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                              <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--primary)', padding: '0.2rem 0.45rem', backgroundColor: 'rgba(99, 102, 241, 0.1)', borderRadius: '4px' }}>
-                                W: {field.weight}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveCustomField(field.id)}
-                                style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', borderRadius: '4px' }}
-                                title="Remove custom criteria"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                  );
+                })}
               </div>
             )}
 
-            {/* 2. Integrated Diversity Health Strip */}
-            {groupingResult && (
-              <div 
-                style={{ 
-                  borderTop: '1px solid var(--border-color)', 
-                  backgroundColor: 'var(--bg-surface)', 
-                  padding: '0.65rem 1.1rem', 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', 
-                  gap: '0.85rem', 
-                  alignItems: 'center' 
-                }}
-              >
-                {/* Overall Index */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                  <div 
-                    style={{ 
-                      minWidth: '48px', 
-                      padding: '0 0.4rem', 
-                      height: '32px', 
-                      borderRadius: '7px', 
-                      backgroundColor: 'rgba(20, 184, 166, 0.14)', 
-                      color: 'var(--accent-teal)', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      fontWeight: 800, 
-                      fontSize: '0.84rem', 
-                      flexShrink: 0 
-                    }}
-                  >
-                    {groupingResult.overallDiversityScore}%
-                  </div>
-                  <div style={{ lineHeight: 1.25 }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>Team Balance Index</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 600 }}>
-                      {groupingResult.overallDiversityScore >= 80 ? 'Optimal Dispersion' : 'Balanced Spread'}
-                    </div>
-                  </div>
+            {/* Active Rules List */}
+            <div className="autogroup-rules-container">
+              {rules.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)', fontSize: '0.82rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px' }}>
+                  <AlertCircle size={24} style={{ margin: '0 auto 0.4rem auto', opacity: 0.5 }} />
+                  <p style={{ margin: 0 }}>No grouping rules configured. Students will be partitioned randomly in equal sizes.</p>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={handleResetToDefaults} style={{ marginTop: '0.6rem' }}>
+                    <RotateCcw size={12} /> Load Recommended Rules
+                  </button>
                 </div>
+              ) : (
+                rules.map((rule, idx) => {
+                  const relativePct = totalActiveWeight > 0 && rule.enabled ? Math.round((rule.weight / totalActiveWeight) * 100) : 0;
+                  const ruleColor = RULE_PALETTE[idx % RULE_PALETTE.length];
 
-                {/* Gender Balance */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '7px', backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <UserCheck size={16} />
-                  </div>
-                  <div style={{ lineHeight: 1.25 }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>Gender Parity</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 600 }}>
-                      {groupingResult.genderBalanceRating} Distribution
-                    </div>
-                  </div>
-                </div>
+                  return (
+                    <div 
+                      key={rule.id} 
+                      className={`autogroup-rule-card ${!rule.enabled ? 'disabled' : ''}`}
+                    >
+                      <div className="autogroup-rule-row-grid">
+                        
+                        {/* Col 1: Toggle + Icon + Title + Attribute Pill + Description (Full wrapping) */}
+                        <div className="autogroup-rule-title-group">
+                          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', margin: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={rule.enabled}
+                              onChange={() => handleToggleRule(rule.id)}
+                              style={{ width: '16px', height: '16px', accentColor: ruleColor, cursor: 'pointer' }}
+                            />
+                          </label>
 
-                {/* Nationality & Origin Diversity */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '7px', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Globe size={16} />
-                  </div>
-                  <div style={{ lineHeight: 1.25 }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>Origin Dispersion</div>
-                    <div style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 600 }}>
-                      {groupingResult.nationalityMixRating}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Language Proficiency Spread */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '7px', backgroundColor: 'rgba(245, 158, 11, 0.12)', color: 'var(--accent-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Languages size={16} />
-                  </div>
-                  <div style={{ lineHeight: 1.25 }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>Language Spread</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--accent-amber)', fontWeight: 600 }}>
-                      {groupingResult.englishMixRating}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* View Mode Switcher Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-              <BarChart2 size={16} className="text-teal" />
-              <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                Generated Team Rosters ({numTeams} Teams, {totalMembers} Students)
-              </span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                • Click any member for detailed academic profile
-              </span>
-            </div>
-
-            {/* Switcher */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', backgroundColor: 'var(--bg-app)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <button
-                type="button"
-                className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem', gap: '0.3rem', border: 'none' }}
-                onClick={() => setViewMode('grid')}
-              >
-                <LayoutGrid size={13} /> Grid View
-              </button>
-
-              <button
-                type="button"
-                className={`btn btn-sm ${viewMode === 'kanban' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem', gap: '0.3rem', border: 'none' }}
-                onClick={() => setViewMode('kanban')}
-              >
-                <Kanban size={13} /> Drag &amp; Drop Kanban
-              </button>
-            </div>
-          </div>
-
-          {/* Generated Teams Preview */}
-          {isGenerating ? (
-            <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
-              <RefreshCw size={24} className="spin" style={{ margin: '0 auto 0.5rem', display: 'block', color: 'var(--primary)' }} />
-              Simulating optimal multi-criteria permutations...
-            </div>
-          ) : totalMembers === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
-              <span>No students enrolled in this classroom yet. Add students using the wizard or load sample data to test team balancing.</span>
-              {onLoadSampleStudents && (
-                <button
-                  type="button"
-                  className="btn btn-teal btn-sm"
-                  onClick={onLoadSampleStudents}
-                  style={{ fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                >
-                  <Sparkles size={13} /> Load 100 Sample Students into Classroom
-                </button>
-              )}
-            </div>
-          ) : viewMode === 'kanban' ? (
-            /* --- KANBAN DRAG AND DROP REBALANCING BOARD --- */
-            <div 
-              style={{ 
-                display: 'flex', 
-                gap: '1rem', 
-                overflowX: 'auto', 
-                paddingBottom: '0.75rem', 
-                minHeight: '400px' 
-              }}
-            >
-              {groupingResult?.groups.map((grp) => (
-                <div
-                  key={grp.groupName}
-                  style={{
-                    flex: '0 0 320px',
-                    backgroundColor: 'var(--bg-app)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '0.9rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.65rem',
-                    maxHeight: '520px',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.currentTarget.style.borderColor = 'var(--primary)';
-                  }}
-                  onDragLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                    if (draggedStudentId) {
-                      handleMoveStudent(draggedStudentId, grp.groupName);
-                      setDraggedStudentId(null);
-                    }
-                  }}
-                >
-                  {/* Column Header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', gap: '0.4rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
-                      <b style={{ fontSize: '0.94rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{grp.groupName}</b>
-                      <span className="badge badge-secondary" style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', flexShrink: 0 }}>
-                        {grp.studentCount}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-                      <span className="badge badge-teal" style={{ fontSize: '0.68rem', fontWeight: 800 }}>
-                        {grp.diversityScore}%
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => setExportModal({ isOpen: true, team: grp, format: 'xlsx', scope: 'diversity_card' })}
-                        title={`Export ${grp.groupName} roster`}
-                        style={{ padding: '0.2rem 0.45rem', height: '24px', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.68rem' }}
-                      >
-                        <Download size={11} /> Export
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Student Cards in Column */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', overflowY: 'auto', flex: 1, paddingRight: '2px' }}>
-                    {grp.students.map((student) => (
-                      <div
-                        key={student.id}
-                        draggable
-                        onDragStart={() => setDraggedStudentId(student.id)}
-                        onClick={() => setSelectedStudent(student)}
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '7px',
-                          padding: '0.6rem 0.7rem',
-                          cursor: 'grab',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.35rem',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                          transition: 'all 120ms ease'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0 }}>
-                            <GripVertical size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                            <b style={{ fontSize: '0.84rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {student.name}
-                            </b>
+                          <div className="autogroup-rule-icon-box" style={{ backgroundColor: `${ruleColor}18`, color: ruleColor }}>
+                            {getRuleIcon(rule.fieldKey)}
                           </div>
-                          <span 
-                            style={{ 
-                              fontSize: '0.65rem', 
-                              fontWeight: 700, 
-                              padding: '0.1rem 0.35rem', 
-                              borderRadius: '4px', 
-                              backgroundColor: student.gender?.toLowerCase() === 'female' ? 'rgba(236, 72, 153, 0.12)' : 'rgba(59, 130, 246, 0.12)', 
-                              color: student.gender?.toLowerCase() === 'female' ? '#ec4899' : '#3b82f6',
-                              flexShrink: 0
-                            }}
-                          >
-                            {student.gender || 'N/A'}
-                          </span>
+
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.86rem', fontWeight: 800, color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                {rule.name}
+                              </span>
+                              <span className="badge badge-secondary" style={{ fontSize: '0.66rem', padding: '0.1rem 0.4rem' }}>
+                                Attribute: {rule.fieldKey}
+                              </span>
+                            </div>
+                            {rule.description && (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', lineHeight: 1.35, marginTop: '0.15rem' }}>
+                                {rule.description}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
-                        {student.degree && (
-                          <div style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {student.degree}
+                        {/* Col 2: Mode Pill Selector */}
+                        <div className="autogroup-mode-pill-group">
+                          <button
+                            type="button"
+                            onClick={() => handleModeChange(rule.id, 'disperse')}
+                            className={`autogroup-mode-pill ${rule.mode === 'disperse' ? 'active' : ''}`}
+                            title="Disperse: Spread matching values across different teams"
+                            disabled={!rule.enabled}
+                          >
+                            <Globe size={11} /> Disperse
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleModeChange(rule.id, 'cluster')}
+                            className={`autogroup-mode-pill ${rule.mode === 'cluster' ? 'active' : ''}`}
+                            title="Cluster: Group students with identical values into the same team"
+                            disabled={!rule.enabled}
+                          >
+                            <Users size={11} /> Cluster
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleModeChange(rule.id, 'balance')}
+                            className={`autogroup-mode-pill ${rule.mode === 'balance' ? 'active' : ''}`}
+                            title="Balance: Equal numerical averages or balanced representation"
+                            disabled={!rule.enabled}
+                          >
+                            <Layers size={11} /> Balance
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleModeChange(rule.id, 'strict_disperse')}
+                            className={`autogroup-mode-pill ${rule.mode === 'strict_disperse' ? 'active' : ''}`}
+                            title="Strict: Heavy penalty if identical attributes are paired"
+                            disabled={!rule.enabled}
+                          >
+                            <ShieldAlert size={11} /> Strict
+                          </button>
+                        </div>
+
+                        {/* Col 3: Simplified Priority Tiers vs Precise Slider */}
+                        {weightControlMode === 'simplified' ? (
+                          <div className="autogroup-priority-control-group">
+                            <div className="autogroup-priority-tier-buttons">
+                              <button
+                                type="button"
+                                onClick={() => handleWeightChange(rule.id, 10)}
+                                className={`autogroup-priority-btn ${rule.weight <= 12 ? 'active' : ''}`}
+                                disabled={!rule.enabled}
+                                title="Low priority (10 pts) - gentle influence"
+                              >
+                                Low
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleWeightChange(rule.id, 20)}
+                                className={`autogroup-priority-btn ${rule.weight > 12 && rule.weight <= 25 ? 'active' : ''}`}
+                                disabled={!rule.enabled}
+                                title="Medium priority (20 pts) - standard balanced influence"
+                              >
+                                Medium
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleWeightChange(rule.id, 35)}
+                                className={`autogroup-priority-btn ${rule.weight > 25 && rule.weight < 45 ? 'active' : ''}`}
+                                disabled={!rule.enabled}
+                                title="High priority (35 pts) - strong grouping preference"
+                              >
+                                High
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleWeightChange(rule.id, 50)}
+                                className={`autogroup-priority-btn ${rule.weight >= 45 ? 'active' : ''}`}
+                                disabled={!rule.enabled}
+                                title="Critical priority (50 pts) - top priority constraint"
+                              >
+                                Critical
+                              </button>
+                            </div>
+
+                            <div 
+                              className="autogroup-priority-share-badge" 
+                              style={{ 
+                                borderColor: rule.enabled ? `${ruleColor}40` : 'var(--border-color)',
+                                backgroundColor: rule.enabled ? `${ruleColor}10` : 'var(--bg-app)'
+                              }}
+                              title={`${rule.name} accounts for ${rule.enabled ? relativePct : 0}% of the overall optimization weight`}
+                            >
+                              <span 
+                                className="autogroup-priority-share-dot" 
+                                style={{ backgroundColor: rule.enabled ? ruleColor : 'var(--text-muted)' }} 
+                              />
+                              <span style={{ fontWeight: 800, color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                {rule.enabled ? `${relativePct}% Share` : '0%'}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="autogroup-precise-slider-wrapper">
+                            <div className="autogroup-slider-track-wrap">
+                              <button 
+                                type="button" 
+                                className="autogroup-stepper-btn" 
+                                onClick={() => handleWeightChange(rule.id, Math.max(1, rule.weight - 1))}
+                                disabled={!rule.enabled || rule.weight <= 1}
+                                title="Decrease weight by 1"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="range"
+                                min={1}
+                                max={50}
+                                value={rule.weight}
+                                onChange={(e) => handleWeightChange(rule.id, Number(e.target.value))}
+                                disabled={!rule.enabled}
+                                className="autogroup-slider-input"
+                                style={{ '--thumb-color': ruleColor } as React.CSSProperties}
+                                title={`Weight: ${rule.weight} pts`}
+                              />
+                              <button 
+                                type="button" 
+                                className="autogroup-stepper-btn" 
+                                onClick={() => handleWeightChange(rule.id, Math.min(50, rule.weight + 1))}
+                                disabled={!rule.enabled || rule.weight >= 50}
+                                title="Increase weight by 1"
+                              >
+                                +
+                              </button>
+                              <span className="autogroup-weight-num-badge" style={{ color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                {rule.weight} pts
+                              </span>
+                            </div>
+
+                            <div 
+                              className="autogroup-priority-share-badge" 
+                              style={{ 
+                                borderColor: rule.enabled ? `${ruleColor}40` : 'var(--border-color)',
+                                backgroundColor: rule.enabled ? `${ruleColor}10` : 'var(--bg-app)'
+                              }}
+                              title={`${rule.name} accounts for ${rule.enabled ? relativePct : 0}% of the overall optimization weight`}
+                            >
+                              <span 
+                                className="autogroup-priority-share-dot" 
+                                style={{ backgroundColor: rule.enabled ? ruleColor : 'var(--text-muted)' }} 
+                              />
+                              <span style={{ fontWeight: 800, color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                {rule.enabled ? `${relativePct}% Share` : '0%'}
+                              </span>
+                            </div>
                           </div>
                         )}
 
-                        {renderStudentUniText(student)}
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                            <Globe size={11} style={{ opacity: 0.7 }} /> {student.nationality || 'Unspecified'}
-                          </span>
-                          <span style={{ fontWeight: 600, color: 'var(--accent-teal)' }}>
-                            {student.englishProficiency?.split(' ')[0] || 'Fluent'}
-                          </span>
+                        {/* Col 4: Delete Action */}
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRule(rule.id)}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.35rem', borderRadius: '6px' }}
+                            title="Remove this rule"
+                          >
+                            <Trash2 size={15} className="hover:text-red-500" />
+                          </button>
                         </div>
-                      </div>
-                    ))}
-                  </div>
 
-                  {/* Custom Fields Summary Bar in Column */}
-                  {grp.customFieldSummaries && Object.keys(grp.customFieldSummaries).length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
-                      {Object.values(grp.customFieldSummaries).map((cfSum, idx) => (
-                        <span 
-                          key={idx}
-                          style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
-                        >
-                          <b>{cfSum.fieldName}:</b> {cfSum.uniqueCount} unique ({cfSum.score}%)
-                        </span>
-                      ))}
+                      </div>
                     </div>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+          {/* ── TEAMS PREVIEW TOOLBAR & LAYOUT SWITCHER ─────────────────────────────── */}
+          {students.length > 0 && groupingResult && (
+            <div 
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between', 
+                flexWrap: 'wrap', 
+                gap: '0.85rem',
+                padding: '0.85rem 1.15rem',
+                backgroundColor: 'var(--bg-app)',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-color)'
+              }}
+            >
+              {/* Layout Switcher Tabs */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <LayoutGrid size={14} className="text-teal" /> Preview Layout:
+                </span>
+                <div style={{ display: 'inline-flex', backgroundColor: 'var(--bg-surface)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', gap: '2px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('grid')}
+                    className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                  >
+                    <LayoutGrid size={13} /> Grid
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('kanban')}
+                    className={`btn btn-sm ${viewMode === 'kanban' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                  >
+                    <Kanban size={13} /> Kanban Board
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('table')}
+                    className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                  >
+                    <Table size={13} /> Detailed Table
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('compact')}
+                    className={`btn btn-sm ${viewMode === 'compact' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                  >
+                    <Columns3 size={13} /> Compact Matrix
+                  </button>
+                </div>
+              </div>
+
+              {/* History & Pin Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', backgroundColor: 'var(--bg-app)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={historyIndex <= 0}
+                    className="btn btn-sm btn-secondary"
+                    title="Undo team move (Ctrl+Z)"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      padding: '0.3rem 0.6rem',
+                      fontSize: '0.74rem',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      opacity: historyIndex <= 0 ? 0.45 : 1,
+                      cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <Undo2 size={13} /> Undo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRedo}
+                    disabled={historyIndex >= history.length - 1}
+                    className="btn btn-sm btn-secondary"
+                    title="Redo team move (Ctrl+Y)"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      padding: '0.3rem 0.6rem',
+                      fontSize: '0.74rem',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      opacity: historyIndex >= history.length - 1 ? 0.45 : 1,
+                      cursor: historyIndex >= history.length - 1 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <Redo2 size={13} /> Redo
+                  </button>
+                </div>
+
+                {pinnedStudentIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleUnpinAll}
+                    className="btn btn-sm btn-secondary"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.32rem 0.65rem',
+                      fontSize: '0.74rem',
+                      borderRadius: '6px',
+                      color: 'var(--accent-amber)',
+                      fontWeight: 700
+                    }}
+                    title="Unlock all pinned students"
+                  >
+                    <PinOff size={13} /> Unpin All ({pinnedStudentIds.size})
+                  </button>
+                )}
+              </div>
+
+              {/* Search Filter Input */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '240px', flex: '1 1 240px', maxWidth: '340px' }}>
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Filter students, university, nationality..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    style={{ height: '36px', paddingLeft: '32px', paddingRight: searchFilter ? '30px' : '10px', fontSize: '0.8rem', width: '100%' }}
+                  />
+                  {searchFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchFilter('')}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                      title="Clear search"
+                    >
+                      <X size={14} />
+                    </button>
                   )}
                 </div>
-              ))}
+              </div>
             </div>
-          ) : (
-            /* --- GRID VIEW --- */
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.1rem' }}>
-              {groupingResult?.groups.map((grp) => (
-                <div 
-                  key={grp.groupName} 
-                  className="card" 
-                  style={{ 
-                    padding: '0.95rem', 
-                    margin: 0, 
-                    backgroundColor: 'var(--bg-app)', 
-                    border: '1px solid var(--border-color)', 
+          )}
+
+          {/* ── TEAMS PREVIEW RENDERING ─────────────────────────────────────────── */}
+          {students.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2.5rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-color)' }}>
+              <Users size={36} style={{ color: 'var(--text-muted)', margin: '0 auto 0.75rem auto' }} />
+              <h4 style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>No Students in Class Roster</h4>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.35rem 0 1rem 0' }}>
+                Import students via Section 1 Onboarding Wizard or load a 100-student demo dataset to test rule optimization.
+              </p>
+              {onLoadSampleStudents && (
+                <button type="button" className="btn btn-primary btn-sm" onClick={onLoadSampleStudents} style={{ fontWeight: 700 }}>
+                  <Sparkles size={13} /> Load 100-Student Demo Dataset
+                </button>
+              )}
+            </div>
+          ) : groupingResult && (
+            <div className={draggedStudentId ? 'is-dragging-student' : ''} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              
+              {/* Sticky All-Teams Quick Drop Target Strip (Sticky across Grid, Kanban, Table & Compact views) */}
+              <div 
+                className="autogroup-sticky-quick-bar"
+                style={{ 
+                  position: 'sticky',
+                  top: '60px',
+                  zIndex: 960,
+                  padding: '0.65rem 0.85rem', 
+                  backgroundColor: 'var(--bg-surface)', 
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  borderRadius: 'var(--radius-md)', 
+                  border: draggedStudentId ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
+                  boxShadow: '0 6px 20px rgba(0, 0, 0, 0.12)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <span style={{ fontSize: '0.74rem', fontWeight: 800, color: draggedStudentId ? 'var(--accent-teal)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    {draggedStudentId ? <Zap size={13} className="text-teal" /> : <Target size={13} className="text-teal" />}
+                    {draggedStudentId ? 'Drop card onto any team below for instant move:' : 'Quick Team Drop & Jump Targets:'}
+                  </span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <Layers size={11} /> {groupingResult.groups.length} Targets Available
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', maxHeight: '110px', overflowY: 'auto' }}>
+                  {groupingResult.groups.map(g => {
+                    const isTargetHovered = dragOverGroupId === `quick-${g.groupName}`;
+                    return (
+                      <div
+                        key={`quick-drop-${g.groupName}`}
+                        onDragEnter={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (draggedStudentId && dragOverGroupId !== `quick-${g.groupName}`) {
+                            setDragOverGroupId(`quick-${g.groupName}`);
+                          }
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (draggedStudentId && dragOverGroupId !== `quick-${g.groupName}`) {
+                            setDragOverGroupId(`quick-${g.groupName}`);
+                          }
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            if (dragOverGroupId === `quick-${g.groupName}`) {
+                              setDragOverGroupId(null);
+                            }
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const studentId = e.dataTransfer.getData('text/plain') || draggedStudentId;
+                          if (studentId) {
+                            handleMoveStudent(studentId, g.groupName);
+                          }
+                          setDraggedStudentId(null);
+                          setDragOverGroupId(null);
+                        }}
+                        onClick={() => {
+                          const el = document.getElementById(`grid-team-card-${g.groupName}`) || document.getElementById(`kanban-team-col-${g.groupName}`) || document.getElementById(`table-team-section-${g.groupName}`);
+                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                        }}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.22rem 0.55rem',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          backgroundColor: isTargetHovered 
+                            ? 'var(--accent-teal)' 
+                            : draggedStudentId 
+                              ? 'rgba(13, 148, 136, 0.08)' 
+                              : 'var(--bg-app)',
+                          color: isTargetHovered ? '#ffffff' : 'var(--text-primary)',
+                          border: isTargetHovered 
+                            ? '1px solid var(--accent-teal)' 
+                            : draggedStudentId 
+                              ? '1px dashed var(--accent-teal)' 
+                              : '1px solid var(--border-color)',
+                          boxShadow: isTargetHovered ? '0 2px 8px rgba(13, 148, 136, 0.35)' : 'none',
+                          transform: isTargetHovered ? 'scale(1.04)' : 'scale(1)',
+                          transition: 'all 0.15s ease',
+                          userSelect: 'none',
+                          WebkitUserSelect: 'none'
+                        }}
+                        title={`Click to jump, or drop student here to move to ${g.groupName}`}
+                      >
+                        <span>{g.groupName}</span>
+                        <span style={{ 
+                          fontSize: '0.64rem', 
+                          padding: '0.05rem 0.3rem', 
+                          borderRadius: '4px', 
+                          backgroundColor: isTargetHovered ? 'rgba(255,255,255,0.25)' : 'var(--primary-light)', 
+                          color: isTargetHovered ? '#ffffff' : 'var(--primary)', 
+                          fontWeight: 800 
+                        }}>
+                          {g.studentCount}
+                        </span>
+                        {/* What-If Simulation Badge */}
+                        {draggedStudentId && simulationReports && simulationReports[g.groupName] && (
+                          <span 
+                            className={`autogroup-sim-badge ${simulationReports[g.groupName].delta > 0 ? 'positive' : simulationReports[g.groupName].delta < 0 ? 'negative' : 'neutral'}`}
+                            style={{
+                              fontSize: '0.62rem',
+                              padding: '0.04rem 0.28rem',
+                              borderRadius: '4px',
+                              fontWeight: 800,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '1px'
+                            }}
+                            title={`Simulated score if dropped here: ${simulationReports[g.groupName].simulatedScore}% (${simulationReports[g.groupName].delta > 0 ? '+' : ''}${simulationReports[g.groupName].delta}%)`}
+                          >
+                            {simulationReports[g.groupName].delta > 0 ? `+${simulationReports[g.groupName].delta}%` : `${simulationReports[g.groupName].delta}%`}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 1. Enhanced Kanban Board View */}
+              {viewMode === 'kanban' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  {/* Kanban Sub-Header Controls & Layout Mode Switcher */}
+                  <div style={{ 
                     display: 'flex', 
-                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between', 
+                    flexWrap: 'wrap', 
                     gap: '0.65rem',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
-                  }}
-                >
-                  {/* Card Header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <b style={{ fontSize: '0.96rem', color: 'var(--text-primary)' }}>{grp.groupName}</b>
-                      <span className="badge badge-secondary" style={{ fontSize: '0.68rem', padding: '0.1rem 0.45rem' }}>
-                        {grp.studentCount} Students
+                    padding: '0.6rem 0.85rem',
+                    backgroundColor: 'var(--bg-app)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-color)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <Kanban size={14} className="text-teal" /> Kanban View
+                      </span>
+                      <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}>
+                        {groupingResult.groups.length} Teams • {groupingResult.updatedStudents.length} Students
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 800 }}>
-                        {grp.diversityScore}% Balance
-                      </span>
+                    {/* Board Layout Mode Switcher */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', backgroundColor: 'var(--bg-surface)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                       <button
                         type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => setExportModal({ isOpen: true, team: grp, format: 'xlsx', scope: 'diversity_card' })}
-                        title={`Export ${grp.groupName} roster`}
-                        style={{ padding: '0.2rem 0.45rem', height: '24px', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.68rem' }}
+                        onClick={() => setKanbanLayout('wrap')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.25rem 0.6rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          fontSize: '0.72rem',
+                          fontWeight: kanbanLayout === 'wrap' ? 700 : 500,
+                          cursor: 'pointer',
+                          backgroundColor: kanbanLayout === 'wrap' ? 'var(--accent-teal)' : 'transparent',
+                          color: kanbanLayout === 'wrap' ? '#ffffff' : 'var(--text-secondary)',
+                          transition: 'all 0.15s'
+                        }}
+                        title="Fit and wrap all teams on screen in responsive multi-column grid"
                       >
-                        <Download size={11} /> Export
+                        <LayoutGrid size={12} /> Wrap All Teams
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKanbanLayout('compact')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.25rem 0.6rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          fontSize: '0.72rem',
+                          fontWeight: kanbanLayout === 'compact' ? 700 : 500,
+                          cursor: 'pointer',
+                          backgroundColor: kanbanLayout === 'compact' ? 'var(--accent-teal)' : 'transparent',
+                          color: kanbanLayout === 'compact' ? '#ffffff' : 'var(--text-secondary)',
+                          transition: 'all 0.15s'
+                        }}
+                        title="High density compact view to see maximum teams simultaneously"
+                      >
+                        <Columns3 size={12} /> Compact Grid
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKanbanLayout('scroll')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.25rem 0.6rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          fontSize: '0.72rem',
+                          fontWeight: kanbanLayout === 'scroll' ? 700 : 500,
+                          cursor: 'pointer',
+                          backgroundColor: kanbanLayout === 'scroll' ? 'var(--accent-teal)' : 'transparent',
+                          color: kanbanLayout === 'scroll' ? '#ffffff' : 'var(--text-secondary)',
+                          transition: 'all 0.15s'
+                        }}
+                        title="Classic horizontal scrollable swimlanes"
+                      >
+                        <Kanban size={12} /> Horizontal Scroll
                       </button>
                     </div>
                   </div>
 
-                  {/* Members List */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {grp.students.map((student) => (
-                      <div 
-                        key={student.id} 
-                        onClick={() => setSelectedStudent(student)}
-                        style={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          alignItems: 'center', 
-                          padding: '0.5rem 0.65rem', 
-                          backgroundColor: 'var(--bg-surface)', 
-                          borderRadius: '7px', 
-                          border: '1px solid var(--border-color)',
-                          cursor: 'pointer',
-                          transition: 'all 120ms ease',
-                          gap: '0.5rem'
-                        }}
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', minWidth: 0 }}>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {student.name}
-                          </span>
-                          {student.degree && (
-                            <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {student.degree}
-                            </span>
-                          )}
-                          {renderStudentUniText(student)}
-                        </div>
+                  {/* Kanban Columns Grid / Flex Container */}
+                  <div 
+                    style={
+                      kanbanLayout === 'wrap'
+                        ? {
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                            gap: '0.85rem',
+                            alignItems: 'start'
+                          }
+                        : kanbanLayout === 'compact'
+                        ? {
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(195px, 1fr))',
+                            gap: '0.65rem',
+                            alignItems: 'start'
+                          }
+                        : {
+                            display: 'flex',
+                            gap: '1rem',
+                            overflowX: 'auto',
+                            paddingBottom: '0.85rem'
+                          }
+                    }
+                  >
+                    {groupingResult.groups.map(group => {
+                      const filteredMembers = group.students.filter(s => 
+                        !searchFilter.trim() || 
+                        s.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
+                        (s.nationality && s.nationality.toLowerCase().includes(searchFilter.toLowerCase())) ||
+                        (s.university && s.university.toLowerCase().includes(searchFilter.toLowerCase())) ||
+                        (s.gender && s.gender.toLowerCase().includes(searchFilter.toLowerCase())) ||
+                        (s.englishProficiency && s.englishProficiency.toLowerCase().includes(searchFilter.toLowerCase()))
+                      );
+                      const isDragOver = dragOverGroupId === group.groupName;
+                      const pinnedInGroup = group.students.filter(s => pinnedStudentIds.has(s.id)).length;
+                      const sim = simulationReports ? simulationReports[group.groupName] : null;
 
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem', flexShrink: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                            <span 
-                              style={{ 
-                                fontSize: '0.65rem', 
-                                fontWeight: 700, 
-                                padding: '0.08rem 0.35rem', 
-                                borderRadius: '4px', 
-                                backgroundColor: student.gender?.toLowerCase() === 'female' ? 'rgba(236, 72, 153, 0.12)' : 'rgba(59, 130, 246, 0.12)', 
-                                color: student.gender?.toLowerCase() === 'female' ? '#ec4899' : '#3b82f6' 
-                              }}
-                            >
-                              {student.gender || 'N/A'}
-                            </span>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
-                              {student.nationality || 'Unspecified'}
-                            </span>
-                          </div>
-                          <span style={{ fontSize: '0.66rem', color: 'var(--accent-teal)', fontWeight: 600 }}>
-                            {student.englishProficiency?.split(' ')[0] || 'Fluent'}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Custom Fields Summary Badges inside Team Card */}
-                  {grp.customFieldSummaries && Object.keys(grp.customFieldSummaries).length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
-                      {Object.values(grp.customFieldSummaries).map((cfSum, idx) => (
-                        <span 
-                          key={idx}
-                          style={{ 
-                            fontSize: '0.66rem', 
-                            padding: '0.15rem 0.45rem', 
-                            borderRadius: '4px', 
-                            backgroundColor: 'var(--bg-surface)', 
-                            border: '1px solid var(--border-color)', 
-                            color: 'var(--text-secondary)',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem'
+                      return (
+                        <div
+                          id={`kanban-team-col-${group.groupName}`}
+                          key={group.groupName}
+                          className={`autogroup-kanban-col ${isDragOver ? 'drag-over' : ''}`}
+                          onDragEnter={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (draggedStudentId && dragOverGroupId !== group.groupName) {
+                              setDragOverGroupId(group.groupName);
+                            }
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.dataTransfer.dropEffect = 'move';
+                            if (draggedStudentId && dragOverGroupId !== group.groupName) {
+                              setDragOverGroupId(group.groupName);
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              if (dragOverGroupId === group.groupName) {
+                                setDragOverGroupId(null);
+                              }
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const studentId = e.dataTransfer.getData('text/plain') || draggedStudentId;
+                            if (studentId) {
+                              handleMoveStudent(studentId, group.groupName);
+                            }
+                            setDraggedStudentId(null);
+                            setDragOverGroupId(null);
+                          }}
+                          style={{
+                            minWidth: kanbanLayout === 'scroll' ? '275px' : 'auto',
+                            maxWidth: kanbanLayout === 'scroll' ? '290px' : 'none',
+                            flexShrink: kanbanLayout === 'scroll' ? 0 : 1,
+                            backgroundColor: isDragOver ? 'rgba(13, 148, 136, 0.05)' : 'var(--bg-app)',
+                            border: isDragOver ? '2px dashed var(--accent-teal)' : '1px solid var(--border-color)',
+                            borderRadius: 'var(--radius-md)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                            boxShadow: isDragOver ? '0 0 0 3px rgba(13, 148, 136, 0.15)' : 'none',
+                            transition: 'border-color 0.15s, background-color 0.15s, box-shadow 0.15s'
                           }}
                         >
-                          <b>{cfSum.fieldName}:</b> {cfSum.uniqueCount} distinct ({cfSum.score}%)
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                          {/* Column Header */}
+                          <div style={{ 
+                            padding: kanbanLayout === 'compact' ? '0.5rem 0.65rem' : '0.75rem 0.9rem', 
+                            backgroundColor: 'var(--bg-surface)', 
+                            borderBottom: '1px solid var(--border-color)', 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center' 
+                          }}>
+                            <div>
+                              <span style={{ fontSize: kanbanLayout === 'compact' ? '0.8rem' : '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                {group.groupName}
+                              </span>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>
+                                {group.studentCount} {group.studentCount === 1 ? 'member' : 'members'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              {pinnedInGroup > 0 && (
+                                <span 
+                                  className="autogroup-pinned-indicator"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '2px',
+                                    fontSize: '0.65rem',
+                                    padding: '0.1rem 0.35rem',
+                                    borderRadius: '4px',
+                                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                    color: '#d97706',
+                                    fontWeight: 700
+                                  }}
+                                  title={`${pinnedInGroup} student${pinnedInGroup > 1 ? 's' : ''} pinned to this team`}
+                                >
+                                  <Pin size={10} style={{ transform: 'rotate(45deg)' }} /> {pinnedInGroup}
+                                </span>
+                              )}
+                              {sim && sim.delta !== 0 && (
+                                <span 
+                                  className={`autogroup-sim-badge ${sim.delta > 0 ? 'positive' : 'negative'}`}
+                                  style={{
+                                    fontSize: '0.65rem',
+                                    padding: '0.1rem 0.35rem',
+                                    borderRadius: '4px',
+                                    fontWeight: 800,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '1px'
+                                  }}
+                                  title={`Live What-If: moving student here changes diversity to ${sim.simulatedScore}% (${sim.delta > 0 ? '+' : ''}${sim.delta}%)`}
+                                >
+                                  {sim.delta > 0 ? `+${sim.delta}%` : `${sim.delta}%`}
+                                </span>
+                              )}
+                              <span 
+                                style={{ 
+                                  fontSize: kanbanLayout === 'compact' ? '0.68rem' : '0.75rem', 
+                                  fontWeight: 800, 
+                                  backgroundColor: 'var(--primary-light)', 
+                                  color: 'var(--primary)', 
+                                  padding: '0.12rem 0.4rem', 
+                                  borderRadius: '6px' 
+                                }}
+                              >
+                                {group.diversityScore}%
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setExportModal({ isOpen: true, team: group, format: 'xlsx', scope: 'diversity_card' })}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.2rem' }}
+                                title="Export this team"
+                              >
+                                <Download size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Student Cards in Column */}
+                          <div style={{ 
+                            padding: kanbanLayout === 'compact' ? '0.45rem' : '0.65rem', 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            gap: kanbanLayout === 'compact' ? '0.35rem' : '0.5rem', 
+                            minHeight: '110px', 
+                            flex: 1 
+                          }}>
+                            {filteredMembers.length === 0 ? (
+                              <div style={{ padding: '1rem 0.4rem', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                                {group.students.length === 0 ? 'Drop student here to assign' : 'No matching students'}
+                              </div>
+                            ) : (
+                              filteredMembers.map(student => {
+                                const isPinned = pinnedStudentIds.has(student.id);
+                                const isDraggingThis = draggedStudentId === student.id;
+
+                                return (
+                                <div
+                                  key={student.id}
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    e.dataTransfer.setData('text/plain', student.id);
+                                    setDraggedStudentId(student.id);
+                                  }}
+                                  onDragEnd={(e) => {
+                                    e.preventDefault();
+                                    setDraggedStudentId(null);
+                                    setDragOverGroupId(null);
+                                  }}
+                                  onClick={() => setSelectedStudent(student)}
+                                  className={`autogroup-kanban-card ${isDraggingThis ? 'is-being-dragged' : ''}`}
+                                  style={{
+                                    padding: kanbanLayout === 'compact' ? '0.45rem 0.55rem' : '0.6rem 0.7rem',
+                                    backgroundColor: 'var(--bg-surface)',
+                                    border: isPinned ? '1px solid rgba(245, 158, 11, 0.45)' : '1px solid var(--border-color)',
+                                    borderRadius: '8px',
+                                    cursor: 'grab',
+                                    boxShadow: isPinned ? '0 1px 4px rgba(245, 158, 11, 0.12)' : '0 1px 3px rgba(0, 0, 0, 0.04)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: kanbanLayout === 'compact' ? '0.25rem' : '0.35rem',
+                                    transition: 'transform 0.12s, box-shadow 0.12s',
+                                    userSelect: 'none',
+                                    WebkitUserSelect: 'none'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0 }}>
+                                      <div style={{ 
+                                        width: kanbanLayout === 'compact' ? '19px' : '22px', 
+                                        height: kanbanLayout === 'compact' ? '19px' : '22px', 
+                                        borderRadius: '50%', 
+                                        backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.15)' : 'var(--primary-light)', 
+                                        color: isPinned ? '#d97706' : 'var(--primary)', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center', 
+                                        fontSize: kanbanLayout === 'compact' ? '0.62rem' : '0.68rem', 
+                                        fontWeight: 800, 
+                                        flexShrink: 0 
+                                      }}>
+                                        {student.name.charAt(0)}
+                                      </div>
+                                      <span style={{ 
+                                        fontSize: kanbanLayout === 'compact' ? '0.74rem' : '0.8rem', 
+                                        fontWeight: 700, 
+                                        color: 'var(--text-primary)', 
+                                        overflow: 'hidden', 
+                                        textOverflow: 'ellipsis', 
+                                        whiteSpace: 'nowrap' 
+                                      }}>
+                                        {student.name}
+                                      </span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                                      {/* Student Pin / Lock Button */}
+                                      <button
+                                        type="button"
+                                        draggable={false}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleTogglePin(student.id);
+                                        }}
+                                        className={`autogroup-pin-btn ${isPinned ? 'pinned' : ''}`}
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          padding: '0.15rem',
+                                          cursor: 'pointer',
+                                          borderRadius: '4px',
+                                          color: isPinned ? '#d97706' : 'var(--text-muted)',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          transition: 'all 0.15s ease'
+                                        }}
+                                        title={isPinned ? "Student is locked to this team. Click to unpin." : "Pin student to keep them in this team during re-shuffle / optimization"}
+                                      >
+                                        <Pin size={12} style={{ transform: isPinned ? 'rotate(0deg)' : 'rotate(45deg)' }} />
+                                      </button>
+                                      <select
+                                        draggable={false}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => {
+                                          e.stopPropagation();
+                                          if (e.target.value) handleMoveStudent(student.id, e.target.value);
+                                        }}
+                                        value=""
+                                        style={{
+                                          fontSize: '0.64rem',
+                                          padding: '0.08rem 0.15rem',
+                                          backgroundColor: 'var(--bg-app)',
+                                          border: '1px solid var(--border-color)',
+                                          borderRadius: '4px',
+                                          color: 'var(--text-muted)',
+                                          cursor: 'pointer'
+                                        }}
+                                        title="Quick move to another team"
+                                      >
+                                        <option value="" disabled>Move...</option>
+                                        {groupingResult.groups.filter(g => g.groupName !== group.groupName).map(g => (
+                                          <option key={g.groupName} value={g.groupName}>{g.groupName}</option>
+                                        ))}
+                                      </select>
+                                      <GripVertical size={12} style={{ color: 'var(--text-muted)', cursor: 'grab', flexShrink: 0 }} />
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                    {student.nationality && (
+                                      <span className="badge badge-secondary" style={{ fontSize: '0.6rem', padding: '0.08rem 0.3rem' }}>
+                                        {student.nationality}
+                                      </span>
+                                    )}
+                                    {student.gender && (
+                                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{student.gender}</span>
+                                    )}
+                                    {student.englishProficiency && (
+                                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                                        • {student.englishProficiency.split(' ')[0]}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              ))}
+              ) : viewMode === 'table' ? (
+                /* 2. Detailed Table View */
+                <div className="autogroup-table-container">
+                  <table className="autogroup-preview-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '160px' }}>Team Name</th>
+                        <th style={{ width: '90px' }}>Diversity</th>
+                        <th style={{ width: '80px' }}>Members</th>
+                        <th>Student Roster</th>
+                        <th style={{ width: '180px' }}>Demographics</th>
+                        <th style={{ width: '80px', textAlign: 'center' }}>Export</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupingResult.groups.map(group => {
+                        const filteredMembers = group.students.filter(s => 
+                          !searchFilter.trim() || 
+                          s.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
+                          (s.nationality && s.nationality.toLowerCase().includes(searchFilter.toLowerCase())) ||
+                          (s.university && s.university.toLowerCase().includes(searchFilter.toLowerCase()))
+                        );
+
+                        const natList = Array.from(new Set(group.students.map(s => s.nationality).filter(Boolean)));
+                        const genderCounts = group.students.reduce((acc, s) => {
+                          const g = s.gender || 'Other';
+                          acc[g] = (acc[g] || 0) + 1;
+                          return acc;
+                        }, {} as Record<string, number>);
+
+                        const pinnedInGroup = group.students.filter(s => pinnedStudentIds.has(s.id)).length;
+                        const isDragOver = dragOverGroupId === `table-${group.groupName}`;
+
+                        return (
+                          <tr 
+                            key={group.groupName}
+                            onDragEnter={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (draggedStudentId && dragOverGroupId !== `table-${group.groupName}`) {
+                                setDragOverGroupId(`table-${group.groupName}`);
+                              }
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.dataTransfer.dropEffect = 'move';
+                              if (draggedStudentId && dragOverGroupId !== `table-${group.groupName}`) {
+                                setDragOverGroupId(`table-${group.groupName}`);
+                              }
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                if (dragOverGroupId === `table-${group.groupName}`) {
+                                  setDragOverGroupId(null);
+                                }
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const studentId = e.dataTransfer.getData('text/plain') || draggedStudentId;
+                              if (studentId) {
+                                handleMoveStudent(studentId, group.groupName);
+                              }
+                              setDraggedStudentId(null);
+                              setDragOverGroupId(null);
+                            }}
+                            style={{
+                              backgroundColor: isDragOver ? 'rgba(13, 148, 136, 0.08)' : undefined,
+                              outline: isDragOver ? '2px dashed var(--accent-teal)' : undefined
+                            }}
+                          >
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                                  {group.groupName}
+                                </span>
+                                {pinnedInGroup > 0 && (
+                                  <span 
+                                    className="autogroup-pinned-indicator"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '2px',
+                                      fontSize: '0.62rem',
+                                      padding: '0.08rem 0.3rem',
+                                      borderRadius: '4px',
+                                      backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                      color: '#d97706',
+                                      fontWeight: 700
+                                    }}
+                                    title={`${pinnedInGroup} student${pinnedInGroup > 1 ? 's' : ''} pinned to this team`}
+                                  >
+                                    <Pin size={9} style={{ transform: 'rotate(45deg)' }} /> {pinnedInGroup}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              <span 
+                                style={{ 
+                                  fontSize: '0.76rem', 
+                                  fontWeight: 800, 
+                                  backgroundColor: 'var(--primary-light)', 
+                                  color: 'var(--primary)', 
+                                  padding: '0.2rem 0.5rem', 
+                                  borderRadius: '6px',
+                                  display: 'inline-block'
+                                }}
+                              >
+                                {group.diversityScore}%
+                              </span>
+                            </td>
+                            <td>
+                              <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
+                                {group.studentCount}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                {filteredMembers.map(student => {
+                                  const isPinned = pinnedStudentIds.has(student.id);
+                                  const isDraggingThis = draggedStudentId === student.id;
+
+                                  return (
+                                    <div
+                                      key={student.id}
+                                      draggable={true}
+                                      onDragStart={(e) => {
+                                        e.stopPropagation();
+                                        e.dataTransfer.effectAllowed = 'move';
+                                        e.dataTransfer.setData('text/plain', student.id);
+                                        setDraggedStudentId(student.id);
+                                      }}
+                                      onDragEnd={(e) => {
+                                        e.preventDefault();
+                                        setDraggedStudentId(null);
+                                        setDragOverGroupId(null);
+                                      }}
+                                      className={`autogroup-draggable-item ${isDraggingThis ? 'is-being-dragged' : ''}`}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.35rem',
+                                        padding: '0.2rem 0.5rem',
+                                        backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.08)' : 'var(--bg-app)',
+                                        border: isPinned ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-color)',
+                                        borderRadius: '6px',
+                                        fontSize: '0.74rem',
+                                        color: 'var(--text-primary)',
+                                        cursor: 'grab',
+                                        userSelect: 'none',
+                                        WebkitUserSelect: 'none'
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        draggable={false}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={() => setSelectedStudent(student)}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '0.3rem',
+                                          background: 'none',
+                                          border: 'none',
+                                          padding: 0,
+                                          cursor: 'pointer',
+                                          color: 'inherit'
+                                        }}
+                                        title="Click to view student profile"
+                                      >
+                                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.2)' : 'var(--primary-light)', color: isPinned ? '#d97706' : 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 800 }}>
+                                          {student.name.charAt(0)}
+                                        </div>
+                                        <span style={{ fontWeight: 600 }}>{student.name}</span>
+                                        {student.nationality && (
+                                          <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>({student.nationality})</span>
+                                        )}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        draggable={false}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleTogglePin(student.id);
+                                        }}
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          padding: '0.1rem',
+                                          cursor: 'pointer',
+                                          color: isPinned ? '#d97706' : 'var(--text-muted)',
+                                          display: 'flex',
+                                          alignItems: 'center'
+                                        }}
+                                        title={isPinned ? "Student locked in team. Click to unlock." : "Pin student to lock in this team"}
+                                      >
+                                        <Pin size={11} style={{ transform: isPinned ? 'rotate(0deg)' : 'rotate(45deg)' }} />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                {natList.length > 0 && (
+                                  <span><strong>Nations:</strong> {natList.slice(0, 3).join(', ')}{natList.length > 3 ? '...' : ''}</span>
+                                )}
+                                <span>
+                                  <strong>Gender:</strong> {Object.entries(genderCounts).map(([k, v]) => `${k[0]}:${v}`).join(', ')}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => setExportModal({ isOpen: true, team: group, format: 'xlsx', scope: 'diversity_card' })}
+                                className="btn btn-sm btn-secondary"
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                                title="Export team spreadsheet"
+                              >
+                                <Download size={12} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : viewMode === 'compact' ? (
+                /* 3. Compact Matrix View */
+                <div className="autogroup-compact-grid">
+                  {groupingResult.groups.map(group => {
+                    const filteredMembers = group.students.filter(s => 
+                      !searchFilter.trim() || 
+                      s.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
+                      (s.nationality && s.nationality.toLowerCase().includes(searchFilter.toLowerCase())) ||
+                      (s.university && s.university.toLowerCase().includes(searchFilter.toLowerCase()))
+                    );
+                    const pinnedInGroup = group.students.filter(s => pinnedStudentIds.has(s.id)).length;
+                    const isDragOver = dragOverGroupId === `compact-${group.groupName}`;
+
+                    return (
+                      <div
+                        key={group.groupName}
+                        onDragEnter={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (draggedStudentId && dragOverGroupId !== `compact-${group.groupName}`) {
+                            setDragOverGroupId(`compact-${group.groupName}`);
+                          }
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (draggedStudentId && dragOverGroupId !== `compact-${group.groupName}`) {
+                            setDragOverGroupId(`compact-${group.groupName}`);
+                          }
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            if (dragOverGroupId === `compact-${group.groupName}`) {
+                              setDragOverGroupId(null);
+                            }
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const studentId = e.dataTransfer.getData('text/plain') || draggedStudentId;
+                          if (studentId) {
+                            handleMoveStudent(studentId, group.groupName);
+                          }
+                          setDraggedStudentId(null);
+                          setDragOverGroupId(null);
+                        }}
+                        style={{
+                          backgroundColor: isDragOver ? 'rgba(13, 148, 136, 0.08)' : 'var(--bg-surface)',
+                          border: isDragOver ? '2px dashed var(--accent-teal)' : '1px solid var(--border-color)',
+                          borderRadius: '8px',
+                          padding: '0.75rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem',
+                          boxShadow: isDragOver ? '0 0 0 3px rgba(13, 148, 136, 0.15)' : '0 1px 3px rgba(0, 0, 0, 0.03)',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                              {group.groupName}
+                            </span>
+                            {pinnedInGroup > 0 && (
+                              <span 
+                                className="autogroup-pinned-indicator"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '2px',
+                                  fontSize: '0.62rem',
+                                  padding: '0.08rem 0.3rem',
+                                  borderRadius: '4px',
+                                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                  color: '#d97706',
+                                  fontWeight: 700
+                                }}
+                                title={`${pinnedInGroup} student${pinnedInGroup > 1 ? 's' : ''} pinned`}
+                              >
+                                <Pin size={9} style={{ transform: 'rotate(45deg)' }} /> {pinnedInGroup}
+                              </span>
+                            )}
+                          </div>
+                          <span 
+                            style={{ 
+                              fontSize: '0.72rem', 
+                              fontWeight: 800, 
+                              backgroundColor: 'var(--primary-light)', 
+                              color: 'var(--primary)', 
+                              padding: '0.12rem 0.45rem', 
+                              borderRadius: '5px' 
+                            }}
+                          >
+                            {group.diversityScore}%
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          {filteredMembers.map(student => {
+                            const isPinned = pinnedStudentIds.has(student.id);
+                            const isDraggingThis = draggedStudentId === student.id;
+
+                            return (
+                            <div
+                              key={student.id}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.effectAllowed = 'move';
+                                e.dataTransfer.setData('text/plain', student.id);
+                                setDraggedStudentId(student.id);
+                              }}
+                              onDragEnd={(e) => {
+                                e.preventDefault();
+                                setDraggedStudentId(null);
+                                setDragOverGroupId(null);
+                              }}
+                              onClick={() => setSelectedStudent(student)}
+                              className={`autogroup-draggable-item ${isDraggingThis ? 'is-being-dragged' : ''}`}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '0.25rem 0.4rem',
+                                backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.08)' : 'var(--bg-app)',
+                                border: isPinned ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid transparent',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                cursor: 'grab',
+                                userSelect: 'none',
+                                WebkitUserSelect: 'none'
+                              }}
+                            >
+                              <span style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {student.name}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                                  {student.nationality || student.gender || ''}
+                                </span>
+                                <button
+                                  type="button"
+                                  draggable={false}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleTogglePin(student.id);
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    padding: '0.1rem',
+                                    cursor: 'pointer',
+                                    color: isPinned ? '#d97706' : 'var(--text-muted)',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                  }}
+                                  title={isPinned ? "Student locked. Click to unlock." : "Pin student"}
+                                >
+                                  <Pin size={10} style={{ transform: isPinned ? 'rotate(0deg)' : 'rotate(45deg)' }} />
+                                </button>
+                              </div>
+                            </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* 4. Enhanced Grid View */
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: '1.15rem' }}>
+                  {groupingResult.groups.map(group => {
+                    const filteredMembers = group.students.filter(s => 
+                      !searchFilter.trim() || 
+                      s.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
+                      (s.nationality && s.nationality.toLowerCase().includes(searchFilter.toLowerCase())) ||
+                      (s.university && s.university.toLowerCase().includes(searchFilter.toLowerCase())) ||
+                      (s.gender && s.gender.toLowerCase().includes(searchFilter.toLowerCase())) ||
+                      (s.englishProficiency && s.englishProficiency.toLowerCase().includes(searchFilter.toLowerCase()))
+                    );
+                    const pinnedInGroup = group.students.filter(s => pinnedStudentIds.has(s.id)).length;
+                    const sim = simulationReports ? simulationReports[group.groupName] : null;
+                    const isDragOver = dragOverGroupId === `grid-${group.groupName}`;
+
+                    return (
+                      <div
+                        id={`grid-team-card-${group.groupName}`}
+                        key={group.groupName}
+                        className={`autogroup-grid-card ${isDragOver ? 'drag-over' : ''}`}
+                        onDragEnter={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (draggedStudentId && dragOverGroupId !== `grid-${group.groupName}`) {
+                            setDragOverGroupId(`grid-${group.groupName}`);
+                          }
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (draggedStudentId && dragOverGroupId !== `grid-${group.groupName}`) {
+                            setDragOverGroupId(`grid-${group.groupName}`);
+                          }
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            if (dragOverGroupId === `grid-${group.groupName}`) {
+                              setDragOverGroupId(null);
+                            }
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const studentId = e.dataTransfer.getData('text/plain') || draggedStudentId;
+                          if (studentId) {
+                            handleMoveStudent(studentId, group.groupName);
+                          }
+                          setDraggedStudentId(null);
+                          setDragOverGroupId(null);
+                        }}
+                        style={{
+                          backgroundColor: isDragOver ? 'rgba(13, 148, 136, 0.08)' : 'var(--bg-surface)',
+                          border: isDragOver ? '2px dashed var(--accent-teal)' : '1px solid var(--border-color)',
+                          borderRadius: 'var(--radius-lg)',
+                          padding: '1.1rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.85rem',
+                          boxShadow: isDragOver ? '0 0 0 4px rgba(13, 148, 136, 0.18)' : '0 2px 10px rgba(0, 0, 0, 0.03)',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {/* Group Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                              <div 
+                                style={{
+                                  width: '26px',
+                                  height: '26px',
+                                  borderRadius: '6px',
+                                  backgroundColor: 'var(--primary-light)',
+                                  color: 'var(--primary)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 800
+                                }}
+                              >
+                                <Users size={13} />
+                              </div>
+                              <span style={{ fontSize: '0.94rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                {group.groupName}
+                              </span>
+                              <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.12rem 0.4rem' }}>
+                                {group.studentCount} {group.studentCount === 1 ? 'member' : 'members'}
+                              </span>
+                              {pinnedInGroup > 0 && (
+                                <span 
+                                  className="autogroup-pinned-indicator"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '2px',
+                                    fontSize: '0.65rem',
+                                    padding: '0.1rem 0.35rem',
+                                    borderRadius: '4px',
+                                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                    color: '#d97706',
+                                    fontWeight: 700
+                                  }}
+                                  title={`${pinnedInGroup} student${pinnedInGroup > 1 ? 's' : ''} locked to this team`}
+                                >
+                                  <Pin size={10} style={{ transform: 'rotate(45deg)' }} /> {pinnedInGroup}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Rule Satisfactions Mini-Tags */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                              {group.ruleSatisfactions && group.ruleSatisfactions.slice(0, 3).map(rs => (
+                                <span 
+                                  key={rs.ruleId} 
+                                  style={{ 
+                                    fontSize: '0.67rem', 
+                                    padding: '0.1rem 0.35rem',
+                                    borderRadius: '4px',
+                                    backgroundColor: 'var(--bg-app)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-secondary)' 
+                                  }}
+                                >
+                                  {rs.ruleName.split(' ')[0]}: <strong style={{ color: rs.satisfactionScore >= 80 ? '#10b981' : 'var(--primary)' }}>{rs.satisfactionScore}%</strong>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                            {sim && sim.delta !== 0 && (
+                              <span 
+                                className={`autogroup-sim-badge ${sim.delta > 0 ? 'positive' : 'negative'}`}
+                                style={{
+                                  fontSize: '0.65rem',
+                                  padding: '0.15rem 0.4rem',
+                                  borderRadius: '6px',
+                                  fontWeight: 800,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '1px'
+                                }}
+                                title={`Live What-If: moving selected student here gives ${sim.simulatedScore}% diversity (${sim.delta > 0 ? '+' : ''}${sim.delta}%)`}
+                              >
+                                {sim.delta > 0 ? `+${sim.delta}%` : `${sim.delta}%`}
+                              </span>
+                            )}
+                            <span 
+                              style={{ 
+                                fontSize: '0.82rem', 
+                                fontWeight: 800, 
+                                color: group.diversityScore >= 80 ? '#0d9488' : 'var(--primary)',
+                                backgroundColor: 'var(--primary-light)',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-color)'
+                              }}
+                              title={`Team overall diversity score: ${group.diversityScore}%`}
+                            >
+                              {group.diversityScore}%
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setExportModal({ isOpen: true, team: group, format: 'xlsx', scope: 'diversity_card' })}
+                              className="btn btn-sm btn-secondary"
+                              style={{ padding: '0.22rem 0.4rem' }}
+                              title="Export this team"
+                            >
+                              <Download size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Active Drop Cue Banner */}
+                        {draggedStudentId && (
+                          <div 
+                            style={{
+                              padding: '0.35rem 0.6rem',
+                              borderRadius: '6px',
+                              backgroundColor: isDragOver ? 'rgba(13, 148, 136, 0.16)' : 'rgba(13, 148, 136, 0.04)',
+                              border: isDragOver ? '1.5px solid var(--accent-teal)' : '1px dashed var(--accent-teal)',
+                              color: 'var(--accent-teal)',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.35rem',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <ArrowRightLeft size={12} /> {isDragOver ? `Release to assign to ${group.groupName}` : `Drop here to move to ${group.groupName}`}
+                          </div>
+                        )}
+
+                        {/* Members List */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.6rem' }}>
+                          {filteredMembers.length === 0 ? (
+                            <div style={{ padding: '1rem', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '0.74rem' }}>
+                              {group.students.length === 0 ? 'Drop students here to assign' : 'No matching students'}
+                            </div>
+                          ) : (
+                            filteredMembers.map(student => {
+                              const isPinned = pinnedStudentIds.has(student.id);
+                              const isDraggingThis = draggedStudentId === student.id;
+
+                              return (
+                                <div
+                                  key={student.id}
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    e.dataTransfer.setData('text/plain', student.id);
+                                    setDraggedStudentId(student.id);
+                                  }}
+                                  onDragEnd={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setDraggedStudentId(null);
+                                    setDragOverGroupId(null);
+                                  }}
+                                  onClick={() => setSelectedStudent(student)}
+                                  className={`autogroup-draggable-item ${isDraggingThis ? 'is-being-dragged' : ''}`}
+                                  style={{
+                                    padding: '0.5rem 0.65rem',
+                                    backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.08)' : 'var(--bg-app)',
+                                    border: isPinned ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-color)',
+                                    borderRadius: '7px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.35rem',
+                                    fontSize: '0.76rem',
+                                    cursor: 'grab',
+                                    userSelect: 'none',
+                                    WebkitUserSelect: 'none',
+                                    transition: 'all 0.12s ease'
+                                  }}
+                                >
+                                  {/* Top Row: Grip, Avatar, Name & Uni, Action Controls */}
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+                                      <GripVertical size={13} style={{ color: 'var(--text-muted)', flexShrink: 0, opacity: 0.6 }} />
+                                      <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.2)' : 'var(--primary-light)', color: isPinned ? '#d97706' : 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 800, flexShrink: 0 }}>
+                                        {student.name.charAt(0)}
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                        <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                          {student.name}
+                                        </span>
+                                        {renderStudentUniText(student)}
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
+                                      {/* Quick Move Dropdown */}
+                                      <select
+                                        value={group.groupName}
+                                        draggable={false}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => {
+                                          e.stopPropagation();
+                                          if (e.target.value !== group.groupName) {
+                                            handleMoveStudent(student.id, e.target.value);
+                                          }
+                                        }}
+                                        style={{
+                                          fontSize: '0.67rem',
+                                          padding: '0.12rem 0.3rem',
+                                          borderRadius: '4px',
+                                          border: '1px solid var(--border-color)',
+                                          backgroundColor: 'var(--bg-surface)',
+                                          color: 'var(--text-secondary)',
+                                          cursor: 'pointer',
+                                          fontWeight: 600
+                                        }}
+                                        title="Instantly move student to another team"
+                                      >
+                                        {groupingResult.groups.map(g => (
+                                          <option key={g.groupName} value={g.groupName}>
+                                            {g.groupName === group.groupName ? `Team: ${g.groupName}` : `Move to ${g.groupName}`}
+                                          </option>
+                                        ))}
+                                      </select>
+
+                                      {/* Pin Button */}
+                                      <button
+                                        type="button"
+                                        draggable={false}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleTogglePin(student.id);
+                                        }}
+                                        style={{
+                                          background: isPinned ? 'rgba(245, 158, 11, 0.15)' : 'none',
+                                          border: isPinned ? '1px solid rgba(245, 158, 11, 0.35)' : 'none',
+                                          borderRadius: '4px',
+                                          padding: '0.18rem',
+                                          cursor: 'pointer',
+                                          color: isPinned ? '#d97706' : 'var(--text-muted)',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center'
+                                        }}
+                                        title={isPinned ? "Student is locked. Click to unlock." : "Pin student to lock into this team"}
+                                      >
+                                        <Pin size={12} style={{ transform: isPinned ? 'rotate(0deg)' : 'rotate(45deg)' }} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Bottom Row: Demographics Chips */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap', paddingLeft: '1.25rem' }}>
+                                    {student.nationality && (
+                                      <span className="badge badge-secondary" style={{ fontSize: '0.64rem', padding: '0.08rem 0.32rem', fontWeight: 600 }}>
+                                        <Globe size={9} style={{ marginRight: '2px' }} /> {student.nationality}
+                                      </span>
+                                    )}
+                                    {student.gender && (
+                                      <span className="badge badge-secondary" style={{ fontSize: '0.64rem', padding: '0.08rem 0.32rem' }}>
+                                        {student.gender}
+                                      </span>
+                                    )}
+                                    {student.englishProficiency && (
+                                      <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                                        <Languages size={9} /> {student.englishProficiency.split(' ')[0]}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── BOTTOM ACTION & FINALIZATION BAR ─────────────────────────────────────── */}
+          {groupingResult && students.length > 0 && (
+            <div className="autogroup-bottom-action-bar">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+                <div>
+                  <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block' }}>
+                    {groupingResult.groups.length} Teams Configured ({students.length} Students Total)
+                  </span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    Simulated Annealing Optimized • Ready to apply allocation to class roster
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowReshuffleModal(true)}
+                    disabled={isGenerating || students.length === 0}
+                    style={{ padding: '0.55rem 1.15rem', fontSize: '0.84rem', fontWeight: 700 }}
+                    title="Re-run simulated annealing to generate a new mix"
+                  >
+                    <Shuffle size={14} style={{ color: 'var(--primary)' }} className={isGenerating ? 'spin' : ''} /> Shuffle Combinations
+                  </button>
+                  <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
+                    Re-runs optimization for a new mix
+                  </span>
+                </div>
+
+                {onOpenTeamCharter && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={onOpenTeamCharter}
+                      style={{ padding: '0.55rem 1.15rem', fontSize: '0.84rem', fontWeight: 700, borderColor: 'var(--primary)', color: 'var(--primary)', backgroundColor: 'var(--bg-surface)' }}
+                      title="Generate Team Charters, assign customizable activity roles, and tailored 5-min multicultural icebreakers"
+                    >
+                      <Sparkles size={14} /> Team Charters &amp; Icebreakers
+                    </button>
+                    <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
+                      Assign roles &amp; 5-min icebreakers
+                    </span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => setShowAssignModal(true)}
+                    disabled={isGenerating || students.length === 0}
+                    style={{ padding: '0.55rem 1.4rem', fontSize: '0.86rem', fontWeight: 800, boxShadow: '0 4px 16px var(--primary-glow)' }}
+                    title="Save team assignments to the active classroom roster"
+                  >
+                    <Check size={16} /> Apply to Class Roster
+                  </button>
+                  <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
+                    Saves team assignments to roster
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 
         </div>
       )}
 
-      {/* --- CONFIRMATION POPUP: RESHUFFLE TEAMS --- */}
+      {/* ── MODAL: CONFIRM RESHUFFLE ─────────────────────────────────────────────── */}
       {showReshuffleModal && createPortal(
         <div 
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
-            backdropFilter: 'blur(5px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 99999,
-            padding: '1rem'
-          }}
+          className="modal-overlay" 
           onClick={() => setShowReshuffleModal(false)}
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            zIndex: 100060, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+            backdropFilter: 'blur(8px)',
+            padding: '1.25rem',
+            animation: 'fadeIn 120ms ease' 
+          }}
         >
           <div 
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--border-color)',
-              maxWidth: '480px',
-              width: '100%',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
-              overflow: 'hidden',
-              animation: 'popIn 160ms ease-out'
-            }}
-            onClick={(e) => e.stopPropagation()}
+            className="modal-content" 
+            onClick={e => e.stopPropagation()} 
+            style={{ maxWidth: '420px', width: '100%', padding: '1.5rem', backgroundColor: 'var(--bg-surface)', margin: 'auto' }}
           >
-            <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.14)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Shuffle size={20} />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  Reshuffle Team Allocations?
-                </h3>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Simulated Annealing Diversity Optimizer
-                </span>
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--primary)', marginBottom: '0.75rem' }}>
+              <Shuffle size={20} />
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Shuffle Combinations</h3>
             </div>
-
-            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-              <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Are you sure you want to reshuffle the team allocations? This will run a fresh multi-criteria combinatorial search to generate a newly balanced cohort grouping.
-              </p>
-
-              {/* Parameter Preview Card */}
-              <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.76rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Classroom Cohort:</span>
-                  <b style={{ color: 'var(--text-primary)' }}>{totalMembers} Students</b>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Target Team Size:</span>
-                  <b style={{ color: 'var(--text-primary)' }}>~{targetSize} per team ({numTeams} Teams)</b>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Active Strategy:</span>
-                  <b style={{ color: 'var(--accent-teal)' }}>{activeStrategyObj?.label.split('(')[0].trim()}</b>
-                </div>
-                {customFields.length > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Custom Criteria:</span>
-                    <b style={{ color: 'var(--primary)' }}>{customFields.length} active custom rule{customFields.length > 1 ? 's' : ''}</b>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div style={{ padding: '0.9rem 1.25rem', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-app)', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setShowReshuffleModal(false)}
-                style={{ fontSize: '0.82rem', padding: '0.4rem 0.95rem' }}
-              >
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 1.25rem 0' }}>
+              This will re-run the simulated annealing algorithm with your active custom rules and weightages to generate a fresh team combination.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowReshuffleModal(false)}>
                 Cancel
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleConfirmReshuffle}
-                style={{ fontSize: '0.82rem', padding: '0.4rem 1.15rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-              >
-                <Shuffle size={14} /> Yes, Reshuffle Teams
+              <button type="button" className="btn btn-primary btn-sm" onClick={handleConfirmReshuffle} style={{ fontWeight: 800 }}>
+                Shuffle Combinations
               </button>
             </div>
           </div>
@@ -1356,98 +2774,42 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
         document.body
       )}
 
-      {/* --- CONFIRMATION POPUP: ASSIGN TEAMS --- */}
+      {/* ── MODAL: CONFIRM ASSIGN TO ROSTER ───────────────────────────────────────── */}
       {showAssignModal && createPortal(
         <div 
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
-            backdropFilter: 'blur(5px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 99999,
-            padding: '1rem'
-          }}
+          className="modal-overlay" 
           onClick={() => setShowAssignModal(false)}
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            zIndex: 100060, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+            backdropFilter: 'blur(8px)',
+            padding: '1.25rem',
+            animation: 'fadeIn 120ms ease' 
+          }}
         >
           <div 
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--border-color)',
-              maxWidth: '500px',
-              width: '100%',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
-              overflow: 'hidden',
-              animation: 'popIn 160ms ease-out'
-            }}
-            onClick={(e) => e.stopPropagation()}
+            className="modal-content" 
+            onClick={e => e.stopPropagation()} 
+            style={{ maxWidth: '440px', width: '100%', padding: '1.5rem', backgroundColor: 'var(--bg-surface)', margin: 'auto' }}
           >
-            <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'rgba(20, 184, 166, 0.14)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <CheckCircle2 size={22} />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  Confirm Team Assignment to Roster
-                </h3>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Apply Generated Teams to Active Classroom
-                </span>
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--primary)', marginBottom: '0.75rem' }}>
+              <CheckCircle2 size={22} />
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Apply Teams to Class Roster</h3>
             </div>
-
-            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-              <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                You are about to assign <b>{numTeams} teams</b> to <b>{totalMembers} students</b> in your active course roster. This will update their team memberships for peer evaluations and grade calculations.
-              </p>
-
-              {/* Health Score Summary Card */}
-              {groupingResult && (
-                <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.85rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', fontSize: '0.76rem' }}>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block' }}>Diversity Index:</span>
-                    <b style={{ color: 'var(--accent-teal)', fontSize: '0.94rem' }}>{groupingResult.overallDiversityScore}%</b>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block' }}>Gender Balance:</span>
-                    <b style={{ color: 'var(--primary)' }}>{groupingResult.genderBalanceRating}</b>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block' }}>Origin Dispersion:</span>
-                    <b style={{ color: '#10b981' }}>{groupingResult.nationalityMixRating}</b>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block' }}>Language Spread:</span>
-                    <b style={{ color: 'var(--accent-amber)' }}>{groupingResult.englishMixRating}</b>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                <AlertCircle size={14} style={{ flexShrink: 0 }} />
-                <span>Existing manual groups will be safely updated to the newly generated team roster.</span>
-              </div>
-            </div>
-
-            <div style={{ padding: '0.9rem 1.25rem', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-app)', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setShowAssignModal(false)}
-                style={{ fontSize: '0.82rem', padding: '0.4rem 0.95rem' }}
-              >
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 1.25rem 0' }}>
+              Are you sure you want to update all <strong>{students.length} students</strong> in the active class roster with their new team assignments?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowAssignModal(false)}>
                 Cancel
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleConfirmAssign}
-                style={{ fontSize: '0.82rem', padding: '0.4rem 1.2rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-              >
-                <Check size={14} /> Confirm &amp; Assign Teams
+              <button type="button" className="btn btn-primary btn-sm" onClick={handleConfirmAssign} style={{ fontWeight: 800 }}>
+                Confirm &amp; Apply to Roster
               </button>
             </div>
           </div>
@@ -1455,318 +2817,157 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
         document.body
       )}
 
-      {/* --- STUDENT DETAIL MODAL --- */}
-      {selectedStudent && createPortal(
-        <div 
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 99999,
-            padding: '1rem'
-          }}
-          onClick={() => setSelectedStudent(null)}
-        >
-          <div 
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--border-color)',
-              maxWidth: '520px',
-              width: '100%',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
-              overflow: 'hidden'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div style={{ padding: '1.1rem 1.35rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '9px', backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <UserCheck size={18} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    {selectedStudent.name}
-                  </h3>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    {selectedStudent.groupName || 'Unassigned'} • ID: {selectedStudent.id}
-                  </span>
-                </div>
-              </div>
-
-              <button 
-                type="button" 
-                onClick={() => setSelectedStudent(null)}
-                style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem 0.8rem', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>Email Address</span>
-                  <b style={{ fontSize: '0.78rem', color: 'var(--text-primary)', wordBreak: 'break-all' }}>{selectedStudent.email}</b>
-                </div>
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem 0.8rem', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>Gender Identity</span>
-                  <b style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>{selectedStudent.gender || 'Unspecified'}</b>
-                </div>
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem 0.8rem', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>Nationality / Origin</span>
-                  <b style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>{selectedStudent.nationality || 'Unspecified'}</b>
-                </div>
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem 0.8rem', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>Language Proficiency</span>
-                  <b style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>{selectedStudent.englishProficiency || 'Fluent (C1/C2)'}</b>
-                </div>
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem 0.8rem', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>University / Campus</span>
-                  <b style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>{selectedStudent.university || 'Unspecified'}</b>
-                </div>
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem 0.8rem', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>Degree / Field</span>
-                  <b style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>{selectedStudent.degree || 'Unspecified'}</b>
-                </div>
-              </div>
-
-              {/* Custom Attributes Section */}
-              {customFields.length > 0 && (
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.75rem 0.85rem', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.4rem' }}>
-                    Custom Diversity Attributes
-                  </span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    {customFields.map(cf => (
-                      <div key={cf.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>{cf.name}:</span>
-                        <b style={{ color: 'var(--text-primary)' }}>
-                          {getStudentFieldValue(selectedStudent, cf.key, cf.name) || 'Not Set'}
-                        </b>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div style={{ padding: '0.85rem 1.25rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end' }}>
-              <button 
-                type="button" 
-                className="btn btn-secondary btn-sm" 
-                onClick={() => setSelectedStudent(null)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* --- EXPORT SINGLE TEAM MODAL --- */}
+      {/* ── MODAL: SINGLE TEAM EXPORT ─────────────────────────────────────────────── */}
       {exportModal.isOpen && exportModal.team && createPortal(
         <div 
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 99999,
-            padding: '1rem'
-          }}
+          className="modal-overlay" 
           onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            zIndex: 100060, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+            backdropFilter: 'blur(8px)',
+            padding: '1.25rem',
+            animation: 'fadeIn 120ms ease' 
+          }}
         >
           <div 
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--border-color)',
-              maxWidth: '480px',
-              width: '100%',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
-              overflow: 'hidden'
-            }}
-            onClick={(e) => e.stopPropagation()}
+            className="modal-content" 
+            onClick={e => e.stopPropagation()} 
+            style={{ maxWidth: '440px', width: '100%', padding: '1.5rem', backgroundColor: 'var(--bg-surface)', margin: 'auto' }}
           >
-            {/* Modal Header */}
-            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Download size={16} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Export {exportModal.team.groupName}
-                  </h3>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    {exportModal.team.studentCount} Members • {exportModal.team.diversityScore}% Diversity
-                  </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                Export {exportModal.team.groupName}
+              </h3>
+              <button type="button" onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+                  File Format
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${exportModal.format === 'xlsx' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setExportModal(prev => ({ ...prev, format: 'xlsx' }))}
+                    style={{ flex: 1 }}
+                  >
+                    <FileSpreadsheet size={13} /> Excel (.xlsx)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${exportModal.format === 'csv' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setExportModal(prev => ({ ...prev, format: 'csv' }))}
+                    style={{ flex: 1 }}
+                  >
+                    <FileText size={13} /> CSV (.csv)
+                  </button>
                 </div>
               </div>
+            </div>
 
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-primary btn-sm" onClick={handleExecuteExport} style={{ fontWeight: 800 }}>
+                <Download size={13} /> Download Export
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── MODAL: STUDENT DETAILS (WELL-PLACED & PROPERLY CENTERED) ──────────────── */}
+      {selectedStudent && createPortal(
+        <div 
+          className="modal-overlay" 
+          onClick={() => setSelectedStudent(null)}
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            zIndex: 100070, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+            backdropFilter: 'blur(8px)',
+            padding: '1.25rem',
+            animation: 'fadeIn 150ms ease' 
+          }}
+        >
+          <div 
+            className="modal-content" 
+            onClick={e => e.stopPropagation()} 
+            style={{ 
+              maxWidth: '460px', 
+              width: '100%', 
+              padding: '1.5rem', 
+              backgroundColor: 'var(--bg-surface)', 
+              borderRadius: 'var(--radius-lg)', 
+              border: '1px solid var(--border-color)', 
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+              margin: 'auto',
+              animation: 'slideUp 200ms cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '50%', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1.05rem' }}>
+                  {selectedStudent.name.charAt(0)}
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>{selectedStudent.name}</h3>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{selectedStudent.email || selectedStudent.id || 'Student Profile'}</span>
+                </div>
+              </div>
               <button 
                 type="button" 
-                onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
-                style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                onClick={() => setSelectedStudent(null)} 
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0.25rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {/* Format Selector */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.78rem', backgroundColor: 'var(--bg-app)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', marginBottom: '1.25rem' }}>
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem', display: 'block' }}>
-                  1. Choose Export Format
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-                  <button
-                    type="button"
-                    onClick={() => setExportModal(prev => ({ ...prev, format: 'xlsx' }))}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      padding: '0.65rem 0.8rem',
-                      borderRadius: '8px',
-                      border: `2px solid ${exportModal.format === 'xlsx' ? 'var(--accent-teal)' : 'var(--border-color)'}`,
-                      backgroundColor: exportModal.format === 'xlsx' ? 'rgba(20, 184, 166, 0.08)' : 'var(--bg-app)',
-                      cursor: 'pointer',
-                      textAlign: 'left'
-                    }}
-                  >
-                    <FileSpreadsheet size={20} style={{ color: '#10b981', flexShrink: 0 }} />
-                    <div>
-                      <b style={{ fontSize: '0.82rem', color: 'var(--text-primary)', display: 'block' }}>Excel (.xlsx)</b>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Formatted Workbook</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setExportModal(prev => ({ ...prev, format: 'csv' }))}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      padding: '0.65rem 0.8rem',
-                      borderRadius: '8px',
-                      border: `2px solid ${exportModal.format === 'csv' ? 'var(--accent-teal)' : 'var(--border-color)'}`,
-                      backgroundColor: exportModal.format === 'csv' ? 'rgba(20, 184, 166, 0.08)' : 'var(--bg-app)',
-                      cursor: 'pointer',
-                      textAlign: 'left'
-                    }}
-                  >
-                    <FileText size={20} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                    <div>
-                      <b style={{ fontSize: '0.82rem', color: 'var(--text-primary)', display: 'block' }}>CSV Format</b>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Comma-Separated</span>
-                    </div>
-                  </button>
-                </div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.02em', marginBottom: '0.15rem' }}>Gender</span>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{selectedStudent.gender || 'Unspecified'}</span>
               </div>
-
-              {/* Data Scope Selector */}
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem', display: 'block' }}>
-                  2. Choose Data Content to Include
-                </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                  <label 
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'flex-start', 
-                      gap: '0.65rem', 
-                      padding: '0.75rem 0.85rem', 
-                      borderRadius: '8px', 
-                      border: `2px solid ${exportModal.scope === 'diversity_card' ? 'var(--accent-teal)' : 'var(--border-color)'}`,
-                      backgroundColor: exportModal.scope === 'diversity_card' ? 'rgba(20, 184, 166, 0.08)' : 'var(--bg-app)',
-                      cursor: 'pointer',
-                      transition: 'all 120ms ease'
-                    }}
-                  >
-                    <input 
-                      type="radio" 
-                      name="exportScope" 
-                      value="diversity_card" 
-                      checked={exportModal.scope === 'diversity_card'}
-                      onChange={() => setExportModal(prev => ({ ...prev, scope: 'diversity_card' }))}
-                      style={{ marginTop: '2px', accentColor: 'var(--accent-teal)' }}
-                    />
-                    <div>
-                      <b style={{ fontSize: '0.84rem', color: 'var(--text-primary)', display: 'block' }}>
-                        Diversity Studio Card Info Only
-                      </b>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.35, display: 'block', marginTop: '2px' }}>
-                        Includes Name, Team, Gender, English CEFR level, Nationality, Current Country, Original/Current Universities, Degree, and Exchange status.
-                      </span>
-                    </div>
-                  </label>
-
-                  <label 
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'flex-start', 
-                      gap: '0.65rem', 
-                      padding: '0.75rem 0.85rem', 
-                      borderRadius: '8px', 
-                      border: `2px solid ${exportModal.scope === 'all' ? 'var(--primary)' : 'var(--border-color)'}`,
-                      backgroundColor: exportModal.scope === 'all' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-app)',
-                      cursor: 'pointer',
-                      transition: 'all 120ms ease'
-                    }}
-                  >
-                    <input 
-                      type="radio" 
-                      name="exportScope" 
-                      value="all" 
-                      checked={exportModal.scope === 'all'}
-                      onChange={() => setExportModal(prev => ({ ...prev, scope: 'all' }))}
-                      style={{ marginTop: '2px', accentColor: 'var(--primary)' }}
-                    />
-                    <div>
-                      <b style={{ fontSize: '0.84rem', color: 'var(--text-primary)', display: 'block' }}>
-                        All Data About These Students
-                      </b>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.35, display: 'block', marginTop: '2px' }}>
-                        Includes all student attributes plus submission status, peer reviews count, expected reviews, and grade metrics.
-                      </span>
-                    </div>
-                  </label>
-                </div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.02em', marginBottom: '0.15rem' }}>Nationality</span>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{selectedStudent.nationality || 'Unspecified'}</span>
               </div>
-
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.02em', marginBottom: '0.15rem' }}>University / Campus</span>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{selectedStudent.university || 'Unassigned'}</span>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.02em', marginBottom: '0.15rem' }}>CEFR Language</span>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{selectedStudent.englishProficiency || 'Fluent (C1/C2)'}</span>
+              </div>
+              {selectedStudent.degree && (
+                <div style={{ gridColumn: 'span 2' }}>
+                  <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.02em', marginBottom: '0.15rem' }}>Degree / Major</span>
+                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{selectedStudent.degree}</span>
+                </div>
+              )}
             </div>
 
-            {/* Modal Footer */}
-            <div style={{ padding: '0.9rem 1.25rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
-                onClick={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
-                style={{ fontSize: '0.85rem', padding: '0.4rem 0.9rem' }}
-              >
-                Cancel
-              </button>
-              <button 
-                type="button" 
-                className="btn btn-primary" 
-                onClick={handleExecuteExport}
-                style={{ fontSize: '0.85rem', padding: '0.4rem 1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-              >
-                <Download size={14} /> Download Roster
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelectedStudent(null)} style={{ padding: '0.45rem 1.25rem', fontWeight: 700 }}>
+                Close
               </button>
             </div>
           </div>

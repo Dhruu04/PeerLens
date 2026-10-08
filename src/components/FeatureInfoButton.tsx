@@ -360,7 +360,7 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
                         lineHeight: 1.45 
                       }}
                     >
-                      <span style={{ color: 'var(--primary, #6366f1)', fontWeight: 800, fontSize: '0.9rem', lineHeight: '1.2' }}>✓</span>
+                      <CheckCircle size={14} style={{ color: 'var(--primary, #6366f1)', flexShrink: 0, marginTop: '2px' }} />
                       <span>{item}</span>
                     </div>
                   ))}

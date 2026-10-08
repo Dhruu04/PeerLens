@@ -23,7 +23,9 @@ import {
   LayoutGrid,
   Tv,
   CheckCheck,
-  Sparkles
+  ArrowRight,
+  Sparkles,
+  Presentation
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useClass } from '../context/ClassContext';
@@ -32,6 +34,8 @@ import { calculateGroupReport, type GroupDiversityReport } from '../utils/groupi
 import Modal from '../components/Modal';
 import SearchableSelect from '../components/SearchableSelect';
 import AutoGroupModal from '../components/AutoGroupModal';
+import LivePresentationScoringModal from '../components/LivePresentationScoringModal';
+import { TeamKickoffModal } from '../components/TeamKickoffModal';
 import { NATIONALITY_OPTIONS } from '../utils/nationalities';
 import { normalizeNationality } from '../utils/math';
 import FeatureInfoButton from '../components/FeatureInfoButton';
@@ -90,6 +94,8 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
 
   // Diversity Auto-Group Modal State
   const [isAutoGroupModalOpen, setIsAutoGroupModalOpen] = useState(false);
+  const [isLivePresentationModalOpen, setIsLivePresentationModalOpen] = useState(false);
+  const [isTeamKickoffModalOpen, setIsTeamKickoffModalOpen] = useState(false);
 
   // Dynamic Add Team & Add Student Modal State
   const [isAddTeamModalOpen, setIsAddTeamModalOpen] = useState(false);
@@ -434,10 +440,12 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
       return (
         <span
           style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-          title={`Exchange: ${student.originalUniversity} ➔ ${student.currentUniversity}`}
+          title={`Exchange: ${student.originalUniversity} -> ${student.currentUniversity}`}
         >
           <Plane size={11} className="text-teal" style={{ flexShrink: 0 }} />
-          <span>{student.originalUniversity} ➔ {student.currentUniversity}</span>
+          <span>{student.originalUniversity}</span>
+          <ArrowRight size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <span>{student.currentUniversity}</span>
         </span>
       );
     }
@@ -538,6 +546,26 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               </span>
             </div>
           )}
+
+          <button
+            type="button"
+            className="btn btn-teal btn-sm"
+            onClick={() => setIsLivePresentationModalOpen(true)}
+            style={{ gap: '0.35rem', padding: '0.45rem 0.85rem', fontWeight: 700 }}
+            title="Launch Live Presentation Scoring & Mobile QR Mode"
+          >
+            <Presentation size={14} /> Live Presentation Scoring
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setIsTeamKickoffModalOpen(true)}
+            style={{ gap: '0.35rem', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '0.45rem 0.85rem', fontWeight: 700 }}
+            title="Launch Team Charter, Role Allocator & Icebreakers"
+          >
+            <Sparkles size={14} className="text-primary" /> Team Charters
+          </button>
 
           <button
             type="button"
@@ -1824,6 +1852,31 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           onApplyGroups={(updatedStudents) => {
             importRoster(currentClass.id, updatedStudents, true);
             setIsAutoGroupModalOpen(false);
+          }}
+          onOpenTeamCharter={() => {
+            setIsAutoGroupModalOpen(false);
+            setIsTeamKickoffModalOpen(true);
+          }}
+        />
+      )}
+
+      {/* --- MODAL: LIVE PRESENTATION DAY SCORING --- */}
+      {isLivePresentationModalOpen && currentClass && (
+        <LivePresentationScoringModal
+          isOpen={isLivePresentationModalOpen}
+          onClose={() => setIsLivePresentationModalOpen(false)}
+          classData={currentClass}
+        />
+      )}
+
+      {/* --- MODAL: TEAM CHARTER, ROLE ALLOCATOR & ICEBREAKER STUDIO --- */}
+      {isTeamKickoffModalOpen && currentClass && (
+        <TeamKickoffModal
+          isOpen={isTeamKickoffModalOpen}
+          onClose={() => setIsTeamKickoffModalOpen(false)}
+          classData={currentClass}
+          onSaveStudents={(updatedStudents) => {
+            importRoster(currentClass.id, updatedStudents, true);
           }}
         />
       )}

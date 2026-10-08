@@ -453,11 +453,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <Settings size={15} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                Workspace Settings
-              </h3>
-              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.2 }}>
-                Manage Brevo email delivery, Firebase cloud sync, themes &amp; shortcuts.
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                  Workspace &amp; Feature Studio
+                </h3>
+                <span
+                  style={{
+                    fontSize: '0.62rem',
+                    fontWeight: 750,
+                    padding: '0.1rem 0.4rem',
+                    borderRadius: '9999px',
+                    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                    color: 'var(--primary)',
+                    border: '1px solid rgba(99, 102, 241, 0.25)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.2rem'
+                  }}
+                >
+                  <Sparkles size={10} /> 40+ Tools
+                </span>
+              </div>
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.2, marginTop: '0.1rem' }}>
+                Customize modular layouts, grading formulas, Brevo email, cloud sync, themes &amp; rapid shortcuts.
               </p>
             </div>
           </div>
@@ -504,7 +522,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               transition: 'all 150ms ease'
             }}
           >
-            <LayoutGrid size={13} /> Interface &amp; Modules
+            <LayoutGrid size={13} /> Features (40+)
           </button>
           <button
             type="button"

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig } from '../utils/math';
+import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig, TeamCharterConfig } from '../utils/math';
 import { normalizeNationality, getEvaluationControls, DEFAULT_PULSE_CONFIG, generateSamplePulseRounds } from '../utils/math';
 import { loadFeatureToggles, DEFAULT_FEATURE_TOGGLES, type FeatureToggles } from '../utils/featurePreferences';
 import { DEFAULT_KEYBOARD_SHORTCUTS } from '../utils/keyboardShortcuts';
@@ -85,6 +85,7 @@ import {
     selectClass: (id: string | null) => void;
     updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify?: boolean) => void;
     updateEvaluationControls: (classId: string, controls: Partial<EvaluationFormControls>) => void;
+    updateTeamCharterConfig: (classId: string, config: Partial<TeamCharterConfig>) => void;
     updateTeamBaseGrade: (classId: string, teamName: string, grade: number) => void;
     setAllTeamBaseGrades: (classId: string, grades: Record<string, number>) => void;
     importRoster: (classId: string, students: Student[], clearExisting?: boolean) => void;
@@ -1167,6 +1168,23 @@ import {
       addToast('Evaluation form settings updated.', 'success');
     };
 
+    const updateTeamCharterConfig = (classId: string, config: Partial<TeamCharterConfig>) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentConfig = c.teamCharterConfig || { selectedRoleIds: [], icebreakerTopic: 'multicultural', teamNorms: [] };
+          return {
+            ...c,
+            teamCharterConfig: {
+              ...currentConfig,
+              ...config
+            }
+          };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+    };
+
     const updateTeamBaseGrade = (classId: string, teamName: string, grade: number) => {
       const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
@@ -1973,6 +1991,7 @@ import {
           selectClass,
           updateGradingConfig,
           updateEvaluationControls,
+          updateTeamCharterConfig,
           updateTeamBaseGrade,
           setAllTeamBaseGrades,
           importRoster,
