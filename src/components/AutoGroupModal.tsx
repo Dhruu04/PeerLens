@@ -6,7 +6,7 @@ import {
   GripVertical, Download, FileSpreadsheet, FileText, X,
   GraduationCap, Plane, Sliders, Plus, Trash2,
   AlertCircle, CheckCircle2, Settings2,
-  Compass, ShieldAlert, Search, RotateCcw, ChevronDown, ChevronUp,
+  Compass, Search, RotateCcw, ChevronDown, ChevronUp,
   Table, Columns3, ArrowRightLeft,
   Pin, PinOff, Undo2, Redo2,
   Target, Zap, ArrowRight
@@ -17,6 +17,7 @@ import {
   calculateGroupReport,
   discoverRosterFields,
   DEFAULT_GROUPING_RULES,
+  normalizeRule,
   type GroupingRule,
   type GroupingRuleMode,
   type DiversityGroupingResult,
@@ -84,37 +85,24 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
   // Custom Rules State
   const [rules, setRules] = useState<GroupingRule[]>(() => {
     try {
-      const saved = localStorage.getItem('peerlens_custom_grouping_rules_v2');
+      const saved = localStorage.getItem('peerlens_custom_grouping_rules_v3') || localStorage.getItem('peerlens_custom_grouping_rules_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(normalizeRule);
+        }
       }
     } catch (e) {
       console.error('Failed to load grouping rules from storage', e);
     }
-    return DEFAULT_GROUPING_RULES;
+    return DEFAULT_GROUPING_RULES.map(normalizeRule);
   });
 
   // Result State
   const [groupingResult, setGroupingResult] = useState<DiversityGroupingResult | null>(null);
 
-  // Weight Control Mode: Simplified Tiers vs Precise Sliders
-  const [weightControlMode, setWeightControlMode] = useState<'simplified' | 'precise'>(() => {
-    try {
-      return (localStorage.getItem('peerlens_weight_control_mode') as 'simplified' | 'precise') || 'simplified';
-    } catch {
-      return 'simplified';
-    }
-  });
-
-  const handleSetWeightControlMode = (mode: 'simplified' | 'precise') => {
-    setWeightControlMode(mode);
-    try {
-      localStorage.setItem('peerlens_weight_control_mode', mode);
-    } catch (e) {
-      console.error('Failed to save weight control mode', e);
-    }
-  };
+  // Quick Drop Bar Pinning State (Unpinned by default so it scrolls away)
+  const [isQuickBarPinned, setIsQuickBarPinned] = useState<boolean>(false);
 
   // Sub-Modals
   const [showReshuffleModal, setShowReshuffleModal] = useState<boolean>(false);
@@ -140,7 +128,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
 
   useEffect(() => {
     try {
-      localStorage.setItem('peerlens_custom_grouping_rules_v2', JSON.stringify(rules));
+      localStorage.setItem('peerlens_custom_grouping_rules_v3', JSON.stringify(rules));
     } catch (e) {
       console.error('Failed to save grouping rules', e);
     }
@@ -359,14 +347,15 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
 
   const handleQuickAddDiscoveredField = (df: { key: string; name: string }) => {
     if (rules.some(r => r.fieldKey === df.key)) return;
+    const cleanName = df.name.replace(/Diversity|Status|Dispersal|Parity/gi, '').trim() || df.name;
     const newRule: GroupingRule = {
       id: `discovered_rule_${Date.now()}_${df.key}`,
-      name: `${df.name} Diversity`,
+      name: cleanName,
       fieldKey: df.key,
-      mode: 'disperse',
-      weight: 18,
+      mode: 'distribute',
+      weight: 20,
       enabled: true,
-      description: `Disperse students by ${df.name} across teams`
+      description: `Distribute students with different ${cleanName.toLowerCase()} across teams`
     };
     setRules(prev => [...prev, newRule]);
   };
@@ -757,24 +746,6 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                 {isRulesExpanded && (
                   <>
-                    {/* Simplified vs Precise Mode Switcher */}
-                    <div className="autogroup-weight-mode-switch" title="Toggle between simplified 1-click priority tiers and precise numeric sliders">
-                      <button
-                        type="button"
-                        className={`autogroup-weight-mode-btn ${weightControlMode === 'simplified' ? 'active' : ''}`}
-                        onClick={() => handleSetWeightControlMode('simplified')}
-                      >
-                        <Sparkles size={11} /> Simplified
-                      </button>
-                      <button
-                        type="button"
-                        className={`autogroup-weight-mode-btn ${weightControlMode === 'precise' ? 'active' : ''}`}
-                        onClick={() => handleSetWeightControlMode('precise')}
-                      >
-                        <Sliders size={11} /> Precise Sliders
-                      </button>
-                    </div>
-
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
@@ -971,7 +942,6 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                 </div>
               ) : (
                 rules.map((rule, idx) => {
-                  const relativePct = totalActiveWeight > 0 && rule.enabled ? Math.round((rule.weight / totalActiveWeight) * 100) : 0;
                   const ruleColor = RULE_PALETTE[idx % RULE_PALETTE.length];
 
                   return (
@@ -980,6 +950,8 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       className={`autogroup-rule-card ${!rule.enabled ? 'disabled' : ''}`}
                     >
                       <div className="autogroup-rule-row-grid">
+                        
+                        {/* Col 1: Toggle + Icon + Title + Attribute Pill + Description */}
                         <div className="autogroup-rule-title-group">
                           <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', margin: 0 }}>
                             <input
@@ -999,8 +971,8 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                               <span style={{ fontSize: '0.86rem', fontWeight: 800, color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                                 {rule.name}
                               </span>
-                              <span className="badge badge-secondary" style={{ fontSize: '0.66rem', padding: '0.1rem 0.4rem' }}>
-                                Attribute: {rule.fieldKey}
+                              <span className="badge badge-secondary" style={{ fontSize: '0.64rem', padding: '0.08rem 0.35rem', opacity: 0.75 }}>
+                                {rule.fieldKey}
                               </span>
                             </div>
                             {rule.description && (
@@ -1011,159 +983,69 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                           </div>
                         </div>
 
+                        {/* Col 2: Mode Pill Selector (Distribute / Keep Together) */}
                         <div className="autogroup-mode-pill-group">
                           <button
                             type="button"
-                            onClick={() => handleModeChange(rule.id, 'disperse')}
-                            className={`autogroup-mode-pill ${rule.mode === 'disperse' ? 'active' : ''}`}
-                            title="Disperse: Spread matching values across different teams"
+                            onClick={() => handleModeChange(rule.id, 'distribute')}
+                            className={`autogroup-mode-pill ${rule.mode !== 'together' && rule.mode !== 'group' && rule.mode !== 'cluster' ? 'active' : ''}`}
+                            title="Distribute: Spread students with this trait across different teams"
                             disabled={!rule.enabled}
                           >
-                            <Globe size={11} /> Disperse
+                            <Shuffle size={11} /> Distribute
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleModeChange(rule.id, 'cluster')}
-                            className={`autogroup-mode-pill ${rule.mode === 'cluster' ? 'active' : ''}`}
-                            title="Cluster: Group students with identical values into the same team"
+                            onClick={() => handleModeChange(rule.id, 'together')}
+                            className={`autogroup-mode-pill ${rule.mode === 'together' || rule.mode === 'group' || rule.mode === 'cluster' ? 'active' : ''}`}
+                            title="Keep Together: Place matching students together in the same team"
                             disabled={!rule.enabled}
                           >
-                            <Users size={11} /> Cluster
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleModeChange(rule.id, 'balance')}
-                            className={`autogroup-mode-pill ${rule.mode === 'balance' ? 'active' : ''}`}
-                            title="Balance: Equal numerical averages or balanced representation"
-                            disabled={!rule.enabled}
-                          >
-                            <Layers size={11} /> Balance
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleModeChange(rule.id, 'strict_disperse')}
-                            className={`autogroup-mode-pill ${rule.mode === 'strict_disperse' ? 'active' : ''}`}
-                            title="Strict: Heavy penalty if identical attributes are paired"
-                            disabled={!rule.enabled}
-                          >
-                            <ShieldAlert size={11} /> Strict
+                            <Users size={11} /> Keep Together
                           </button>
                         </div>
 
-                        {/* Col 3: Simplified Priority Tiers vs Precise Slider */}
-                        {weightControlMode === 'simplified' ? (
-                          <div className="autogroup-priority-control-group">
-                            <div className="autogroup-priority-tier-buttons">
-                              <button
-                                type="button"
-                                onClick={() => handleWeightChange(rule.id, 10)}
-                                className={`autogroup-priority-btn ${rule.weight <= 12 ? 'active' : ''}`}
-                                disabled={!rule.enabled}
-                                title="Low priority (10 pts) - gentle influence"
-                              >
-                                Low
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleWeightChange(rule.id, 20)}
-                                className={`autogroup-priority-btn ${rule.weight > 12 && rule.weight <= 25 ? 'active' : ''}`}
-                                disabled={!rule.enabled}
-                                title="Medium priority (20 pts) - standard balanced influence"
-                              >
-                                Medium
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleWeightChange(rule.id, 35)}
-                                className={`autogroup-priority-btn ${rule.weight > 25 && rule.weight < 45 ? 'active' : ''}`}
-                                disabled={!rule.enabled}
-                                title="High priority (35 pts) - strong grouping preference"
-                              >
-                                High
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleWeightChange(rule.id, 50)}
-                                className={`autogroup-priority-btn ${rule.weight >= 45 ? 'active' : ''}`}
-                                disabled={!rule.enabled}
-                                title="Critical priority (50 pts) - top priority constraint"
-                              >
-                                Critical
-                              </button>
-                            </div>
-
-                            <div 
-                              className="autogroup-priority-share-badge" 
-                              style={{ 
-                                borderColor: rule.enabled ? `${ruleColor}40` : 'var(--border-color)',
-                                backgroundColor: rule.enabled ? `${ruleColor}10` : 'var(--bg-app)'
-                              }}
-                              title={`${rule.name} accounts for ${rule.enabled ? relativePct : 0}% of the overall optimization weight`}
+                        {/* Col 3: Priority Tiers (Low / Medium / High / Max) */}
+                        <div className="autogroup-priority-control-group">
+                          <div className="autogroup-priority-tier-buttons">
+                            <button
+                              type="button"
+                              onClick={() => handleWeightChange(rule.id, 10)}
+                              className={`autogroup-priority-btn ${rule.weight <= 12 ? 'active' : ''}`}
+                              disabled={!rule.enabled}
+                              title="Low priority (10 pts) - gentle influence"
                             >
-                              <span 
-                                className="autogroup-priority-share-dot" 
-                                style={{ backgroundColor: rule.enabled ? ruleColor : 'var(--text-muted)' }} 
-                              />
-                              <span style={{ fontWeight: 800, color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                                {rule.enabled ? `${relativePct}% Share` : '0%'}
-                              </span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="autogroup-precise-slider-wrapper">
-                            <div className="autogroup-slider-track-wrap">
-                              <button 
-                                type="button" 
-                                className="autogroup-stepper-btn" 
-                                onClick={() => handleWeightChange(rule.id, Math.max(1, rule.weight - 1))}
-                                disabled={!rule.enabled || rule.weight <= 1}
-                                title="Decrease weight by 1"
-                              >
-                                -
-                              </button>
-                              <input
-                                type="range"
-                                min={1}
-                                max={50}
-                                value={rule.weight}
-                                onChange={(e) => handleWeightChange(rule.id, Number(e.target.value))}
-                                disabled={!rule.enabled}
-                                className="autogroup-slider-input"
-                                style={{ '--thumb-color': ruleColor } as React.CSSProperties}
-                                title={`Weight: ${rule.weight} pts`}
-                              />
-                              <button 
-                                type="button" 
-                                className="autogroup-stepper-btn" 
-                                onClick={() => handleWeightChange(rule.id, Math.min(50, rule.weight + 1))}
-                                disabled={!rule.enabled || rule.weight >= 50}
-                                title="Increase weight by 1"
-                              >
-                                +
-                              </button>
-                              <span className="autogroup-weight-num-badge" style={{ color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                                {rule.weight} pts
-                              </span>
-                            </div>
-
-                            <div 
-                              className="autogroup-priority-share-badge" 
-                              style={{ 
-                                borderColor: rule.enabled ? `${ruleColor}40` : 'var(--border-color)',
-                                backgroundColor: rule.enabled ? `${ruleColor}10` : 'var(--bg-app)'
-                              }}
-                              title={`${rule.name} accounts for ${rule.enabled ? relativePct : 0}% of the overall optimization weight`}
+                              Low
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleWeightChange(rule.id, 20)}
+                              className={`autogroup-priority-btn ${rule.weight > 12 && rule.weight <= 25 ? 'active' : ''}`}
+                              disabled={!rule.enabled}
+                              title="Medium priority (20 pts) - standard balanced influence"
                             >
-                              <span 
-                                className="autogroup-priority-share-dot" 
-                                style={{ backgroundColor: rule.enabled ? ruleColor : 'var(--text-muted)' }} 
-                              />
-                              <span style={{ fontWeight: 800, color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                                {rule.enabled ? `${relativePct}% Share` : '0%'}
-                              </span>
-                            </div>
+                              Medium
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleWeightChange(rule.id, 35)}
+                              className={`autogroup-priority-btn ${rule.weight > 25 && rule.weight < 45 ? 'active' : ''}`}
+                              disabled={!rule.enabled}
+                              title="High priority (35 pts) - strong grouping preference"
+                            >
+                              High
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleWeightChange(rule.id, 50)}
+                              className={`autogroup-priority-btn ${rule.weight >= 45 ? 'active max-tier' : ''}`}
+                              disabled={!rule.enabled}
+                              title="Max priority (50 pts) - top constraint with maximum penalty"
+                            >
+                              Max
+                            </button>
                           </div>
-                        )}
+                        </div>
 
                         <div>
                           <button
@@ -1353,20 +1235,20 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
           {groupingResult && (
             <div className={draggedStudentId ? 'is-dragging-student' : ''} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               
-              {/* Sticky All-Teams Quick Drop Target Strip (Sticky across Grid, Kanban, Table & Compact views) */}
+              {/* All-Teams Quick Drop Target Strip (Sticky when pinned, scrolls away when unpinned) */}
               <div 
                 className="autogroup-sticky-quick-bar"
                 style={{ 
-                  position: 'sticky',
-                  top: 0,
-                  zIndex: 50,
+                  position: isQuickBarPinned ? 'sticky' : 'relative',
+                  top: isQuickBarPinned ? 0 : 'auto',
+                  zIndex: isQuickBarPinned ? 50 : 10,
                   padding: '0.65rem 0.85rem', 
                   backgroundColor: 'var(--bg-surface)', 
                   backdropFilter: 'blur(16px)',
                   WebkitBackdropFilter: 'blur(16px)',
                   borderRadius: 'var(--radius-md)', 
                   border: draggedStudentId ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
-                  boxShadow: '0 6px 20px rgba(0, 0, 0, 0.12)',
+                  boxShadow: isQuickBarPinned ? '0 6px 20px rgba(0, 0, 0, 0.12)' : '0 1px 3px rgba(0, 0, 0, 0.05)',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -1375,9 +1257,30 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                     {draggedStudentId ? <Zap size={13} className="text-teal" /> : <Target size={13} className="text-teal" />}
                     {draggedStudentId ? 'Drop card onto any team below for instant move:' : 'Quick Team Drop & Jump Targets:'}
                   </span>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <Layers size={11} /> {groupingResult.groups.length} Targets Available
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Layers size={11} /> {groupingResult.groups.length} Targets Available
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsQuickBarPinned(prev => !prev)}
+                      className={`btn btn-sm ${isQuickBarPinned ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{
+                        fontSize: '0.68rem',
+                        padding: '0.2rem 0.55rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        borderRadius: '16px',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                      title={isQuickBarPinned ? 'Unpin: Target bar will scroll away when scrolling down' : 'Pin to top: Keep target bar visible while scrolling'}
+                    >
+                      {isQuickBarPinned ? <Pin size={11} /> : <PinOff size={11} />}
+                      <span>{isQuickBarPinned ? 'Pinned to Top' : 'Pin to Top'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', maxHeight: '110px', overflowY: 'auto' }}>

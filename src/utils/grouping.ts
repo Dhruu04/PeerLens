@@ -1,14 +1,19 @@
 import { normalizeNationality, type Student } from './math';
 
 export type GroupingRuleMode = 
-  | 'disperse'         // Maximize diversity / spread values evenly across different teams
-  | 'cluster'          // Group matching values together in the same team
-  | 'balance'          // Balance distribution / ratios / averages evenly across all teams
-  | 'strict_disperse'; // Strict separation (heavily penalizes putting identical values in same team)
+  | 'distribute'       // Distribute values across different teams (diversify, balance, disperse)
+  | 'together'         // Keep matching values together in the same team
+  | 'mix'              // Legacy alias for 'distribute'
+  | 'group'            // Legacy alias for 'together'
+  | 'spread'           // Legacy alias for 'distribute'
+  | 'balance'          // Legacy alias for 'distribute'
+  | 'disperse'         // Legacy alias for 'distribute'
+  | 'cluster'          // Legacy alias for 'together'
+  | 'strict_disperse'; // Legacy alias
 
 export interface GroupingRule {
   id: string;
-  name: string;             // Display name, e.g. "Gender Balance", "Nationality Mixing"
+  name: string;             // Display name, e.g. "Gender", "University"
   fieldKey: string;         // 'gender' | 'nationality' | 'university' | 'englishProficiency' | 'degree' | 'studentType' | customKey
   mode: GroupingRuleMode;
   weight: number;           // 1 to 50 (or 0 if disabled)
@@ -29,7 +34,7 @@ export interface CustomDiversityField {
   name: string;
   key: string;
   weight: number;
-  mode: 'disperse' | 'cluster';
+  mode: GroupingRuleMode;
 }
 
 export interface GroupingWeights {
@@ -81,7 +86,7 @@ export interface GroupDiversityReport {
   customFieldSummaries?: Record<string, {
     fieldName: string;
     key: string;
-    mode: 'disperse' | 'cluster';
+    mode: GroupingRuleMode;
     uniqueCount: number;
     score: number;
     values: Record<string, number>;
@@ -113,59 +118,109 @@ export interface DiscoveredRosterField {
 export const DEFAULT_GROUPING_RULES: GroupingRule[] = [
   {
     id: 'rule_gender',
-    name: 'Gender Parity & Balance',
+    name: 'Gender',
     fieldKey: 'gender',
-    mode: 'balance',
+    mode: 'distribute',
     weight: 20,
     enabled: true,
-    description: 'Even distribution of Male, Female, and Non-binary students across teams'
+    description: 'Distribute gender representation evenly across teams'
   },
   {
     id: 'rule_university',
-    name: 'University & Campus Dispersal',
+    name: 'University',
     fieldKey: 'university',
-    mode: 'disperse',
+    mode: 'distribute',
     weight: 25,
     enabled: true,
-    description: 'Separate students from the same home or host campus into different teams'
+    description: 'Distribute students from the same university into different teams'
   },
   {
     id: 'rule_nationality',
-    name: 'Nationality & Origin Diversity',
+    name: 'Nationality',
     fieldKey: 'nationality',
-    mode: 'disperse',
-    weight: 18,
+    mode: 'distribute',
+    weight: 20,
     enabled: true,
-    description: 'Mix different nationalities and cultural backgrounds across teams'
+    description: 'Distribute students with different nationalities across teams'
   },
   {
     id: 'rule_english',
-    name: 'Language Proficiency Balance',
+    name: 'Language Proficiency',
     fieldKey: 'englishProficiency',
-    mode: 'balance',
+    mode: 'distribute',
     weight: 15,
     enabled: true,
-    description: 'Evenly distribute CEFR English proficiency levels (C2 to A1) across groups'
+    description: 'Distribute language proficiency levels evenly across teams'
   },
   {
     id: 'rule_degree',
-    name: 'Degree & Major Diversity',
+    name: 'Degree / Major',
     fieldKey: 'degree',
-    mode: 'disperse',
+    mode: 'distribute',
     weight: 15,
     enabled: true,
-    description: 'Disperse students with matching degrees or academic majors'
+    description: 'Distribute students from different academic majors across teams'
   },
   {
     id: 'rule_student_type',
-    name: 'Student Mobility Status',
+    name: 'Student Mobility',
     fieldKey: 'studentType',
-    mode: 'disperse',
+    mode: 'distribute',
     weight: 10,
     enabled: false,
-    description: 'Mix exchange, international, and domestic students across teams'
+    description: 'Distribute exchange, international, and domestic students across teams'
   }
 ];
+
+/**
+ * Normalizes legacy or persisted rule definitions to current concise naming and standard modes.
+ */
+export function normalizeRule(rule: GroupingRule): GroupingRule {
+  let mode: GroupingRuleMode = 'distribute';
+  if (rule.mode === 'together' || rule.mode === 'group' || rule.mode === 'cluster') {
+    mode = 'together';
+  } else {
+    mode = 'distribute';
+  }
+
+  let weight = rule.weight;
+  if ((rule as any).mode === 'strict_disperse') {
+    weight = Math.max(weight, 50);
+  }
+
+  let name = rule.name;
+  let description = rule.description;
+  if (rule.fieldKey === 'gender') {
+    name = 'Gender';
+    description = 'Distribute gender representation evenly across teams';
+  } else if (rule.fieldKey === 'university') {
+    name = 'University';
+    description = 'Distribute students from the same university into different teams';
+  } else if (rule.fieldKey === 'nationality') {
+    name = 'Nationality';
+    description = 'Distribute students with different nationalities across teams';
+  } else if (rule.fieldKey === 'englishProficiency') {
+    name = 'Language Proficiency';
+    description = 'Distribute language proficiency levels evenly across teams';
+  } else if (rule.fieldKey === 'degree') {
+    name = 'Degree / Major';
+    description = 'Distribute students from different academic majors across teams';
+  } else if (rule.fieldKey === 'studentType') {
+    name = 'Student Mobility';
+    description = 'Distribute exchange, international, and domestic students across teams';
+  } else if (rule.fieldKey === 'currentCountry') {
+    name = 'Current Country';
+    description = 'Distribute students from different host or current countries across teams';
+  }
+
+  return {
+    ...rule,
+    name,
+    mode,
+    weight,
+    description
+  };
+}
 
 const ENGLISH_SCORE_MAP: Record<string, number> = {
   'native / bilingual': 5,
@@ -309,13 +364,13 @@ export function discoverRosterFields(students: Student[]): DiscoveredRosterField
     isStandard: boolean;
     values: Record<string, number>;
   }> = {
-    gender: { name: 'Gender Identity', isStandard: true, values: {} },
-    university: { name: 'University / Campus', isStandard: true, values: {} },
-    nationality: { name: 'Nationality / Origin', isStandard: true, values: {} },
-    englishProficiency: { name: 'CEFR Language Proficiency', isStandard: true, values: {} },
+    gender: { name: 'Gender', isStandard: true, values: {} },
+    university: { name: 'University', isStandard: true, values: {} },
+    nationality: { name: 'Nationality', isStandard: true, values: {} },
+    englishProficiency: { name: 'Language Proficiency', isStandard: true, values: {} },
     degree: { name: 'Degree / Major', isStandard: true, values: {} },
-    studentType: { name: 'Student Mobility Status', isStandard: true, values: {} },
-    currentCountry: { name: 'Host / Current Country', isStandard: true, values: {} }
+    studentType: { name: 'Student Mobility', isStandard: true, values: {} },
+    currentCountry: { name: 'Current Country', isStandard: true, values: {} }
   };
 
   students.forEach(s => {
@@ -544,8 +599,22 @@ export function generateDiverseGroups(
     for (const rule of effectiveRules) {
       const w = rule.weight;
       if (w <= 0) continue;
+      const isMax = w >= 45 || (rule as any).mode === 'strict_disperse';
 
-      if (rule.mode === 'balance') {
+      if (rule.mode === 'together' || rule.mode === 'group' || rule.mode === 'cluster') {
+        const valCounts: Record<string, number> = {};
+        for (const s of group) {
+          const val = getStudentFieldValue(s, rule.fieldKey, rule.name).toLowerCase().trim();
+          if (val && val !== 'unspecified' && val !== 'n/a' && val !== 'none') {
+            valCounts[val] = (valCounts[val] || 0) + 1;
+          }
+        }
+        const uniqueCount = Object.keys(valCounts).length;
+        if (uniqueCount > 1) {
+          cost += Math.pow(uniqueCount - 1, 2) * w * (isMax ? 25.0 : 5.0);
+        }
+      } else {
+        // 'distribute' mode (intelligent diversification across teams)
         if (rule.fieldKey === 'gender') {
           const genderCounts: Record<string, number> = {};
           for (const s of group) {
@@ -556,33 +625,16 @@ export function generateDiverseGroups(
           const males = genderCounts['male'] || 0;
           const diff = Math.abs(females - males);
           if (diff > 1) {
-            cost += Math.pow(diff - 1, 2) * w * 2.0;
+            cost += Math.pow(diff - 1, 2) * w * (isMax ? 16.0 : 2.0);
           }
         } else if (rule.fieldKey === 'englishProficiency') {
           const avgScore = group.reduce((acc, s) => acc + getEnglishScore(s.englishProficiency), 0) / gSize;
-          cost += Math.pow(avgScore - classAvgEnglish, 2) * w * 5.0;
+          cost += Math.pow(avgScore - classAvgEnglish, 2) * w * (isMax ? 25.0 : 5.0);
           const hasAdvanced = group.some(s => getEnglishScore(s.englishProficiency) >= 4);
           if (!hasAdvanced && gSize >= 3) {
-            cost += 25.0 * w;
+            cost += (isMax ? 80.0 : 25.0) * w;
           }
-        } else {
-          // Categorical Chi-Squared Expected Balance
-          const groupValCounts: Record<string, number> = {};
-          for (const s of group) {
-            const val = getStudentFieldValue(s, rule.fieldKey, rule.name).toLowerCase().trim() || 'unspecified';
-            groupValCounts[val] = (groupValCounts[val] || 0) + 1;
-          }
-          const cDist = cohortDistributions[rule.fieldKey];
-          if (cDist) {
-            for (const [vKey, cCount] of Object.entries(cDist)) {
-              const expected = (cCount / totalStudents) * gSize;
-              const actual = groupValCounts[vKey] || 0;
-              cost += Math.pow(actual - expected, 2) * w * 2.2;
-            }
-          }
-        }
-      } else if (rule.mode === 'disperse') {
-        if (rule.fieldKey === 'nationality') {
+        } else if (rule.fieldKey === 'nationality') {
           for (let i = 0; i < group.length; i++) {
             for (let j = i + 1; j < group.length; j++) {
               const s1 = group[i];
@@ -593,14 +645,15 @@ export function generateDiverseGroups(
                 const uni1 = (s1.university || '').toLowerCase().trim();
                 const uni2 = (s2.university || '').toLowerCase().trim();
                 if (uni1 && uni2 && uni1 !== uni2) {
-                  cost += w * 1.0;
+                  cost += w * (isMax ? 8.0 : 1.0);
                 } else {
-                  cost += w * 4.0;
+                  cost += w * (isMax ? 25.0 : 4.0);
                 }
               }
             }
           }
         } else {
+          // Categorical uniqueness dispersion across teams (University, Degree, Mobility, Custom)
           const valCounts: Record<string, number> = {};
           for (const s of group) {
             const val = getStudentFieldValue(s, rule.fieldKey, rule.name).toLowerCase().trim();
@@ -610,34 +663,9 @@ export function generateDiverseGroups(
           }
           for (const count of Object.values(valCounts)) {
             if (count > 1) {
-              cost += Math.pow(count - 1, 2) * w * 3.8;
+              cost += Math.pow(count - 1, 2) * w * (isMax ? 25.0 : 3.8);
             }
           }
-        }
-      } else if (rule.mode === 'strict_disperse') {
-        const valCounts: Record<string, number> = {};
-        for (const s of group) {
-          const val = getStudentFieldValue(s, rule.fieldKey, rule.name).toLowerCase().trim();
-          if (val && val !== 'unspecified' && val !== 'n/a' && val !== 'none') {
-            valCounts[val] = (valCounts[val] || 0) + 1;
-          }
-        }
-        for (const count of Object.values(valCounts)) {
-          if (count > 1) {
-            cost += Math.pow(count - 1, 2) * w * 25.0; // High barrier penalty
-          }
-        }
-      } else if (rule.mode === 'cluster') {
-        const valCounts: Record<string, number> = {};
-        for (const s of group) {
-          const val = getStudentFieldValue(s, rule.fieldKey, rule.name).toLowerCase().trim();
-          if (val && val !== 'unspecified' && val !== 'n/a' && val !== 'none') {
-            valCounts[val] = (valCounts[val] || 0) + 1;
-          }
-        }
-        const uniqueCount = Object.keys(valCounts).length;
-        if (uniqueCount > 1) {
-          cost += Math.pow(uniqueCount - 1, 2) * w * 5.0;
         }
       }
     }
@@ -816,7 +844,7 @@ export function calculateGroupReport(
   });
 
   const ruleSatisfactions: RuleSatisfactionReport[] = [];
-  const customFieldSummaries: Record<string, { fieldName: string; key: string; mode: 'disperse' | 'cluster'; uniqueCount: number; score: number; values: Record<string, number> }> = {};
+  const customFieldSummaries: Record<string, { fieldName: string; key: string; mode: GroupingRuleMode; uniqueCount: number; score: number; values: Record<string, number> }> = {};
 
   let totalWeight = 0;
   let weightedScoreSum = 0;
@@ -838,35 +866,33 @@ export function calculateGroupReport(
       }
     }
 
-    if (rule.mode === 'balance') {
+    const isMax = rule.weight >= 45 || (rule as any).mode === 'strict_disperse';
+
+    if (rule.mode === 'together' || rule.mode === 'group' || rule.mode === 'cluster') {
+      if (uniqueVals.size > 1) {
+        ruleScore = Math.max(30, Math.round(100 - ((uniqueVals.size - 1) * (isMax ? 32 : 22))));
+        summary = `${uniqueVals.size} groups mixed`;
+      } else {
+        ruleScore = 100;
+        summary = `Aligned (${Array.from(uniqueVals)[0] || 'Unassigned'})`;
+      }
+    } else {
+      // 'distribute' mode: intelligent per-attribute diversity evaluation
       if (rule.fieldKey === 'gender') {
         const females = genderCounts['Female'] || genderCounts['female'] || 0;
         const males = genderCounts['Male'] || genderCounts['male'] || 0;
         const diff = Math.abs(females - males);
-        ruleScore = Math.max(40, 100 - (diff > 1 ? (diff - 1) * 18 : 0));
+        ruleScore = Math.max(35, 100 - (diff > 1 ? (diff - 1) * (isMax ? 26 : 18) : 0));
         summary = `${females}F / ${males}M ratio`;
       } else if (rule.fieldKey === 'englishProficiency') {
         const dev = Math.abs(avgEnglishScore - classAvgEnglish);
-        ruleScore = Math.max(40, Math.round(100 - (dev * 20)));
+        ruleScore = Math.max(35, Math.round(100 - (dev * (isMax ? 30 : 20))));
         summary = `Avg CEFR ${getCEFRLevelFromScore(avgEnglishScore).code} (${avgEnglishScore.toFixed(1)})`;
       } else {
-        const maxValCount = Math.max(...Object.values(valCounts), 0);
-        const dupes = Math.max(0, maxValCount - 1);
-        ruleScore = Math.max(40, 100 - (dupes * 18));
-        summary = `${uniqueVals.size} distinct categories`;
-      }
-    } else if (rule.mode === 'disperse' || rule.mode === 'strict_disperse') {
-      const duplicates = Math.max(0, studentCount - uniqueVals.size);
-      const penaltyFactor = rule.mode === 'strict_disperse' ? 28 : 16;
-      ruleScore = Math.max(35, Math.round(100 - (duplicates * penaltyFactor)));
-      summary = `${uniqueVals.size} unique / ${studentCount} members`;
-    } else if (rule.mode === 'cluster') {
-      if (uniqueVals.size > 1) {
-        ruleScore = Math.max(30, Math.round(100 - ((uniqueVals.size - 1) * 22)));
-        summary = `${uniqueVals.size} clusters mixed`;
-      } else {
-        ruleScore = 100;
-        summary = `Single cluster aligned (${Array.from(uniqueVals)[0] || 'Unassigned'})`;
+        const duplicates = Math.max(0, studentCount - uniqueVals.size);
+        const penaltyFactor = isMax ? 28 : 16;
+        ruleScore = Math.max(35, Math.round(100 - (duplicates * penaltyFactor)));
+        summary = `${uniqueVals.size} unique / ${studentCount} members`;
       }
     }
 
@@ -883,7 +909,7 @@ export function calculateGroupReport(
     customFieldSummaries[rule.id] = {
       fieldName: rule.name,
       key: rule.fieldKey,
-      mode: (rule.mode === 'cluster' ? 'cluster' : 'disperse'),
+      mode: (rule.mode === 'together' || rule.mode === 'group' || rule.mode === 'cluster' ? 'together' : 'distribute'),
       uniqueCount: uniqueVals.size,
       score: ruleScore,
       values: valCounts
