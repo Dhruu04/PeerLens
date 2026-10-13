@@ -907,3 +907,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     items: MODULE_ITEMS.filter(m => m.category === 'footer')
   }
 ];
+
+export function hasSubmodules(key: keyof FeatureToggles): boolean {
+  return MODULE_ITEMS.some(m => m.parentKey === key);
+}

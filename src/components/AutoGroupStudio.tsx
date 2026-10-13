@@ -36,10 +36,12 @@ interface AutoGroupStudioProps {
   onApplyGroups: (updatedStudents: Student[]) => void;
   onLoadSampleStudents?: () => void;
   defaultExpanded?: boolean;
-  onOpenTeamCharter?: () => void;
+  onOpenTeamCharter?: (stagedStudents?: Student[]) => void;
   isEditMode?: boolean;
   featureToggles?: FeatureToggles;
   onToggleModule?: (key: keyof FeatureToggles, nextVisible: boolean) => void;
+  classId?: string;
+  onStagedGroupsChange?: (stagedStudents: Student[]) => void;
 }
 
 const PREFIX_OPTIONS = [
@@ -72,7 +74,9 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
   onOpenTeamCharter,
   isEditMode = false,
   featureToggles: featureTogglesProp,
-  onToggleModule
+  onToggleModule,
+  classId,
+  onStagedGroupsChange
 }) => {
   const [internalToggles, setInternalToggles] = useState<FeatureToggles>(loadFeatureToggles);
 
@@ -85,7 +89,17 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
   const activeToggles = featureTogglesProp || internalToggles;
   const handleToggle = onToggleModule || ((key: keyof FeatureToggles, val: boolean) => saveFeatureToggle(key, val));
 
-  const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
+  const [isExpanded, setIsExpanded] = useState<boolean>(isEditMode || defaultExpanded);
+
+  // Automatically keep expanded in Edit Mode so users can view and customize modules & sub-modules
+  useEffect(() => {
+    if (isEditMode) {
+      setIsExpanded(true);
+    }
+  }, [isEditMode]);
+
+  const effectiveExpanded = isExpanded || isEditMode;
+
   const [targetSize, setTargetSize] = useState<number>(4);
   const [prefix, setPrefix] = useState<string>('Team');
   const [customPrefix, setCustomPrefix] = useState<string>('Pod');
@@ -199,6 +213,20 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
       runOptimization();
     }
   }, [students.length, targetSize, prefix, customPrefix, rules]);
+
+  // Persist staged Auto-Group students and notify parent so Team Collaboration Agreement & Roles Studio can use them
+  useEffect(() => {
+    if (groupingResult?.updatedStudents && groupingResult.updatedStudents.length > 0) {
+      if (classId) {
+        try {
+          localStorage.setItem(`peerlens_staged_autogroups_${classId}`, JSON.stringify(groupingResult.updatedStudents));
+        } catch (e) {
+          console.warn('Failed to persist staged autogroups', e);
+        }
+      }
+      onStagedGroupsChange?.(groupingResult.updatedStudents);
+    }
+  }, [groupingResult, classId, onStagedGroupsChange]);
 
   // Global Keyboard Shortcuts for Undo / Redo
   useEffect(() => {
@@ -486,19 +514,23 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
     <div className="accordion-item" style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'visible', backgroundColor: 'var(--bg-surface)', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)', marginBottom: '1.25rem' }}>
       {/* Studio Header Bar */}
       <div 
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          if (!isEditMode) {
+            setIsExpanded(!isExpanded);
+          }
+        }}
         style={{ 
           padding: '1rem 1.25rem', 
-          cursor: 'pointer', 
+          cursor: isEditMode ? 'default' : 'pointer', 
           display: 'flex', 
           alignItems: 'center', 
           justifyContent: 'space-between',
-          backgroundColor: isExpanded ? 'var(--bg-app)' : 'var(--bg-surface)',
-          borderBottom: isExpanded ? '1px solid var(--border-color)' : 'none',
+          backgroundColor: effectiveExpanded ? 'var(--bg-app)' : 'var(--bg-surface)',
+          borderBottom: effectiveExpanded ? '1px solid var(--border-color)' : 'none',
           borderTopLeftRadius: 'calc(var(--radius-lg) - 1px)',
           borderTopRightRadius: 'calc(var(--radius-lg) - 1px)',
-          borderBottomLeftRadius: isExpanded ? '0' : 'calc(var(--radius-lg) - 1px)',
-          borderBottomRightRadius: isExpanded ? '0' : 'calc(var(--radius-lg) - 1px)',
+          borderBottomLeftRadius: effectiveExpanded ? '0' : 'calc(var(--radius-lg) - 1px)',
+          borderBottomRightRadius: effectiveExpanded ? '0' : 'calc(var(--radius-lg) - 1px)',
           transition: 'background-color 0.15s ease'
         }}
       >
@@ -549,15 +581,17 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
             type="button"
             className="btn btn-icon btn-secondary btn-sm"
             style={{ borderRadius: '50%' }}
-            aria-label={isExpanded ? 'Collapse Studio' : 'Expand Studio'}
+            aria-label={effectiveExpanded ? 'Collapse Studio' : 'Expand Studio'}
+            disabled={isEditMode}
+            title={isEditMode ? 'Studio is kept open in Edit Mode for sub-module customization' : (isExpanded ? 'Collapse Studio' : 'Expand Studio')}
           >
-            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            {effectiveExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
         </div>
       </div>
 
       {/* Studio Expanded Body */}
-      {isExpanded && (
+      {effectiveExpanded && (
         <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Main Controls Deck: Target Team Size & Group Naming Format */}
@@ -2787,7 +2821,7 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
                         <button
                           type="button"
                           className="btn btn-secondary"
-                          onClick={onOpenTeamCharter}
+                          onClick={() => onOpenTeamCharter(groupingResult?.updatedStudents)}
                           style={{ padding: '0.55rem 1.15rem', fontSize: '0.84rem', fontWeight: 700, borderColor: 'var(--primary)', color: 'var(--primary)', backgroundColor: 'var(--bg-surface)' }}
                           title="Generate Team Collaboration Agreements, assign customizable activity roles, and tailored 5-min multicultural icebreakers"
                         >

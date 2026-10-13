@@ -31,7 +31,7 @@ interface AutoGroupModalProps {
   onClose: () => void;
   students: Student[];
   onApplyGroups: (updatedStudents: Student[]) => void;
-  onOpenTeamCharter?: () => void;
+  onOpenTeamCharter?: (stagedStudents?: Student[]) => void;
 }
 
 const PREFIX_OPTIONS = [
@@ -2606,7 +2606,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       className="btn btn-secondary"
                       onClick={() => {
                         onClose();
-                        onOpenTeamCharter();
+                        onOpenTeamCharter?.(groupingResult?.updatedStudents);
                       }}
                       style={{ padding: '0.55rem 1.15rem', fontSize: '0.84rem', fontWeight: 700, borderColor: 'var(--primary)', color: 'var(--primary)', backgroundColor: 'var(--bg-surface)' }}
                       title="Generate Team Collaboration Agreements, assign customizable activity roles, and tailored 5-min multicultural icebreakers"

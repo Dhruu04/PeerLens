@@ -451,8 +451,16 @@ export const AdminDashboard: React.FC = () => {
   const [copiedEnrollLink, setCopiedEnrollLink] = useState(false);
   const [teamKickoffInitialTab, setTeamKickoffInitialTab] = useState<'roles_config' | 'icebreakers' | 'charters'>('roles_config');
   const [teamKickoffAutoPrint, setTeamKickoffAutoPrint] = useState(false);
+  const [stagedAutoGroups, setStagedAutoGroups] = useState<Student[] | null>(null);
 
-  const handleOpenTeamKickoff = (tab: 'roles_config' | 'icebreakers' | 'charters' = 'roles_config', autoPrint = false) => {
+  const handleOpenTeamKickoff = (
+    tab: 'roles_config' | 'icebreakers' | 'charters' = 'roles_config', 
+    autoPrint = false,
+    staged?: Student[]
+  ) => {
+    if (staged) {
+      setStagedAutoGroups(staged);
+    }
     setTeamKickoffInitialTab(tab);
     setTeamKickoffAutoPrint(autoPrint);
     setIsTeamKickoffModalOpen(true);
@@ -4628,7 +4636,7 @@ export const AdminDashboard: React.FC = () => {
               <div data-tour="autogroup-studio">
                 <AutoGroupStudio
                   students={activeClass.students}
-                  defaultExpanded={false}
+                  defaultExpanded={isEditMode || false}
                   onApplyGroups={(updatedStudents) => {
                     importRoster(activeClass.id, updatedStudents, true);
                     const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
@@ -4638,10 +4646,12 @@ export const AdminDashboard: React.FC = () => {
                     importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
                     addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
                   }}
-                  onOpenTeamCharter={() => handleOpenTeamKickoff('charters')}
+                  onOpenTeamCharter={(staged) => handleOpenTeamKickoff('charters', false, staged)}
                   isEditMode={isEditMode}
                   featureToggles={featureToggles}
                   onToggleModule={handleToggleModule}
+                  classId={activeClass.id}
+                  onStagedGroupsChange={setStagedAutoGroups}
                 />
               </div>
             </EditableModuleSlot>
@@ -12000,7 +12010,7 @@ export const AdminDashboard: React.FC = () => {
           const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
           addToast(`Successfully organized ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
         }}
-        onOpenTeamCharter={() => handleOpenTeamKickoff('charters')}
+        onOpenTeamCharter={(staged) => handleOpenTeamKickoff('charters', false, staged)}
       />
 
       {/* MODAL: INDIVIDUAL STUDENT PDF REPORT CARDS & PREVIEWS */}
@@ -12999,11 +13009,18 @@ export const AdminDashboard: React.FC = () => {
           isOpen={isTeamKickoffModalOpen}
           onClose={() => setIsTeamKickoffModalOpen(false)}
           classData={activeClass}
+          stagedStudents={stagedAutoGroups || undefined}
           initialTab={teamKickoffInitialTab}
           autoPrint={teamKickoffAutoPrint}
           onSaveStudents={(updatedStudents) => {
             importRoster(activeClass.id, updatedStudents, true);
-            addToast('Saved customized team roles to student roster!', 'success');
+            setStagedAutoGroups(null);
+            try {
+              localStorage.removeItem(`peerlens_staged_autogroups_${activeClass.id}`);
+            } catch (e) {
+              console.warn('Failed to clear staged autogroups', e);
+            }
+            addToast('Saved customized team roles & roster assignments!', 'success');
           }}
         />
       )}

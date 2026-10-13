@@ -28,6 +28,7 @@ interface TeamKickoffModalProps {
   onSaveStudents: (updatedStudents: Student[]) => void;
   initialTab?: 'roles_config' | 'icebreakers' | 'charters';
   autoPrint?: boolean;
+  stagedStudents?: Student[];
 }
 
 const DEFAULT_CUSTOM_ROLES: TeamCharterRole[] = DEFAULT_TEAM_ROLES;
@@ -62,18 +63,55 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
   classData,
   onSaveStudents,
   initialTab,
-  autoPrint
+  autoPrint,
+  stagedStudents
 }) => {
-  // Group students by team
+  // Check for staged auto-groups (either passed as prop or saved from AutoGroup Studio in localStorage)
+  const stagedFromStorage = useMemo(() => {
+    try {
+      const saved = localStorage.getItem(`peerlens_staged_autogroups_${classData.id}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed as Student[];
+      }
+    } catch (e) {
+      console.warn('Failed to load staged autogroups from storage', e);
+    }
+    return null;
+  }, [classData.id]);
+
+  const effectiveStaged = stagedStudents || stagedFromStorage;
+
+  const { effectiveStudents, isUsingAutoGroups } = useMemo(() => {
+    if (effectiveStaged && effectiveStaged.length > 0) {
+      const stagedMap = new Map(effectiveStaged.map(s => [s.id, s.groupName]));
+      let hasAnyStaged = false;
+      const merged = classData.students.map(s => {
+        const g = stagedMap.get(s.id);
+        if (g && g !== 'Unassigned') {
+          hasAnyStaged = true;
+          return { ...s, groupName: g };
+        }
+        return s;
+      });
+
+      if (hasAnyStaged) {
+        return { effectiveStudents: merged, isUsingAutoGroups: true };
+      }
+    }
+    return { effectiveStudents: classData.students, isUsingAutoGroups: false };
+  }, [classData.students, effectiveStaged]);
+
+  // Group students by team using effective students (prioritizing AutoGroup Studio partitions)
   const teamsMap = useMemo(() => {
     const map: Record<string, Student[]> = {};
-    classData.students.forEach(s => {
+    effectiveStudents.forEach(s => {
       const g = s.groupName || 'Unassigned';
       if (!map[g]) map[g] = [];
       map[g].push(s);
     });
     return map;
-  }, [classData.students]);
+  }, [effectiveStudents]);
 
   const { updateTeamCharterConfig } = useClass();
 
@@ -138,7 +176,7 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
   // Student Role Assignments state: studentId -> roleTitle
   const [studentRoles, setStudentRoles] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
-    classData.students.forEach(s => {
+    effectiveStudents.forEach(s => {
       if (s.role) init[s.id] = s.role;
     });
     return init;
@@ -147,11 +185,11 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
   // Keep studentRoles in sync whenever students update (e.g. self-selected by student in portal)
   useEffect(() => {
     const init: Record<string, string> = {};
-    classData.students.forEach(s => {
+    effectiveStudents.forEach(s => {
       if (s.role) init[s.id] = s.role;
     });
     setStudentRoles(init);
-  }, [classData.students]);
+  }, [effectiveStudents]);
 
   // UI Navigation Tabs
   const [activeTab, setActiveTab] = useState<'roles_config' | 'icebreakers' | 'charters'>(initialTab || 'roles_config');
@@ -392,9 +430,9 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
     setTimeout(() => setIsSavedNotice(false), 3000);
   };
 
-  // --- APPLY ROLES TO CLASS ---
+  // --- APPLY ROLES & TEAMS TO CLASS ---
   const handleApplyRolesToClass = () => {
-    const updated = classData.students.map(s => {
+    const updated = effectiveStudents.map(s => {
       return {
         ...s,
         role: studentRoles[s.id] || undefined
@@ -558,6 +596,15 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
                 <span className="badge badge-primary" style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem', borderRadius: '4px' }}>
                   Customizable
                 </span>
+                {isUsingAutoGroups && (
+                  <span 
+                    className="badge badge-teal" 
+                    style={{ fontSize: '0.65rem', padding: '0.1rem 0.5rem', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                    title="Active teams are populated from your unapplied Auto-Group Studio setup"
+                  >
+                    <Sparkles size={10} /> Auto-Group Studio ({teamNames.filter(t => t !== 'Unassigned').length} Teams)
+                  </span>
+                )}
               </div>
               <p style={{ margin: '0.1rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
                 Customize activity roles, kickoff icebreaker prompts, and team working agreements.
@@ -1365,6 +1412,38 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
           {activeTab === 'charters' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               
+              {/* Auto-Group Staged Teams Banner */}
+              {isUsingAutoGroups && (
+                <div
+                  style={{
+                    backgroundColor: 'rgba(13, 148, 136, 0.08)',
+                    border: '1px solid rgba(13, 148, 136, 0.25)',
+                    borderRadius: '8px',
+                    padding: '0.65rem 0.9rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '0.6rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Sparkles size={15} style={{ color: 'var(--accent-teal)', flexShrink: 0 }} />
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                      Displaying <strong>{teamNames.filter(t => t !== 'Unassigned').length} teams</strong> generated by <strong>Intelligent Auto-Group &amp; Diversity Studio</strong> (not yet applied to class roster). Saving here will finalize both teams and roles to your roster.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleApplyRolesToClass}
+                    className="btn btn-primary btn-sm"
+                    style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.25rem 0.65rem', gap: '0.3rem' }}
+                  >
+                    <Check size={12} /> Apply Teams &amp; Roles Now
+                  </button>
+                </div>
+              )}
+
               {/* Filter and Overview bar */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>

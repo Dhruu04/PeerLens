@@ -96,6 +96,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
   const [isAutoGroupModalOpen, setIsAutoGroupModalOpen] = useState(false);
   const [isLivePresentationModalOpen, setIsLivePresentationModalOpen] = useState(false);
   const [isTeamKickoffModalOpen, setIsTeamKickoffModalOpen] = useState(false);
+  const [stagedAutoGroups, setStagedAutoGroups] = useState<Student[] | null>(null);
 
   // Dynamic Add Team & Add Student Modal State
   const [isAddTeamModalOpen, setIsAddTeamModalOpen] = useState(false);
@@ -1853,8 +1854,9 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
             importRoster(currentClass.id, updatedStudents, true);
             setIsAutoGroupModalOpen(false);
           }}
-          onOpenTeamCharter={() => {
+          onOpenTeamCharter={(staged) => {
             setIsAutoGroupModalOpen(false);
+            if (staged) setStagedAutoGroups(staged);
             setIsTeamKickoffModalOpen(true);
           }}
         />
@@ -1875,8 +1877,15 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
           isOpen={isTeamKickoffModalOpen}
           onClose={() => setIsTeamKickoffModalOpen(false)}
           classData={currentClass}
+          stagedStudents={stagedAutoGroups || undefined}
           onSaveStudents={(updatedStudents) => {
             importRoster(currentClass.id, updatedStudents, true);
+            setStagedAutoGroups(null);
+            try {
+              localStorage.removeItem(`peerlens_staged_autogroups_${currentClass.id}`);
+            } catch (e) {
+              console.warn('Failed to clear staged autogroups', e);
+            }
           }}
         />
       )}

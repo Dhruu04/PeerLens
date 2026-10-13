@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { FeatureToggles } from '../utils/featurePreferences';
-import { getModuleByKey, type ModuleSlotType } from '../utils/moduleRegistry';
+import { getModuleByKey, hasSubmodules, type ModuleSlotType } from '../utils/moduleRegistry';
 import { Eye, EyeOff, Plus, Layers } from 'lucide-react';
 
 interface EditableModuleSlotProps {
@@ -46,6 +46,7 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
   const slotType = customSlotType || meta?.slotType || 'card';
   const IconComponent = meta?.icon || Layers;
   const isSubmodule = !!meta?.parentKey || slotType === 'button' || inline;
+  const isContainerWithSubmodules = hasSubmodules(moduleKey);
 
   // Edit Mode: Module is currently VISIBLE -> Highlighted with 1-click Hide capability
   if (isVisible) {
@@ -63,38 +64,44 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
           verticalAlign: inline ? 'middle' : undefined,
           borderRadius: slotType === 'button' || inline ? '8px' : '12px',
           outline: isHovered
-            ? '2px dashed var(--accent-rose, #ef4444)'
+            ? (isContainerWithSubmodules ? '2px dashed var(--primary, #6366f1)' : '2px dashed var(--accent-rose, #ef4444)')
             : isSubmodule
               ? '1.5px dashed var(--primary, #6366f1)'
               : '2px dashed rgba(99, 102, 241, 0.65)',
           outlineOffset: slotType === 'button' || inline ? '1px' : '3px',
           transition: 'outline 150ms ease, transform 150ms ease',
-          cursor: 'pointer',
+          cursor: isContainerWithSubmodules ? 'default' : 'pointer',
           pointerEvents: 'auto',
           flexShrink: inline ? 0 : undefined,
           zIndex: isHovered ? (isSubmodule ? 40 : 25) : (isSubmodule ? 15 : undefined),
           ...style
         }}
         onMouseEnter={(e) => {
-          e.stopPropagation();
-          setIsHovered(true);
+          if (!isContainerWithSubmodules) {
+            e.stopPropagation();
+            setIsHovered(true);
+          }
         }}
         onMouseLeave={(e) => {
-          e.stopPropagation();
-          setIsHovered(false);
+          if (!isContainerWithSubmodules) {
+            e.stopPropagation();
+            setIsHovered(false);
+          }
         }}
         onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onToggle(moduleKey, false);
+          if (!isContainerWithSubmodules) {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggle(moduleKey, false);
+          }
         }}
-        title={`Click to Hide: "${title}"`}
+        title={isContainerWithSubmodules ? title : `Click to Hide: "${title}"`}
       >
         {/* Real Content */}
         <div
           style={{
-            pointerEvents: 'none',
-            opacity: isHovered ? 0.6 : 1,
+            pointerEvents: isContainerWithSubmodules ? 'auto' : 'none',
+            opacity: (!isContainerWithSubmodules && isHovered) ? 0.6 : 1,
             transition: 'opacity 150ms ease',
             display: inline ? 'inline-flex' : 'flex',
             flexDirection: 'column',
@@ -108,12 +115,20 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
 
         {/* Floating Edit Mode Badge for cards & bars */}
         {isFloatingBadge && (
-          <div
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggle(moduleKey, false);
+            }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
             style={{
               position: 'absolute',
               top: '6px',
               right: '8px',
-              zIndex: 30,
+              zIndex: 35,
               backgroundColor: isHovered ? 'var(--accent-rose, #ef4444)' : 'var(--bg-surface)',
               color: isHovered ? '#ffffff' : 'var(--text-primary)',
               border: `1px solid ${isHovered ? 'var(--accent-rose, #ef4444)' : 'var(--border-color)'}`,
@@ -125,10 +140,12 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
               alignItems: 'center',
               gap: '0.3rem',
               boxShadow: 'var(--shadow-md, 0 2px 8px rgba(0, 0, 0, 0.15))',
-              pointerEvents: 'none',
+              cursor: 'pointer',
+              pointerEvents: 'auto',
               transition: 'all 150ms ease',
               backdropFilter: 'blur(8px)'
             }}
+            title={`Click to Hide: "${title}"`}
           >
             {isHovered ? (
               <>
@@ -144,7 +161,7 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.62rem' }}>• Hide</span>
               </>
             )}
-          </div>
+          </button>
         )}
 
         {/* Small button badge overlay */}
