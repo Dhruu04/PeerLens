@@ -1103,8 +1103,9 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                     onClick={() => setViewMode('kanban')}
                     className={`btn btn-sm ${viewMode === 'kanban' ? 'btn-primary' : 'btn-secondary'}`}
                     style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                    title="Column Board (Kanban Columns)"
                   >
-                    <Kanban size={13} /> Kanban Board
+                    <Kanban size={13} /> Column Board
                   </button>
                   <button
                     type="button"
@@ -1407,7 +1408,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Kanban size={14} className="text-teal" /> Kanban View
+                        <Kanban size={14} className="text-teal" /> Column Board View
                       </span>
                       <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}>
                         {groupingResult.groups.length} Teams • {groupingResult.updatedStudents.length} Students
@@ -2608,12 +2609,12 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                         onOpenTeamCharter();
                       }}
                       style={{ padding: '0.55rem 1.15rem', fontSize: '0.84rem', fontWeight: 700, borderColor: 'var(--primary)', color: 'var(--primary)', backgroundColor: 'var(--bg-surface)' }}
-                      title="Generate Team Charters, assign customizable activity roles, and tailored 5-min multicultural icebreakers"
+                      title="Generate Team Collaboration Agreements, assign customizable activity roles, and tailored 5-min multicultural icebreakers"
                     >
-                      <Sparkles size={14} /> Team Charters &amp; Icebreakers
+                      <Sparkles size={14} /> Team Agreements &amp; Roles
                     </button>
                     <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
-                      Assign roles &amp; 5-min icebreakers
+                      Roles, icebreakers &amp; norms
                     </span>
                   </div>
                 )}

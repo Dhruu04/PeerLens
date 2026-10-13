@@ -42,6 +42,23 @@ export interface FeatureToggles {
   showExportRosterBtn: boolean;
   showDownloadTemplateBtn: boolean;
   showAutoGroupStudio: boolean;
+  showAutoGroupTargetSize: boolean;
+  showAutoGroupNamingFormat: boolean;
+  showAutoGroupRulesCard: boolean;
+  showAutoGroupResetRulesBtn: boolean;
+  showAutoGroupDiscoveredFields: boolean;
+  showAutoGroupQuickTargets: boolean;
+  showAutoGroupToolbar: boolean;
+  showAutoGroupViewGrid: boolean;
+  showAutoGroupViewKanban: boolean;
+  showAutoGroupViewTable: boolean;
+  showAutoGroupViewCompact: boolean;
+  showAutoGroupHistoryControls: boolean;
+  showAutoGroupSearchFilter: boolean;
+  showAutoGroupBottomBar: boolean;
+  showAutoGroupShuffleBtn: boolean;
+  showAutoGroupCharterBtn: boolean;
+  showAutoGroupApplyBtn: boolean;
   showExportButtons: boolean;
   showRosterSearchFilter: boolean;
   showRosterAddStudentBtn: boolean;
@@ -132,6 +149,23 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showExportRosterBtn: false, // Hidden by default as shown in photo
   showDownloadTemplateBtn: false, // Hidden by default as shown in photo
   showAutoGroupStudio: true,
+  showAutoGroupTargetSize: true,
+  showAutoGroupNamingFormat: true,
+  showAutoGroupRulesCard: true,
+  showAutoGroupResetRulesBtn: true,
+  showAutoGroupDiscoveredFields: true,
+  showAutoGroupQuickTargets: true,
+  showAutoGroupToolbar: true,
+  showAutoGroupViewGrid: true,
+  showAutoGroupViewKanban: true,
+  showAutoGroupViewTable: false, // Hidden by default - only Grid and Column Board visible by default
+  showAutoGroupViewCompact: false, // Hidden by default - only Grid and Column Board visible by default
+  showAutoGroupHistoryControls: true,
+  showAutoGroupSearchFilter: true,
+  showAutoGroupBottomBar: true,
+  showAutoGroupShuffleBtn: true,
+  showAutoGroupCharterBtn: false, // Hidden by default at bottom as requested
+  showAutoGroupApplyBtn: true,
   showExportButtons: false, // Hidden by default as shown in photo
   showRosterSearchFilter: false, // Hidden by default as shown in photo
   showRosterAddStudentBtn: false, // Hidden by default as shown in photo (seperately togglable from quick action)
@@ -222,6 +256,23 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showExportRosterBtn: false,
   showDownloadTemplateBtn: false,
   showAutoGroupStudio: true,
+  showAutoGroupTargetSize: true,
+  showAutoGroupNamingFormat: true,
+  showAutoGroupRulesCard: true,
+  showAutoGroupResetRulesBtn: true,
+  showAutoGroupDiscoveredFields: true,
+  showAutoGroupQuickTargets: true,
+  showAutoGroupToolbar: true,
+  showAutoGroupViewGrid: true,
+  showAutoGroupViewKanban: true,
+  showAutoGroupViewTable: false,
+  showAutoGroupViewCompact: false,
+  showAutoGroupHistoryControls: true,
+  showAutoGroupSearchFilter: true,
+  showAutoGroupBottomBar: true,
+  showAutoGroupShuffleBtn: true,
+  showAutoGroupCharterBtn: false,
+  showAutoGroupApplyBtn: true,
   showExportButtons: false,
   showRosterSearchFilter: false,
   showRosterAddStudentBtn: false,
@@ -310,6 +361,23 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showExportRosterBtn: true,
   showDownloadTemplateBtn: true,
   showAutoGroupStudio: true,
+  showAutoGroupTargetSize: true,
+  showAutoGroupNamingFormat: true,
+  showAutoGroupRulesCard: true,
+  showAutoGroupResetRulesBtn: true,
+  showAutoGroupDiscoveredFields: true,
+  showAutoGroupQuickTargets: true,
+  showAutoGroupToolbar: true,
+  showAutoGroupViewGrid: true,
+  showAutoGroupViewKanban: true,
+  showAutoGroupViewTable: true,
+  showAutoGroupViewCompact: true,
+  showAutoGroupHistoryControls: true,
+  showAutoGroupSearchFilter: true,
+  showAutoGroupBottomBar: true,
+  showAutoGroupShuffleBtn: true,
+  showAutoGroupCharterBtn: true,
+  showAutoGroupApplyBtn: true,
   showExportButtons: true,
   showRosterSearchFilter: true,
   showRosterAddStudentBtn: true,
@@ -356,12 +424,12 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showFooterCopyright: true,
 };
 
-const STORAGE_KEY = 'peerlens_feature_toggles_v4';
+const STORAGE_KEY = 'peerlens_feature_toggles_v5';
 const EVENT_KEY = 'peerlens_features_changed';
 
 export const loadFeatureToggles = (): FeatureToggles => {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('peerlens_feature_toggles_v4');
     if (saved) {
       const parsed = JSON.parse(saved);
       return { ...DEFAULT_FEATURE_TOGGLES, ...parsed };

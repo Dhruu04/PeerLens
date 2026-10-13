@@ -4,7 +4,8 @@ import {
   Compass, Database, Sliders, LayoutGrid, CheckSquare, QrCode, 
   Sparkles, Users, CheckCircle, Download, ShieldCheck, Clock, 
   SlidersHorizontal, Activity, Award, RefreshCw, MessageSquare, 
-  Key, Zap, Edit3, Plus, Type, UserCheck, Presentation
+  Key, Zap, Edit3, Plus, Type, UserCheck, Presentation,
+  Layers, Kanban, Table, Columns3, Undo2, Shuffle, Settings2, Target, RotateCcw, Check
 } from 'lucide-react';
 import type { FeatureToggles } from './featurePreferences';
 
@@ -344,6 +345,159 @@ export const MODULE_ITEMS: ModuleItem[] = [
     defaultHeight: 120
   },
   {
+    key: 'showAutoGroupTargetSize',
+    title: 'AutoGroup: Target Team Size Controls',
+    desc: 'Target size stepper input, planned team count indicator, and quick size preset buttons.',
+    icon: Users,
+    category: 'roster',
+    slotType: 'card',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupNamingFormat',
+    title: 'AutoGroup: Group Naming Format Selector',
+    desc: 'Sequential prefix selector (Team, Group, Squad, Cohort, Custom) and preview tag.',
+    icon: Layers,
+    category: 'roster',
+    slotType: 'card',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupRulesCard',
+    title: 'AutoGroup: Rules & Constraints Studio Card',
+    desc: 'Active custom grouping rules, attribute weightage buttons, and optimization constraints card.',
+    icon: Settings2,
+    category: 'roster',
+    slotType: 'card',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupResetRulesBtn',
+    title: 'AutoGroup: Reset Defaults & Clear Rules Buttons',
+    desc: 'Reset to balanced rules and Clear All buttons in the rules header.',
+    icon: RotateCcw,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupDiscoveredFields',
+    title: 'AutoGroup: Discovered Fields Quick Chips',
+    desc: 'Quick-add rule chips for auto-detected roster fields (Gender, Nationality, Degree, etc.).',
+    icon: Sparkles,
+    category: 'roster',
+    slotType: 'bar',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupQuickTargets',
+    title: 'AutoGroup: Quick Team Drop & Jump Strip',
+    desc: 'Sticky or scrollable target strip to jump between teams and drop students with live simulation.',
+    icon: Target,
+    category: 'roster',
+    slotType: 'bar',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupToolbar',
+    title: 'AutoGroup: Preview Layout & History Toolbar',
+    desc: 'Toolbar containing layout switchers, undo/redo move history, and roster search filter.',
+    icon: LayoutGrid,
+    category: 'roster',
+    slotType: 'bar',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupViewGrid',
+    title: 'AutoGroup Layout: Grid View Option',
+    desc: 'Grid preview layout tab showing responsive team cards with member rosters.',
+    icon: LayoutGrid,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupViewKanban',
+    title: 'AutoGroup Layout: Column Board Option',
+    desc: 'Column Board (Kanban) preview layout tab with drag-and-drop columns and wrap/scroll modes.',
+    icon: Kanban,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupViewTable',
+    title: 'AutoGroup Layout: Detailed Table Option',
+    desc: 'Comprehensive spreadsheet table layout tab listing all team compositions and demographics.',
+    icon: Table,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupViewCompact',
+    title: 'AutoGroup Layout: Compact Matrix Option',
+    desc: 'Ultra-dense compact team cards preview layout tab for quick multi-team overview.',
+    icon: Columns3,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupHistoryControls',
+    title: 'AutoGroup: Undo & Redo History Buttons',
+    desc: 'Undo and Redo buttons to revert or re-apply manual student drag-and-drop moves.',
+    icon: Undo2,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupSearchFilter',
+    title: 'AutoGroup: Search & Filter Input',
+    desc: 'Instant search input to filter students across all teams by name, nationality, or skill.',
+    icon: Search,
+    category: 'roster',
+    slotType: 'bar',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupBottomBar',
+    title: 'AutoGroup: Bottom Finalization Action Bar',
+    desc: 'Bottom bar containing formation summary status, reshuffle, agreements, and roster save buttons.',
+    icon: CheckCircle,
+    category: 'roster',
+    slotType: 'bar',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupShuffleBtn',
+    title: 'AutoGroup: Shuffle Combinations Button',
+    desc: 'Button in the bottom bar to re-run optimization and produce a fresh balanced allocation.',
+    icon: Shuffle,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupCharterBtn',
+    title: 'AutoGroup: Team Agreements & Roles Button',
+    desc: 'Button at the bottom to launch Team Collaboration Agreements, activity roles, and icebreakers.',
+    icon: Sparkles,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupApplyBtn',
+    title: 'AutoGroup: Apply to Class Roster Button',
+    desc: 'Primary button in bottom bar to commit and save generated team assignments to the class roster.',
+    icon: Check,
+    category: 'roster',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
     key: 'showDuplicateDetector',
     title: 'Duplicate Enrollment Warning Banner',
     desc: 'Alert banner flagging duplicate student names or emails in roster.',
@@ -407,8 +561,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showTeamKickoffAndRoles',
-    title: 'Team Charter, Roles & Icebreaker Studio',
-    desc: 'Customizable role allocator (Tech Lead, Scribe, Presenter) & tailored 5-minute multicultural team icebreaker activity generator.',
+    title: 'Team Collaboration Agreement & Roles Studio',
+    desc: 'Customizable role allocator (Lead, Scribe, Presenter), team collaboration agreements, and tailored 5-min kickoff icebreakers.',
     icon: UserCheck,
     category: 'roster',
     slotType: 'card',

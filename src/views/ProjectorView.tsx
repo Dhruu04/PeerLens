@@ -562,9 +562,9 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
             className="btn btn-secondary btn-sm"
             onClick={() => setIsTeamKickoffModalOpen(true)}
             style={{ gap: '0.35rem', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '0.45rem 0.85rem', fontWeight: 700 }}
-            title="Launch Team Charter, Role Allocator & Icebreakers"
+            title="Launch Team Collaboration Agreements, Role Allocator & Icebreakers"
           >
-            <Sparkles size={14} className="text-primary" /> Team Charters
+            <Sparkles size={14} className="text-primary" /> Team Agreements & Roles
           </button>
 
           <button

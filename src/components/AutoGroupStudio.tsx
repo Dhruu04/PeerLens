@@ -23,6 +23,13 @@ import {
 } from '../utils/grouping';
 import { exportSingleTeamToCSV, exportSingleTeamToExcel } from '../utils/csv';
 import CustomSelect from './CustomSelect';
+import { EditableModuleSlot } from './EditableModuleSlot';
+import { 
+  loadFeatureToggles, 
+  subscribeFeatureToggles, 
+  saveFeatureToggle, 
+  type FeatureToggles 
+} from '../utils/featurePreferences';
 
 interface AutoGroupStudioProps {
   students: Student[];
@@ -30,6 +37,9 @@ interface AutoGroupStudioProps {
   onLoadSampleStudents?: () => void;
   defaultExpanded?: boolean;
   onOpenTeamCharter?: () => void;
+  isEditMode?: boolean;
+  featureToggles?: FeatureToggles;
+  onToggleModule?: (key: keyof FeatureToggles, nextVisible: boolean) => void;
 }
 
 const PREFIX_OPTIONS = [
@@ -59,14 +69,55 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
   onApplyGroups,
   onLoadSampleStudents,
   defaultExpanded = false,
-  onOpenTeamCharter
+  onOpenTeamCharter,
+  isEditMode = false,
+  featureToggles: featureTogglesProp,
+  onToggleModule
 }) => {
+  const [internalToggles, setInternalToggles] = useState<FeatureToggles>(loadFeatureToggles);
+
+  useEffect(() => {
+    if (!featureTogglesProp) {
+      return subscribeFeatureToggles(setInternalToggles);
+    }
+  }, [featureTogglesProp]);
+
+  const activeToggles = featureTogglesProp || internalToggles;
+  const handleToggle = onToggleModule || ((key: keyof FeatureToggles, val: boolean) => saveFeatureToggle(key, val));
+
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
   const [targetSize, setTargetSize] = useState<number>(4);
   const [prefix, setPrefix] = useState<string>('Team');
   const [customPrefix, setCustomPrefix] = useState<string>('Pod');
   const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'table' | 'compact'>('grid');
   const [kanbanLayout, setKanbanLayout] = useState<'wrap' | 'scroll' | 'compact'>('wrap');
+
+  // Fallback layout if active viewMode layout gets toggled off
+  useEffect(() => {
+    const isCurrentModeVisible = 
+      (viewMode === 'grid' && activeToggles.showAutoGroupViewGrid) ||
+      (viewMode === 'kanban' && activeToggles.showAutoGroupViewKanban) ||
+      (viewMode === 'table' && activeToggles.showAutoGroupViewTable) ||
+      (viewMode === 'compact' && activeToggles.showAutoGroupViewCompact);
+
+    if (!isCurrentModeVisible) {
+      if (activeToggles.showAutoGroupViewGrid) {
+        setViewMode('grid');
+      } else if (activeToggles.showAutoGroupViewKanban) {
+        setViewMode('kanban');
+      } else if (activeToggles.showAutoGroupViewTable) {
+        setViewMode('table');
+      } else if (activeToggles.showAutoGroupViewCompact) {
+        setViewMode('compact');
+      }
+    }
+  }, [
+    viewMode, 
+    activeToggles.showAutoGroupViewGrid, 
+    activeToggles.showAutoGroupViewKanban, 
+    activeToggles.showAutoGroupViewTable, 
+    activeToggles.showAutoGroupViewCompact
+  ]);
   const [isRulesExpanded, setIsRulesExpanded] = useState<boolean>(true);
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -519,193 +570,216 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
             }}
           >
             {/* Tile 1: Target Size with Steppers & Quick Presets */}
-            <div 
-              style={{
-                backgroundColor: 'var(--bg-app)',
-                padding: '1.05rem 1.25rem',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                gap: '0.75rem',
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
-              }}
+            <EditableModuleSlot
+              moduleKey="showAutoGroupTargetSize"
+              isEditMode={isEditMode}
+              isVisible={activeToggles.showAutoGroupTargetSize}
+              onToggle={handleToggle}
+              slotType="card"
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                <label style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
-                  <Users size={16} className="text-teal" /> Target Team Size
-                </label>
-                <span className="badge badge-teal" style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 800 }}>
-                  {numTeams} {numTeams === 1 ? 'Team' : 'Teams'} planned
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                {/* Stepper Input */}
-                <div style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-                  <button
-                    type="button"
-                    onClick={() => setTargetSize(prev => Math.max(2, prev - 1))}
-                    disabled={targetSize <= 2}
-                    style={{
-                      width: '34px',
-                      height: '34px',
-                      border: 'none',
-                      background: 'transparent',
-                      color: targetSize <= 2 ? 'var(--text-muted)' : 'var(--text-primary)',
-                      cursor: targetSize <= 2 ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '1rem',
-                      transition: 'background 0.15s'
-                    }}
-                    title="Decrease team size"
-                  >
-                    -
-                  </button>
-                  <input 
-                    type="number" 
-                    min={2} 
-                    max={Math.max(2, totalMembers)}
-                    value={targetSize}
-                    onChange={(e) => setTargetSize(Math.max(2, Number(e.target.value)))}
-                    style={{ 
-                      fontWeight: 800, 
-                      textAlign: 'center', 
-                      height: '34px', 
-                      width: '46px', 
-                      border: 'none', 
-                      background: 'transparent',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.92rem'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setTargetSize(prev => Math.min(Math.max(2, totalMembers), prev + 1))}
-                    disabled={targetSize >= totalMembers}
-                    style={{
-                      width: '34px',
-                      height: '34px',
-                      border: 'none',
-                      background: 'transparent',
-                      color: targetSize >= totalMembers ? 'var(--text-muted)' : 'var(--text-primary)',
-                      cursor: targetSize >= totalMembers ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '1rem',
-                      transition: 'background 0.15s'
-                    }}
-                    title="Increase team size"
-                  >
-                    +
-                  </button>
+              <div 
+                style={{
+                  backgroundColor: 'var(--bg-app)',
+                  padding: '1.05rem 1.25rem',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
+                    <Users size={16} className="text-teal" /> Target Team Size
+                  </label>
+                  <span className="badge badge-teal" style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 800 }}>
+                    {numTeams} {numTeams === 1 ? 'Team' : 'Teams'} planned
+                  </span>
                 </div>
 
-                {/* Quick Presets */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Preset:</span>
-                  {[2, 3, 4, 5, 6, 8].map(size => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {/* Stepper Input */}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
                     <button
-                      key={size}
                       type="button"
-                      onClick={() => setTargetSize(size)}
-                      className={`btn btn-sm ${targetSize === size ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setTargetSize(prev => Math.max(2, prev - 1))}
+                      disabled={targetSize <= 2}
                       style={{
-                        padding: '0.2rem 0.5rem',
-                        fontSize: '0.74rem',
-                        fontWeight: targetSize === size ? 800 : 600,
-                        minWidth: '28px',
-                        height: '28px',
-                        borderRadius: '6px'
+                        width: '34px',
+                        height: '34px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: targetSize <= 2 ? 'var(--text-muted)' : 'var(--text-primary)',
+                        cursor: targetSize <= 2 ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '1rem',
+                        transition: 'background 0.15s'
                       }}
+                      title="Decrease team size"
                     >
-                      {size}
+                      -
                     </button>
-                  ))}
+                    <input 
+                      type="number" 
+                      min={2} 
+                      max={Math.max(2, totalMembers)}
+                      value={targetSize}
+                      onChange={(e) => setTargetSize(Math.max(2, Number(e.target.value)))}
+                      style={{ 
+                        fontWeight: 800, 
+                        textAlign: 'center', 
+                        height: '34px', 
+                        width: '46px', 
+                        border: 'none', 
+                        background: 'transparent',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.92rem'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setTargetSize(prev => Math.min(Math.max(2, totalMembers), prev + 1))}
+                      disabled={targetSize >= totalMembers}
+                      style={{
+                        width: '34px',
+                        height: '34px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: targetSize >= totalMembers ? 'var(--text-muted)' : 'var(--text-primary)',
+                        cursor: targetSize >= totalMembers ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '1rem',
+                        transition: 'background 0.15s'
+                      }}
+                      title="Increase team size"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Preset:</span>
+                    {[2, 3, 4, 5, 6, 8].map(size => (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => setTargetSize(size)}
+                        className={`btn btn-sm ${targetSize === size ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{
+                          padding: '0.2rem 0.5rem',
+                          fontSize: '0.74rem',
+                          fontWeight: targetSize === size ? 800 : 600,
+                          minWidth: '28px',
+                          height: '28px',
+                          borderRadius: '6px'
+                        }}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>
+                  Distributing {totalMembers} students into {numTeams} teams (~{targetSize} members per team)
                 </div>
               </div>
-
-              <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>
-                Distributing {totalMembers} students into {numTeams} teams (~{targetSize} members per team)
-              </div>
-            </div>
+            </EditableModuleSlot>
 
             {/* Tile 2: Team Prefix & Group Naming Format */}
-            <div 
-              style={{
-                backgroundColor: 'var(--bg-app)',
-                padding: '1.05rem 1.25rem',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                gap: '0.75rem',
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
-              }}
+            <EditableModuleSlot
+              moduleKey="showAutoGroupNamingFormat"
+              isEditMode={isEditMode}
+              isVisible={activeToggles.showAutoGroupNamingFormat}
+              onToggle={handleToggle}
+              slotType="card"
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                <label style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
-                  <Layers size={16} className="text-teal" /> Group Naming Format
-                </label>
-                <span style={{ 
-                  fontSize: '0.7rem', 
-                  color: 'var(--primary)', 
-                  fontWeight: 700,
-                  backgroundColor: 'var(--primary-light)',
-                  padding: '0.15rem 0.5rem',
-                  borderRadius: '4px'
-                }}>
-                  Preview: {effectivePrefix} 1, {effectivePrefix} 2...
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
-                  <CustomSelect
-                    options={PREFIX_OPTIONS}
-                    value={prefix}
-                    onChange={(val) => setPrefix(val)}
-                  />
+              <div 
+                style={{
+                  backgroundColor: 'var(--bg-app)',
+                  padding: '1.05rem 1.25rem',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
+                    <Layers size={16} className="text-teal" /> Group Naming Format
+                  </label>
+                  <span style={{ 
+                    fontSize: '0.7rem', 
+                    color: 'var(--primary)', 
+                    fontWeight: 700,
+                    backgroundColor: 'var(--primary-light)',
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '4px'
+                  }}>
+                    Preview: {effectivePrefix} 1, {effectivePrefix} 2...
+                  </span>
                 </div>
-                {prefix === 'custom' && (
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. Pod, Squad, Lab..."
-                    value={customPrefix}
-                    onChange={(e) => setCustomPrefix(e.target.value)}
-                    style={{ height: '38px', fontSize: '0.82rem', fontWeight: 600, width: '130px' }}
-                  />
-                )}
-              </div>
 
-              <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>
-                Generated teams will be sequentially numbered with this naming prefix
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <div style={{ flex: 1 }}>
+                    <CustomSelect
+                      options={PREFIX_OPTIONS}
+                      value={prefix}
+                      onChange={(val) => setPrefix(val)}
+                    />
+                  </div>
+                  {prefix === 'custom' && (
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Pod, Squad, Lab..."
+                      value={customPrefix}
+                      onChange={(e) => setCustomPrefix(e.target.value)}
+                      style={{ height: '38px', fontSize: '0.82rem', fontWeight: 600, width: '130px' }}
+                    />
+                  )}
+                </div>
+
+                <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>
+                  Generated teams will be sequentially numbered with this naming prefix
+                </div>
               </div>
-            </div>
+            </EditableModuleSlot>
           </div>
 
           {/* ── CUSTOM RULES & CONSTRAINTS STUDIO CARD (CONTRACTABLE) ───────────────────── */}
-          <div 
-            style={{ 
-              backgroundColor: 'var(--bg-surface)', 
-              borderRadius: 'var(--radius-md)', 
-              border: '1px solid var(--border-color)', 
-              padding: isRulesExpanded ? '1.25rem' : '0.85rem 1.25rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: isRulesExpanded ? '1rem' : '0.45rem',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
-              transition: 'all 0.2s ease'
-            }}
+          <EditableModuleSlot
+            moduleKey="showAutoGroupRulesCard"
+            isEditMode={isEditMode}
+            isVisible={activeToggles.showAutoGroupRulesCard}
+            onToggle={handleToggle}
+            slotType="card"
           >
+            <div 
+              style={{ 
+                backgroundColor: 'var(--bg-surface)', 
+                borderRadius: 'var(--radius-md)', 
+                border: '1px solid var(--border-color)', 
+                padding: isRulesExpanded ? '1.25rem' : '0.85rem 1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: isRulesExpanded ? '1rem' : '0.45rem',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+                transition: 'all 0.2s ease'
+              }}
+            >
             {/* Rules Header with Utilities & Collapse Toggle */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.6rem' }}>
               <div 
@@ -726,28 +800,37 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                 {isRulesExpanded && (
-                  <>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={handleResetToDefaults}
-                      title="Reset to recommended balanced rules"
-                      style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
-                    >
-                      <RotateCcw size={12} /> Reset Defaults
-                    </button>
-                    {rules.length > 0 && (
+                  <EditableModuleSlot
+                    moduleKey="showAutoGroupResetRulesBtn"
+                    isEditMode={isEditMode}
+                    isVisible={activeToggles.showAutoGroupResetRulesBtn}
+                    onToggle={handleToggle}
+                    slotType="button"
+                    inline
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
-                        onClick={handleClearAllRules}
-                        title="Clear all rules"
-                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem', color: 'var(--text-muted)' }}
+                        onClick={handleResetToDefaults}
+                        title="Reset to recommended balanced rules"
+                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
                       >
-                        Clear All
+                        <RotateCcw size={12} /> Reset Defaults
                       </button>
-                    )}
-                  </>
+                      {rules.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={handleClearAllRules}
+                          title="Clear all rules"
+                          style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem', color: 'var(--text-muted)' }}
+                        >
+                          Clear All
+                        </button>
+                      )}
+                    </div>
+                  </EditableModuleSlot>
                 )}
 
                 {/* Contract / Expand Button */}
@@ -887,28 +970,36 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
 
             {/* Quick-Add Discovered Cohort Attributes Strip */}
             {discoveredFields.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', padding: '0.4rem 0' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <Compass size={12} style={{ color: 'var(--primary)' }} /> Discovered in Roster:
-                </span>
-                {discoveredFields.map(df => {
-                  const alreadyConfigured = rules.some(r => r.fieldKey === df.key);
-                  if (alreadyConfigured) return null;
-                  return (
-                    <button
-                      key={df.key}
-                      type="button"
-                      className="autogroup-discovered-chip"
-                      onClick={() => handleQuickAddDiscoveredField(df)}
-                      title={`Add rule for ${df.name} (${df.distinctCount} unique values across ${df.count} students)`}
-                    >
-                      <Plus size={11} style={{ color: 'var(--primary)' }} />
-                      <span>{df.name}</span>
-                      <span style={{ opacity: 0.6, fontSize: '0.65rem' }}>({df.distinctCount} vals)</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <EditableModuleSlot
+                moduleKey="showAutoGroupDiscoveredFields"
+                isEditMode={isEditMode}
+                isVisible={activeToggles.showAutoGroupDiscoveredFields}
+                onToggle={handleToggle}
+                slotType="bar"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', padding: '0.4rem 0' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <Compass size={12} style={{ color: 'var(--primary)' }} /> Discovered in Roster:
+                  </span>
+                  {discoveredFields.map(df => {
+                    const alreadyConfigured = rules.some(r => r.fieldKey === df.key);
+                    if (alreadyConfigured) return null;
+                    return (
+                      <button
+                        key={df.key}
+                        type="button"
+                        className="autogroup-discovered-chip"
+                        onClick={() => handleQuickAddDiscoveredField(df)}
+                        title={`Add rule for ${df.name} (${df.distinctCount} unique values across ${df.count} students)`}
+                      >
+                        <Plus size={11} style={{ color: 'var(--primary)' }} />
+                        <span>{df.name}</span>
+                        <span style={{ opacity: 0.6, fontSize: '0.65rem' }}>({df.distinctCount} vals)</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </EditableModuleSlot>
             )}
 
             {/* Active Rules List */}
@@ -1049,167 +1140,234 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
           </>
         )}
       </div>
+    </EditableModuleSlot>
 
           {/* ── TEAMS PREVIEW TOOLBAR & LAYOUT SWITCHER ─────────────────────────────── */}
           {students.length > 0 && groupingResult && (
-            <div 
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between', 
-                flexWrap: 'wrap', 
-                gap: '0.85rem',
-                padding: '0.85rem 1.15rem',
-                backgroundColor: 'var(--bg-app)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-color)'
-              }}
+            <EditableModuleSlot
+              moduleKey="showAutoGroupToolbar"
+              isEditMode={isEditMode}
+              isVisible={activeToggles.showAutoGroupToolbar}
+              onToggle={handleToggle}
+              slotType="bar"
             >
-              {/* Layout Switcher Tabs */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <LayoutGrid size={14} className="text-teal" /> Preview Layout:
-                </span>
-                <div style={{ display: 'inline-flex', backgroundColor: 'var(--bg-surface)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', gap: '2px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('grid')}
-                    className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
-                  >
-                    <LayoutGrid size={13} /> Grid
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('kanban')}
-                    className={`btn btn-sm ${viewMode === 'kanban' ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
-                  >
-                    <Kanban size={13} /> Kanban Board
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('table')}
-                    className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
-                  >
-                    <Table size={13} /> Detailed Table
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('compact')}
-                    className={`btn btn-sm ${viewMode === 'compact' ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
-                  >
-                    <Columns3 size={13} /> Compact Matrix
-                  </button>
-                </div>
-              </div>
-
-              {/* History & Pin Controls */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', backgroundColor: 'var(--bg-app)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <button
-                    type="button"
-                    onClick={handleUndo}
-                    disabled={historyIndex <= 0}
-                    className="btn btn-sm btn-secondary"
-                    title="Undo team move (Ctrl+Z)"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      padding: '0.3rem 0.6rem',
-                      fontSize: '0.74rem',
-                      fontWeight: 600,
-                      borderRadius: '6px',
-                      opacity: historyIndex <= 0 ? 0.45 : 1,
-                      cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    <Undo2 size={13} /> Undo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleRedo}
-                    disabled={historyIndex >= history.length - 1}
-                    className="btn btn-sm btn-secondary"
-                    title="Redo team move (Ctrl+Y)"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      padding: '0.3rem 0.6rem',
-                      fontSize: '0.74rem',
-                      fontWeight: 600,
-                      borderRadius: '6px',
-                      opacity: historyIndex >= history.length - 1 ? 0.45 : 1,
-                      cursor: historyIndex >= history.length - 1 ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    <Redo2 size={13} /> Redo
-                  </button>
-                </div>
-
-                {pinnedStudentIds.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleUnpinAll}
-                    className="btn btn-sm btn-secondary"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      padding: '0.32rem 0.65rem',
-                      fontSize: '0.74rem',
-                      borderRadius: '6px',
-                      color: 'var(--accent-amber)',
-                      fontWeight: 700
-                    }}
-                    title="Unlock all pinned students"
-                  >
-                    <PinOff size={13} /> Unpin All ({pinnedStudentIds.size})
-                  </button>
-                )}
-              </div>
-
-              {/* Search Filter Input */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '240px', flex: '1 1 240px', maxWidth: '340px' }}>
-                <div style={{ position: 'relative', width: '100%' }}>
-                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Filter students, university, nationality..."
-                    value={searchFilter}
-                    onChange={(e) => setSearchFilter(e.target.value)}
-                    style={{ height: '36px', paddingLeft: '32px', paddingRight: searchFilter ? '30px' : '10px', fontSize: '0.8rem', width: '100%' }}
-                  />
-                  {searchFilter && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchFilter('')}
-                      style={{
-                        position: 'absolute',
-                        right: '8px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        padding: '2px',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}
-                      title="Clear search"
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between', 
+                  flexWrap: 'wrap', 
+                  gap: '0.85rem',
+                  padding: '0.85rem 1.15rem',
+                  backgroundColor: 'var(--bg-app)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-color)'
+                }}
+              >
+                {/* Layout Switcher Tabs */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <LayoutGrid size={14} className="text-teal" /> Preview Layout:
+                  </span>
+                  <div style={{ display: 'inline-flex', backgroundColor: 'var(--bg-surface)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', gap: '2px', alignItems: 'center' }}>
+                    <EditableModuleSlot
+                      moduleKey="showAutoGroupViewGrid"
+                      isEditMode={isEditMode}
+                      isVisible={activeToggles.showAutoGroupViewGrid}
+                      onToggle={handleToggle}
+                      slotType="button"
+                      inline
                     >
-                      <X size={14} />
-                    </button>
-                  )}
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('grid')}
+                        className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                      >
+                        <LayoutGrid size={13} /> Grid
+                      </button>
+                    </EditableModuleSlot>
+
+                    <EditableModuleSlot
+                      moduleKey="showAutoGroupViewKanban"
+                      isEditMode={isEditMode}
+                      isVisible={activeToggles.showAutoGroupViewKanban}
+                      onToggle={handleToggle}
+                      slotType="button"
+                      inline
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('kanban')}
+                        className={`btn btn-sm ${viewMode === 'kanban' ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                        title="Column Board (Kanban Columns)"
+                      >
+                        <Kanban size={13} /> Column Board
+                      </button>
+                    </EditableModuleSlot>
+
+                    <EditableModuleSlot
+                      moduleKey="showAutoGroupViewTable"
+                      isEditMode={isEditMode}
+                      isVisible={activeToggles.showAutoGroupViewTable}
+                      onToggle={handleToggle}
+                      slotType="button"
+                      inline
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('table')}
+                        className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                      >
+                        <Table size={13} /> Detailed Table
+                      </button>
+                    </EditableModuleSlot>
+
+                    <EditableModuleSlot
+                      moduleKey="showAutoGroupViewCompact"
+                      isEditMode={isEditMode}
+                      isVisible={activeToggles.showAutoGroupViewCompact}
+                      onToggle={handleToggle}
+                      slotType="button"
+                      inline
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('compact')}
+                        className={`btn btn-sm ${viewMode === 'compact' ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                      >
+                        <Columns3 size={13} /> Compact Matrix
+                      </button>
+                    </EditableModuleSlot>
+                  </div>
                 </div>
+
+                {/* History & Pin Controls */}
+                <EditableModuleSlot
+                  moduleKey="showAutoGroupHistoryControls"
+                  isEditMode={isEditMode}
+                  isVisible={activeToggles.showAutoGroupHistoryControls}
+                  onToggle={handleToggle}
+                  slotType="button"
+                  inline
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', backgroundColor: 'var(--bg-app)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <button
+                        type="button"
+                        onClick={handleUndo}
+                        disabled={historyIndex <= 0}
+                        className="btn btn-sm btn-secondary"
+                        title="Undo team move (Ctrl+Z)"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          padding: '0.3rem 0.6rem',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                          borderRadius: '6px',
+                          opacity: historyIndex <= 0 ? 0.45 : 1,
+                          cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        <Undo2 size={13} /> Undo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRedo}
+                        disabled={historyIndex >= history.length - 1}
+                        className="btn btn-sm btn-secondary"
+                        title="Redo team move (Ctrl+Y)"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          padding: '0.3rem 0.6rem',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                          borderRadius: '6px',
+                          opacity: historyIndex >= history.length - 1 ? 0.45 : 1,
+                          cursor: historyIndex >= history.length - 1 ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        <Redo2 size={13} /> Redo
+                      </button>
+                    </div>
+
+                    {pinnedStudentIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleUnpinAll}
+                        className="btn btn-sm btn-secondary"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.32rem 0.65rem',
+                          fontSize: '0.74rem',
+                          borderRadius: '6px',
+                          color: 'var(--accent-amber)',
+                          fontWeight: 700
+                        }}
+                        title="Unlock all pinned students"
+                      >
+                        <PinOff size={13} /> Unpin All ({pinnedStudentIds.size})
+                      </button>
+                    )}
+                  </div>
+                </EditableModuleSlot>
+
+                {/* Search Filter Input */}
+                <EditableModuleSlot
+                  moduleKey="showAutoGroupSearchFilter"
+                  isEditMode={isEditMode}
+                  isVisible={activeToggles.showAutoGroupSearchFilter}
+                  onToggle={handleToggle}
+                  slotType="bar"
+                  style={{ minWidth: '240px', flex: '1 1 240px', maxWidth: '340px' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
+                    <div style={{ position: 'relative', width: '100%' }}>
+                      <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Filter students, university, nationality..."
+                        value={searchFilter}
+                        onChange={(e) => setSearchFilter(e.target.value)}
+                        style={{ height: '36px', paddingLeft: '32px', paddingRight: searchFilter ? '30px' : '10px', fontSize: '0.8rem', width: '100%' }}
+                      />
+                      {searchFilter && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchFilter('')}
+                          style={{
+                            position: 'absolute',
+                            right: '8px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}
+                          title="Clear search"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </EditableModuleSlot>
               </div>
-            </div>
+            </EditableModuleSlot>
           )}
 
           {/* ── TEAMS PREVIEW RENDERING ─────────────────────────────────────────── */}
@@ -1230,159 +1388,167 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
             <div className={draggedStudentId ? 'is-dragging-student' : ''} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               
               {/* All-Teams Quick Drop Target Strip (Sticky when pinned, scrolls away when unpinned) */}
-              <div 
-                className="autogroup-sticky-quick-bar"
-                style={{ 
-                  position: isQuickBarPinned ? 'sticky' : 'relative',
-                  top: isQuickBarPinned ? '60px' : 'auto',
-                  zIndex: isQuickBarPinned ? 960 : 10,
-                  padding: '0.65rem 0.85rem', 
-                  backgroundColor: 'var(--bg-surface)', 
-                  backdropFilter: 'blur(16px)',
-                  WebkitBackdropFilter: 'blur(16px)',
-                  borderRadius: 'var(--radius-md)', 
-                  border: draggedStudentId ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
-                  boxShadow: isQuickBarPinned ? '0 6px 20px rgba(0, 0, 0, 0.12)' : '0 1px 3px rgba(0, 0, 0, 0.05)',
-                  transition: 'all 0.2s ease'
-                }}
+              <EditableModuleSlot
+                moduleKey="showAutoGroupQuickTargets"
+                isEditMode={isEditMode}
+                isVisible={activeToggles.showAutoGroupQuickTargets}
+                onToggle={handleToggle}
+                slotType="bar"
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.4rem' }}>
-                  <span style={{ fontSize: '0.74rem', fontWeight: 800, color: draggedStudentId ? 'var(--accent-teal)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    {draggedStudentId ? <Zap size={13} className="text-teal" /> : <Target size={13} className="text-teal" />}
-                    {draggedStudentId ? 'Drop card onto any team below for instant move:' : 'Quick Team Drop & Jump Targets:'}
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <Layers size={11} /> {groupingResult.groups.length} Targets Available
+                <div 
+                  className="autogroup-sticky-quick-bar"
+                  style={{ 
+                    position: isQuickBarPinned ? 'sticky' : 'relative',
+                    top: isQuickBarPinned ? '60px' : 'auto',
+                    zIndex: isQuickBarPinned ? 960 : 10,
+                    padding: '0.65rem 0.85rem', 
+                    backgroundColor: 'var(--bg-surface)', 
+                    backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
+                    borderRadius: 'var(--radius-md)', 
+                    border: draggedStudentId ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
+                    boxShadow: isQuickBarPinned ? '0 6px 20px rgba(0, 0, 0, 0.12)' : '0 1px 3px rgba(0, 0, 0, 0.05)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: draggedStudentId ? 'var(--accent-teal)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      {draggedStudentId ? <Zap size={13} className="text-teal" /> : <Target size={13} className="text-teal" />}
+                      {draggedStudentId ? 'Drop card onto any team below for instant move:' : 'Quick Team Drop & Jump Targets:'}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsQuickBarPinned(prev => !prev)}
-                      className={`btn btn-sm ${isQuickBarPinned ? 'btn-primary' : 'btn-secondary'}`}
-                      style={{
-                        fontSize: '0.68rem',
-                        padding: '0.2rem 0.55rem',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.3rem',
-                        borderRadius: '16px',
-                        cursor: 'pointer',
-                        fontWeight: 600
-                      }}
-                      title={isQuickBarPinned ? 'Unpin: Target bar will scroll away when scrolling down' : 'Pin to top: Keep target bar visible while scrolling'}
-                    >
-                      {isQuickBarPinned ? <Pin size={11} /> : <PinOff size={11} />}
-                      <span>{isQuickBarPinned ? 'Pinned to Top' : 'Pin to Top'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', maxHeight: '110px', overflowY: 'auto' }}>
-                  {groupingResult.groups.map(g => {
-                    const isTargetHovered = dragOverGroupId === `quick-${g.groupName}`;
-                    return (
-                      <div
-                        key={`quick-drop-${g.groupName}`}
-                        onDragEnter={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (draggedStudentId && dragOverGroupId !== `quick-${g.groupName}`) {
-                            setDragOverGroupId(`quick-${g.groupName}`);
-                          }
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          e.dataTransfer.dropEffect = 'move';
-                          if (draggedStudentId && dragOverGroupId !== `quick-${g.groupName}`) {
-                            setDragOverGroupId(`quick-${g.groupName}`);
-                          }
-                        }}
-                        onDragLeave={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                            if (dragOverGroupId === `quick-${g.groupName}`) {
-                              setDragOverGroupId(null);
-                            }
-                          }
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const studentId = e.dataTransfer.getData('text/plain') || draggedStudentId;
-                          if (studentId) {
-                            handleMoveStudent(studentId, g.groupName);
-                          }
-                          setDraggedStudentId(null);
-                          setDragOverGroupId(null);
-                        }}
-                        onClick={() => {
-                          const el = document.getElementById(`grid-team-card-${g.groupName}`) || document.getElementById(`kanban-team-col-${g.groupName}`) || document.getElementById(`table-team-section-${g.groupName}`);
-                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-                        }}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <Layers size={11} /> {groupingResult.groups.length} Targets Available
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsQuickBarPinned(prev => !prev)}
+                        className={`btn btn-sm ${isQuickBarPinned ? 'btn-primary' : 'btn-secondary'}`}
                         style={{
+                          fontSize: '0.68rem',
+                          padding: '0.2rem 0.55rem',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '0.35rem',
-                          padding: '0.22rem 0.55rem',
-                          borderRadius: '6px',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
+                          gap: '0.3rem',
+                          borderRadius: '16px',
                           cursor: 'pointer',
-                          backgroundColor: isTargetHovered 
-                            ? 'var(--accent-teal)' 
-                            : draggedStudentId 
-                              ? 'rgba(13, 148, 136, 0.08)' 
-                              : 'var(--bg-app)',
-                          color: isTargetHovered ? '#ffffff' : 'var(--text-primary)',
-                          border: isTargetHovered 
-                            ? '1px solid var(--accent-teal)' 
-                            : draggedStudentId 
-                              ? '1px dashed var(--accent-teal)' 
-                              : '1px solid var(--border-color)',
-                          boxShadow: isTargetHovered ? '0 2px 8px rgba(13, 148, 136, 0.35)' : 'none',
-                          transform: isTargetHovered ? 'scale(1.04)' : 'scale(1)',
-                          transition: 'all 0.15s ease',
-                          userSelect: 'none',
-                          WebkitUserSelect: 'none'
+                          fontWeight: 600
                         }}
-                        title={`Click to jump, or drop student here to move to ${g.groupName}`}
+                        title={isQuickBarPinned ? 'Unpin: Target bar will scroll away when scrolling down' : 'Pin to top: Keep target bar visible while scrolling'}
                       >
-                        <span>{g.groupName}</span>
-                        <span style={{ 
-                          fontSize: '0.64rem', 
-                          padding: '0.05rem 0.3rem', 
-                          borderRadius: '4px', 
-                          backgroundColor: isTargetHovered ? 'rgba(255,255,255,0.25)' : 'var(--primary-light)', 
-                          color: isTargetHovered ? '#ffffff' : 'var(--primary)', 
-                          fontWeight: 800 
-                        }}>
-                          {g.studentCount}
-                        </span>
-                        {/* What-If Simulation Badge */}
-                        {draggedStudentId && simulationReports && simulationReports[g.groupName] && (
-                          <span 
-                            className={`autogroup-sim-badge ${simulationReports[g.groupName].delta > 0 ? 'positive' : simulationReports[g.groupName].delta < 0 ? 'negative' : 'neutral'}`}
-                            style={{
-                              fontSize: '0.62rem',
-                              padding: '0.04rem 0.28rem',
-                              borderRadius: '4px',
-                              fontWeight: 800,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '1px'
-                            }}
-                            title={`Simulated score if dropped here: ${simulationReports[g.groupName].simulatedScore}% (${simulationReports[g.groupName].delta > 0 ? '+' : ''}${simulationReports[g.groupName].delta}%)`}
-                          >
-                            {simulationReports[g.groupName].delta > 0 ? `+${simulationReports[g.groupName].delta}%` : `${simulationReports[g.groupName].delta}%`}
+                        {isQuickBarPinned ? <Pin size={11} /> : <PinOff size={11} />}
+                        <span>{isQuickBarPinned ? 'Pinned to Top' : 'Pin to Top'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', maxHeight: '110px', overflowY: 'auto' }}>
+                    {groupingResult.groups.map(g => {
+                      const isTargetHovered = dragOverGroupId === `quick-${g.groupName}`;
+                      return (
+                        <div
+                          key={`quick-drop-${g.groupName}`}
+                          onDragEnter={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (draggedStudentId && dragOverGroupId !== `quick-${g.groupName}`) {
+                              setDragOverGroupId(`quick-${g.groupName}`);
+                            }
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.dataTransfer.dropEffect = 'move';
+                            if (draggedStudentId && dragOverGroupId !== `quick-${g.groupName}`) {
+                              setDragOverGroupId(`quick-${g.groupName}`);
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              if (dragOverGroupId === `quick-${g.groupName}`) {
+                                setDragOverGroupId(null);
+                              }
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const studentId = e.dataTransfer.getData('text/plain') || draggedStudentId;
+                            if (studentId) {
+                              handleMoveStudent(studentId, g.groupName);
+                            }
+                            setDraggedStudentId(null);
+                            setDragOverGroupId(null);
+                          }}
+                          onClick={() => {
+                            const el = document.getElementById(`grid-team-card-${g.groupName}`) || document.getElementById(`kanban-team-col-${g.groupName}`) || document.getElementById(`table-team-section-${g.groupName}`);
+                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                          }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            padding: '0.22rem 0.55rem',
+                            borderRadius: '6px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            backgroundColor: isTargetHovered 
+                              ? 'var(--accent-teal)' 
+                              : draggedStudentId 
+                                ? 'rgba(13, 148, 136, 0.08)' 
+                                : 'var(--bg-app)',
+                            color: isTargetHovered ? '#ffffff' : 'var(--text-primary)',
+                            border: isTargetHovered 
+                              ? '1px solid var(--accent-teal)' 
+                              : draggedStudentId 
+                                ? '1px dashed var(--accent-teal)' 
+                                : '1px solid var(--border-color)',
+                            boxShadow: isTargetHovered ? '0 2px 8px rgba(13, 148, 136, 0.35)' : 'none',
+                            transform: isTargetHovered ? 'scale(1.04)' : 'scale(1)',
+                            transition: 'all 0.15s ease',
+                            userSelect: 'none',
+                            WebkitUserSelect: 'none'
+                          }}
+                          title={`Click to jump, or drop student here to move to ${g.groupName}`}
+                        >
+                          <span>{g.groupName}</span>
+                          <span style={{ 
+                            fontSize: '0.64rem', 
+                            padding: '0.05rem 0.3rem', 
+                            borderRadius: '4px', 
+                            backgroundColor: isTargetHovered ? 'rgba(255,255,255,0.25)' : 'var(--primary-light)', 
+                            color: isTargetHovered ? '#ffffff' : 'var(--primary)', 
+                            fontWeight: 800 
+                          }}>
+                            {g.studentCount}
                           </span>
-                        )}
-                      </div>
-                    );
-                  })}
+                          {/* What-If Simulation Badge */}
+                          {draggedStudentId && simulationReports && simulationReports[g.groupName] && (
+                            <span 
+                              className={`autogroup-sim-badge ${simulationReports[g.groupName].delta > 0 ? 'positive' : simulationReports[g.groupName].delta < 0 ? 'negative' : 'neutral'}`}
+                              style={{
+                                fontSize: '0.62rem',
+                                padding: '0.04rem 0.28rem',
+                                borderRadius: '4px',
+                                fontWeight: 800,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '1px'
+                              }}
+                              title={`Simulated score if dropped here: ${simulationReports[g.groupName].simulatedScore}% (${simulationReports[g.groupName].delta > 0 ? '+' : ''}${simulationReports[g.groupName].delta}%)`}
+                            >
+                              {simulationReports[g.groupName].delta > 0 ? `+${simulationReports[g.groupName].delta}%` : `${simulationReports[g.groupName].delta}%`}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              </EditableModuleSlot>
 
               {/* 1. Enhanced Kanban Board View */}
               {viewMode === 'kanban' ? (
@@ -1401,7 +1567,7 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Kanban size={14} className="text-teal" /> Kanban View
+                        <Kanban size={14} className="text-teal" /> Column Board View
                       </span>
                       <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}>
                         {groupingResult.groups.length} Teams • {groupingResult.updatedStudents.length} Students
@@ -2563,69 +2729,104 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
 
           {/* ── BOTTOM ACTION & FINALIZATION BAR ─────────────────────────────────────── */}
           {groupingResult && students.length > 0 && (
-            <div className="autogroup-bottom-action-bar">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
-                <div>
-                  <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block' }}>
-                    {groupingResult.groups.length} Teams Configured ({students.length} Students Total)
-                  </span>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Simulated Annealing Optimized • Ready to apply allocation to class roster
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowReshuffleModal(true)}
-                    disabled={isGenerating || students.length === 0}
-                    style={{ padding: '0.55rem 1.15rem', fontSize: '0.84rem', fontWeight: 700 }}
-                    title="Re-run simulated annealing to generate a new mix"
-                  >
-                    <Shuffle size={14} style={{ color: 'var(--primary)' }} className={isGenerating ? 'spin' : ''} /> Shuffle Combinations
-                  </button>
-                  <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
-                    Re-runs optimization for a new mix
-                  </span>
-                </div>
-
-                {onOpenTeamCharter && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={onOpenTeamCharter}
-                      style={{ padding: '0.55rem 1.15rem', fontSize: '0.84rem', fontWeight: 700, borderColor: 'var(--primary)', color: 'var(--primary)', backgroundColor: 'var(--bg-surface)' }}
-                      title="Generate Team Charters, assign customizable activity roles, and tailored 5-min multicultural icebreakers"
-                    >
-                      <Sparkles size={14} /> Team Charters &amp; Icebreakers
-                    </button>
-                    <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
-                      Assign roles &amp; 5-min icebreakers
+            <EditableModuleSlot
+              moduleKey="showAutoGroupBottomBar"
+              isEditMode={isEditMode}
+              isVisible={activeToggles.showAutoGroupBottomBar}
+              onToggle={handleToggle}
+              slotType="bar"
+            >
+              <div className="autogroup-bottom-action-bar">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+                  <div>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block' }}>
+                      {groupingResult.groups.length} Teams Configured ({students.length} Students Total)
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      Simulated Annealing Optimized • Ready to apply allocation to class roster
                     </span>
                   </div>
-                )}
+                </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => setShowAssignModal(true)}
-                    disabled={isGenerating || students.length === 0}
-                    style={{ padding: '0.55rem 1.4rem', fontSize: '0.86rem', fontWeight: 800, boxShadow: '0 4px 16px var(--primary-glow)' }}
-                    title="Save team assignments to the active classroom roster"
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem', flexWrap: 'wrap' }}>
+                  <EditableModuleSlot
+                    moduleKey="showAutoGroupShuffleBtn"
+                    isEditMode={isEditMode}
+                    isVisible={activeToggles.showAutoGroupShuffleBtn}
+                    onToggle={handleToggle}
+                    slotType="button"
+                    inline
                   >
-                    <Check size={16} /> Apply to Class Roster
-                  </button>
-                  <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
-                    Saves team assignments to roster
-                  </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setShowReshuffleModal(true)}
+                        disabled={isGenerating || students.length === 0}
+                        style={{ padding: '0.55rem 1.15rem', fontSize: '0.84rem', fontWeight: 700 }}
+                        title="Re-run simulated annealing to generate a new mix"
+                      >
+                        <Shuffle size={14} style={{ color: 'var(--primary)' }} className={isGenerating ? 'spin' : ''} /> Shuffle Combinations
+                      </button>
+                      <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
+                        Re-runs optimization for a new mix
+                      </span>
+                    </div>
+                  </EditableModuleSlot>
+
+                  {onOpenTeamCharter && (
+                    <EditableModuleSlot
+                      moduleKey="showAutoGroupCharterBtn"
+                      isEditMode={isEditMode}
+                      isVisible={activeToggles.showAutoGroupCharterBtn}
+                      onToggle={handleToggle}
+                      slotType="button"
+                      inline
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={onOpenTeamCharter}
+                          style={{ padding: '0.55rem 1.15rem', fontSize: '0.84rem', fontWeight: 700, borderColor: 'var(--primary)', color: 'var(--primary)', backgroundColor: 'var(--bg-surface)' }}
+                          title="Generate Team Collaboration Agreements, assign customizable activity roles, and tailored 5-min multicultural icebreakers"
+                        >
+                          <Sparkles size={14} /> Team Agreements &amp; Roles
+                        </button>
+                        <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
+                          Roles, icebreakers &amp; norms
+                        </span>
+                      </div>
+                    </EditableModuleSlot>
+                  )}
+
+                  <EditableModuleSlot
+                    moduleKey="showAutoGroupApplyBtn"
+                    isEditMode={isEditMode}
+                    isVisible={activeToggles.showAutoGroupApplyBtn}
+                    onToggle={handleToggle}
+                    slotType="button"
+                    inline
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => setShowAssignModal(true)}
+                        disabled={isGenerating || students.length === 0}
+                        style={{ padding: '0.55rem 1.4rem', fontSize: '0.86rem', fontWeight: 800, boxShadow: '0 4px 16px var(--primary-glow)' }}
+                        title="Save team assignments to the active classroom roster"
+                      >
+                        <Check size={16} /> Apply to Class Roster
+                      </button>
+                      <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
+                        Saves team assignments to roster
+                      </span>
+                    </div>
+                  </EditableModuleSlot>
                 </div>
               </div>
-            </div>
+            </EditableModuleSlot>
           )}
 
         </div>

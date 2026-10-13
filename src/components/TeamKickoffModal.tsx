@@ -14,7 +14,8 @@ import {
   Clock,
   Target,
   RotateCcw,
-  MessageSquare
+  MessageSquare,
+  Copy
 } from 'lucide-react';
 import type { Student, ClassData, TeamCharterRole } from '../utils/math';
 import { DEFAULT_TEAM_ROLES, DEFAULT_CUSTOM_ICEBREAKERS, type CustomIcebreakerTask } from '../utils/math';
@@ -425,6 +426,67 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
       .replace(/{degrees}/g, degrees.join(', ') || 'Diverse disciplines');
   };
 
+  const [copiedTeam, setCopiedTeam] = useState<string | null>(null);
+  const [copiedAll, setCopiedAll] = useState<boolean>(false);
+
+  const generateTeamAgreementMarkdown = (tName: string) => {
+    const members = teamsMap[tName] || [];
+    const formattedPrompt = formatPromptForTeam(activeIcebreaker.prompt, tName, members);
+    const lines: string[] = [];
+    lines.push(`# Team Collaboration Agreement: ${tName}`);
+    lines.push(`**Classroom:** ${classData.name}`);
+    lines.push(`**Generated:** ${new Date().toLocaleDateString()}`);
+    lines.push('');
+    lines.push('## Team Roster & Assigned Roles');
+    if (members.length === 0) {
+      lines.push('*No members currently assigned to this team.*');
+    } else {
+      members.forEach(m => {
+        const roleTitle = studentRoles[m.id] || 'Unassigned';
+        const roleObj = activeRolesList.find(r => r.title === roleTitle);
+        const roleDesc = roleObj ? ` — ${roleObj.description}` : '';
+        lines.push(`- **${m.name}** (${m.degree || m.nationality || 'Member'}): **${roleTitle}**${roleDesc}`);
+      });
+    }
+    lines.push('');
+    lines.push(`## Kickoff Icebreaker: ${activeIcebreaker.title} (${activeIcebreaker.duration})`);
+    lines.push(formattedPrompt);
+    if (activeIcebreaker.outcome) {
+      lines.push(`\n*Expected Outcome:* ${activeIcebreaker.outcome}`);
+    }
+    lines.push('');
+    lines.push('## Team Working Agreements & Norms');
+    customNorms.forEach((norm, idx) => {
+      lines.push(`${idx + 1}. ${norm}`);
+    });
+    lines.push('');
+    lines.push('---');
+    lines.push('*Generated via PeerLens Team Collaboration Agreement & Roles Studio*');
+    return lines.join('\n');
+  };
+
+  const handleCopyTeamAgreement = async (tName: string) => {
+    const md = generateTeamAgreementMarkdown(tName);
+    try {
+      await navigator.clipboard.writeText(md);
+      setCopiedTeam(tName);
+      setTimeout(() => setCopiedTeam(null), 2200);
+    } catch (e) {
+      console.error('Failed to copy team agreement', e);
+    }
+  };
+
+  const handleCopyAllAgreements = async () => {
+    const allMd = teamNames.map(generateTeamAgreementMarkdown).join('\n\n---\n\n');
+    try {
+      await navigator.clipboard.writeText(allMd);
+      setCopiedAll(true);
+      setTimeout(() => setCopiedAll(false), 2200);
+    } catch (e) {
+      console.error('Failed to copy all team agreements', e);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -491,7 +553,7 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                 <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                  Team Charter &amp; Roles Studio
+                  Team Collaboration Agreement &amp; Roles Studio
                 </h3>
                 <span className="badge badge-primary" style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem', borderRadius: '4px' }}>
                   Customizable
@@ -509,9 +571,9 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
               onClick={() => window.print()}
               className="btn btn-secondary btn-sm"
               style={{ gap: '0.35rem', fontSize: '0.76rem', fontWeight: 600, padding: '0.35rem 0.75rem' }}
-              title="Print all generated Team Charter Kickoff Cards"
+              title="Print all generated Team Collaboration Agreements"
             >
-              <Printer size={13} /> Print Charters
+              <Printer size={13} /> Print Agreements
             </button>
             <button
               type="button"
@@ -621,7 +683,7 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
               }}
             >
               <FileText size={13} />
-              <span>Team Charters ({teamNames.length})</span>
+              <span>Team Agreements ({teamNames.length})</span>
             </button>
           </div>
 
@@ -974,7 +1036,7 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
                       Team Working Agreement &amp; Norms
                     </h4>
                     <p style={{ margin: '0.1rem 0 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      Default ground rules printed on each team charter.
+                      Default ground rules included on each team collaboration agreement.
                     </p>
                   </div>
                   <button
@@ -1055,7 +1117,7 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
                     Kickoff Icebreaker Activities
                   </h4>
                   <p style={{ margin: '0.1rem 0 0 0', fontSize: '0.73rem', color: 'var(--text-muted)' }}>
-                    Select the active prompt for team charters, or customize new prompts.
+                    Select the active prompt for team agreements, or customize new prompts.
                   </p>
                 </div>
 
@@ -1298,14 +1360,14 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
           )}
 
           {/* ─────────────────────────────────────────────────────────────────────────
-              TAB 3: TEAM CHARTERS & KICKOFF CARDS
+              TAB 3: TEAM COLLABORATION AGREEMENTS & CARDS
              ───────────────────────────────────────────────────────────────────────── */}
           {activeTab === 'charters' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               
               {/* Filter and Overview bar */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                     Filter Team:
                   </span>
@@ -1320,6 +1382,26 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyAllAgreements}
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: '0.74rem', padding: '0.25rem 0.65rem', height: '30px', gap: '0.3rem' }}
+                    title="Copy all team collaboration agreements to clipboard in clean Markdown"
+                  >
+                    {copiedAll ? (
+                      <>
+                        <Check size={12} style={{ color: 'var(--accent-teal)' }} />
+                        <span style={{ color: 'var(--accent-teal)', fontWeight: 750 }}>All Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={12} />
+                        <span>Copy All Agreements (MD)</span>
+                      </>
+                    )}
+                  </button>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1329,13 +1411,15 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
                 </div>
               </div>
 
-              {/* Grid of Team Charter Cards */}
+              {/* Grid of Team Collaboration Agreement Cards */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '0.85rem' }}>
                 {teamNames
                   .filter(tName => activeTeamFilter === 'all' || activeTeamFilter === tName)
                   .map(tName => {
                     const members = teamsMap[tName] || [];
                     const formattedPrompt = formatPromptForTeam(activeIcebreaker.prompt, tName, members);
+                    const assignedCount = members.filter(m => studentRoles[m.id] && studentRoles[m.id] !== 'Unassigned').length;
+                    const isAllAssigned = members.length > 0 && assignedCount === members.length;
 
                     return (
                       <div
@@ -1351,8 +1435,8 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
                           boxShadow: 'var(--shadow-xs)'
                         }}
                       >
-                        {/* Team Charter Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                        {/* Team Agreement Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.55rem', gap: '0.45rem', flexWrap: 'wrap' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                             <div style={{ width: '24px', height: '24px', borderRadius: '6px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 800 }}>
                               <Users size={12} />
@@ -1360,10 +1444,49 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
                             <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                               {tName}
                             </span>
+                            <span className="badge badge-secondary" style={{ fontSize: '0.64rem', padding: '0.1rem 0.35rem' }}>
+                              {members.length}
+                            </span>
                           </div>
-                          <span className="badge badge-secondary" style={{ fontSize: '0.66rem', padding: '0.1rem 0.4rem' }}>
-                            {members.length} Members
-                          </span>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span
+                              style={{
+                                fontSize: '0.64rem',
+                                fontWeight: 700,
+                                padding: '0.12rem 0.45rem',
+                                borderRadius: '999px',
+                                backgroundColor: isAllAssigned ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                color: isAllAssigned ? 'var(--accent-teal)' : 'var(--accent-amber)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.2rem'
+                              }}
+                            >
+                              {isAllAssigned ? <Check size={10} /> : null}
+                              {isAllAssigned ? 'Roles Set' : `${assignedCount}/${members.length} Roles`}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopyTeamAgreement(tName)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.68rem', height: '25px', gap: '0.25rem' }}
+                              title="Copy this team agreement in Markdown to share"
+                            >
+                              {copiedTeam === tName ? (
+                                <>
+                                  <Check size={11} style={{ color: 'var(--accent-teal)' }} />
+                                  <span style={{ color: 'var(--accent-teal)', fontWeight: 750 }}>Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={11} />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                         </div>
 
                         {/* Members with Assigned Roles Dropdown */}

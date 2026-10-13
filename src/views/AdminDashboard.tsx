@@ -3902,9 +3902,9 @@ export const AdminDashboard: React.FC = () => {
                                   e.stopPropagation();
                                   handleOpenTeamKickoff('roles_config');
                                 }}
-                                title="Launch Team Charter, Role Allocator & Icebreakers"
+                                title="Launch Team Collaboration Agreements, Role Allocator & Icebreakers"
                               >
-                                <Sparkles size={11} /> <span>Team Charters</span>
+                                <Sparkles size={11} /> <span>Team Agreements</span>
                               </button>
                             </div>
                           </EditableModuleSlot>
@@ -4639,6 +4639,9 @@ export const AdminDashboard: React.FC = () => {
                     addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
                   }}
                   onOpenTeamCharter={() => handleOpenTeamKickoff('charters')}
+                  isEditMode={isEditMode}
+                  featureToggles={featureToggles}
+                  onToggleModule={handleToggleModule}
                 />
               </div>
             </EditableModuleSlot>
@@ -4686,7 +4689,7 @@ export const AdminDashboard: React.FC = () => {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                          Team Charter &amp; Role Allocator Studio
+                          Team Collaboration Agreement &amp; Role Studio
                         </h3>
                         <span className="badge badge-primary" style={{ fontSize: '0.66rem', padding: '0.12rem 0.5rem' }}>
                           Pedagogical Alignment
@@ -4705,9 +4708,9 @@ export const AdminDashboard: React.FC = () => {
                       className="btn btn-secondary btn-sm"
                       onClick={() => handleOpenTeamKickoff('charters', true)}
                       style={{ gap: '0.35rem', fontWeight: 650, fontSize: '0.8rem', padding: '0.55rem 0.95rem' }}
-                      title="Open Team Charters & trigger quick print view"
+                      title="Open Team Agreements & trigger quick print view"
                     >
-                      <Printer size={13} /> Print Charters
+                      <Printer size={13} /> Print Agreements
                     </button>
                     <button
                       type="button"
@@ -4834,7 +4837,7 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
                       <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#d97706' }}>
-                        Preview &amp; Print Charters &rarr;
+                        Preview &amp; Print Agreements &rarr;
                       </span>
                       <ArrowRight size={12} style={{ color: '#d97706' }} />
                     </div>
