@@ -90,14 +90,14 @@ export const FOCUSED_TOUR_TRACKS: GuidedTourTrack[] = [
   },
   {
     id: 'perception_audit_track',
-    title: 'Section 3: Perception Radar & Collusion Audit',
+    title: 'Section 3: Skills Radar & Suspicious Ratings',
     category: 'Analytics & Integrity',
     stepCount: 3,
     duration: '40 sec',
-    description: 'Explore Competency Spider Radars, Johari Window self-vs-peer blind spot detection (±7.5% threshold), and statistical collusion / retaliatory score audits.',
+    description: 'Explore Skills Radar Charts, Self vs. Peer Rating Comparisons, and Suspicious Ratings Alerts.',
     icon: <Activity size={18} style={{ color: 'var(--accent-rose)' }} />,
     stepIds: ['analytics_tab', 'perception_deck', 'anomaly_audit'],
-    keyTopics: ['Spider Radar Overlay', 'Johari Blind Spots', 'Reciprocal Collusion Rings', 'Outlier Grader Detection']
+    keyTopics: ['Skills Radar Chart', 'Self vs. Peer Comparison', 'Suspicious Ratings Alert', 'Outlier Grader Detection']
   }
 ];
 
@@ -307,7 +307,8 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
               title="Open Complete Operational Manual in a new browser tab"
             >
               <BookOpen size={14} style={{ color: 'var(--primary)' }} />
-              <span>Manual ↗</span>
+              <span>Manual</span>
+              <ExternalLink size={12} style={{ opacity: 0.75 }} />
             </a>
 
             {/* Sleek Close Button */}
@@ -684,11 +685,11 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                     <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                       <strong style={{ color: 'var(--text-primary)' }}>Key Features:</strong>
                       <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, lineHeight: 1.45 }}>
-                        <li>Self-Enrollment QR code &amp; mobile join link</li>
-                        <li>100 Demo Cohort Generator (35+ countries)</li>
-                        <li>Smart Roster CSV/Excel Importer</li>
-                        <li>AutoGroup Combinatorial Diversity Studio</li>
-                        <li>Multi-Select Bulk Actions Toolbar</li>
+                        <li>Student Join Code &amp; Link (QR and web URL)</li>
+                        <li>Load Demo Students (100 sample students)</li>
+                        <li>Import Spreadsheet (CSV / Excel)</li>
+                        <li>Auto-Group Teams (balanced by rules)</li>
+                        <li>Team Roles &amp; Icebreaker</li>
                       </ul>
                     </div>
                   </div>
@@ -718,20 +719,20 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                       </span>
                     </div>
                     <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      Review System &amp; Rubrics
+                      Grading Rubric
                     </h4>
                     <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.42 }}>
-                      Define criteria dimensions, qualitative anchors, 100% weight auto-balancing, team health pulse check-ins, and student evaluation governance.
+                      Define criteria dimensions, qualitative descriptors, 100% weight balancing, team health check-ins, and student review options.
                     </p>
                     <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                       <strong style={{ color: 'var(--text-primary)' }}>Key Features:</strong>
                       <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, lineHeight: 1.45 }}>
-                        <li>100% Criteria Weight Auto-Balance bar</li>
-                        <li>Standardized Rubric (IPAF Research-Synthesized)</li>
-                        <li>Team Health Micro-Pulse Surveys (30s check-ins, 5 scale presets, blocker alerts)</li>
-                        <li>Evaluation Form Controls (Self-evaluations, praise badges, profile locks)</li>
-                        <li>Target Scale Normalization (20, 100%, Likert)</li>
-                        <li>Interactive Student Smartphone Simulator</li>
+                        <li>Weight Total: 100% (Balanced)</li>
+                        <li>Rubric Presets (IPAF Standard template)</li>
+                        <li>Team Health Check-ins (30s check-ins and blocker notes)</li>
+                        <li>Feedback Settings (Self-evaluations, praise badges, comments)</li>
+                        <li>Grade Scale</li>
+                        <li>Preview Student View</li>
                       </ul>
                     </div>
                   </div>
@@ -761,19 +762,19 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                       </span>
                     </div>
                     <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      Grading &amp; Performance Analytics
+                      Grades &amp; Reports
                     </h4>
                     <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.42 }}>
-                      Loughborough WebPA multipliers, team-specific base marks, fudge weights, spider radars, and anomaly collusion audits.
+                      Peer score adjustments, peer review impact slider, skills radar, and suspicious ratings alerts.
                     </p>
                     <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                       <strong style={{ color: 'var(--text-primary)' }}>Key Features:</strong>
                       <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, lineHeight: 1.45 }}>
-                        <li>Per-Team Base Marks + Global Calibrator</li>
-                        <li>0%–100% Calibrator Fudge Weight slider</li>
-                        <li>Multi-Axis Competency Spider Radar</li>
-                        <li>Johari Window (±7.5% Blind Spot Matrix)</li>
-                        <li>Master Gradebook &amp; Batch Student PDFs</li>
+                        <li>Peer Score Adjustment + Team Base Marks</li>
+                        <li>Peer Review Impact (0–100%) slider</li>
+                        <li>Skills Radar Chart</li>
+                        <li>Self vs. Peer Rating Comparison</li>
+                        <li>Class Gradebook Table &amp; Batch Student PDFs</li>
                       </ul>
                     </div>
                   </div>

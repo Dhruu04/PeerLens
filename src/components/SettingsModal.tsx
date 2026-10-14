@@ -103,7 +103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<'email' | 'cloud' | 'shortcuts' | 'appearance' | 'modules'>(initialTab);
   const [featureToggles, setFeatureToggles] = useState<FeatureToggles>(loadFeatureToggles);
-  const [moduleCategoryFilter, setModuleCategoryFilter] = useState<'all' | 'header' | 'hub' | 'roster' | 'rubric' | 'analytics'>('all');
+  const [moduleCategoryFilter, setModuleCategoryFilter] = useState<'all' | 'header' | 'hub' | 'roster' | 'autogroup' | 'rubric' | 'analytics' | 'footer'>('all');
   const [moduleSearchQuery, setModuleSearchQuery] = useState('');
   const [moduleStatusFilter, setModuleStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
 
@@ -939,7 +939,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   { id: 'all', label: 'All Sections', count: totalItemsCount },
                   { id: 'header', label: 'Top Navigation', count: MODULE_GROUPS.find(g => g.id === 'header')?.items.length || 0 },
                   { id: 'hub', label: 'Home Hub', count: MODULE_GROUPS.find(g => g.id === 'hub')?.items.length || 0 },
-                  { id: 'roster', label: '1. Enrollment & Teams', count: MODULE_GROUPS.find(g => g.id === 'roster')?.items.length || 0 },
+                  { id: 'roster', label: '1. Enrollment & Roster', count: MODULE_GROUPS.find(g => g.id === 'roster')?.items.length || 0 },
+                  { id: 'autogroup', label: 'AutoGroup Studio', count: MODULE_GROUPS.find(g => g.id === 'autogroup')?.items.length || 0 },
                   { id: 'rubric', label: '2. Review System', count: MODULE_GROUPS.find(g => g.id === 'rubric')?.items.length || 0 },
                   { id: 'analytics', label: '3. Grading & Analytics', count: MODULE_GROUPS.find(g => g.id === 'analytics')?.items.length || 0 },
                   { id: 'footer', label: 'Footer Elements', count: MODULE_GROUPS.find(g => g.id === 'footer')?.items.length || 0 }

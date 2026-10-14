@@ -54,11 +54,18 @@ export interface FeatureToggles {
   showAutoGroupViewTable: boolean;
   showAutoGroupViewCompact: boolean;
   showAutoGroupHistoryControls: boolean;
+  showAutoGroupUnassignedDrawer: boolean;
   showAutoGroupSearchFilter: boolean;
   showAutoGroupBottomBar: boolean;
   showAutoGroupShuffleBtn: boolean;
   showAutoGroupCharterBtn: boolean;
   showAutoGroupApplyBtn: boolean;
+  showAutoGroupRuleCompliance: boolean;
+  showAutoGroupWeightDistribution: boolean;
+  showAutoGroupDiversityPercentages: boolean;
+  showAutoGroupDiversityStrip: boolean;
+  showAutoGroupTeamComposition: boolean;
+  showAutoGroupStudentDemographics: boolean;
   showExportButtons: boolean;
   showRosterSearchFilter: boolean;
   showRosterAddStudentBtn: boolean;
@@ -161,11 +168,18 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showAutoGroupViewTable: false, // Hidden by default - only Grid and Column Board visible by default
   showAutoGroupViewCompact: false, // Hidden by default - only Grid and Column Board visible by default
   showAutoGroupHistoryControls: true,
+  showAutoGroupUnassignedDrawer: false, // Hidden by default as requested
   showAutoGroupSearchFilter: true,
   showAutoGroupBottomBar: true,
   showAutoGroupShuffleBtn: true,
   showAutoGroupCharterBtn: false, // Hidden by default at bottom as requested
   showAutoGroupApplyBtn: true,
+  showAutoGroupRuleCompliance: false, // Hidden by default as requested
+  showAutoGroupWeightDistribution: false, // Hidden by default as requested
+  showAutoGroupDiversityPercentages: false, // Hidden by default in recommended preset as requested
+  showAutoGroupDiversityStrip: false, // Hidden by default as requested
+  showAutoGroupTeamComposition: false, // Hidden by default as requested in picture
+  showAutoGroupStudentDemographics: true,
   showExportButtons: false, // Hidden by default as shown in photo
   showRosterSearchFilter: false, // Hidden by default as shown in photo
   showRosterAddStudentBtn: false, // Hidden by default as shown in photo (seperately togglable from quick action)
@@ -268,11 +282,18 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showAutoGroupViewTable: false,
   showAutoGroupViewCompact: false,
   showAutoGroupHistoryControls: true,
+  showAutoGroupUnassignedDrawer: false,
   showAutoGroupSearchFilter: true,
   showAutoGroupBottomBar: true,
   showAutoGroupShuffleBtn: true,
   showAutoGroupCharterBtn: false,
   showAutoGroupApplyBtn: true,
+  showAutoGroupRuleCompliance: false,
+  showAutoGroupWeightDistribution: false,
+  showAutoGroupDiversityPercentages: false,
+  showAutoGroupDiversityStrip: false,
+  showAutoGroupTeamComposition: false,
+  showAutoGroupStudentDemographics: true,
   showExportButtons: false,
   showRosterSearchFilter: false,
   showRosterAddStudentBtn: false,
@@ -373,11 +394,18 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showAutoGroupViewTable: true,
   showAutoGroupViewCompact: true,
   showAutoGroupHistoryControls: true,
+  showAutoGroupUnassignedDrawer: true,
   showAutoGroupSearchFilter: true,
   showAutoGroupBottomBar: true,
   showAutoGroupShuffleBtn: true,
   showAutoGroupCharterBtn: true,
   showAutoGroupApplyBtn: true,
+  showAutoGroupRuleCompliance: true,
+  showAutoGroupWeightDistribution: true,
+  showAutoGroupDiversityPercentages: true,
+  showAutoGroupDiversityStrip: true,
+  showAutoGroupTeamComposition: true,
+  showAutoGroupStudentDemographics: true,
   showExportButtons: true,
   showRosterSearchFilter: true,
   showRosterAddStudentBtn: true,
@@ -424,12 +452,12 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showFooterCopyright: true,
 };
 
-const STORAGE_KEY = 'peerlens_feature_toggles_v5';
+const STORAGE_KEY = 'peerlens_feature_toggles_v6';
 const EVENT_KEY = 'peerlens_features_changed';
 
 export const loadFeatureToggles = (): FeatureToggles => {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('peerlens_feature_toggles_v4');
+    const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('peerlens_feature_toggles_v5');
     if (saved) {
       const parsed = JSON.parse(saved);
       return { ...DEFAULT_FEATURE_TOGGLES, ...parsed };

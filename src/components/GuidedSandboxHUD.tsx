@@ -23,6 +23,7 @@ interface GuidedSandboxHUDProps {
   onKeepData: () => void;
   missions: SandboxMission[];
   onNavigateTab: (tab: 'roster' | 'grading' | 'results') => void;
+  embedded?: boolean;
 }
 
 export const GuidedSandboxHUD: React.FC<GuidedSandboxHUDProps> = ({
@@ -32,7 +33,8 @@ export const GuidedSandboxHUD: React.FC<GuidedSandboxHUDProps> = ({
   onExitAndReset,
   onKeepData,
   missions,
-  onNavigateTab
+  onNavigateTab,
+  embedded = false
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isPinned, setIsPinned] = useState(true);
@@ -56,18 +58,18 @@ export const GuidedSandboxHUD: React.FC<GuidedSandboxHUDProps> = ({
   return (
     <div
       style={{
-        position: isPinned ? 'sticky' : 'relative',
-        top: isPinned ? '3.65rem' : 'auto',
-        zIndex: isPinned ? 930 : 10,
-        marginBottom: '1rem',
+        position: embedded ? 'relative' : (isPinned ? 'sticky' : 'relative'),
+        top: embedded ? 'auto' : (isPinned ? '3.65rem' : 'auto'),
+        zIndex: embedded ? 10 : (isPinned ? 930 : 10),
+        marginBottom: embedded ? 0 : '1rem',
         borderRadius: '12px',
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
+        backgroundColor: 'var(--bg-surface)',
         border: '1.5px solid #10b981',
-        boxShadow: isPinned 
-          ? '0 10px 30px -5px rgba(16, 185, 129, 0.18), 0 4px 12px -2px rgba(0, 0, 0, 0.05)' 
-          : '0 4px 16px -2px rgba(16, 185, 129, 0.10)',
+        boxShadow: embedded
+          ? 'none'
+          : (isPinned 
+              ? '0 10px 30px -5px rgba(16, 185, 129, 0.18), 0 4px 12px -2px rgba(0, 0, 0, 0.05)' 
+              : '0 4px 16px -2px rgba(16, 185, 129, 0.10)'),
         overflow: 'hidden',
         transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
       }}

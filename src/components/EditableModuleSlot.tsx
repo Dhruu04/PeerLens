@@ -31,29 +31,48 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
   inline = false
 }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [isBadgeHovered, setIsBadgeHovered] = useState(false);
 
   // Normal mode (Edit Mode is deactivated)
   if (!isEditMode) {
     if (isVisible) {
-      return <>{children}</>;
+      return (
+        <div
+          data-module-key={moduleKey}
+          id={`module-slot-${moduleKey}`}
+          className={`module-slot-host ${className}`}
+          style={{ display: 'contents' }}
+        >
+          {children}
+        </div>
+      );
     }
     return null;
   }
 
   // Look up metadata from module registry
   const meta = getModuleByKey(moduleKey);
-  const title = customTitle || meta?.title || String(moduleKey);
+  const rawTitle = customTitle || meta?.title || String(moduleKey);
   const slotType = customSlotType || meta?.slotType || 'card';
   const IconComponent = meta?.icon || Layers;
   const isSubmodule = !!meta?.parentKey || slotType === 'button' || inline;
   const isContainerWithSubmodules = hasSubmodules(moduleKey);
 
-  // Edit Mode: Module is currently VISIBLE -> Highlighted with 1-click Hide capability
+  // Clean title for badge display: strip redundant prefixes that bloat width and cover content
+  const cleanBadgeTitle = rawTitle
+    .replace(/^AutoGroup:\s*/i, '')
+    .replace(/^Section \d+:\s*/i, '')
+    .replace(/ Button| Action Icon| Selector| Indicator| Buttons/gi, '')
+    .trim();
+
+  // Edit Mode: Module is currently VISIBLE -> Highlighted with attached tab badge
   if (isVisible) {
     const isFloatingBadge = !inline && slotType !== 'button';
 
     return (
       <div
+        data-module-key={moduleKey}
+        id={`module-slot-${moduleKey}`}
         className={`edit-mode-slot edit-mode-slot-visible ${isSubmodule ? 'edit-mode-submodule' : ''} ${className}`}
         style={{
           position: 'relative',
@@ -69,11 +88,13 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
               ? '1.5px dashed var(--primary, #6366f1)'
               : '2px dashed rgba(99, 102, 241, 0.65)',
           outlineOffset: slotType === 'button' || inline ? '1px' : '3px',
-          transition: 'outline 150ms ease, transform 150ms ease',
+          transition: 'outline 150ms ease, box-shadow 150ms ease',
           cursor: isContainerWithSubmodules ? 'default' : 'pointer',
           pointerEvents: 'auto',
           flexShrink: inline ? 0 : undefined,
-          zIndex: isHovered ? (isSubmodule ? 40 : 25) : (isSubmodule ? 15 : undefined),
+          zIndex: isHovered ? (isSubmodule ? 50 : 30) : (isSubmodule ? 20 : undefined),
+          overflow: 'visible',
+          marginTop: isFloatingBadge ? (isSubmodule ? '10px' : '6px') : undefined,
           ...style
         }}
         onMouseEnter={(e) => {
@@ -89,19 +110,19 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
           }
         }}
         onClick={(e) => {
-          if (!isContainerWithSubmodules) {
+          if (!isContainerWithSubmodules && !isFloatingBadge) {
             e.preventDefault();
             e.stopPropagation();
             onToggle(moduleKey, false);
           }
         }}
-        title={isContainerWithSubmodules ? title : `Click to Hide: "${title}"`}
+        title={isContainerWithSubmodules || isFloatingBadge ? rawTitle : `Click to Hide: "${rawTitle}"`}
       >
         {/* Real Content */}
         <div
           style={{
-            pointerEvents: isContainerWithSubmodules ? 'auto' : 'none',
-            opacity: (!isContainerWithSubmodules && isHovered) ? 0.6 : 1,
+            pointerEvents: (isContainerWithSubmodules || isFloatingBadge) ? 'auto' : 'none',
+            opacity: (!isContainerWithSubmodules && !isFloatingBadge && isHovered) ? 0.65 : 1,
             transition: 'opacity 150ms ease',
             display: inline ? 'inline-flex' : 'flex',
             flexDirection: 'column',
@@ -113,7 +134,7 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
           {children}
         </div>
 
-        {/* Floating Edit Mode Badge for cards & bars */}
+        {/* Attached Border Tab Badge for cards, bars & submodules (sitting ON the top border line, NEVER covering text) */}
         {isFloatingBadge && (
           <button
             type="button"
@@ -122,49 +143,61 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
               e.stopPropagation();
               onToggle(moduleKey, false);
             }}
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            onMouseEnter={() => {
+              setIsBadgeHovered(true);
+              setIsHovered(true);
+            }}
+            onMouseLeave={() => {
+              setIsBadgeHovered(false);
+              setIsHovered(false);
+            }}
             style={{
               position: 'absolute',
-              top: '6px',
-              right: '8px',
-              zIndex: 35,
-              backgroundColor: isHovered ? 'var(--accent-rose, #ef4444)' : 'var(--bg-surface)',
-              color: isHovered ? '#ffffff' : 'var(--text-primary)',
-              border: `1px solid ${isHovered ? 'var(--accent-rose, #ef4444)' : 'var(--border-color)'}`,
-              padding: '0.2rem 0.55rem',
+              top: '-11px',
+              right: isContainerWithSubmodules ? 'auto' : (isSubmodule ? '14px' : '16px'),
+              left: isContainerWithSubmodules ? '16px' : 'auto',
+              zIndex: 1000,
+              backgroundColor: isBadgeHovered ? 'var(--accent-rose, #ef4444)' : 'var(--bg-surface)',
+              color: isBadgeHovered ? '#ffffff' : 'var(--text-primary)',
+              border: `1px solid ${isBadgeHovered ? 'var(--accent-rose, #ef4444)' : 'var(--border-color)'}`,
+              padding: '0.12rem 0.55rem',
               borderRadius: '20px',
-              fontSize: '0.68rem',
-              fontWeight: 700,
+              fontSize: '0.66rem',
+              fontWeight: 750,
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.3rem',
-              boxShadow: 'var(--shadow-md, 0 2px 8px rgba(0, 0, 0, 0.15))',
+              boxShadow: isBadgeHovered
+                ? '0 4px 12px rgba(239, 68, 68, 0.35)'
+                : '0 2px 8px rgba(0, 0, 0, 0.12)',
               cursor: 'pointer',
               pointerEvents: 'auto',
-              transition: 'all 150ms ease',
-              backdropFilter: 'blur(8px)'
+              transition: 'all 140ms ease',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              height: '21px',
+              whiteSpace: 'nowrap'
             }}
-            title={`Click to Hide: "${title}"`}
+            title={`Click to Hide: "${rawTitle}"`}
           >
-            {isHovered ? (
+            {isBadgeHovered ? (
               <>
-                <EyeOff size={11} />
-                <span>Click to Hide</span>
+                <EyeOff size={10} />
+                <span>Hide {cleanBadgeTitle.length > 20 ? cleanBadgeTitle.slice(0, 19) + '…' : cleanBadgeTitle}</span>
               </>
             ) : (
               <>
-                <Eye size={11} style={{ color: 'var(--primary)' }} />
-                <span style={{ maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {title}
+                <Eye size={10} style={{ color: 'var(--primary)' }} />
+                <span style={{ maxWidth: '160px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {cleanBadgeTitle}
                 </span>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.62rem' }}>• Hide</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.6rem', fontWeight: 600 }}>• Hide</span>
               </>
             )}
           </button>
         )}
 
-        {/* Small button badge overlay */}
+        {/* Small button corner badge on hover */}
         {!isFloatingBadge && isHovered && (
           <div
             style={{
@@ -180,7 +213,7 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
               boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-              zIndex: 45
+              zIndex: 1000
             }}
           >
             <EyeOff size={10} />
@@ -193,15 +226,12 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
   // Edit Mode: Module is currently HIDDEN -> Render Empty Space Highlighted Placeholder with 1-click Show
   const isButtonSlot = slotType === 'button';
   const isBarSlot = slotType === 'bar' || slotType === 'banner';
-  const defaultMinHeight = meta?.defaultHeight || (isButtonSlot ? 34 : isBarSlot ? 48 : 110);
-
-  // For button slot or inline slot, get concise title for compact fitting
-  const displayTitle = isButtonSlot || inline
-    ? title.replace(/ Button| Action Icon| Selector| Indicator| Buttons/gi, '').trim()
-    : title;
+  const defaultMinHeight = meta?.defaultHeight || (isButtonSlot ? 34 : isBarSlot ? 48 : 100);
 
   return (
     <div
+      data-module-key={moduleKey}
+      id={`module-slot-${moduleKey}`}
       className={`edit-mode-slot edit-mode-slot-hidden ${isSubmodule ? 'edit-mode-submodule-hidden' : ''} ${className}`}
       style={{
         position: 'relative',
@@ -212,7 +242,7 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
         gap: inline ? '0.35rem' : '0.45rem',
         minHeight: inline ? '34px' : (isButtonSlot ? '36px' : isBarSlot ? '48px' : `${defaultMinHeight}px`),
         height: isButtonSlot ? (style.height || '36px') : undefined,
-        padding: inline ? '0 0.65rem' : (isButtonSlot ? '0.45rem 0.65rem' : '1rem'),
+        padding: inline ? '0 0.65rem' : (isButtonSlot ? '0.45rem 0.65rem' : '0.85rem 1rem'),
         borderRadius: inline || isButtonSlot ? '8px' : '12px',
         width: inline ? 'auto' : '100%',
         boxSizing: 'border-box',
@@ -228,13 +258,15 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
             : 'var(--bg-surface-hover, rgba(0, 0, 0, 0.02))',
         cursor: 'pointer',
         transition: 'all 160ms cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: isHovered ? 'scale(1.01)' : 'scale(1)',
+        transform: isHovered ? 'scale(1.008)' : 'scale(1)',
         boxShadow: isHovered ? '0 4px 14px rgba(16, 185, 129, 0.15)' : 'none',
         userSelect: 'none',
         verticalAlign: inline ? 'middle' : undefined,
         flexShrink: inline ? 0 : undefined,
         pointerEvents: 'auto',
         zIndex: 20,
+        marginTop: isSubmodule ? '4px' : undefined,
+        marginBottom: isSubmodule ? '4px' : undefined,
         ...style,
         ...placeholderStyle
       }}
@@ -251,7 +283,7 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
         e.stopPropagation();
         onToggle(moduleKey, true);
       }}
-      title={`Click to Show: "${title}"`}
+      title={`Click to Show: "${rawTitle}"`}
     >
       <div
         style={{
@@ -261,14 +293,14 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
           color: isHovered ? 'var(--accent-teal, #059669)' : 'var(--text-secondary)'
         }}
       >
-        <IconComponent size={isButtonSlot || inline ? 13 : 18} style={{ opacity: isHovered ? 1 : 0.8 }} />
+        <IconComponent size={isButtonSlot || inline ? 13 : 16} style={{ opacity: isHovered ? 1 : 0.8 }} />
         {isButtonSlot || inline ? (
           <span style={{ fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
-            + {displayTitle.length > 20 ? displayTitle.slice(0, 19) + '…' : displayTitle}
+            + {cleanBadgeTitle.length > 20 ? cleanBadgeTitle.slice(0, 19) + '…' : cleanBadgeTitle}
           </span>
         ) : (
-          <b style={{ fontSize: '0.8rem', color: isHovered ? 'var(--accent-teal, #059669)' : 'var(--text-secondary)' }}>
-            {title}
+          <b style={{ fontSize: '0.78rem', color: isHovered ? 'var(--accent-teal, #059669)' : 'var(--text-secondary)' }}>
+            {cleanBadgeTitle}
           </b>
         )}
       </div>
@@ -278,16 +310,16 @@ export const EditableModuleSlot: React.FC<EditableModuleSlotProps> = ({
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '0.3rem',
-            fontSize: '0.72rem',
+            gap: '0.25rem',
+            fontSize: '0.68rem',
             fontWeight: 700,
             color: isHovered ? 'var(--accent-teal, #10b981)' : 'var(--primary)',
             backgroundColor: isHovered ? 'var(--accent-teal-light, rgba(16, 185, 129, 0.15))' : 'var(--primary-light, rgba(79, 70, 229, 0.08))',
-            padding: '0.2rem 0.65rem',
+            padding: '0.15rem 0.55rem',
             borderRadius: '20px'
           }}
         >
-          <Plus size={12} />
+          <Plus size={11} />
           <span>Click to Show Module</span>
         </div>
       )}

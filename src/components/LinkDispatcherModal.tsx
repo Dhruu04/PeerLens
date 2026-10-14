@@ -12,7 +12,9 @@ import {
   User,
   Layers,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import type { ClassData, Student } from '../utils/math';
@@ -353,14 +355,14 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Classroom Email Center</h3>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Email Links to Students</h3>
                 <span className={`badge ${emailService === 'simulator' ? 'badge-amber' : 'badge-teal'}`} style={{ fontSize: '0.7rem' }}>
                   {emailService === 'emailjs' ? 'EmailJS API' : emailService === 'brevo' ? 'Brevo API' : 'Simulator Mode'}
                 </span>
-                <FeatureInfoButton featureId="link-dispatcher" size="sm" tooltipText="Link Dispatcher Guide" />
+                <FeatureInfoButton featureId="link-dispatcher" size="sm" tooltipText="Email Links Guide" />
               </div>
               <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Directly send customized evaluation links to selected students, groups, or the entire class.
+                Sends private evaluation links to students via email.
               </p>
             </div>
           </div>
@@ -636,15 +638,15 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
                     style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}
                     onClick={() => setPreviewStudentIndex(prev => (prev > 0 ? prev - 1 : targetRecipients.length - 1))}
                   >
-                    ◀ Prev
+                    <ChevronLeft size={13} /> Prev
                   </button>
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}
+                    style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
                     onClick={() => setPreviewStudentIndex(prev => (prev < targetRecipients.length - 1 ? prev + 1 : 0))}
                   >
-                    Next ▶
+                    Next <ChevronRight size={13} />
                   </button>
                 </div>
               )}

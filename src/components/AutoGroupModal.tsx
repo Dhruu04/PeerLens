@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Users, Sparkles, Check, Globe, 
@@ -9,7 +9,8 @@ import {
   Compass, Search, RotateCcw, ChevronDown, ChevronUp,
   Table, Columns3, ArrowRightLeft,
   Pin, PinOff, Undo2, Redo2,
-  Target, Zap, ArrowRight
+  Target, Zap, ArrowRight,
+  Lock, Unlock, UserX, UserCheck, Send
 } from 'lucide-react';
 import type { Student } from '../utils/math';
 import { 
@@ -25,6 +26,8 @@ import {
 } from '../utils/grouping';
 import { exportSingleTeamToCSV, exportSingleTeamToExcel } from '../utils/csv';
 import CustomSelect from './CustomSelect';
+import { loadFeatureToggles, type FeatureToggles } from '../utils/featurePreferences';
+import { getShortcutTooltip } from '../utils/keyboardShortcuts';
 
 interface AutoGroupModalProps {
   isOpen: boolean;
@@ -65,10 +68,18 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
   onOpenTeamCharter
 }) => {
   const [targetSize, setTargetSize] = useState<number>(4);
+  const [targetSizeInput, setTargetSizeInput] = useState<string>('4');
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setTargetSizeInput(String(targetSize));
+  }, [targetSize]);
   const [prefix, setPrefix] = useState<string>('Team');
   const [customPrefix, setCustomPrefix] = useState<string>('Pod');
   const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'table' | 'compact'>('grid');
   const [kanbanLayout, setKanbanLayout] = useState<'wrap' | 'scroll' | 'compact'>('wrap');
+  const [featureToggles] = useState<FeatureToggles>(loadFeatureToggles);
+  const [showWeightDistribution, setShowWeightDistribution] = useState<boolean>(false);
   const [isRulesExpanded, setIsRulesExpanded] = useState<boolean>(true);
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -77,6 +88,12 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
 
   // Pinned / Locked Students State
   const [pinnedStudentIds, setPinnedStudentIds] = useState<Set<string>>(new Set());
+
+  // Instant 2-Click Teammate Swap State
+  const [swappingStudentId, setSwappingStudentId] = useState<string | null>(null);
+
+  // Floating Unassigned Students Drawer / Dock State
+  const [isUnassignedDockOpen, setIsUnassignedDockOpen] = useState<boolean>(false);
 
   // History Stack for Undo/Redo (Ctrl+Z / Ctrl+Y)
   const [history, setHistory] = useState<Student[][]>([]);
@@ -108,6 +125,11 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
   const [showReshuffleModal, setShowReshuffleModal] = useState<boolean>(false);
   const [showAssignModal, setShowAssignModal] = useState<boolean>(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [transferringStudentId, setTransferringStudentId] = useState<string | null>(null);
+  const transferringStudent = useMemo(() => {
+    if (!transferringStudentId || !groupingResult) return null;
+    return groupingResult.updatedStudents.find(s => s.id === transferringStudentId) || null;
+  }, [transferringStudentId, groupingResult]);
   const [exportModal, setExportModal] = useState<{
     isOpen: boolean;
     team: GroupDiversityReport | null;
@@ -138,17 +160,72 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     if (isOpen) {
       const prevOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
+
       return () => {
         document.body.style.overflow = prevOverflow || '';
+
       };
     }
   }, [isOpen]);
 
+  const hasInitializedRef = React.useRef(false);
+
   useEffect(() => {
-    if (isOpen && students.length > 0) {
+    if (!isOpen || !students || students.length === 0) {
+      if (!isOpen) hasInitializedRef.current = false;
+      return;
+    }
+
+    // Inspect existing assignments in the current roster
+    const existingGroupMap: Record<string, Student[]> = {};
+    const unassignedList: Student[] = [];
+
+    students.forEach(s => {
+      const g = (s.groupName || '').trim();
+      if (!g || g.toLowerCase() === 'unassigned' || g.toLowerCase() === 'none') {
+        unassignedList.push({ ...s, groupName: 'Unassigned' });
+      } else {
+        if (!existingGroupMap[g]) existingGroupMap[g] = [];
+        existingGroupMap[g].push(s);
+      }
+    });
+
+    const existingGroupNames = Object.keys(existingGroupMap);
+
+    // If there are existing teams formed in the class roster, preserve them and place unassigned in the drawer!
+    if (existingGroupNames.length > 0) {
+      const groups: GroupDiversityReport[] = existingGroupNames.map(gName => {
+        return calculateGroupReport(gName, existingGroupMap[gName], 3.5, activeRules);
+      });
+
+      const avgScore = groups.length > 0
+        ? Math.round(groups.reduce((acc, g) => acc + g.diversityScore, 0) / groups.length)
+        : 100;
+
+      const allUpdatedStudents = [
+        ...Object.values(existingGroupMap).flat(),
+        ...unassignedList
+      ];
+
+      setGroupingResult({
+        groups,
+        updatedStudents: allUpdatedStudents,
+        overallDiversityScore: avgScore,
+        activeRulesCount: activeRules.length,
+        overallRuleBreakdown: [],
+        genderBalanceRating: avgScore >= 85 ? 'Optimal' : avgScore >= 70 ? 'Good' : 'Moderate',
+        nationalityMixRating: avgScore >= 80 ? 'Highly Mixed' : avgScore >= 65 ? 'Balanced' : 'Moderate',
+        englishMixRating: avgScore >= 75 ? 'Evenly Distributed' : avgScore >= 60 ? 'Good' : 'Fair',
+        customFieldRating: avgScore >= 80 ? 'Optimal' : avgScore >= 65 ? 'Good' : 'Moderate'
+      });
+      setHistory([allUpdatedStudents]);
+      setHistoryIndex(0);
+      hasInitializedRef.current = true;
+    } else if (!hasInitializedRef.current) {
+      hasInitializedRef.current = true;
       runOptimization();
     }
-  }, [isOpen, students.length, targetSize, prefix, customPrefix, rules]);
+  }, [isOpen, students]);
 
   // Global window drag listeners to cleanly reset states
   useEffect(() => {
@@ -164,9 +241,12 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     };
   }, []);
 
-  const runOptimization = () => {
+  const runOptimization = (overrideSize?: number, overridePrefix?: string) => {
     if (students.length === 0) return;
     setIsGenerating(true);
+
+    const activeSize = overrideSize ?? targetSize;
+    const activePrefix = overridePrefix ?? effectivePrefix;
 
     // Build pinned student map (studentId -> current groupName)
     const pinnedStudentMap: Record<string, string> = {};
@@ -180,8 +260,8 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
 
     setTimeout(() => {
       const result = generateDiverseGroups(students, {
-        targetSize,
-        prefix: effectivePrefix,
+        targetSize: activeSize,
+        prefix: activePrefix,
         rules,
         pinnedStudentMap: Object.keys(pinnedStudentMap).length > 0 ? pinnedStudentMap : undefined
       });
@@ -189,7 +269,87 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
       setHistory([result.updatedStudents]);
       setHistoryIndex(0);
       setIsGenerating(false);
-    }, 60);
+    }, 40);
+  };
+
+  const handleStepTargetSize = (delta: number) => {
+    const newSize = Math.max(2, Math.min(totalMembers || 50, targetSize + delta));
+    if (newSize !== targetSize) {
+      setTargetSize(newSize);
+      runOptimization(newSize);
+    }
+  };
+
+  const handleDirectInputChange = (valStr: string) => {
+    setTargetSizeInput(valStr);
+    const parsed = parseInt(valStr, 10);
+    if (!isNaN(parsed) && parsed >= 2 && parsed <= Math.max(2, totalMembers)) {
+      setTargetSize(parsed);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        runOptimization(parsed);
+      }, 300);
+    }
+  };
+
+  const handleInputBlur = () => {
+    const parsed = parseInt(targetSizeInput, 10);
+    if (isNaN(parsed) || parsed < 2) {
+      setTargetSize(2);
+      setTargetSizeInput('2');
+      runOptimization(2);
+    } else if (parsed > totalMembers) {
+      setTargetSize(totalMembers);
+      setTargetSizeInput(String(totalMembers));
+      runOptimization(totalMembers);
+    }
+  };
+
+  const renameGroupsWithPrefix = (newPrefixStr: string) => {
+    if (!groupingResult) return;
+    const cleanPrefix = newPrefixStr.trim() || 'Team';
+
+    const oldToNewMap: Record<string, string> = {};
+    groupingResult.groups.forEach((g, idx) => {
+      oldToNewMap[g.groupName] = `${cleanPrefix} ${idx + 1}`;
+    });
+
+    const updatedStudents = groupingResult.updatedStudents.map(s => {
+      if (s.groupName && oldToNewMap[s.groupName]) {
+        return { ...s, groupName: oldToNewMap[s.groupName] };
+      }
+      return s;
+    });
+
+    const updatedGroups = groupingResult.groups.map((g, idx) => {
+      const newName = `${cleanPrefix} ${idx + 1}`;
+      const groupStudents = updatedStudents.filter(s => s.groupName === newName);
+      return {
+        ...g,
+        groupName: newName,
+        students: groupStudents
+      };
+    });
+
+    setGroupingResult(prev => prev ? {
+      ...prev,
+      groups: updatedGroups,
+      updatedStudents
+    } : null);
+  };
+
+  const handlePrefixChange = (newPrefix: string) => {
+    setPrefix(newPrefix);
+    const eff = newPrefix === 'custom' ? (customPrefix.trim() || 'Team') : newPrefix;
+    renameGroupsWithPrefix(eff);
+  };
+
+  const handleCustomPrefixChange = (newCustom: string) => {
+    setCustomPrefix(newCustom);
+    if (prefix === 'custom') {
+      const eff = newCustom.trim() || 'Team';
+      renameGroupsWithPrefix(eff);
+    }
   };
 
   const handleTogglePin = (studentId: string) => {
@@ -204,9 +364,116 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     });
   };
 
-  const handleUnpinAll = () => {
-    setPinnedStudentIds(new Set());
+  // Assigned and Unassigned students
+  const assignedStudents = useMemo(() => {
+    return groupingResult?.updatedStudents.filter(s => s.groupName && s.groupName !== 'Unassigned' && s.groupName !== 'None') || [];
+  }, [groupingResult]);
+
+  const unassignedStudents = useMemo(() => {
+    return groupingResult?.updatedStudents.filter(s => !s.groupName || s.groupName === 'Unassigned' || s.groupName === 'None') || [];
+  }, [groupingResult]);
+
+
+
+  // Lock / Unlock a Particular Team
+  const handleToggleLockTeam = (groupStudents: Student[]) => {
+    if (!groupStudents || groupStudents.length === 0) return;
+    const isTeamFullyLocked = groupStudents.every(s => pinnedStudentIds.has(s.id));
+    setPinnedStudentIds(prev => {
+      const next = new Set(prev);
+      if (isTeamFullyLocked) {
+        groupStudents.forEach(s => next.delete(s.id));
+      } else {
+        groupStudents.forEach(s => next.add(s.id));
+      }
+      return next;
+    });
   };
+
+  // Instant 2-Click Swap Teammates
+  const handleSwapStudents = (studentAId: string, studentBId: string) => {
+    if (!groupingResult || studentAId === studentBId) return;
+    const studentA = groupingResult.updatedStudents.find(s => s.id === studentAId);
+    const studentB = groupingResult.updatedStudents.find(s => s.id === studentBId);
+    if (!studentA || !studentB) return;
+
+    const groupA = studentA.groupName || 'Unassigned';
+    const groupB = studentB.groupName || 'Unassigned';
+    if (groupA === groupB) return;
+
+    const newStudents = groupingResult.updatedStudents.map(s => {
+      if (s.id === studentAId) return { ...s, groupName: groupB };
+      if (s.id === studentBId) return { ...s, groupName: groupA };
+      return s;
+    });
+
+    applyNewStudentAssignment(newStudents, true);
+  };
+
+  const handleInitiateSwap = (studentId: string) => {
+    if (!swappingStudentId) {
+      setSwappingStudentId(studentId);
+    } else if (swappingStudentId === studentId) {
+      setSwappingStudentId(null);
+    } else {
+      handleSwapStudents(swappingStudentId, studentId);
+      setSwappingStudentId(null);
+    }
+  };
+
+  // 1-Click Auto-distribute unassigned students
+  const handleAutoDistributeUnassigned = () => {
+    if (!groupingResult || unassignedStudents.length === 0 || groupingResult.groups.length === 0) return;
+    const groupCounts: Record<string, number> = {};
+    groupingResult.groups.forEach(g => {
+      groupCounts[g.groupName] = g.students.length;
+    });
+
+    const newStudents = [...groupingResult.updatedStudents];
+    unassignedStudents.forEach(unassigned => {
+      let targetGroup = groupingResult.groups[0].groupName;
+      let minCount = Infinity;
+      groupingResult.groups.forEach(g => {
+        const count = groupCounts[g.groupName] ?? 0;
+        if (count < minCount) {
+          minCount = count;
+          targetGroup = g.groupName;
+        }
+      });
+      groupCounts[targetGroup] = (groupCounts[targetGroup] ?? 0) + 1;
+      const idx = newStudents.findIndex(s => s.id === unassigned.id);
+      if (idx !== -1) {
+        newStudents[idx] = { ...newStudents[idx], groupName: targetGroup };
+      }
+    });
+
+    applyNewStudentAssignment(newStudents, true);
+  };
+
+  // Keyboard shortcut listener integration
+  useEffect(() => {
+    const onToggleUnassigned = () => setIsUnassignedDockOpen(prev => !prev);
+    const onToggleQuickTargets = () => setIsQuickBarPinned(prev => !prev);
+    const onReshuffle = () => runOptimization();
+    const onEscapeKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (swappingStudentId) setSwappingStudentId(null);
+        if (transferringStudentId) setTransferringStudentId(null);
+      }
+    };
+
+    window.addEventListener('peerlens_toggle_unassigned_dock', onToggleUnassigned);
+    window.addEventListener('peerlens_toggle_quick_targets', onToggleQuickTargets);
+    window.addEventListener('peerlens_reshuffle_teams', onReshuffle);
+    window.addEventListener('keydown', onEscapeKeyDown);
+
+    return () => {
+      window.removeEventListener('peerlens_toggle_unassigned_dock', onToggleUnassigned);
+      window.removeEventListener('peerlens_toggle_quick_targets', onToggleQuickTargets);
+      window.removeEventListener('peerlens_reshuffle_teams', onReshuffle);
+      window.removeEventListener('keydown', onEscapeKeyDown);
+    };
+  }, [assignedStudents, swappingStudentId]);
 
   const applyNewStudentAssignment = (newStudents: Student[], addToHistory: boolean = true) => {
     if (!groupingResult) return;
@@ -398,7 +665,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
   if (!isOpen) return null;
 
   const totalMembers = students.length;
-  const numTeams = groupingResult ? groupingResult.groups.length : Math.ceil(totalMembers / targetSize);
+  const plannedTeamsCount = targetSize > 0 ? Math.ceil(totalMembers / targetSize) : 0;
 
   const getRuleIcon = (fieldKey: string) => {
     switch (fieldKey) {
@@ -506,23 +773,33 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
             </div>
           </div>
 
-          <button 
-            type="button"
-            onClick={onClose}
-            style={{ 
-              background: 'transparent', 
-              border: 'none', 
-              color: 'var(--text-muted)', 
-              cursor: 'pointer', 
-              padding: '0.5rem',
-              borderRadius: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            <X size={20} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+            {featureToggles.showAutoGroupRuleCompliance && groupingResult && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'var(--bg-app)', padding: '0.35rem 0.75rem', borderRadius: '20px', border: '1px solid var(--border-color)', animation: 'fadeIn 0.2s ease' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Rule Compliance:</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--primary)' }}>
+                  {groupingResult.overallDiversityScore}%
+                </span>
+              </div>
+            )}
+            <button 
+              type="button"
+              onClick={onClose}
+              style={{ 
+                background: 'transparent', 
+                border: 'none', 
+                color: 'var(--text-muted)', 
+                cursor: 'pointer', 
+                padding: '0.5rem',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Modal Scrollable Body */}
@@ -537,35 +814,76 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
               alignItems: 'stretch'
             }}
           >
-            {/* Tile 1: Target Size with Steppers & Quick Presets */}
+            {/* Tile 1: Target Size with Steppers & Dynamic Breakdown */}
             <div 
               style={{
-                backgroundColor: 'var(--bg-app)',
-                padding: '1.05rem 1.25rem',
-                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-surface)',
+                padding: '1rem 1.25rem',
+                borderRadius: '12px',
                 border: '1px solid var(--border-color)',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
                 gap: '0.75rem',
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                height: '100%',
+                transition: 'all 0.2s ease'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                <label style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
-                  <Users size={16} className="text-teal" /> Target Team Size
-                </label>
-                <span className="badge badge-teal" style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 800 }}>
-                  {numTeams} {numTeams === 1 ? 'Team' : 'Teams'} planned
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                  <div style={{ 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    width: '28px', 
+                    height: '28px', 
+                    borderRadius: '8px', 
+                    backgroundColor: 'rgba(13, 148, 136, 0.12)', 
+                    color: 'var(--teal)' 
+                  }}>
+                    <Users size={16} />
+                  </div>
+                  <label style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>
+                    Target Team Size
+                  </label>
+                </div>
+                <span 
+                  className="badge badge-teal" 
+                  style={{ 
+                    fontSize: '0.74rem', 
+                    padding: '0.22rem 0.65rem', 
+                    fontWeight: 800,
+                    borderRadius: '6px',
+                    boxShadow: '0 1px 3px rgba(13, 148, 136, 0.15)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Layers size={12} />
+                  {plannedTeamsCount} {plannedTeamsCount === 1 ? 'Team' : 'Teams'} planned
                 </span>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                 {/* Stepper Input */}
-                <div style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+                <div style={{ 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  backgroundColor: 'var(--bg-app)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: '9px', 
+                  overflow: 'hidden', 
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)', 
+                  flexShrink: 0,
+                  height: '38px',
+                  padding: '2px'
+                }}>
                   <button
                     type="button"
-                    onClick={() => setTargetSize(prev => Math.max(2, prev - 1))}
+                    onClick={() => handleStepTargetSize(-1)}
                     disabled={targetSize <= 2}
                     style={{
                       width: '34px',
@@ -578,33 +896,37 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontWeight: 800,
-                      fontSize: '1rem',
-                      transition: 'background 0.15s'
+                      fontSize: '1.1rem',
+                      borderRadius: '7px',
+                      transition: 'background 0.15s, color 0.15s'
                     }}
                     title="Decrease team size"
+                    aria-label="Decrease team size"
                   >
                     -
                   </button>
                   <input 
-                    type="number" 
-                    min={2} 
-                    max={Math.max(2, totalMembers)}
-                    value={targetSize}
-                    onChange={(e) => setTargetSize(Math.max(2, Number(e.target.value)))}
+                    type="text" 
+                    inputMode="numeric"
+                    value={targetSizeInput}
+                    onChange={(e) => handleDirectInputChange(e.target.value)}
+                    onBlur={handleInputBlur}
                     style={{ 
                       fontWeight: 800, 
                       textAlign: 'center', 
                       height: '34px', 
                       width: '46px', 
                       border: 'none', 
-                      background: 'transparent',
+                      background: 'transparent', 
                       color: 'var(--text-primary)',
-                      fontSize: '0.92rem'
+                      fontSize: '0.96rem',
+                      outline: 'none'
                     }}
+                    title="Type target team size"
                   />
                   <button
                     type="button"
-                    onClick={() => setTargetSize(prev => Math.min(Math.max(2, totalMembers), prev + 1))}
+                    onClick={() => handleStepTargetSize(1)}
                     disabled={targetSize >= totalMembers}
                     style={{
                       width: '34px',
@@ -617,96 +939,108 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontWeight: 800,
-                      fontSize: '1rem',
-                      transition: 'background 0.15s'
+                      fontSize: '1.1rem',
+                      borderRadius: '7px',
+                      transition: 'background 0.15s, color 0.15s'
                     }}
                     title="Increase team size"
+                    aria-label="Increase team size"
                   >
                     +
                   </button>
                 </div>
 
-                {/* Quick Presets */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Preset:</span>
-                  {[2, 3, 4, 5, 6, 8].map(size => (
-                    <button
-                      key={size}
-                      type="button"
-                      onClick={() => setTargetSize(size)}
-                      className={`btn btn-sm ${targetSize === size ? 'btn-primary' : 'btn-secondary'}`}
-                      style={{
-                        padding: '0.2rem 0.5rem',
-                        fontSize: '0.74rem',
-                        fontWeight: targetSize === size ? 800 : 600,
-                        minWidth: '28px',
-                        height: '28px',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      {size}
-                    </button>
-                  ))}
+                {/* Cohort Info Pill */}
+                <div style={{ 
+                  flex: 1, 
+                  minWidth: 0,
+                  height: '38px',
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.45rem',
+                  padding: '0 0.85rem', 
+                  backgroundColor: 'var(--bg-app)', 
+                  borderRadius: '9px', 
+                  border: '1px solid var(--border-color)',
+                  fontSize: '0.78rem',
+                  color: 'var(--text-secondary)'
+                }}>
+                  <Users size={14} className="text-teal" />
+                  <span><strong style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{totalMembers}</strong> students total</span>
                 </div>
-              </div>
-
-              <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>
-                Distributing {totalMembers} students into {numTeams} teams (~{targetSize} members per team)
               </div>
             </div>
 
             {/* Tile 2: Team Prefix & Group Naming Format */}
             <div 
               style={{
-                backgroundColor: 'var(--bg-app)',
-                padding: '1.05rem 1.25rem',
-                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-surface)',
+                padding: '1rem 1.25rem',
+                borderRadius: '12px',
                 border: '1px solid var(--border-color)',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
                 gap: '0.75rem',
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                height: '100%',
+                transition: 'all 0.2s ease'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                <label style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
-                  <Layers size={16} className="text-teal" /> Group Naming Format
-                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                  <div style={{ 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    width: '28px', 
+                    height: '28px', 
+                    borderRadius: '8px', 
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)', 
+                    color: 'var(--primary)' 
+                  }}>
+                    <Layers size={16} />
+                  </div>
+                  <label style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>
+                    Team Name Style
+                  </label>
+                </div>
                 <span style={{ 
-                  fontSize: '0.7rem', 
+                  fontSize: '0.74rem', 
                   color: 'var(--primary)', 
-                  fontWeight: 700,
+                  fontWeight: 800,
                   backgroundColor: 'var(--primary-light)',
-                  padding: '0.15rem 0.5rem',
-                  borderRadius: '4px'
+                  padding: '0.22rem 0.65rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  transition: 'all 0.15s ease'
                 }}>
-                  Preview: {effectivePrefix} 1, {effectivePrefix} 2...
+                  <Sparkles size={12} /> Preview: {effectivePrefix} 1, {effectivePrefix} 2...
                 </span>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', height: '38px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <CustomSelect
                     options={PREFIX_OPTIONS}
                     value={prefix}
-                    onChange={(val) => setPrefix(val)}
+                    onChange={(val) => handlePrefixChange(val)}
                   />
                 </div>
                 {prefix === 'custom' && (
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. Pod, Squad, Lab..."
+                    placeholder="e.g. Squad, Lab, Pod..."
                     value={customPrefix}
-                    onChange={(e) => setCustomPrefix(e.target.value)}
-                    style={{ height: '38px', fontSize: '0.82rem', fontWeight: 600, width: '130px' }}
+                    onChange={(e) => handleCustomPrefixChange(e.target.value)}
+                    style={{ height: '38px', fontSize: '0.84rem', fontWeight: 600, width: '140px', borderRadius: '8px' }}
                   />
                 )}
-              </div>
-
-              <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>
-                Generated teams will be sequentially numbered with this naming prefix
               </div>
             </div>
           </div>
@@ -861,44 +1195,68 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                   Adjust weights and modes for each rule. The engine dynamically balances all active rules simultaneously.
                 </p>
 
-                {/* Proportional Weight Bar */}
-                {activeRules.length > 0 && totalActiveWeight > 0 && (
-                  <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
-                        Overall Optimization Weight Distribution
-                      </span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                        {activeRules.length} active criteria balancing 100% of cohort formation
-                      </span>
-                    </div>
-                    <div className="autogroup-weight-bar-container">
-                      {activeRules.map((rule, idx) => {
-                        const pct = Math.round((rule.weight / totalActiveWeight) * 100);
-                        const color = RULE_PALETTE[idx % RULE_PALETTE.length];
-                        return (
-                          <div
-                            key={rule.id}
-                            className="autogroup-weight-bar-segment"
-                            style={{ width: `${pct}%`, backgroundColor: color }}
-                            title={`${rule.name}: ${pct}% of total grouping focus`}
-                          />
-                        );
-                      })}
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: '0.1rem' }}>
-                      {activeRules.map((rule, idx) => {
-                        const pct = Math.round((rule.weight / totalActiveWeight) * 100);
-                        const color = RULE_PALETTE[idx % RULE_PALETTE.length];
-                        return (
-                          <div key={rule.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: color, display: 'inline-block' }} />
-                            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{rule.name}</span>
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600 }}>({pct}%)</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                {/* Proportional Weight Bar - Collapsible & Hidden by default */}
+                {featureToggles.showAutoGroupWeightDistribution && activeRules.length > 0 && totalActiveWeight > 0 && (
+                  <div style={{ backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowWeightDistribution(!showWeightDistribution)}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.65rem 0.95rem',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        fontWeight: 750,
+                        color: 'var(--text-secondary)'
+                      }}
+                      title={showWeightDistribution ? "Collapse weight distribution breakdown" : "Expand weight distribution breakdown"}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <Sliders size={13} className="text-teal" />
+                        <span>Overall Optimization Weight Distribution</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        <span>{activeRules.length} active criteria ({totalActiveWeight} pts total)</span>
+                        {showWeightDistribution ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </div>
+                    </button>
+
+                    {showWeightDistribution && (
+                      <div style={{ padding: '0.75rem 0.95rem 0.85rem 0.95rem', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.55rem', backgroundColor: 'var(--bg-surface)' }}>
+                        <div className="autogroup-weight-bar-container">
+                          {activeRules.map((rule, idx) => {
+                            const pct = Math.round((rule.weight / totalActiveWeight) * 100);
+                            const color = RULE_PALETTE[idx % RULE_PALETTE.length];
+                            return (
+                              <div
+                                key={rule.id}
+                                className="autogroup-weight-bar-segment"
+                                style={{ width: `${pct}%`, backgroundColor: color }}
+                                title={`${rule.name}: ${pct}% of total grouping focus`}
+                              />
+                            );
+                          })}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: '0.1rem' }}>
+                          {activeRules.map((rule, idx) => {
+                            const pct = Math.round((rule.weight / totalActiveWeight) * 100);
+                            const color = RULE_PALETTE[idx % RULE_PALETTE.length];
+                            return (
+                              <div key={rule.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: color, display: 'inline-block' }} />
+                                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{rule.name}</span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600 }}>({pct}%)</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1103,9 +1461,9 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                     onClick={() => setViewMode('kanban')}
                     className={`btn btn-sm ${viewMode === 'kanban' ? 'btn-primary' : 'btn-secondary'}`}
                     style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
-                    title="Column Board (Kanban Columns)"
+                    title="Board View (Drag and drop students between teams)"
                   >
-                    <Kanban size={13} /> Column Board
+                    <Kanban size={13} /> Board View
                   </button>
                   <button
                     type="button"
@@ -1120,78 +1478,99 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                     onClick={() => setViewMode('compact')}
                     className={`btn btn-sm ${viewMode === 'compact' ? 'btn-primary' : 'btn-secondary'}`}
                     style={{ padding: '0.32rem 0.75rem', fontSize: '0.76rem', borderRadius: '6px', fontWeight: 700 }}
+                    title="Compact Cards (Dense view showing all teams side-by-side)"
                   >
-                    <Columns3 size={13} /> Compact Matrix
+                    <Columns3 size={13} /> Compact Cards
                   </button>
                 </div>
               </div>
 
               {/* History & Pin Controls */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', backgroundColor: 'var(--bg-app)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <button
-                    type="button"
-                    onClick={handleUndo}
-                    disabled={historyIndex <= 0}
-                    className="btn btn-sm btn-secondary"
-                    title="Undo team move (Ctrl+Z)"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      padding: '0.3rem 0.6rem',
-                      fontSize: '0.74rem',
-                      fontWeight: 600,
-                      borderRadius: '6px',
-                      opacity: historyIndex <= 0 ? 0.45 : 1,
-                      cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    <Undo2 size={13} /> Undo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleRedo}
-                    disabled={historyIndex >= history.length - 1}
-                    className="btn btn-sm btn-secondary"
-                    title="Redo team move (Ctrl+Y)"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      padding: '0.3rem 0.6rem',
-                      fontSize: '0.74rem',
-                      fontWeight: 600,
-                      borderRadius: '6px',
-                      opacity: historyIndex >= history.length - 1 ? 0.45 : 1,
-                      cursor: historyIndex >= history.length - 1 ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    <Redo2 size={13} /> Redo
-                  </button>
-                </div>
+                {featureToggles.showAutoGroupHistoryControls && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', backgroundColor: 'var(--bg-app)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <button
+                      type="button"
+                      onClick={handleUndo}
+                      disabled={historyIndex <= 0}
+                      className="btn btn-sm btn-secondary"
+                      title={getShortcutTooltip("Undo team assignment", "undo_team_move")}
+                      aria-label="Undo team assignment"
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 0,
+                        borderRadius: '6px',
+                        opacity: historyIndex <= 0 ? 0.45 : 1,
+                        cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      <Undo2 size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRedo}
+                      disabled={historyIndex >= history.length - 1}
+                      className="btn btn-sm btn-secondary"
+                      title={getShortcutTooltip("Redo team assignment", "redo_team_move")}
+                      aria-label="Redo team assignment"
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 0,
+                        borderRadius: '6px',
+                        opacity: historyIndex >= history.length - 1 ? 0.45 : 1,
+                        cursor: historyIndex >= history.length - 1 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      <Redo2 size={13} />
+                    </button>
+                  </div>
+                )}
 
-                {pinnedStudentIds.size > 0 && (
+                {/* Unassigned Students Quick Drawer Trigger (Hidden by default) */}
+                {featureToggles.showAutoGroupUnassignedDrawer && (
                   <button
                     type="button"
-                    onClick={handleUnpinAll}
-                    className="btn btn-sm btn-secondary"
+                    onClick={() => setIsUnassignedDockOpen(prev => !prev)}
+                    className={`btn btn-sm ${isUnassignedDockOpen ? 'btn-primary' : 'btn-secondary'}`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '0.35rem',
-                      padding: '0.32rem 0.65rem',
+                      gap: '0.25rem',
+                      height: '28px',
+                      padding: '0 0.55rem',
                       fontSize: '0.74rem',
                       borderRadius: '6px',
-                      color: 'var(--accent-amber)',
-                      fontWeight: 700
+                      color: isUnassignedDockOpen ? '#ffffff' : unassignedStudents.length > 0 ? 'var(--accent-rose, #e11d48)' : 'var(--text-secondary)',
+                      fontWeight: 700,
+                      transition: 'all 0.15s ease'
                     }}
-                    title="Unlock all pinned students"
+                    title={getShortcutTooltip(`Unassigned Students Drawer (${unassignedStudents.length} unassigned)`, "toggle_unassigned_dock")}
+                    aria-label="Toggle Unassigned Students Drawer"
                   >
-                    <PinOff size={13} /> Unpin All ({pinnedStudentIds.size})
+                    <UserX size={12} style={{ color: isUnassignedDockOpen ? '#ffffff' : unassignedStudents.length > 0 ? 'var(--accent-rose, #e11d48)' : 'inherit' }} />
+                    <span style={{ 
+                      fontSize: '0.62rem', 
+                      padding: '0.04rem 0.26rem', 
+                      borderRadius: '4px', 
+                      backgroundColor: unassignedStudents.length > 0 ? 'rgba(225, 29, 72, 0.15)' : 'var(--border-color)', 
+                      color: unassignedStudents.length > 0 ? 'var(--accent-rose, #e11d48)' : 'var(--text-muted)', 
+                      fontWeight: 800 
+                    }}>
+                      {unassignedStudents.length}
+                    </span>
                   </button>
                 )}
               </div>
+
+              
 
               {/* Search Filter Input */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '240px', flex: '1 1 240px', maxWidth: '340px' }}>
@@ -1258,28 +1637,50 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                     {draggedStudentId ? <Zap size={13} className="text-teal" /> : <Target size={13} className="text-teal" />}
                     {draggedStudentId ? 'Drop card onto any team below for instant move:' : 'Quick Team Drop & Jump Targets:'}
                   </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <Layers size={11} /> {groupingResult.groups.length} Targets Available
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsQuickBarPinned(prev => !prev)}
-                      className={`btn btn-sm ${isQuickBarPinned ? 'btn-primary' : 'btn-secondary'}`}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <span
                       style={{
                         fontSize: '0.68rem',
-                        padding: '0.2rem 0.55rem',
+                        color: 'var(--text-secondary)',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '0.3rem',
-                        borderRadius: '16px',
-                        cursor: 'pointer',
-                        fontWeight: 600
+                        padding: '0.15rem 0.45rem',
+                        backgroundColor: 'var(--bg-secondary, rgba(0, 0, 0, 0.04))',
+                        borderRadius: '12px',
+                        border: '1px solid var(--border-color)',
+                        fontWeight: 650
                       }}
-                      title={isQuickBarPinned ? 'Unpin: Target bar will scroll away when scrolling down' : 'Pin to top: Keep target bar visible while scrolling'}
+                      title={`${groupingResult.groups.length} generated teams available`}
                     >
-                      {isQuickBarPinned ? <Pin size={11} /> : <PinOff size={11} />}
-                      <span>{isQuickBarPinned ? 'Pinned to Top' : 'Pin to Top'}</span>
+                      <Users size={12} className="text-teal" />
+                      <span>{groupingResult.groups.length} {groupingResult.groups.length === 1 ? 'Team' : 'Teams'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsQuickBarPinned(prev => !prev);
+                      }}
+                      className={`btn btn-sm ${isQuickBarPinned ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{
+                        width: '26px',
+                        height: '26px',
+                        padding: 0,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: isQuickBarPinned ? '0 2px 6px rgba(13, 148, 136, 0.25)' : 'none'
+                      }}
+                      aria-label={isQuickBarPinned ? 'Unpin jump bar from top' : 'Pin jump bar to top'}
+                      title={isQuickBarPinned ? 'Pinned to top (Click to unpin)' : 'Pin jump bar to top'}
+                    >
+                      {isQuickBarPinned ? <Pin size={12} style={{ transform: 'rotate(0deg)' }} /> : <PinOff size={12} style={{ opacity: 0.7 }} />}
                     </button>
                   </div>
                 </div>
@@ -1391,6 +1792,48 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                 </div>
               </div>
 
+              {/* Active Student Transfer Banner */}
+              {transferringStudent && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.6rem 1rem',
+                  backgroundColor: 'var(--primary)',
+                  color: '#ffffff',
+                  borderRadius: '10px',
+                  marginBottom: '0.85rem',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  boxShadow: '0 4px 14px var(--primary-glow)',
+                  animation: 'fadeIn 0.15s ease'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <Send size={15} style={{ transform: 'translateX(-1px)' }} />
+                    <span>
+                      Select destination: Click any team card or column below to transfer <strong>{transferringStudent.name}</strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTransferringStudentId(null)}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.22)',
+                      border: 'none',
+                      color: '#ffffff',
+                      borderRadius: '6px',
+                      padding: '0.2rem 0.6rem',
+                      fontSize: '0.72rem',
+                      cursor: 'pointer',
+                      fontWeight: 700,
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    Cancel (Esc)
+                  </button>
+                </div>
+              )}
+
               {/* 1. Enhanced Kanban Board View */}
               {viewMode === 'kanban' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -1408,7 +1851,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Kanban size={14} className="text-teal" /> Column Board View
+                        <Kanban size={14} className="text-teal" /> Board View
                       </span>
                       <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}>
                         {groupingResult.groups.length} Teams • {groupingResult.updatedStudents.length} Students
@@ -1519,12 +1962,14 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       );
                       const isDragOver = dragOverGroupId === group.groupName;
                       const pinnedInGroup = group.students.filter(s => pinnedStudentIds.has(s.id)).length;
+                      const isTeamFullyLocked = group.students.length > 0 && group.students.every(s => pinnedStudentIds.has(s.id));
                       const sim = simulationReports ? simulationReports[group.groupName] : null;
 
                       return (
                         <div
                           id={`kanban-modal-col-${group.groupName}`}
                           key={group.groupName}
+                          data-group-name={group.groupName}
                           className={`autogroup-kanban-col ${isDragOver ? 'drag-over' : ''}`}
                           onDragEnter={(e) => {
                             e.preventDefault();
@@ -1584,10 +2029,24 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                             alignItems: 'center' 
                           }}>
                             <div>
-                              <span style={{ fontSize: kanbanLayout === 'compact' ? '0.8rem' : '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                                {group.groupName}
-                              </span>
-                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <button
+                                  type="button"
+                                  className={`p-1 rounded-md transition-all ${isTeamFullyLocked ? 'text-amber-500 bg-amber-500/10' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleLockTeam(group.students);
+                                  }}
+                                  title={isTeamFullyLocked ? `Unlock all students in ${group.groupName}` : `Lock all students in ${group.groupName}`}
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center' }}
+                                >
+                                  {isTeamFullyLocked ? <Lock size={12} className="text-amber-500" /> : <Unlock size={12} />}
+                                </button>
+                                <span style={{ fontSize: kanbanLayout === 'compact' ? '0.8rem' : '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                  {group.groupName}
+                                </span>
+                              </div>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', paddingLeft: '1.4rem' }}>
                                 {group.studentCount} {group.studentCount === 1 ? 'member' : 'members'}
                               </span>
                             </div>
@@ -1628,18 +2087,20 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                   {sim.delta > 0 ? `+${sim.delta}%` : `${sim.delta}%`}
                                 </span>
                               )}
-                              <span 
-                                style={{ 
-                                  fontSize: kanbanLayout === 'compact' ? '0.68rem' : '0.75rem', 
-                                  fontWeight: 800, 
-                                  backgroundColor: 'var(--primary-light)', 
-                                  color: 'var(--primary)', 
-                                  padding: '0.12rem 0.4rem', 
-                                  borderRadius: '6px' 
-                                }}
-                              >
-                                {group.diversityScore}%
-                              </span>
+                              {featureToggles.showAutoGroupDiversityPercentages && (
+                                <span 
+                                  style={{ 
+                                    fontSize: kanbanLayout === 'compact' ? '0.68rem' : '0.75rem', 
+                                    fontWeight: 800, 
+                                    backgroundColor: 'var(--primary-light)', 
+                                    color: 'var(--primary)', 
+                                    padding: '0.12rem 0.4rem', 
+                                    borderRadius: '6px' 
+                                  }}
+                                >
+                                  {group.diversityScore}%
+                                </span>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => setExportModal({ isOpen: true, team: group, format: 'xlsx', scope: 'diversity_card' })}
@@ -1672,6 +2133,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                 return (
                                 <div
                                   key={student.id}
+                                  data-student-id={student.id}
                                   draggable={true}
                                   onDragStart={(e) => {
                                     e.stopPropagation();
@@ -1684,8 +2146,19 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                     setDraggedStudentId(null);
                                     setDragOverGroupId(null);
                                   }}
-                                  onClick={() => setSelectedStudent(student)}
-                                  className={`autogroup-kanban-card ${isDraggingThis ? 'is-being-dragged' : ''}`}
+                                  onClick={() => {
+                                    if (swappingStudentId) {
+                                      if (swappingStudentId === student.id) {
+                                        setSwappingStudentId(null);
+                                      } else {
+                                        handleSwapStudents(swappingStudentId, student.id);
+                                        setSwappingStudentId(null);
+                                      }
+                                      return;
+                                    }
+                                    setSelectedStudent(student);
+                                  }}
+                                  className={`autogroup-kanban-card ${isDraggingThis ? 'is-being-dragged' : ''} ${swappingStudentId === student.id ? 'is-swapping-active' : ''}`}
                                   style={{
                                     padding: kanbanLayout === 'compact' ? '0.45rem 0.55rem' : '0.6rem 0.7rem',
                                     backgroundColor: 'var(--bg-surface)',
@@ -1752,34 +2225,60 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                           transition: 'all 0.15s ease'
                                         }}
                                         title={isPinned ? "Student is locked to this team. Click to unpin." : "Pin student to keep them in this team during re-shuffle / optimization"}
+                                        aria-label={isPinned ? "Unpin student" : "Pin student"}
                                       >
                                         <Pin size={12} style={{ transform: isPinned ? 'rotate(0deg)' : 'rotate(45deg)' }} />
                                       </button>
-                                      <select
+
+                                      {/* Instant 2-Click Swap Teammate Button */}
+                                      <button
+                                        type="button"
                                         draggable={false}
                                         onMouseDown={(e) => e.stopPropagation()}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => {
+                                        onClick={(e) => {
                                           e.stopPropagation();
-                                          if (e.target.value) handleMoveStudent(student.id, e.target.value);
+                                          handleInitiateSwap(student.id);
                                         }}
-                                        value=""
+                                        className={`autogroup-swap-btn ${swappingStudentId === student.id ? 'active' : ''}`}
                                         style={{
-                                          fontSize: '0.64rem',
-                                          padding: '0.08rem 0.15rem',
-                                          backgroundColor: 'var(--bg-app)',
-                                          border: '1px solid var(--border-color)',
+                                          background: swappingStudentId === student.id ? 'var(--primary-light)' : 'none',
+                                          border: 'none',
+                                          padding: '0.15rem',
+                                          cursor: 'pointer',
                                           borderRadius: '4px',
-                                          color: 'var(--text-muted)',
-                                          cursor: 'pointer'
+                                          color: swappingStudentId === student.id ? 'var(--primary)' : 'var(--text-muted)',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          transition: 'all 0.15s ease'
                                         }}
-                                        title="Quick move to another team"
+                                        title={
+                                          swappingStudentId === student.id
+                                            ? "Cancel swap (or press Esc)"
+                                            : swappingStudentId
+                                              ? "Swap with selected teammate"
+                                              : getShortcutTooltip("Swap teammate", "swap_teammate")
+                                        }
+                                        aria-label="Swap teammate"
                                       >
-                                        <option value="" disabled>Move...</option>
-                                        {groupingResult.groups.filter(g => g.groupName !== group.groupName).map(g => (
-                                          <option key={g.groupName} value={g.groupName}>{g.groupName}</option>
-                                        ))}
-                                      </select>
+                                        <ArrowRightLeft size={11} />
+                                      </button>
+
+                                      <button
+                                          type="button"
+                                          draggable={false}
+                                          onMouseDown={(e) => e.stopPropagation()}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSwappingStudentId(null);
+                                            setTransferringStudentId(prev => prev === student.id ? null : student.id);
+                                          }}
+                                          className={`autogroup-send-btn ${transferringStudentId === student.id ? 'active' : ''}`}
+                                          title={transferringStudentId === student.id ? `Cancel transfer of ${student.name}` : `Transfer ${student.name} to another team (click here, then click destination team)`}
+                                          aria-label={`Transfer ${student.name} to another team`}
+                                          style={{ width: '22px', height: '22px' }}
+                                        >
+                                          <Send size={11} style={{ transform: 'translateX(-1px)' }} />
+                                        </button>
                                       <GripVertical size={12} style={{ color: 'var(--text-muted)', cursor: 'grab', flexShrink: 0 }} />
                                     </div>
                                   </div>
@@ -1840,11 +2339,13 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                         }, {} as Record<string, number>);
 
                         const pinnedInGroup = group.students.filter(s => pinnedStudentIds.has(s.id)).length;
+                        const isTeamFullyLocked = group.students.length > 0 && group.students.every(s => pinnedStudentIds.has(s.id));
                         const isDragOver = dragOverGroupId === `table-${group.groupName}`;
 
                         return (
                           <tr 
                             key={group.groupName}
+                            data-group-name={group.groupName}
                             onDragEnter={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -1886,6 +2387,18 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                           >
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <button
+                                  type="button"
+                                  className={`p-1 rounded-md transition-all ${isTeamFullyLocked ? 'text-amber-500 bg-amber-500/10' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleLockTeam(group.students);
+                                  }}
+                                  title={isTeamFullyLocked ? `Unlock all students in ${group.groupName}` : `Lock all students in ${group.groupName}`}
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center' }}
+                                >
+                                  {isTeamFullyLocked ? <Lock size={12} className="text-amber-500" /> : <Unlock size={12} />}
+                                </button>
                                 <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
                                   {group.groupName}
                                 </span>
@@ -1915,14 +2428,14 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                 style={{ 
                                   fontSize: '0.76rem', 
                                   fontWeight: 800, 
-                                  backgroundColor: 'var(--primary-light)', 
-                                  color: 'var(--primary)', 
-                                  padding: '0.2rem 0.5rem', 
+                                  backgroundColor: featureToggles.showAutoGroupDiversityPercentages ? 'var(--primary-light)' : 'transparent', 
+                                  color: featureToggles.showAutoGroupDiversityPercentages ? 'var(--primary)' : 'var(--text-muted)', 
+                                  padding: featureToggles.showAutoGroupDiversityPercentages ? '0.2rem 0.5rem' : '0.2rem 0', 
                                   borderRadius: '6px',
                                   display: 'inline-block'
                                 }}
                               >
-                                {group.diversityScore}%
+                                {featureToggles.showAutoGroupDiversityPercentages ? `${group.diversityScore}%` : '—'}
                               </span>
                             </td>
                             <td>
@@ -1939,6 +2452,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                   return (
                                     <div
                                       key={student.id}
+                                      data-student-id={student.id}
                                       draggable={true}
                                       onDragStart={(e) => {
                                         e.stopPropagation();
@@ -1951,7 +2465,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                         setDraggedStudentId(null);
                                         setDragOverGroupId(null);
                                       }}
-                                      className={`autogroup-draggable-item ${isDraggingThis ? 'is-being-dragged' : ''}`}
+                                      className={`autogroup-draggable-item ${isDraggingThis ? 'is-being-dragged' : ''} ${swappingStudentId === student.id ? 'is-swapping-active' : ''}`}
                                       style={{
                                         display: 'inline-flex',
                                         alignItems: 'center',
@@ -1971,7 +2485,18 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                         type="button"
                                         draggable={false}
                                         onMouseDown={(e) => e.stopPropagation()}
-                                        onClick={() => setSelectedStudent(student)}
+                                        onClick={() => {
+                                          if (swappingStudentId) {
+                                            if (swappingStudentId === student.id) {
+                                              setSwappingStudentId(null);
+                                            } else {
+                                              handleSwapStudents(swappingStudentId, student.id);
+                                              setSwappingStudentId(null);
+                                            }
+                                            return;
+                                          }
+                                          setSelectedStudent(student);
+                                        }}
                                         style={{
                                           display: 'inline-flex',
                                           alignItems: 'center',
@@ -1982,7 +2507,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                           cursor: 'pointer',
                                           color: 'inherit'
                                         }}
-                                        title="Click to view student profile"
+                                        title={swappingStudentId && swappingStudentId !== student.id ? "Click to swap with selected student" : "Click to view student profile"}
                                       >
                                         <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.2)' : 'var(--primary-light)', color: isPinned ? '#d97706' : 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 800 }}>
                                           {student.name.charAt(0)}
@@ -2012,6 +2537,35 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                         title={isPinned ? "Student locked in team. Click to unlock." : "Pin student to lock in this team"}
                                       >
                                         <Pin size={11} style={{ transform: isPinned ? 'rotate(0deg)' : 'rotate(45deg)' }} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        draggable={false}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleInitiateSwap(student.id);
+                                        }}
+                                        className={`autogroup-swap-btn ${swappingStudentId === student.id ? 'active' : ''}`}
+                                        style={{
+                                          background: swappingStudentId === student.id ? 'var(--primary-light)' : 'none',
+                                          border: 'none',
+                                          padding: '0.1rem',
+                                          cursor: 'pointer',
+                                          color: swappingStudentId === student.id ? 'var(--primary)' : 'var(--text-muted)',
+                                          display: 'flex',
+                                          alignItems: 'center'
+                                        }}
+                                        title={
+                                          swappingStudentId === student.id
+                                            ? "Cancel swap"
+                                            : swappingStudentId
+                                              ? "Swap with selected teammate"
+                                              : getShortcutTooltip("Swap teammate", "swap_teammate")
+                                        }
+                                        aria-label="Swap teammate"
+                                      >
+                                        <ArrowRightLeft size={10} />
                                       </button>
                                     </div>
                                   );
@@ -2056,11 +2610,13 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       (s.university && s.university.toLowerCase().includes(searchFilter.toLowerCase()))
                     );
                     const pinnedInGroup = group.students.filter(s => pinnedStudentIds.has(s.id)).length;
+                    const isTeamFullyLocked = group.students.length > 0 && group.students.every(s => pinnedStudentIds.has(s.id));
                     const isDragOver = dragOverGroupId === `compact-${group.groupName}`;
 
                     return (
                       <div
                         key={group.groupName}
+                        data-group-name={group.groupName}
                         onDragEnter={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -2109,6 +2665,18 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <button
+                              type="button"
+                              className={`p-1 rounded-md transition-all ${isTeamFullyLocked ? 'text-amber-500 bg-amber-500/10' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleLockTeam(group.students);
+                              }}
+                              title={isTeamFullyLocked ? `Unlock all students in ${group.groupName}` : `Lock all students in ${group.groupName}`}
+                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center' }}
+                            >
+                              {isTeamFullyLocked ? <Lock size={12} className="text-amber-500" /> : <Unlock size={12} />}
+                            </button>
                             <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                               {group.groupName}
                             </span>
@@ -2132,18 +2700,20 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                               </span>
                             )}
                           </div>
-                          <span 
-                            style={{ 
-                              fontSize: '0.72rem', 
-                              fontWeight: 800, 
-                              backgroundColor: 'var(--primary-light)', 
-                              color: 'var(--primary)', 
-                              padding: '0.12rem 0.45rem', 
-                              borderRadius: '5px' 
-                            }}
-                          >
-                            {group.diversityScore}%
-                          </span>
+                          {featureToggles.showAutoGroupDiversityPercentages && (
+                            <span 
+                              style={{ 
+                                fontSize: '0.72rem', 
+                                fontWeight: 800, 
+                                backgroundColor: 'var(--primary-light)', 
+                                color: 'var(--primary)', 
+                                padding: '0.12rem 0.45rem', 
+                                borderRadius: '5px' 
+                              }}
+                            >
+                              {group.diversityScore}%
+                            </span>
+                          )}
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
@@ -2154,6 +2724,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                             return (
                             <div
                               key={student.id}
+                              data-student-id={student.id}
                               draggable={true}
                               onDragStart={(e) => {
                                 e.stopPropagation();
@@ -2166,8 +2737,19 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                 setDraggedStudentId(null);
                                 setDragOverGroupId(null);
                               }}
-                              onClick={() => setSelectedStudent(student)}
-                              className={`autogroup-draggable-item ${isDraggingThis ? 'is-being-dragged' : ''}`}
+                              onClick={() => {
+                                if (swappingStudentId) {
+                                  if (swappingStudentId === student.id) {
+                                    setSwappingStudentId(null);
+                                  } else {
+                                    handleSwapStudents(swappingStudentId, student.id);
+                                    setSwappingStudentId(null);
+                                  }
+                                  return;
+                                }
+                                setSelectedStudent(student);
+                              }}
+                              className={`autogroup-draggable-item ${isDraggingThis ? 'is-being-dragged' : ''} ${swappingStudentId === student.id ? 'is-swapping-active' : ''}`}
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -2185,10 +2767,39 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                               <span style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {student.name}
                               </span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
                                 <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
                                   {student.nationality || student.gender || ''}
                                 </span>
+                                <button
+                                  type="button"
+                                  draggable={false}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleInitiateSwap(student.id);
+                                  }}
+                                  className={`autogroup-swap-btn ${swappingStudentId === student.id ? 'active' : ''}`}
+                                  style={{
+                                    background: swappingStudentId === student.id ? 'var(--primary-light)' : 'none',
+                                    border: 'none',
+                                    padding: '0.1rem',
+                                    cursor: 'pointer',
+                                    color: swappingStudentId === student.id ? 'var(--primary)' : 'var(--text-muted)',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                  }}
+                                  title={
+                                    swappingStudentId === student.id
+                                      ? "Cancel swap"
+                                      : swappingStudentId
+                                        ? "Swap with selected teammate"
+                                        : getShortcutTooltip("Swap teammate", "swap_teammate")
+                                  }
+                                  aria-label="Swap teammate"
+                                >
+                                  <ArrowRightLeft size={10} />
+                                </button>
                                 <button
                                   type="button"
                                   draggable={false}
@@ -2232,6 +2843,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       (s.englishProficiency && s.englishProficiency.toLowerCase().includes(searchFilter.toLowerCase()))
                     );
                     const pinnedInGroup = group.students.filter(s => pinnedStudentIds.has(s.id)).length;
+                    const isTeamFullyLocked = group.students.length > 0 && group.students.every(s => pinnedStudentIds.has(s.id));
                     const sim = simulationReports ? simulationReports[group.groupName] : null;
                     const isDragOver = dragOverGroupId === `grid-${group.groupName}`;
 
@@ -2239,6 +2851,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       <div
                         id={`grid-team-card-${group.groupName}`}
                         key={group.groupName}
+                        data-group-name={group.groupName}
                         className={`autogroup-grid-card ${isDragOver ? 'drag-over' : ''}`}
                         onDragEnter={(e) => {
                           e.preventDefault();
@@ -2275,21 +2888,34 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                           setDragOverGroupId(null);
                         }}
                         style={{
-                          backgroundColor: isDragOver ? 'rgba(13, 148, 136, 0.08)' : 'var(--bg-surface)',
-                          border: isDragOver ? '2px dashed var(--accent-teal)' : '1px solid var(--border-color)',
+                          backgroundColor: isDragOver ? 'rgba(13, 148, 136, 0.08)' : transferringStudentId && transferringStudent?.groupName !== group.groupName ? 'rgba(99, 102, 241, 0.04)' : 'var(--bg-surface)',
+                          border: isDragOver ? '2px dashed var(--accent-teal)' : transferringStudentId && transferringStudent?.groupName !== group.groupName ? '2px dashed var(--primary)' : '1px solid var(--border-color)',
                           borderRadius: 'var(--radius-lg)',
                           padding: '1.1rem',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '0.85rem',
-                          boxShadow: isDragOver ? '0 0 0 4px rgba(13, 148, 136, 0.18)' : '0 2px 10px rgba(0, 0, 0, 0.03)',
+                          boxShadow: isDragOver ? '0 0 0 4px rgba(13, 148, 136, 0.18)' : transferringStudentId && transferringStudent?.groupName !== group.groupName ? '0 0 0 2px var(--primary-glow)' : '0 2px 10px rgba(0, 0, 0, 0.03)',
+                          cursor: transferringStudentId && transferringStudent?.groupName !== group.groupName ? 'pointer' : 'default',
                           transition: 'all 0.15s ease'
                         }}
                       >
                         {/* Group Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className={`p-1 rounded-md transition-all ${isTeamFullyLocked ? 'text-amber-500 bg-amber-500/10' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleLockTeam(group.students);
+                                }}
+                                title={isTeamFullyLocked ? `Unlock all students in ${group.groupName}` : `Lock all students in ${group.groupName}`}
+                                style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center' }}
+                              >
+                                {isTeamFullyLocked ? <Lock size={13} className="text-amber-500" /> : <Unlock size={13} />}
+                              </button>
                               <div 
                                 style={{
                                   width: '26px',
@@ -2301,15 +2927,21 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   fontSize: '0.72rem',
-                                  fontWeight: 800
+                                  fontWeight: 800,
+                                  flexShrink: 0
                                 }}
                               >
                                 <Users size={13} />
                               </div>
-                              <span style={{ fontSize: '0.94rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                              <span style={{ fontSize: '0.94rem', fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                                 {group.groupName}
                               </span>
-                              <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.12rem 0.4rem' }}>
+                              {transferringStudentId && transferringStudent?.groupName !== group.groupName && (
+                                <span style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--primary)', backgroundColor: 'var(--primary-light)', padding: '0.12rem 0.4rem', borderRadius: '4px' }}>
+                                  Click to move here
+                                </span>
+                              )}
+                              <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.12rem 0.4rem', flexShrink: 0 }}>
                                 {group.studentCount} {group.studentCount === 1 ? 'member' : 'members'}
                               </span>
                               {pinnedInGroup > 0 && (
@@ -2324,7 +2956,8 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                     borderRadius: '4px',
                                     backgroundColor: 'rgba(245, 158, 11, 0.12)',
                                     color: '#d97706',
-                                    fontWeight: 700
+                                    fontWeight: 700,
+                                    flexShrink: 0
                                   }}
                                   title={`${pinnedInGroup} student${pinnedInGroup > 1 ? 's' : ''} locked to this team`}
                                 >
@@ -2333,68 +2966,141 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                               )}
                             </div>
 
-                            {/* Rule Satisfactions Mini-Tags */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
-                              {group.ruleSatisfactions && group.ruleSatisfactions.slice(0, 3).map(rs => (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                              {sim && sim.delta !== 0 && (
                                 <span 
-                                  key={rs.ruleId} 
-                                  style={{ 
-                                    fontSize: '0.67rem', 
-                                    padding: '0.1rem 0.35rem',
-                                    borderRadius: '4px',
-                                    backgroundColor: 'var(--bg-app)',
-                                    border: '1px solid var(--border-color)',
-                                    color: 'var(--text-secondary)' 
+                                  className={`autogroup-sim-badge ${sim.delta > 0 ? 'positive' : 'negative'}`}
+                                  style={{
+                                    fontSize: '0.65rem',
+                                    padding: '0.15rem 0.4rem',
+                                    borderRadius: '6px',
+                                    fontWeight: 800,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '1px'
                                   }}
+                                  title={`Live What-If: moving selected student here gives ${sim.simulatedScore}% diversity (${sim.delta > 0 ? '+' : ''}${sim.delta}%)`}
                                 >
-                                  {rs.ruleName.split(' ')[0]}: <strong style={{ color: rs.satisfactionScore >= 80 ? '#10b981' : 'var(--primary)' }}>{rs.satisfactionScore}%</strong>
+                                  {sim.delta > 0 ? `+${sim.delta}%` : `${sim.delta}%`}
                                 </span>
-                              ))}
+                              )}
+                              {featureToggles.showAutoGroupDiversityPercentages && (
+                                <span 
+                                  style={{ 
+                                    fontSize: '0.82rem', 
+                                    fontWeight: 800, 
+                                    color: group.diversityScore >= 80 ? '#0d9488' : 'var(--primary)',
+                                    backgroundColor: 'var(--primary-light)',
+                                    padding: '0.2rem 0.5rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--border-color)',
+                                    animation: 'fadeIn 0.2s ease'
+                                  }}
+                                  title={`Team overall diversity score: ${group.diversityScore}%`}
+                                >
+                                  {group.diversityScore}%
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setExportModal({ isOpen: true, team: group, format: 'xlsx', scope: 'diversity_card' })}
+                                className="btn btn-sm btn-secondary"
+                                style={{ padding: '0.22rem 0.4rem' }}
+                                title="Export this team"
+                              >
+                                <Download size={13} />
+                              </button>
                             </div>
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-                            {sim && sim.delta !== 0 && (
-                              <span 
-                                className={`autogroup-sim-badge ${sim.delta > 0 ? 'positive' : 'negative'}`}
-                                style={{
-                                  fontSize: '0.65rem',
-                                  padding: '0.15rem 0.4rem',
-                                  borderRadius: '6px',
-                                  fontWeight: 800,
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '1px'
-                                }}
-                                title={`Live What-If: moving selected student here gives ${sim.simulatedScore}% diversity (${sim.delta > 0 ? '+' : ''}${sim.delta}%)`}
-                              >
-                                {sim.delta > 0 ? `+${sim.delta}%` : `${sim.delta}%`}
-                              </span>
-                            )}
-                            <span 
-                              style={{ 
-                                fontSize: '0.82rem', 
-                                fontWeight: 800, 
-                                color: group.diversityScore >= 80 ? '#0d9488' : 'var(--primary)',
-                                backgroundColor: 'var(--primary-light)',
-                                padding: '0.2rem 0.5rem',
-                                borderRadius: '6px',
-                                border: '1px solid var(--border-color)'
-                              }}
-                              title={`Team overall diversity score: ${group.diversityScore}%`}
-                            >
-                              {group.diversityScore}%
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setExportModal({ isOpen: true, team: group, format: 'xlsx', scope: 'diversity_card' })}
-                              className="btn btn-sm btn-secondary"
-                              style={{ padding: '0.22rem 0.4rem' }}
-                              title="Export this team"
-                            >
-                              <Download size={13} />
-                            </button>
-                          </div>
+                          {/* Clean Informative Team Composition Summary (Hidden by default, modularly toggleable) */}
+                          {featureToggles.showAutoGroupTeamComposition && group.students.length > 0 && (() => {
+                            const distinctNatCount = new Set(group.students.map(s => s.nationality).filter(Boolean)).size;
+                            const distinctUniCount = new Set(group.students.map(s => s.university).filter(Boolean)).size;
+                            const femaleCount = group.students.filter(s => s.gender === 'Female').length;
+                            const maleCount = group.students.filter(s => s.gender === 'Male').length;
+                            const otherGenderCount = group.students.length - femaleCount - maleCount;
+                            const genderStr = [
+                              femaleCount > 0 ? `${femaleCount}F` : null,
+                              maleCount > 0 ? `${maleCount}M` : null,
+                              otherGenderCount > 0 ? `${otherGenderCount} Other` : null
+                            ].filter(Boolean).join(' • ');
+
+                            return (
+                              <div style={{
+                                padding: '0.35rem 0.85rem',
+                                backgroundColor: 'var(--bg-app)',
+                                borderBottom: '1px solid var(--border-color)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.45rem',
+                                fontSize: '0.68rem',
+                                color: 'var(--text-secondary)',
+                                flexWrap: 'wrap'
+                              }}>
+                                {distinctNatCount > 0 && (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <Globe size={10} style={{ opacity: 0.75 }} />
+                                    <span>{distinctNatCount} {distinctNatCount === 1 ? 'Country' : 'Countries'}</span>
+                                  </span>
+                                )}
+                                {distinctUniCount > 0 && (
+                                  <>
+                                    <span style={{ color: 'var(--border-color)', userSelect: 'none' }}>•</span>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                      <GraduationCap size={10} style={{ opacity: 0.75 }} />
+                                      <span>{distinctUniCount} {distinctUniCount === 1 ? 'Uni' : 'Unis'}</span>
+                                    </span>
+                                  </>
+                                )}
+                                {genderStr && (
+                                  <>
+                                    <span style={{ color: 'var(--border-color)', userSelect: 'none' }}>•</span>
+                                    <span>{genderStr}</span>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Minimal & Well-Organized Diversity Metric Strip (Hidden by default, modularly toggleable) */}
+                          {featureToggles.showAutoGroupDiversityStrip && group.ruleSatisfactions && group.ruleSatisfactions.length > 0 && (
+                            <div className="autogroup-diversity-strip" style={{ animation: 'fadeIn 0.2s ease' }}>
+                              {group.ruleSatisfactions.slice(0, 3).map((rs, idx) => {
+                                const shortName = rs.ruleName.split(' ')[0];
+                                const isHigh = rs.satisfactionScore >= 80;
+                                const isMid = rs.satisfactionScore >= 60;
+                                const scoreColor = isHigh ? '#10b981' : isMid ? '#f59e0b' : 'var(--accent-rose, #ef4444)';
+                                const dotColor = isHigh ? '#10b981' : isMid ? '#f59e0b' : '#ef4444';
+
+                                return (
+                                  <React.Fragment key={rs.ruleId}>
+                                    {idx > 0 && (
+                                      <div className="autogroup-diversity-divider" />
+                                    )}
+                                    <div 
+                                      className="autogroup-diversity-item"
+                                      title={rs.summary ? `${rs.ruleName}: ${rs.summary} (${rs.satisfactionScore}%)` : `${rs.ruleName}: ${rs.satisfactionScore}%`}
+                                    >
+                                      <span 
+                                        className="autogroup-diversity-dot" 
+                                        style={{ backgroundColor: dotColor }} 
+                                      />
+                                      <span className="autogroup-diversity-label">
+                                        {shortName}
+                                      </span>
+                                      <strong 
+                                        className="autogroup-diversity-score" 
+                                        style={{ color: scoreColor }}
+                                      >
+                                        {rs.satisfactionScore}%
+                                      </strong>
+                                    </div>
+                                  </React.Fragment>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
 
                         {/* Active Drop Cue Banner */}
@@ -2433,6 +3139,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                               return (
                                 <div
                                   key={student.id}
+                                  data-student-id={student.id}
                                   draggable={true}
                                   onDragStart={(e) => {
                                     e.stopPropagation();
@@ -2446,13 +3153,24 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                     setDraggedStudentId(null);
                                     setDragOverGroupId(null);
                                   }}
-                                  onClick={() => setSelectedStudent(student)}
-                                  className={`autogroup-draggable-item ${isDraggingThis ? 'is-being-dragged' : ''}`}
+                                  onClick={() => {
+                                    if (swappingStudentId) {
+                                      if (swappingStudentId === student.id) {
+                                        setSwappingStudentId(null);
+                                      } else {
+                                        handleSwapStudents(swappingStudentId, student.id);
+                                        setSwappingStudentId(null);
+                                      }
+                                      return;
+                                    }
+                                    setSelectedStudent(student);
+                                  }}
+                                  className={`autogroup-draggable-item ${isDraggingThis ? 'is-being-dragged' : ''} ${swappingStudentId === student.id ? 'is-swapping-active' : ''}`}
                                   style={{
-                                    padding: '0.5rem 0.65rem',
-                                    backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.08)' : 'var(--bg-app)',
-                                    border: isPinned ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-color)',
-                                    borderRadius: '7px',
+                                    padding: '0.52rem 0.7rem',
+                                    backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.06)' : 'var(--bg-app)',
+                                    border: isPinned ? '1px solid rgba(245, 158, 11, 0.45)' : '1px solid var(--border-color)',
+                                    borderRadius: '8px',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: '0.35rem',
@@ -2460,102 +3178,170 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                     cursor: 'grab',
                                     userSelect: 'none',
                                     WebkitUserSelect: 'none',
-                                    transition: 'all 0.12s ease'
+                                    boxShadow: isPinned ? '0 1px 4px rgba(245, 158, 11, 0.12)' : '0 1px 3px rgba(0, 0, 0, 0.02)',
+                                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease'
                                   }}
                                 >
                                   {/* Top Row: Grip, Avatar, Name & Uni, Action Controls */}
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
-                                      <GripVertical size={13} style={{ color: 'var(--text-muted)', flexShrink: 0, opacity: 0.6 }} />
-                                      <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.2)' : 'var(--primary-light)', color: isPinned ? '#d97706' : 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 800, flexShrink: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.45rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
+                                      <GripVertical size={13} style={{ color: 'var(--text-muted)', flexShrink: 0, opacity: 0.5 }} />
+                                      <div style={{ 
+                                        width: '24px', 
+                                        height: '24px', 
+                                        borderRadius: '50%', 
+                                        backgroundColor: isPinned ? 'rgba(245, 158, 11, 0.18)' : 'var(--primary-light)', 
+                                        color: isPinned ? '#d97706' : 'var(--primary)', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center', 
+                                        fontSize: '0.68rem', 
+                                        fontWeight: 800, 
+                                        flexShrink: 0 
+                                      }}>
                                         {student.name.charAt(0)}
                                       </div>
-                                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                        <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                          {student.name}
-                                        </span>
-                                        {renderStudentUniText(student)}
+                                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                                          <span 
+                                            style={{ 
+                                              fontWeight: 750, 
+                                              color: 'var(--text-primary)', 
+                                              overflow: 'hidden', 
+                                              textOverflow: 'ellipsis', 
+                                              whiteSpace: 'nowrap', 
+                                              fontSize: '0.82rem' 
+                                            }}
+                                            title={student.name}
+                                          >
+                                            {student.name}
+                                          </span>
+                                          <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden', fontSize: '0.69rem', color: 'var(--text-muted)' }}>
+                                            {renderStudentUniText(student)}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Actions: Clean Reassign & Lock */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+                                        {/* Send to Another Group Popover Button */}
+                                        <button
+                                          type="button"
+                                          draggable={false}
+                                          onMouseDown={(e) => e.stopPropagation()}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSwappingStudentId(null);
+                                            setTransferringStudentId(prev => prev === student.id ? null : student.id);
+                                          }}
+                                          className={`autogroup-send-btn ${transferringStudentId === student.id ? 'active' : ''}`}
+                                          title={transferringStudentId === student.id ? `Cancel transfer of ${student.name}` : `Transfer ${student.name} to another team (click here, then click destination team)`}
+                                          aria-label={`Transfer ${student.name} to another team`}
+                                          style={{ width: '22px', height: '22px' }}
+                                        >
+                                          <Send size={11} style={{ transform: 'translateX(-1px)' }} />
+                                        </button>
+
+                                        {/* Instant 2-Click Swap Teammate Button */}
+                                        <button
+                                          type="button"
+                                          draggable={false}
+                                          onMouseDown={(e) => e.stopPropagation()}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleInitiateSwap(student.id);
+                                          }}
+                                          style={{
+                                            width: '23px',
+                                            height: '23px',
+                                            background: swappingStudentId === student.id ? 'var(--primary-light)' : 'none',
+                                            border: swappingStudentId === student.id ? '1px solid var(--primary)' : '1px solid transparent',
+                                            borderRadius: '5px',
+                                            padding: 0,
+                                            cursor: 'pointer',
+                                            color: swappingStudentId === student.id ? 'var(--primary)' : 'var(--text-muted)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.15s ease'
+                                          }}
+                                          title={
+                                            swappingStudentId === student.id
+                                              ? "Cancel swap (or press Esc)"
+                                              : swappingStudentId
+                                                ? "Swap with selected teammate"
+                                                : getShortcutTooltip("Swap teammate", "swap_teammate")
+                                          }
+                                          aria-label="Swap teammate"
+                                        >
+                                          <ArrowRightLeft size={11} />
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          draggable={false}
+                                          onMouseDown={(e) => e.stopPropagation()}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleTogglePin(student.id);
+                                          }}
+                                          style={{
+                                            width: '23px',
+                                            height: '23px',
+                                            background: isPinned ? 'rgba(245, 158, 11, 0.15)' : 'none',
+                                            border: isPinned ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid transparent',
+                                            borderRadius: '5px',
+                                            padding: 0,
+                                            cursor: 'pointer',
+                                            color: isPinned ? '#d97706' : 'var(--text-muted)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.15s ease'
+                                          }}
+                                          title={isPinned ? "Student is locked in team. Click to unlock." : "Lock student in team"}
+                                        >
+                                          <Pin size={11} style={{ transform: isPinned ? 'rotate(0deg)' : 'rotate(45deg)' }} />
+                                        </button>
                                       </div>
                                     </div>
 
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
-                                      {/* Quick Move Dropdown */}
-                                      <select
-                                        value={group.groupName}
-                                        draggable={false}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => {
-                                          e.stopPropagation();
-                                          if (e.target.value !== group.groupName) {
-                                            handleMoveStudent(student.id, e.target.value);
-                                          }
-                                        }}
-                                        style={{
-                                          fontSize: '0.67rem',
-                                          padding: '0.12rem 0.3rem',
-                                          borderRadius: '4px',
-                                          border: '1px solid var(--border-color)',
-                                          backgroundColor: 'var(--bg-surface)',
-                                          color: 'var(--text-secondary)',
-                                          cursor: 'pointer',
-                                          fontWeight: 600
-                                        }}
-                                        title="Instantly move student to another team"
-                                      >
-                                        {groupingResult.groups.map(g => (
-                                          <option key={g.groupName} value={g.groupName}>
-                                            {g.groupName === group.groupName ? `Team: ${g.groupName}` : `Move to ${g.groupName}`}
-                                          </option>
-                                        ))}
-                                      </select>
-
-                                      {/* Pin Button */}
-                                      <button
-                                        type="button"
-                                        draggable={false}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleTogglePin(student.id);
-                                        }}
-                                        style={{
-                                          background: isPinned ? 'rgba(245, 158, 11, 0.15)' : 'none',
-                                          border: isPinned ? '1px solid rgba(245, 158, 11, 0.35)' : 'none',
-                                          borderRadius: '4px',
-                                          padding: '0.18rem',
-                                          cursor: 'pointer',
-                                          color: isPinned ? '#d97706' : 'var(--text-muted)',
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center'
-                                        }}
-                                        title={isPinned ? "Student is locked. Click to unlock." : "Pin student to lock into this team"}
-                                      >
-                                        <Pin size={12} style={{ transform: isPinned ? 'rotate(0deg)' : 'rotate(45deg)' }} />
-                                      </button>
+                                    {/* Bottom Row: Demographics Chips - Dot-Separated Clean Row (Modularly toggleable) */}
+                                    {featureToggles.showAutoGroupStudentDemographics && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginLeft: '29px', flexWrap: 'wrap', fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+                                      {student.nationality && (
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', color: 'var(--text-secondary)', fontWeight: 550 }}>
+                                          <Globe size={10} style={{ opacity: 0.75, flexShrink: 0 }} />
+                                          <span>{student.nationality}</span>
+                                        </span>
+                                      )}
+                                      {student.gender && student.gender !== 'Prefer not to say' && (
+                                        <>
+                                          <span style={{ color: 'var(--border-color)', userSelect: 'none' }}>•</span>
+                                          <span style={{ color: 'var(--text-secondary)' }}>
+                                            {student.gender}
+                                          </span>
+                                        </>
+                                      )}
+                                      {student.englishProficiency && (
+                                        <>
+                                          <span style={{ color: 'var(--border-color)', userSelect: 'none' }}>•</span>
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', color: 'var(--text-muted)' }}>
+                                            <Languages size={10} style={{ opacity: 0.75, flexShrink: 0 }} />
+                                            <span>{student.englishProficiency.split(' ')[0]}</span>
+                                          </span>
+                                        </>
+                                      )}
+                                      {student.role && (
+                                        <>
+                                          <span style={{ color: 'var(--border-color)', userSelect: 'none' }}>•</span>
+                                          <span style={{ color: 'var(--primary)', fontWeight: 650 }}>
+                                            {student.role}
+                                          </span>
+                                        </>
+                                      )}
                                     </div>
-                                  </div>
-
-                                  {/* Bottom Row: Demographics Chips */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap', paddingLeft: '1.25rem' }}>
-                                    {student.nationality && (
-                                      <span className="badge badge-secondary" style={{ fontSize: '0.64rem', padding: '0.08rem 0.32rem', fontWeight: 600 }}>
-                                        <Globe size={9} style={{ marginRight: '2px' }} /> {student.nationality}
-                                      </span>
-                                    )}
-                                    {student.gender && (
-                                      <span className="badge badge-secondary" style={{ fontSize: '0.64rem', padding: '0.08rem 0.32rem' }}>
-                                        {student.gender}
-                                      </span>
-                                    )}
-                                    {student.englishProficiency && (
-                                      <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                                        <Languages size={9} /> {student.englishProficiency.split(' ')[0]}
-                                      </span>
                                     )}
                                   </div>
-                                </div>
                               );
                             })
                           )}
@@ -2922,6 +3708,240 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
               </button>
             </div>
           </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Floating "Unassigned Students" Quick Drawer / Dock ────────────────── */}
+      {isOpen && (unassignedStudents.length > 0 || isUnassignedDockOpen) && typeof document !== 'undefined' && createPortal(
+        <div className="floating-unassigned-dock">
+          {!isUnassignedDockOpen ? (
+            <button
+              type="button"
+              onClick={() => setIsUnassignedDockOpen(true)}
+              className="floating-unassigned-pill-trigger"
+              title={getShortcutTooltip(`Unassigned Students (${unassignedStudents.length})`, "toggle_unassigned_dock")}
+              aria-label="Expand unassigned students dock"
+            >
+              <UserX size={14} style={{ color: unassignedStudents.length > 0 ? 'var(--accent-rose, #e11d48)' : 'var(--text-muted)' }} />
+              <span style={{
+                fontSize: '0.66rem',
+                padding: '0.08rem 0.35rem',
+                borderRadius: '10px',
+                backgroundColor: unassignedStudents.length > 0 ? 'rgba(225, 29, 72, 0.12)' : 'var(--border-color)',
+                color: unassignedStudents.length > 0 ? 'var(--accent-rose, #e11d48)' : 'var(--text-muted)',
+                fontWeight: 800
+              }}>
+                {unassignedStudents.length}
+              </span>
+            </button>
+          ) : (
+            <div 
+              className="floating-unassigned-panel"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const studentId = e.dataTransfer.getData('text/plain') || draggedStudentId;
+                if (studentId) {
+                  handleMoveStudent(studentId, 'Unassigned');
+                }
+                setDraggedStudentId(null);
+                setDragOverGroupId(null);
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '0.4rem', borderBottom: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <UserX size={14} style={{ color: unassignedStudents.length > 0 ? 'var(--accent-rose, #e11d48)' : 'var(--accent-teal)' }} />
+                  <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {unassignedStudents.length}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  {unassignedStudents.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleAutoDistributeUnassigned}
+                      className="btn btn-sm btn-secondary"
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '5px'
+                      }}
+                      title="Auto-distribute unassigned students to teams with fewest members"
+                      aria-label="Auto-distribute unassigned students"
+                    >
+                      <Shuffle size={12} className="text-teal" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsUnassignedDockOpen(false)}
+                    className="btn btn-sm btn-secondary"
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '5px'
+                    }}
+                    title={getShortcutTooltip("Minimize drawer", "toggle_unassigned_dock")}
+                    aria-label="Minimize drawer"
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {unassignedStudents.length === 0 ? (
+                <div style={{
+                  padding: '1.25rem 0.75rem',
+                  textAlign: 'center',
+                  borderRadius: '8px',
+                  border: '1.5px dashed var(--border-color)',
+                  backgroundColor: 'var(--bg-subtle, rgba(0,0,0,0.02))',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  fontSize: '0.72rem'
+                }}>
+                  <UserCheck size={18} style={{ color: 'var(--accent-teal, #0d9488)' }} />
+                  <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>All students assigned to teams</span>
+                  <span style={{ fontSize: '0.66rem', opacity: 0.8 }}>Drop student here to unassign</span>
+                </div>
+              ) : (
+
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.35rem',
+                maxHeight: '210px',
+                overflowY: 'auto',
+                paddingRight: '0.2rem'
+              }}>
+                {unassignedStudents.map(student => {
+                  const isDraggingThis = draggedStudentId === student.id;
+                  return (
+                    <div
+                      key={`unassigned-${student.id}`}
+                      data-student-id={student.id}
+                      draggable={true}
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', student.id);
+                        setDraggedStudentId(student.id);
+                      }}
+                      onDragEnd={(e) => {
+                        e.preventDefault();
+                        setDraggedStudentId(null);
+                        setDragOverGroupId(null);
+                      }}
+                      onClick={() => {
+                        if (swappingStudentId) {
+                          if (swappingStudentId === student.id) {
+                            setSwappingStudentId(null);
+                          } else {
+                            handleSwapStudents(swappingStudentId, student.id);
+                            setSwappingStudentId(null);
+                          }
+                          return;
+                        }
+                        setSelectedStudent(student);
+                      }}
+                      className={`unassigned-student-chip ${isDraggingThis ? 'is-being-dragged' : ''} ${swappingStudentId === student.id ? 'is-swapping-active' : ''}`}
+                      title="Drag to team or click to inspect"
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0, flex: 1 }}>
+                        <GripVertical size={11} style={{ opacity: 0.4, flexShrink: 0 }} />
+                        <div style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '50%',
+                          backgroundColor: 'rgba(225, 29, 72, 0.12)',
+                          color: 'var(--accent-rose, #e11d48)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '0.62rem',
+                          fontWeight: 800,
+                          flexShrink: 0
+                        }}>
+                          {student.name.charAt(0)}
+                        </div>
+                        <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {student.name}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          draggable={false}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleInitiateSwap(student.id);
+                          }}
+                          className={`autogroup-swap-btn ${swappingStudentId === student.id ? 'active' : ''}`}
+                          style={{
+                            background: swappingStudentId === student.id ? 'var(--primary-light)' : 'none',
+                            border: 'none',
+                            padding: '0.1rem',
+                            cursor: 'pointer',
+                            color: swappingStudentId === student.id ? 'var(--primary)' : 'var(--text-muted)',
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}
+                          title={
+                            swappingStudentId === student.id
+                              ? "Cancel swap"
+                              : swappingStudentId
+                                ? "Swap with selected student"
+                                : getShortcutTooltip("Swap teammate", "swap_teammate")
+                          }
+                          aria-label="Swap teammate"
+                        >
+                          <ArrowRightLeft size={11} />
+                        </button>
+                        {groupingResult && groupingResult.groups.length > 0 && (
+                          <button
+                                          type="button"
+                                          draggable={false}
+                                          onMouseDown={(e) => e.stopPropagation()}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSwappingStudentId(null);
+                                            setTransferringStudentId(prev => prev === student.id ? null : student.id);
+                                          }}
+                                          className={`autogroup-send-btn ${transferringStudentId === student.id ? 'active' : ''}`}
+                                          title={transferringStudentId === student.id ? `Cancel transfer of ${student.name}` : `Transfer ${student.name} to another team (click here, then click destination team)`}
+                                          aria-label={`Transfer ${student.name} to another team`}
+                                          style={{ width: '22px', height: '22px' }}
+                                        >
+                                          <Send size={11} style={{ transform: 'translateX(-1px)' }} />
+                                        </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              )}
+            </div>
+          )}
         </div>,
         document.body
       )}

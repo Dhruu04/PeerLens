@@ -591,7 +591,7 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                 <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                  Team Collaboration Agreement &amp; Roles Studio
+                  Team Roles &amp; Icebreaker
                 </h3>
                 <span className="badge badge-primary" style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem', borderRadius: '4px' }}>
                   Customizable
@@ -600,9 +600,9 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
                   <span 
                     className="badge badge-teal" 
                     style={{ fontSize: '0.65rem', padding: '0.1rem 0.5rem', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                    title="Active teams are populated from your unapplied Auto-Group Studio setup"
+                    title="Active teams are populated from Auto-Group Teams"
                   >
-                    <Sparkles size={10} /> Auto-Group Studio ({teamNames.filter(t => t !== 'Unassigned').length} Teams)
+                    <Sparkles size={10} /> Auto-Group Teams ({teamNames.filter(t => t !== 'Unassigned').length} Teams)
                   </span>
                 )}
               </div>

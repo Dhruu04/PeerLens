@@ -46,10 +46,14 @@ import {
   ChevronsDown,
   ChevronsUp,
   FolderPlus,
-  Edit3
+  Edit3,
+  UserCheck,
+  Presentation,
+  ShieldCheck
 } from 'lucide-react';
 import type { ClassData } from '../utils/math';
 import type { FeatureToggles } from '../utils/featurePreferences';
+import { MODULE_ITEMS } from '../utils/moduleRegistry';
 import {
   getShortcutsEnabled,
   setShortcutsEnabled as saveShortcutsEnabled,
@@ -108,8 +112,13 @@ export interface QuickActionPillProps {
   onResetReviews?: () => void;
   onBackupJSON?: () => void;
   onOpenEditMode?: () => void;
+  onOpenLivePresentation?: () => void;
+  onOpenTeamKickoff?: (tab?: 'roles_config' | 'icebreakers' | 'charters') => void;
   shortcutsEnabled?: boolean;
   onToggleShortcutsEnabled?: (enabled: boolean) => void;
+  embedded?: boolean;
+  isExpanded?: boolean;
+  onExpandChange?: (expanded: boolean) => void;
 }
 
 export const QuickActionPill: React.FC<QuickActionPillProps> = ({
@@ -159,10 +168,26 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
   onResetReviews,
   onBackupJSON,
   onOpenEditMode,
+  onOpenLivePresentation,
+  onOpenTeamKickoff,
   shortcutsEnabled: propShortcutsEnabled,
-  onToggleShortcutsEnabled
+  onToggleShortcutsEnabled,
+  embedded = false,
+  isExpanded: propIsExpanded,
+  onExpandChange
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const isExpanded = propIsExpanded !== undefined ? propIsExpanded : internalExpanded;
+  const toggleExpanded = (val: boolean) => {
+    if (propIsExpanded === undefined) {
+      setInternalExpanded(val);
+    }
+    if (onExpandChange) onExpandChange(val);
+  };
+  const setIsExpanded = (valOrFn: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof valOrFn === 'function' ? valOrFn(isExpanded) : valOrFn;
+    toggleExpanded(nextVal);
+  };
   const [dockTab, setDockTab] = useState<'topbar' | 'modules' | 'tools'>('topbar');
   const [moduleFilter, setModuleFilter] = useState('');
   const [moduleFilterTab, setModuleFilterTab] = useState<'all' | 'pinned' | 'visible' | 'hidden'>('all');
@@ -324,116 +349,133 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Comprehensive Structured module sections covering all 52 feature toggles
+  // Comprehensive Structured module sections covering all modules from MODULE_ITEMS
   const MODULE_SECTIONS: {
     category: string;
     icon: React.ElementType;
-    items: { key: keyof FeatureToggles; label: string; desc: string }[];
+    items: { key: keyof FeatureToggles; label: string; desc: string; icon: React.ElementType; isSubmodule?: boolean }[];
   }[] = useMemo(() => [
     {
       category: 'Top Bar & Global Header',
       icon: LayoutGrid,
-      items: [
-        { key: 'showClassPicker', label: 'Classroom Selector Dropdown', desc: 'Dropdown in top header to switch courses' },
-        { key: 'showDeleteClassButton', label: 'Delete Classroom Action', desc: 'Trash icon next to classroom title' },
-        { key: 'showNewClassButton', label: 'New Classroom Button', desc: '+ New Class button in top bar' },
-        { key: 'showCommandSearch', label: 'Quick Search / Command Bar', desc: 'Top bar search pill (Ctrl+K or /)' },
-        { key: 'showGuideButton', label: 'Academic Guide Button', desc: 'Guidance center & academic documentation' },
-        { key: 'showProjectorButton', label: 'Classroom Projector Button', desc: 'Fullscreen lecture projector monitor' },
-        { key: 'showEmailButton', label: 'Classroom Email Center Button', desc: 'Link dispatcher modal trigger' },
-        { key: 'showSettingsButton', label: 'Workspace Settings Button', desc: 'System settings & preference controls' },
-        { key: 'showCustomizeViewButton', label: 'Customize View (Sliders) Button', desc: 'Sliders button in top bar' },
-        { key: 'showThemeSwitcher', label: 'Theme Mode Switcher', desc: 'Light / dark mode toggle in top bar' },
-        { key: 'showProfilePill', label: 'Admin Profile & Account Pill', desc: 'Workspace account center trigger' },
-        { key: 'showCloudStatus', label: 'Cloud Sync Status Dot', desc: 'Real-time database connection badge' },
-        { key: 'showQuickActionPill', label: 'Floating Quick Action Pill', desc: 'Contractable & expandable dock at bottom of window' }
-      ]
+      items: MODULE_ITEMS.filter((m) => m.category === 'header').map((m) => ({
+        key: m.key,
+        label: m.title,
+        desc: m.desc,
+        icon: m.icon,
+        isSubmodule: !!m.parentKey
+      }))
     },
     {
       category: 'Home Hub Screen',
       icon: Compass,
-      items: [
-        { key: 'showPresetsBanner', label: 'Density Presets Banner', desc: 'Presets header on Home Hub' },
-        { key: 'showHubOverviewBanner', label: 'Hub Overview Banner', desc: 'Header overview strip on Home Hub' },
-        { key: 'showHubOverviewStats', label: 'Live Metrics Strip', desc: 'Enrollment & completion stats' },
-        { key: 'showSectionNavBreadcrumbs', label: 'Breadcrumb Trail', desc: 'Course / Step navigation breadcrumbs' },
-        { key: 'showClassIdBadge', label: 'Classroom ID Badge', desc: 'Course ID chip in sub-bar' },
-        { key: 'showEnrollmentCard', label: 'Section 1 Card (Enrollment)', desc: 'Large Hub card for enrollment & teams' },
-        { key: 'showReviewSystemCard', label: 'Section 2 Card (Rubric)', desc: 'Large Hub card for peer review rubric' },
-        { key: 'showGradingAnalyticsCard', label: 'Section 3 Card (Analytics)', desc: 'Large Hub card for grading calculations' },
-        { key: 'showHubCardMetrics', label: 'Card Progress Indicators', desc: 'Readiness completion tracks on cards' },
-        { key: 'showHubQuickActions', label: 'Card Quick Launch Buttons', desc: '1-click shortcuts directly on cards' }
-      ]
+      items: MODULE_ITEMS.filter((m) => m.category === 'hub').map((m) => ({
+        key: m.key,
+        label: m.title,
+        desc: m.desc,
+        icon: m.icon,
+        isSubmodule: !!m.parentKey
+      }))
     },
     {
-      category: 'Section 1: Enrollment & Teams',
+      category: 'Section 1: Enrollment & Roster',
       icon: Users,
-      items: [
-        { key: 'showSelfEnrollmentCard', label: 'Self-Enrollment QR & Link Card', desc: 'QR code and self-join link' },
-        { key: 'showQuickActionsCard', label: 'Quick Actions & Sample Card', desc: '100 demo sample students and fast add' },
-        { key: 'showImportWizardCard', label: 'Smart Import Wizard Card', desc: 'CSV and Excel upload dropzone' },
-        { key: 'showAutoGroupStudio', label: 'AutoGroup Algorithmic Studio', desc: 'Diversity and skill team formation' },
-        { key: 'showBulkActionBar', label: 'Bulk Action Toolbar', desc: 'Batch selection floating bar' },
-        { key: 'showDuplicateDetector', label: 'Duplicate Detection Banner', desc: 'Alert for duplicate names or emails' },
-        { key: 'showExportButtons', label: 'Roster Export Action Buttons', desc: 'CSV & Excel export shortcuts' },
-        { key: 'showRosterSearchFilter', label: 'Search & Team Filter Bar', desc: 'Student search and group filter' },
-        { key: 'showTeamOverviewCards', label: 'Team Overview & Formation Cards', desc: 'Collapsible deep-dive cards summarizing each team cohort' },
-        { key: 'showRosterTable', label: 'Enrolled Students Roster Table', desc: 'Main tabular student roster' },
-        { key: 'showAddStudentButton', label: 'Add Student Action Button', desc: 'Manual single-student enrollment button' }
-      ]
+      items: MODULE_ITEMS.filter((m) => m.category === 'roster').map((m) => ({
+        key: m.key,
+        label: m.title,
+        desc: m.desc,
+        icon: m.icon,
+        isSubmodule: !!m.parentKey
+      }))
+    },
+    {
+      category: 'AutoGroup Studio & Teams',
+      icon: Sparkles,
+      items: MODULE_ITEMS.filter((m) => m.category === 'autogroup').map((m) => ({
+        key: m.key,
+        label: m.title,
+        desc: m.desc,
+        icon: m.icon,
+        isSubmodule: !!m.parentKey
+      }))
     },
     {
       category: 'Section 2: Review System',
       icon: Sliders,
-      items: [
-        { key: 'showRubricHeader', label: 'Rubric Header & Counter', desc: 'Title, description, and criteria counter' },
-        { key: 'showRubricPresets', label: 'Standardized IPAF Ribbon', desc: 'Research-backed peer assessment presets' },
-        { key: 'showTargetScaleCard', label: 'Target Scaling Converter Card', desc: 'Scale to /20, /100%, GPA 4.0, or Raw' },
-        { key: 'showDeadlineTimer', label: 'Milestone Deadline Timer Card', desc: 'Closing date and countdown clock' },
-        { key: 'showWeightBalanceBar', label: 'Rubric 100% Weight Balance Bar', desc: 'Criteria weight validation progress' },
-        { key: 'showCustomCriterionButton', label: 'Add Custom Criterion Button', desc: '+ Add Criterion action button' },
-        { key: 'showCriterionCards', label: 'Rubric Criteria Cards List', desc: 'Configured criteria cards' },
-        { key: 'showEvaluationSimulator', label: 'Student Portal Simulator Card', desc: 'Preview of student evaluation UI' },
-        { key: 'showEvaluationFormControls', label: 'Evaluation Form Controls Card', desc: 'Card for question prompts, tags & permissions' },
-        { key: 'showTeamHealthPulse', label: 'Team Health "Micro-Pulse" Check-ins', desc: 'On-demand 30-second pulse surveys with sparklines' }
-      ]
+      items: MODULE_ITEMS.filter((m) => m.category === 'rubric').map((m) => ({
+        key: m.key,
+        label: m.title,
+        desc: m.desc,
+        icon: m.icon,
+        isSubmodule: !!m.parentKey
+      }))
     },
     {
       category: 'Section 3: Grading & Performance Analytics',
       icon: Award,
-      items: [
-        { key: 'showResultsHeaderCard', label: 'Results Overview & Metric Banner', desc: 'Top summary metrics, completion rates, and WebPA spread' },
-        { key: 'showResultsSummarySheet', label: 'Results Summary Sheet (Gradebook)', desc: 'Tabular gradebook with WebPA factors, raw and calibrated scores' },
-        { key: 'showWebPACalibration', label: 'WebPA Calibration Slider', desc: 'Non-linear penalty weight tuning and scaling control' },
-        { key: 'showExportReportButtons', label: 'Export Report Action Buttons', desc: 'PDF dossier, CSV & Excel reports' },
-        { key: 'showLmsExport', label: 'LMS Gradebook Integration & Smart Export Formats', desc: 'Collapsible 1-click export presets for Canvas, Blackboard, Moodle, Brightspace' },
-        { key: 'showDetailedReviewMatrix', label: 'Detailed Cross-Evaluation Review Matrix', desc: 'Interactive peer-to-peer score breakdown table' },
-        { key: 'showTeammateAuditLog', label: 'Teammate Evaluation Audit Log', desc: 'Submission timestamps, member reviews, and completion audits' },
-        { key: 'showCompetencyRadar', label: 'Competency Radar Chart', desc: 'Multi-axis radar distribution chart' },
-        { key: 'showJohariMatrix', label: 'Johari Window Matrix', desc: 'Blind spots, hidden strengths, and perception analysis' },
-        { key: 'showQualitativeFeedback', label: 'Qualitative Written Comments', desc: 'Formative text feedback browser with search & filter' },
-        { key: 'showAnomalyAudit', label: 'Anomaly & Outlier Audit', desc: 'Collusion, inflation, and suspicious pattern detection' },
-        { key: 'showMilestonesHistory', label: 'Milestones & Assessment History', desc: 'Sprint archive and historical milestone comparisons' },
-        { key: 'showSubmissionReset', label: 'Submission Reset & Unlock Controls', desc: 'Reset all reviews or unlock submitted evaluations' },
-        { key: 'showGradebookSearchFilter', label: 'Gradebook Search & Filter Bar', desc: 'Filter final marks by team or student name' }
-      ]
+      items: MODULE_ITEMS.filter((m) => m.category === 'analytics').map((m) => ({
+        key: m.key,
+        label: m.title,
+        desc: m.desc,
+        icon: m.icon,
+        isSubmodule: !!m.parentKey
+      }))
+    },
+    {
+      category: 'Section 4: Application Footer Elements',
+      icon: ShieldCheck,
+      items: MODULE_ITEMS.filter((m) => m.category === 'footer').map((m) => ({
+        key: m.key,
+        label: m.title,
+        desc: m.desc,
+        icon: m.icon,
+        isSubmodule: !!m.parentKey
+      }))
     }
   ], []);
 
-  // Intelligent synonym aliases for fast semantic search
+  // Intelligent synonym aliases for fast semantic search across all modules
   const MODULE_ALIASES: Record<string, string[]> = useMemo(() => ({
     showLmsExport: ['canvas', 'moodle', 'blackboard', 'brightspace', 'd2l', 'lms', 'sis', 'gradebook', 'export', 'sync', 'csv', 'tsv'],
     showTeamHealthPulse: ['pulse', 'health', 'morale', 'check-in', 'survey', 'sprint', 'sparkline', 'question', 'feedback', 'blocker'],
-    showAutoGroupStudio: ['group', 'cohort', 'diversity', 'balance', 'formation', 'algorithm', 'team', 'shuffle'],
-    showTeamOverviewCards: ['team', 'cohort', 'deep dive', 'groups', 'members', 'cards'],
-    showRosterTable: ['roster', 'student', 'table', 'enrolled', 'list', 'class'],
+    showAutoGroupStudio: ['autogroup', 'group', 'cohort', 'diversity', 'balance', 'formation', 'algorithm', 'team', 'shuffle', 'partition'],
+    showAutoGroupTargetSize: ['size', 'target size', 'team size', 'stepper', 'count'],
+    showAutoGroupNamingFormat: ['naming', 'prefix', 'team 1', 'squad', 'group format'],
+    showAutoGroupRulesCard: ['rules', 'constraints', 'diversity', 'weights', 'attributes', 'rules studio'],
+    showAutoGroupResetRulesBtn: ['reset rules', 'clear rules', 'default rules'],
+    showAutoGroupDiscoveredFields: ['discovered', 'fields', 'gender', 'degree', 'nationality', 'chips'],
+    showAutoGroupQuickTargets: ['targets', 'drop', 'quick targets', 'simulation'],
+    showAutoGroupToolbar: ['toolbar', 'history', 'layout switcher', 'autogroup toolbar'],
+    showAutoGroupViewGrid: ['grid view', 'grid layout', 'team cards'],
+    showAutoGroupViewKanban: ['kanban', 'column board', 'drag drop columns', 'board'],
+    showAutoGroupViewTable: ['table view', 'spreadsheet layout', 'roster table'],
+    showAutoGroupViewCompact: ['compact view', 'matrix overview', 'dense', 'compact'],
+    showAutoGroupHistoryControls: ['undo', 'redo', 'history', 'moves', 'revert'],
+    showAutoGroupSearchFilter: ['filter autogroup', 'search teams', 'find student'],
+    showAutoGroupBottomBar: ['bottom bar', 'finalization', 'commit'],
+    showAutoGroupShuffleBtn: ['shuffle', 'reshuffle', 're-run', 'randomize'],
+    showAutoGroupCharterBtn: ['charter', 'agreements', 'roles button'],
+    showAutoGroupApplyBtn: ['apply', 'commit', 'save teams', 'finalize roster'],
+    showTeamKickoffAndRoles: ['roles', 'lead', 'scribe', 'icebreaker', 'charter', 'kickoff', 'agreements', 'teamwork', 'allocator'],
+    showLivePresentationScoring: ['presentation', 'scoring', 'live', 'cockpit', 'audience', 'qr', 'voting', 'timer', 'leaderboard'],
     showSelfEnrollmentCard: ['qr', 'join', 'link', 'enroll', 'self', 'code', 'mobile'],
+    showSelfEnrollmentQr: ['qr box', 'qr code preview', 'join url'],
+    showSelfEnrollmentPresentationBtn: ['presentation mode', 'projector onboarding', 'fullscreen qr'],
     showQuickActionsCard: ['demo', 'sample', '100', 'populate', 'random', 'fast add'],
+    showAddStudentButton: ['add student', 'enroll', 'new student', 'member button'],
+    showDemoSampleButton: ['demo sample', '100 students', 'sample cohort'],
+    showClearRosterButton: ['clear roster', 'wipe roster', 'delete all students'],
     showImportWizardCard: ['import', 'csv', 'excel', 'upload', 'file', 'roster'],
+    showImportDropzone: ['dropzone', 'drag drop', 'upload roster', 'xlsx drop'],
+    showExportRosterBtn: ['export roster', 'download csv', 'export students'],
+    showDownloadTemplateBtn: ['template', 'download template', 'sample sheet'],
     showBulkActionBar: ['bulk', 'batch', 'select', 'delete all', 'mass'],
     showDuplicateDetector: ['duplicate', 'warning', 'same', 'collision', 'detector'],
     showExportButtons: ['download', 'csv', 'excel', 'export roster'],
     showRosterSearchFilter: ['search student', 'filter team', 'find'],
+    showRosterAddStudentBtn: ['add student header', 'enroll button', 'roster toolbar button'],
+    showTeamOverviewCards: ['team', 'cohort', 'deep dive', 'groups', 'members', 'cards'],
+    showRosterTable: ['roster', 'student', 'table', 'enrolled', 'list', 'class'],
     showRubricHeader: ['rubric', 'title', 'criteria count', 'header'],
     showRubricPresets: ['ipaf', 'preset', 'standard', 'aacsb', 'rubric'],
     showTargetScaleCard: ['scale', 'target', 'gpa', 'percentage', 'converter', 'max'],
@@ -464,7 +506,16 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     showGuideButton: ['guide', 'help', 'docs', 'documentation', 'academic'],
     showProfilePill: ['profile', 'account', 'user', 'instructor'],
     showEmailButton: ['email', 'dispatcher', 'send', 'mail'],
-    showCloudStatus: ['cloud', 'firebase', 'sync', 'online']
+    showCloudStatus: ['cloud', 'firebase', 'sync', 'online'],
+    showEditModeButton: ['edit', 'layout', 'pencil', 'customizer', 'in-place', 'edit mode'],
+    showQuickActionPill: ['quick action', 'pill', 'dock', 'bottom dock', 'floating bar'],
+    showFooterBrandLogo: ['footer logo', 'peerlens logo', 'branding'],
+    showFooterBrandName: ['footer name', 'brand text', 'title'],
+    showFooterBrandTagline: ['tagline', 'subtitle', 'intelligent peer assessment'],
+    showFooterWorkspaceContext: ['workspace capsule', 'active course footer', 'profile badge'],
+    showFooterDoubleBlindBadge: ['double blind', 'anonymity', 'privacy badge', 'shield'],
+    showFooterSecurePrivateBadge: ['secure', 'private', 'client-side', 'trust badge'],
+    showFooterCopyright: ['copyright', 'legal', '2026', 'notice']
   }), []);
 
   // Map of all modules for fast O(1) lookup
@@ -472,7 +523,7 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     const map = new Map<string, { key: keyof FeatureToggles; label: string; desc: string; category: string; icon: React.ElementType }>();
     MODULE_SECTIONS.forEach((sec) => {
       sec.items.forEach((item) => {
-        map.set(item.key, { ...item, category: sec.category, icon: sec.icon });
+        map.set(item.key, { ...item, category: sec.category, icon: item.icon || sec.icon });
       });
     });
     return map;
@@ -514,42 +565,77 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
 
   const allModuleKeys = useMemo(() => MODULE_SECTIONS.flatMap((sec) => sec.items.map((i) => i.key)), [MODULE_SECTIONS]);
   const activeModuleCount = allModuleKeys.filter((k) => featureToggles[k]).length;
-  const densityPercentage = Math.round((activeModuleCount / allModuleKeys.length) * 100);
+  const densityPercentage = Math.round((activeModuleCount / Math.max(1, allModuleKeys.length)) * 100);
+
+  const quickToolsCount = useMemo(() => {
+    let c = 23;
+    if (onOpenTeamKickoff) c++;
+    if (onCopyJoinLink) c++;
+    if (onOpenTeamBaseGrades) c++;
+    if (onOpenLivePresentation) c++;
+    if (onOpenEvaluationControls) c++;
+    if (onPopulateAuditData) c++;
+    if (onOpenStudentReport) c++;
+    if (onOpenLmsGuide) c++;
+    if (onOpenArchive) c++;
+    if (onOpenEditMode) c++;
+    if (onBackupJSON) c++;
+    return c;
+  }, [
+    onOpenTeamKickoff,
+    onCopyJoinLink,
+    onOpenTeamBaseGrades,
+    onOpenLivePresentation,
+    onOpenEvaluationControls,
+    onPopulateAuditData,
+    onOpenStudentReport,
+    onOpenLmsGuide,
+    onOpenArchive,
+    onOpenEditMode,
+    onBackupJSON
+  ]);
 
   return (
     <div
       ref={containerRef}
       data-tour="quick-action-pill"
       style={{
-        position: 'fixed',
-        bottom: '20px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 1050,
+        position: embedded ? 'relative' : 'fixed',
+        bottom: embedded ? undefined : '20px',
+        left: embedded ? undefined : '50%',
+        transform: embedded ? undefined : 'translateX(-50%)',
+        zIndex: embedded ? 10 : 1050,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         fontFamily: 'inherit',
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        width: embedded ? '100%' : undefined
       }}
     >
-      {/* EXPANDED CONTROL CENTER DOCK (Stationary & Floats Over Window) */}
+      {/* EXPANDED CONTROL CENTER DOCK (Crisp, solid surface with no blur artifacts) */}
       {isExpanded && (
         <div
           className="quick-action-dock-container"
           style={{
-            position: 'absolute',
-            bottom: '58px',
-            width: 'min(760px, calc(100vw - 24px))',
-            maxHeight: 'min(620px, calc(100vh - 90px))',
+            position: 'fixed',
+            bottom: '76px',
+            left: 0,
+            right: 0,
+            marginLeft: 'auto',
+            marginRight: 'auto',
+            width: 'min(780px, calc(100vw - 28px))',
+            maxHeight: 'min(620px, calc(100vh - 96px))',
             backgroundColor: 'var(--bg-surface)',
             border: '1px solid var(--border-color)',
             borderRadius: '22px',
-            boxShadow: '0 28px 64px -12px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--border-color)',
-            backdropFilter: 'blur(28px)',
+            boxShadow: '0 24px 60px -8px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--border-color)',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            zIndex: 1250,
+            pointerEvents: 'auto',
+            transform: 'none'
           }}
         >
           {/* Top Ambient Header */}
@@ -948,7 +1034,7 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                       fontWeight: 800
                     }}
                   >
-                    28
+                    {quickToolsCount}
                   </span>
                 </button>
               </div>
@@ -1302,24 +1388,27 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         onClick={() => onApplyPreset('minimal')}
                         className="btn btn-secondary btn-sm"
                         style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 700 }}
+                        title="Essentials Only: Hides advanced analytics to keep the interface clean and simple."
                       >
-                        Minimal
+                        Essentials
                       </button>
                       <button
                         type="button"
                         onClick={() => onApplyPreset('standard')}
                         className="btn btn-secondary btn-sm"
                         style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 700 }}
+                        title="Recommended: The balanced classroom layout with essential tools."
                       >
-                        Standard
+                        Recommended
                       </button>
                       <button
                         type="button"
                         onClick={() => onApplyPreset('full')}
                         className="btn btn-teal btn-sm"
                         style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 700 }}
+                        title="Show All Modules: Turns on every available feature and tool."
                       >
-                        Full Power
+                        Show All
                       </button>
                       <button
                         type="button"
@@ -1785,7 +1874,7 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                     />
                     <input
                       type="text"
-                      placeholder="Search 52 modules by keyword (e.g. lms, canvas, moodle, teams, pulse, rubric, gradebook)..."
+                      placeholder={`Search all ${allModuleKeys.length} modules by keyword (e.g. lms, autogroup, kanban, rules, pulse, rubric, gradebook)...`}
                       value={moduleFilter}
                       onChange={(e) => setModuleFilter(e.target.value)}
                       style={{
@@ -2113,6 +2202,26 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                       </div>
                     </button>
 
+                    {onOpenTeamKickoff && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onOpenTeamKickoff();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#059669', flexShrink: 0 }}>
+                          <UserCheck size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Team Agreements &amp; Roles</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Roles &amp; 5-min kickoff studio</div>
+                        </div>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -2310,6 +2419,26 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Preview mobile portal UI</div>
                       </div>
                     </button>
+
+                    {onOpenLivePresentation && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onOpenLivePresentation();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(139, 92, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b5cf6', flexShrink: 0 }}>
+                          <Presentation size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Live Presentation Scoring</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Live team grading &amp; timer</div>
+                        </div>
+                      </button>
+                    )}
 
                     {onOpenEvaluationControls && (
                       <button
@@ -2559,6 +2688,26 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         </div>
                       </button>
                     )}
+
+                    {onOpenEditMode && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onOpenEditMode();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5', flexShrink: 0 }}>
+                          <Edit3 size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Layout Edit Mode</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Visual on-screen toggles</div>
+                        </div>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2673,7 +2822,6 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
           borderRadius: '9999px',
           padding: '0.28rem 0.42rem',
           boxShadow: '0 16px 40px -6px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--border-color)',
-          backdropFilter: 'blur(28px)',
           gap: '0.35rem',
           transition: 'all 0.24s cubic-bezier(0.16, 1, 0.3, 1)'
         }}

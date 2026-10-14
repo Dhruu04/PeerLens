@@ -456,8 +456,8 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <h3 style={{ margin: 0, fontSize: '1.08rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                Team Health "Micro-Pulse" Check-ins
-                <FeatureInfoButton featureId="team-health-pulse" size="sm" tooltipText="Team Health Micro-Pulse Guide" />
+                Team Health Check-ins
+                <FeatureInfoButton featureId="team-health-pulse" size="sm" tooltipText="Team Health Check-ins Guide" />
               </h3>
 
               {currentRound && (
@@ -473,7 +473,7 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
               )}
             </div>
             <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-              On-demand 30-second pulse surveys tracking team morale, communication, and project blockers with live sparklines.
+              Quick 30-second morale and blocker check-ins during group projects.
             </p>
           </div>
         </div>

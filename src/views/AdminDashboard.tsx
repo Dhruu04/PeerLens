@@ -81,17 +81,17 @@ import GuideCenterModal from '../components/GuideCenterModal';
 import { StudentPortalPreviewModal } from '../components/StudentPortalPreviewModal';
 import { ContextHelpPopover } from '../components/ContextHelpPopover';
 import { OnboardingChecklistWidget } from '../components/OnboardingChecklistWidget';
-import { QuickActionPill } from '../components/QuickActionPill';
+import { NowBarStack } from '../components/NowBarStack';
 import { KeyboardShortcutsModal } from '../components/KeyboardShortcutsModal';
 import { TeamCohortsOverview } from '../components/TeamCohortsOverview';
 import { TeamHealthPulseCard } from '../components/TeamHealthPulseCard';
-import { GuidedSandboxHUD, type SandboxMission } from '../components/GuidedSandboxHUD';
+import type { SandboxMission } from '../components/GuidedSandboxHUD';
 import { LivePresentationScoringModal } from '../components/LivePresentationScoringModal';
 import { TeamKickoffModal } from '../components/TeamKickoffModal';
 import { Smartphone, Edit3, Presentation } from 'lucide-react';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
 import { EditableModuleSlot } from '../components/EditableModuleSlot';
-import { LayoutEditBar } from '../components/LayoutEditBar';
+import { getModuleTab, getModuleByKey } from '../utils/moduleRegistry';
 import {
   getShortcutsEnabled,
   setShortcutsEnabled as saveShortcutsEnabled,
@@ -106,6 +106,8 @@ import {
   DEFAULT_KEYBOARD_SHORTCUTS
 } from '../utils/keyboardShortcuts';
 import { downloadStudentReportPDF } from '../utils/pdfReport';
+import { QuickLookHUD, type QuickLookPayload } from '../components/QuickLookHUD';
+import { calculateGroupReport } from '../utils/grouping';
 
 
 const getPraiseTagInfo = (tagText: string) => {
@@ -874,7 +876,366 @@ export const AdminDashboard: React.FC = () => {
     setFeatureToggles(updated);
     saveFeatureToggles(updated);
     syncWorkspaceSettingsToCloud({ featureToggles: updated });
+
+    // Fluid visual feedback: highlight the module when restored or toggled
+    setTimeout(() => {
+      const el = document.querySelector(`[data-module-key="${key}"], #module-slot-${key}`) as HTMLElement | null;
+      if (el) {
+        document.querySelectorAll('.module-spotlight-highlight').forEach(n => n.classList.remove('module-spotlight-highlight'));
+        void el.offsetWidth;
+        el.classList.add('module-spotlight-highlight');
+        setTimeout(() => el?.classList.remove('module-spotlight-highlight'), 2600);
+      }
+    }, 50);
   };
+
+  // Mouse Pointer Placement Hover Tracking & Layout History
+  const mousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const moduleLayoutUndoStackRef = useRef<Array<{ moduleKey: keyof FeatureToggles; title: string }>>([]);
+  const moduleLayoutRedoStackRef = useRef<Array<{ moduleKey: keyof FeatureToggles; title: string }>>([]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      mousePosRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  const handleHoverDismissModule = () => {
+    const el = document.elementFromPoint(mousePosRef.current.x, mousePosRef.current.y);
+    if (!el) {
+      addToast('No module found under mouse cursor to hide', 'warning');
+      return;
+    }
+    const slot = el.closest('[data-module-key]') as HTMLElement | null;
+    if (!slot) {
+      addToast('Hover over any module card or tool and press Alt+D to hide it', 'info');
+      return;
+    }
+    const key = slot.getAttribute('data-module-key') as keyof FeatureToggles | null;
+    if (!key) return;
+
+    const meta = getModuleByKey(key);
+    const title = meta?.title || String(key);
+
+    moduleLayoutUndoStackRef.current.push({
+      moduleKey: key,
+      title
+    });
+    moduleLayoutRedoStackRef.current = [];
+
+    handleToggleModule(key, false);
+    addToast(`Hidden: "${title}" • Press Ctrl+Z to undo`, 'info');
+  };
+
+  const handleUndoDismissModule = () => {
+    const last = moduleLayoutUndoStackRef.current.pop();
+    if (!last) return;
+    moduleLayoutRedoStackRef.current.push(last);
+    handleToggleModule(last.moduleKey, true);
+    addToast(`Restored: "${last.title}"`, 'success');
+  };
+
+  const handleRedoDismissModule = () => {
+    const last = moduleLayoutRedoStackRef.current.pop();
+    if (!last) return;
+    moduleLayoutUndoStackRef.current.push(last);
+    handleToggleModule(last.moduleKey, false);
+    addToast(`Re-hidden: "${last.title}"`, 'info');
+  };
+
+  // Quick Look State (Spacebar Hover Inspect)
+  const [quickLookPayload, setQuickLookPayload] = useState<QuickLookPayload | null>(null);
+  const [quickLookPos, setQuickLookPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isSpaceQuickLookActiveRef = useRef<boolean>(false);
+
+  const triggerQuickLookInspect = () => {
+    const x = mousePosRef.current.x;
+    const y = mousePosRef.current.y;
+    const el = document.elementFromPoint(x, y);
+    if (!el) return;
+
+    // 1. Student / Teammate Element
+    const studentEl = el.closest('[data-student-id]') as HTMLElement | null;
+    if (studentEl) {
+      const studentId = studentEl.getAttribute('data-student-id');
+      const student = activeClass?.students.find(s => s.id === studentId) ||
+                      stagedAutoGroups?.find(s => s.id === studentId);
+      if (student) {
+        setQuickLookPos({ x, y });
+        setQuickLookPayload({ type: 'student', student });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      }
+    }
+
+    // 2. Team / Group Element
+    const groupEl = el.closest('[data-group-name]') as HTMLElement | null;
+    if (groupEl) {
+      const groupName = groupEl.getAttribute('data-group-name');
+      if (groupName) {
+        const pool = (stagedAutoGroups && stagedAutoGroups.some(s => s.groupName === groupName))
+          ? stagedAutoGroups
+          : (activeClass?.students || []);
+        const groupStudents = pool.filter(s => s.groupName === groupName);
+        const report = calculateGroupReport(groupName, groupStudents, 3.5);
+        setQuickLookPos({ x, y });
+        setQuickLookPayload({ type: 'team', team: report });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      }
+    }
+
+    // 3. Module Slot
+    const moduleEl = el.closest('[data-module-key]') as HTMLElement | null;
+    if (moduleEl) {
+      const moduleKey = moduleEl.getAttribute('data-module-key') as keyof FeatureToggles | null;
+      if (moduleKey) {
+        const mod = getModuleByKey(moduleKey);
+        if (mod) {
+          setQuickLookPos({ x, y });
+          setQuickLookPayload({ type: 'module', module: mod });
+          isSpaceQuickLookActiveRef.current = true;
+          return;
+        }
+      }
+    }
+
+    // 4. Action Button / Tool with Bespoke Semantic Context
+    const btnEl = el.closest('button, a.btn, [role="button"]') as HTMLElement | null;
+    if (btnEl) {
+      const rawText = (btnEl.innerText || btnEl.getAttribute('aria-label') || btnEl.getAttribute('title') || '').trim();
+      const titleAttr = btnEl.getAttribute('title') || '';
+      const lower = (rawText + ' ' + titleAttr).toLowerCase();
+
+      let richLabel = rawText.slice(0, 45) || 'Action Tool';
+      let richDesc = '';
+      let shortcutHint = '';
+
+      if (lower.includes('reshuffle') || lower.includes('shuffle')) {
+        richLabel = 'Reshuffle Teams (Simulated Annealing)';
+        richDesc = 'Executes combinatorial simulated annealing to balance student teams across home/host universities, nationality mixing, and gender parity.';
+        shortcutHint = 'AutoGroup';
+      } else if (lower.includes('apply') && (lower.includes('group') || lower.includes('team'))) {
+        richLabel = 'Apply & Synchronize Teams';
+        richDesc = 'Commits the current balanced team configuration into the classroom roster, locking memberships for downstream peer evaluation.';
+        shortcutHint = 'Roster Sync';
+      } else if (lower.includes('charter')) {
+        richLabel = 'Export Team Charters';
+        richDesc = 'Generates structured team agreement documents establishing group norms, member roles, and communication rules.';
+        shortcutHint = 'Agreements';
+      } else if (lower.includes('autogroup')) {
+        richLabel = 'AutoGroup Diversity Studio';
+        richDesc = 'Opens the algorithmic group formation workspace to configure target team sizes, rule weights, and layout views.';
+        shortcutHint = 'Optimizer';
+      } else if (lower.includes('export') || lower.includes('download')) {
+        richLabel = 'Export Data Spreadsheet';
+        richDesc = 'Generates accredited spreadsheet records (.xlsx / .csv) containing cohort placements, diversity ratings, or calibrated marks.';
+        shortcutHint = 'Export';
+      } else if (lower.includes('import')) {
+        richLabel = 'Ingest Class Roster';
+        richDesc = 'Parses student cohort files from Canvas, Blackboard, or Excel with automatic character encoding and header detection.';
+        shortcutHint = 'Import';
+      } else if (lower.includes('add student')) {
+        richLabel = 'Enroll Student';
+        richDesc = 'Opens manual registration dialog to add individual students to the active classroom cohort.';
+        shortcutHint = 'Roster';
+      } else if (lower.includes('demo') || lower.includes('100')) {
+        richLabel = 'Load 100 Demo Cohort';
+        richDesc = 'Populates 100 realistic international university students to test multi-attribute group balancing and WebPA analytics.';
+        shortcutHint = 'Sample Data';
+      } else if (lower.includes('clear')) {
+        richLabel = 'Reset Classroom Roster';
+        richDesc = 'Purges student records and group assignments to cleanly prepare the workspace for a fresh academic semester.';
+        shortcutHint = 'Reset';
+      } else if (lower.includes('projector')) {
+        richLabel = 'Auditorium Projector Presentation';
+        richDesc = 'Expands the dashboard into a distraction-free, maximized fullscreen view optimized for classroom presentation screens.';
+        shortcutHint = 'Fullscreen';
+      } else if (lower.includes('settings')) {
+        richLabel = 'Workspace Configuration';
+        richDesc = 'Configure grading algorithms, theme appearance, cloud synchronization, and modular feature visibility.';
+        shortcutHint = 'Preferences';
+      } else if (lower.includes('customize')) {
+        richLabel = 'Modular Component Catalog';
+        richDesc = 'Toggle individual cards, buttons, charts, and metrics to customize the dashboard interface for your syllabus.';
+        shortcutHint = 'Modules';
+      } else if (lower.includes('guide') || lower.includes('tour')) {
+        richLabel = 'Pedagogical Guidance Center';
+        richDesc = 'Explore step-by-step interactive walkthroughs, Loughborough WebPA methodology, and accreditation rubrics.';
+        shortcutHint = 'Help';
+      } else if (lower.includes('send') || lower.includes('transfer')) {
+        richLabel = 'Direct Student Transfer';
+        richDesc = 'Transfers this student directly to another group. Click this icon, then click any destination team card or column.';
+        shortcutHint = '2-Click Move';
+      } else if (lower.includes('swap')) {
+        richLabel = 'Instant 2-Click Teammate Swap';
+        richDesc = 'Swaps this student with any teammate in another group. Click this button, then click the target student to trade.';
+        shortcutHint = '2-Click Swap';
+      } else if (lower.includes('lock') || lower.includes('pin')) {
+        richLabel = 'Freeze Team / Member Assignment';
+        richDesc = 'Locks this student or entire team in place so algorithmic reshuffling will not modify their membership.';
+        shortcutHint = 'Lock';
+      } else if (titleAttr) {
+        richDesc = titleAttr;
+      } else {
+        const closestSection = btnEl.closest('.accordion-item, .card, section');
+        const sectionTitle = closestSection?.querySelector('h2, h3, h4')?.textContent?.trim() || 'Classroom Console';
+        richDesc = `Controls ${richLabel} within the ${sectionTitle} workspace to adjust active cohort configurations.`;
+      }
+
+      setQuickLookPos({ x, y });
+      setQuickLookPayload({ 
+        type: 'action', 
+        label: richLabel, 
+        description: richDesc,
+        shortcut: shortcutHint || undefined
+      });
+      isSpaceQuickLookActiveRef.current = true;
+      return;
+    }
+
+    // 5. Intelligent Section & Card Fallback (Zero Generic Boilerplate)
+    const cardEl = el.closest('.accordion-item, .card, .section-container, table, tr, th, td') as HTMLElement | null;
+    if (cardEl) {
+      const heading = cardEl.querySelector('h1, h2, h3, h4, h5')?.textContent?.trim() || '';
+      const text = cardEl.textContent?.trim().slice(0, 120) || '';
+      
+      let richTitle = heading || text.slice(0, 36) || 'Workspace Component';
+      let richSubtitle = 'Classroom Activity';
+      let richDetails = '';
+
+      if (cardEl.closest('[data-module-key="showAutoGroupStudio"]') || cardEl.closest('.accordion-item:has(.autogroup-kanban-board)')) {
+        richTitle = heading || 'AutoGroup Optimization Workspace';
+        richSubtitle = 'Multi-Attribute Algorithmic Group Balancer';
+        richDetails = 'Balancing student teams across university origin dispersion, nationality mixing, gender parity, and language proficiency.';
+      } else if (text.toLowerCase().includes('section 1') || text.toLowerCase().includes('students & teams') || cardEl.closest('[id*="section-1"]')) {
+        richTitle = 'Phase 1: Students & Groups Hub';
+        richSubtitle = 'Roster Ingestion & Team Formation';
+        richDetails = 'Central directory tracking enrolled participants, self-enrollment QR codes, LMS CSV file imports, and automated team balancing.';
+      } else if (text.toLowerCase().includes('section 2') || text.toLowerCase().includes('grading rubric') || cardEl.closest('[id*="section-2"]')) {
+        richTitle = 'Phase 2: Rubric & Form Hub';
+        richSubtitle = 'Assessment Criteria & Evaluation Settings';
+        richDetails = 'Pedagogical evaluation dimensions, criterion weight balancing, submission deadline enforcement, and student mobile preview.';
+      } else if (text.toLowerCase().includes('section 3') || text.toLowerCase().includes('results') || cardEl.closest('[id*="section-3"]')) {
+        richTitle = 'Phase 3: Grades & WebPA Hub';
+        richSubtitle = 'Loughborough WebPA Algorithm & LMS Sync';
+        richDetails = 'Calibrated individual student marks, competency spider radars, Johari self-awareness matrices, and Canvas/Moodle LMS exports.';
+      } else if (cardEl.tagName === 'TH' || cardEl.tagName === 'TD') {
+        richTitle = heading || `Roster Metric: ${text.slice(0, 28)}`;
+        richSubtitle = 'Cohort Data Record';
+        richDetails = 'Live classroom metric tracking student submissions, team diversity percentages, or peer evaluation marks.';
+      } else {
+        richTitle = heading || 'Classroom Workspace Console';
+        richSubtitle = 'PeerLens Collaborative Assessment Platform';
+        richDetails = `Active classroom management console providing real-time data tracking and student evaluation controls.`;
+      }
+
+      setQuickLookPos({ x, y });
+      setQuickLookPayload({
+        type: 'generic',
+        title: richTitle,
+        subtitle: richSubtitle,
+        details: richDetails
+      });
+      isSpaceQuickLookActiveRef.current = true;
+    }
+  };
+
+  const dismissQuickLook = () => {
+    isSpaceQuickLookActiveRef.current = false;
+    setQuickLookPayload(null);
+  };
+
+  useEffect(() => {
+    // Unconditionally prevent browser Spacebar page scrolling when not editing text
+    const preventSpaceScroll = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.key === ' ' || e.keyCode === 32) {
+        const activeEl = document.activeElement;
+        const isInput = activeEl instanceof HTMLInputElement || 
+                        activeEl instanceof HTMLTextAreaElement || 
+                        activeEl instanceof HTMLSelectElement ||
+                        activeEl?.getAttribute('contenteditable') === 'true' ||
+                        (activeEl as HTMLElement)?.isContentEditable;
+        if (!isInput) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.key === ' ' || e.keyCode === 32) {
+        dismissQuickLook();
+      }
+    };
+    const handleBlur = () => {
+      dismissQuickLook();
+    };
+    window.addEventListener('keydown', preventSpaceScroll, { capture: true, passive: false });
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', preventSpaceScroll, { capture: true });
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleSpotlight = (e: any) => {
+      const key = e.detail?.moduleKey;
+      if (!key) return;
+      const tab = getModuleTab(key);
+      const didSwitch = !!(tab && tab !== activeTab);
+      if (didSwitch && tab) {
+        setActiveTab(tab);
+      }
+      try {
+        window.dispatchEvent(new CustomEvent('peerlens_expand_all'));
+      } catch (err) {}
+
+      setTimeout(() => {
+        let el = document.querySelector(`[data-module-key="${key}"], #module-slot-${key}`) as HTMLElement | null;
+        if (el) {
+          let renderEl = el;
+          if (renderEl.style.display === 'contents' && renderEl.firstElementChild) {
+            renderEl = renderEl.firstElementChild as HTMLElement;
+          }
+
+          const headerOffset = 70;
+          const studioEl = document.querySelector('.now-bar-stack-container, .now-bar-layout-pill') as HTMLElement | null;
+          const studioRect = studioEl?.getBoundingClientRect();
+          const studioTop = (studioRect && studioRect.top > 100 && studioRect.top < window.innerHeight)
+            ? studioRect.top
+            : window.innerHeight;
+          const visibleHeight = Math.max(160, studioTop - headerOffset);
+          const elRect = renderEl.getBoundingClientRect();
+          const currentScrollY = window.scrollY || window.pageYOffset;
+
+          let targetScrollY: number;
+          if (elRect.height >= visibleHeight) {
+            targetScrollY = currentScrollY + elRect.top - headerOffset - 16;
+          } else {
+            const centerInVisibleArea = headerOffset + (visibleHeight / 2);
+            targetScrollY = currentScrollY + elRect.top - centerInVisibleArea + (elRect.height / 2);
+          }
+
+          window.scrollTo({
+            top: Math.max(0, targetScrollY),
+            behavior: 'smooth'
+          });
+
+          document.querySelectorAll('.module-spotlight-highlight').forEach(n => n.classList.remove('module-spotlight-highlight'));
+          void renderEl.offsetWidth;
+          renderEl.classList.add('module-spotlight-highlight');
+          setTimeout(() => renderEl?.classList.remove('module-spotlight-highlight'), 2400);
+        }
+      }, didSwitch ? 130 : 40);
+    };
+    window.addEventListener('peerlens_spotlight_module', handleSpotlight);
+    return () => window.removeEventListener('peerlens_spotlight_module', handleSpotlight);
+  }, [activeTab]);
 
   useEffect(() => {
     const handleShortcutsChanged = (e: any) => {
@@ -1521,11 +1882,10 @@ export const AdminDashboard: React.FC = () => {
         return;
       }
 
-      // 2. Alt + E or Alt + L to toggle Interactive Layout Edit Mode
+      // 2. Alt + E to toggle Interactive Layout Edit Mode
       // Fully platform-independent with e.code check and immediate preventDefault() to prevent browser menu activation
       const isAltEditMode = e.altKey && !e.ctrlKey && !e.metaKey && (
-        e.key.toLowerCase() === 'e' || e.code === 'KeyE' ||
-        e.key.toLowerCase() === 'l' || e.code === 'KeyL'
+        e.key.toLowerCase() === 'e' || e.code === 'KeyE'
       );
 
       if (isAltEditMode) {
@@ -1543,6 +1903,56 @@ export const AdminDashboard: React.FC = () => {
       }
 
       if (isInputFocused) return;
+
+      // Mouse Pointer Placement Hover Shortcuts
+      // 1. Alt + D: Hover & Dismiss / Hide Module
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key.toLowerCase() === 'd' || e.code === 'KeyD')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleHoverDismissModule();
+        return;
+      }
+
+      // 2. Ctrl + Z: Undo Last Hidden Module (if any in stack)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key.toLowerCase() === 'z' || e.code === 'KeyZ')) {
+        if (moduleLayoutUndoStackRef.current.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleUndoDismissModule();
+          return;
+        }
+      }
+
+      // 3. Ctrl + Y or Ctrl + Shift + Z: Redo Hidden Module (if any in stack)
+      if (
+        ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key.toLowerCase() === 'y' || e.code === 'KeyY')) ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key.toLowerCase() === 'z' || e.code === 'KeyZ'))
+      ) {
+        if (moduleLayoutRedoStackRef.current.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleRedoDismissModule();
+          return;
+        }
+      }
+
+      // 4. Spacebar: Hold to Hover-Quick-Inspect ("Quick Look")
+      if (e.code === 'Space' || e.key === ' ' || e.keyCode === 32) {
+        const activeEl = document.activeElement;
+        const isInput = activeEl instanceof HTMLInputElement || 
+                        activeEl instanceof HTMLTextAreaElement || 
+                        activeEl instanceof HTMLSelectElement ||
+                        activeEl?.getAttribute('contenteditable') === 'true' ||
+                        (activeEl as HTMLElement)?.isContentEditable;
+        if (!isInput) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!isSpaceQuickLookActiveRef.current) {
+            triggerQuickLookInspect();
+          }
+          return;
+        }
+      }
 
       // / or Ctrl + F to focus Classroom Roster Power Searchbar
       if (e.key === '/' || (e.ctrlKey && e.key.toLowerCase() === 'f')) {
@@ -2730,6 +3140,19 @@ export const AdminDashboard: React.FC = () => {
         }
         break;
 
+      case 'swap_teammate':
+        window.dispatchEvent(new CustomEvent('peerlens_toggle_swap_mode'));
+        break;
+      case 'toggle_unassigned_dock':
+        window.dispatchEvent(new CustomEvent('peerlens_toggle_unassigned_dock'));
+        break;
+      case 'toggle_quick_targets':
+        window.dispatchEvent(new CustomEvent('peerlens_toggle_quick_targets'));
+        break;
+      case 'reshuffle_teams':
+        window.dispatchEvent(new CustomEvent('peerlens_reshuffle_teams'));
+        break;
+
       // --- Rubric & Scales ---
       case 'add_criterion':
         setActiveTab('grading');
@@ -2869,6 +3292,9 @@ export const AdminDashboard: React.FC = () => {
       case 'collapse_all_sections':
         window.dispatchEvent(new CustomEvent('peerlens_collapse_all'));
         addToast('Collapsed all foldable dashboard sections', 'info');
+        break;
+      case 'hover_dismiss_module':
+        handleHoverDismissModule();
         break;
 
       default:
@@ -3586,7 +4012,9 @@ export const AdminDashboard: React.FC = () => {
               <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
                 <User size={17} className="text-primary" /> Admin Workspace & Account Center
               </h3>
-              <button className="btn-close" onClick={() => setIsMobileProfileModalOpen(false)} title="Close">×</button>
+              <button className="btn-close" onClick={() => setIsMobileProfileModalOpen(false)} title="Close" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={16} />
+              </button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
@@ -3680,18 +4108,7 @@ export const AdminDashboard: React.FC = () => {
         document.body
       )}
 
-      {/* HANDS-ON GUIDED SANDBOX MISSION HUD */}
-      {isSandboxActive && (
-        <GuidedSandboxHUD
-          currentMissionIndex={sandboxMissionIndex}
-          onSelectMission={(idx) => setSandboxMissionIndex(idx)}
-          onAutoCompleteStep={handleAutoCompleteSandboxStep}
-          onExitAndReset={handleExitSandbox}
-          onKeepData={handleKeepSandboxData}
-          missions={sandboxMissions}
-          onNavigateTab={(tab) => setActiveTab(tab)}
-        />
-      )}
+      {/* HANDS-ON GUIDED SANDBOX MISSION HUD (Now integrated into the bottom Now Bar Stack) */}
 
       {/* INSTRUCTOR ONBOARDING & SETUP TRACKER */}
       {!isSandboxActive && showOnboardingChecklist && (
@@ -3824,7 +4241,7 @@ export const AdminDashboard: React.FC = () => {
                         </div>
 
                         <div>
-                          <h3 className="hub-card-title">Enrollment &amp; Teams</h3>
+                          <h3 className="hub-card-title">Students &amp; Teams</h3>
                           <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
                             {isHubOptionsActive
                               ? "Manage enrolled students, configure diverse student cohorts, generate QR join links, and organize peer teams."
@@ -3899,9 +4316,9 @@ export const AdminDashboard: React.FC = () => {
                                   e.stopPropagation();
                                   setIsAutoGroupModalOpen(true);
                                 }}
-                                title="Launch Team Generator Studio"
+                                title="Auto-Group Teams"
                               >
-                                <Users size={11} /> <span>Team Studio</span>
+                                <Users size={11} /> <span>Auto-Group</span>
                               </button>
                               <button
                                 type="button"
@@ -3910,9 +4327,9 @@ export const AdminDashboard: React.FC = () => {
                                   e.stopPropagation();
                                   handleOpenTeamKickoff('roles_config');
                                 }}
-                                title="Launch Team Collaboration Agreements, Role Allocator & Icebreakers"
+                                title="Team Roles & Icebreaker"
                               >
-                                <Sparkles size={11} /> <span>Team Agreements</span>
+                                <Sparkles size={11} /> <span>Team Roles</span>
                               </button>
                             </div>
                           </EditableModuleSlot>
@@ -3928,7 +4345,7 @@ export const AdminDashboard: React.FC = () => {
                             setActiveTab('roster');
                           }}
                         >
-                          <span>Enter Enrollment &amp; Teams</span>
+                          <span>Go to Students &amp; Teams</span>
                           <ArrowRight size={14} className="hub-cta-arrow" />
                         </button>
                       </div>
@@ -3951,7 +4368,7 @@ export const AdminDashboard: React.FC = () => {
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => e.key === 'Enter' && setActiveTab('grading')}
-                      title="Enter Section 2: Review System"
+                      title="Go to Step 2: Grading Rubric"
                     >
                       <div className="hub-card-top">
                         <div className="hub-card-header-row">
@@ -3964,7 +4381,7 @@ export const AdminDashboard: React.FC = () => {
                         </div>
 
                         <div>
-                          <h3 className="hub-card-title">Review System</h3>
+                          <h3 className="hub-card-title">Grading Rubric</h3>
                           <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
                             {isHubOptionsActive
                               ? "Design multi-criteria evaluation rubrics, define performance anchors, adjust weights, and apply templates."
@@ -4057,7 +4474,7 @@ export const AdminDashboard: React.FC = () => {
                             setActiveTab('grading');
                           }}
                         >
-                          <span>Enter Review System</span>
+                          <span>Go to Grading Rubric</span>
                           <ArrowRight size={14} className="hub-cta-arrow" />
                         </button>
                       </div>
@@ -4080,7 +4497,7 @@ export const AdminDashboard: React.FC = () => {
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => e.key === 'Enter' && setActiveTab('results')}
-                      title="Enter Section 3: Grading & Performance Analytics"
+                      title="Go to Step 3: Grades &amp; Reports"
                     >
                       <div className="hub-card-top">
                         <div className="hub-card-header-row">
@@ -4093,11 +4510,11 @@ export const AdminDashboard: React.FC = () => {
                         </div>
 
                         <div>
-                          <h3 className="hub-card-title">Grading &amp; Performance Analytics</h3>
+                          <h3 className="hub-card-title">Grades &amp; Reports</h3>
                           <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
                             {isHubOptionsActive
                               ? "Real-time calculation matrix, peer perception radar benchmarks, PDF report cards, and gradebook exports."
-                              : "Real-time calculation matrix, peer perception radar benchmarks, PDF report cards, and gradebook exports. Analyze peer evaluation distributions with WebPA factor calibration, visualize Johari Window consensus, and export accredited grade summaries to Excel."}
+                              : "Real-time calculation matrix, skills radar chart, student report cards, and LMS gradebook exports. Adjust grades based on peer reviews, compare self vs. peer ratings, and export directly to Excel or Canvas."}
                           </p>
                         </div>
 
@@ -4146,7 +4563,7 @@ export const AdminDashboard: React.FC = () => {
                                   e.stopPropagation();
                                   setActiveTab('results');
                                 }}
-                                title="Open WebPA Gradebook Matrix"
+                                title="Open Class Gradebook Table"
                               >
                                 <BarChart2 size={11} /> <span>Matrix</span>
                               </button>
@@ -4157,7 +4574,7 @@ export const AdminDashboard: React.FC = () => {
                                   e.stopPropagation();
                                   setActiveTab('results');
                                 }}
-                                title="Open Johari Window Perception Radar"
+                                title="Open Skills Radar &amp; Self vs. Peer Comparison"
                               >
                                 <Activity size={11} /> <span>Radar</span>
                               </button>
@@ -4190,7 +4607,7 @@ export const AdminDashboard: React.FC = () => {
                             setActiveTab('results');
                           }}
                         >
-                          <span>Enter Grading &amp; Analytics</span>
+                          <span>Go to Grades &amp; Reports</span>
                           <ArrowRight size={14} className="hub-cta-arrow" />
                         </button>
                       </div>
@@ -4246,8 +4663,8 @@ export const AdminDashboard: React.FC = () => {
                     <div>
                       <div className="card-header" style={{ marginBottom: '0.35rem' }}>
                         <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
-                          <QrCode size={18} className="text-primary" /> Self-Enrollment
-                          <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Self-Enrollment QR Guide" />
+                          <QrCode size={18} className="text-primary" /> Student Join Code &amp; Link
+                          <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Student Join Code &amp; Link Guide" />
                         </h3>
                         <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
                           QR &amp; Link
@@ -4257,10 +4674,10 @@ export const AdminDashboard: React.FC = () => {
                         {(() => {
                           const hasQr = isEditMode || featureToggles.showSelfEnrollmentQr !== false;
                           const hasBtn = isEditMode || featureToggles.showSelfEnrollmentPresentationBtn !== false;
-                          if (hasQr && hasBtn) return 'Share class QR code, direct join link, or launch live presentation mode for student self-registration.';
+                          if (hasQr && hasBtn) return 'Generates a QR code and URL for students to register themselves.';
                           if (hasQr) return 'Share class QR code or direct join link with students for mobile self-registration.';
                           if (hasBtn) return 'Launch live full-screen presentation mode for classroom student self-registration.';
-                          return 'Student self-registration portal and direct onboarding link.';
+                          return 'Generates a QR code and URL for students to register themselves.';
                         })()}
                       </p>
                     </div>
@@ -4435,9 +4852,9 @@ export const AdminDashboard: React.FC = () => {
                               addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
                             }}
                             style={{ fontSize: '0.8rem', gap: '0.35rem', justifyContent: 'center', padding: '0.45rem', fontWeight: 600, width: '100%', minHeight: '34px' }}
-                            title="Populate classroom with a diverse dataset of 100 students to test app features"
+                            title="Populate classroom with 100 sample students to test the software"
                           >
-                            <Sparkles size={13} /> 100 Demo Sample
+                            <Sparkles size={13} /> Load Demo Students
                           </button>
                         </EditableModuleSlot>
                       )}
@@ -4699,14 +5116,14 @@ export const AdminDashboard: React.FC = () => {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                          Team Collaboration Agreement &amp; Role Studio
+                          Team Roles &amp; Icebreaker
                         </h3>
                         <span className="badge badge-primary" style={{ fontSize: '0.66rem', padding: '0.12rem 0.5rem' }}>
-                          Pedagogical Alignment
+                          Roles &amp; Norms
                         </span>
                       </div>
                       <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                        Prevent free-riding and align team expectations before reviews begin. Define sprint responsibilities, set working agreements, and run 5-minute kickoff icebreakers.
+                        Assigns student roles (Lead, Scribe, Presenter) and sets group agreements.
                       </p>
                     </div>
                   </div>
@@ -5446,10 +5863,10 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                   <div>
                     <strong style={{ color: '#b45309', fontSize: '0.88rem', display: 'block' }}>
-                      {duplicateFlagsMap.size} Suspected Repeating / Duplicate Registrations Detected
+                      Duplicate Student Alert ({duplicateFlagsMap.size} detected)
                     </strong>
                     <span style={{ fontSize: '0.75rem', color: '#92400e' }}>
-                      Found potential duplicate entries with identical full names, reversed name orders, or repeating emails.
+                      Flags identical student names, IDs, or emails in the roster.
                     </span>
                   </div>
                 </div>
@@ -5880,7 +6297,7 @@ export const AdminDashboard: React.FC = () => {
                       const isSelected = selectedStudentIds.has(s.id);
 
                       return (
-                        <tr key={s.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : undefined }}>
+                        <tr key={s.id} data-student-id={s.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : undefined }}>
                           {/* Checkbox */}
                           <td style={{ textAlign: 'center' }}>
                             <input
@@ -6512,10 +6929,10 @@ export const AdminDashboard: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                     <div style={{ maxWidth: '520px' }}>
                       <h4 style={{ fontWeight: 700, color: 'var(--primary)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Sliders size={15} /> Final Grade Scaling Target Scale
+                        <Sliders size={15} /> Grade Scale
                       </h4>
                       <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
-                        Choose the target scale for final student grade calculations. Averages scale automatically (e.g. Out of 20, 100, or Sum of Rubrics).
+                        Sets whether final grades are out of 20, 100, or a custom maximum.
                       </p>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '240px', flexWrap: 'wrap' }}>
@@ -6571,10 +6988,10 @@ export const AdminDashboard: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                     <div style={{ maxWidth: '520px' }}>
                       <h4 style={{ fontWeight: 700, color: 'var(--accent-amber)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Clock size={15} /> Submission Deadline &amp; Countdown Timer
+                        <Clock size={15} /> Submission Deadline
                       </h4>
                       <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
-                        Set an optional closing deadline. Displays a live countdown timer in the Projector View and Student Portal, and locks evaluations when time expires.
+                        Sets the date/time when peer evaluation closes.
                       </p>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -6646,13 +7063,13 @@ export const AdminDashboard: React.FC = () => {
                       <div>
                         <div style={{ fontSize: '0.84rem', fontWeight: 800, color: isBalanced ? 'var(--accent-teal)' : 'var(--accent-amber)' }}>
                           {isBalanced
-                            ? `Total Weightage: 100% (Balanced & Valid)`
-                            : `Total Weightage: ${totalWeight}% (${totalWeight > 100 ? `${totalWeight - 100}% over 100%` : `${100 - totalWeight}% remaining`})`}
+                            ? `Weight Total: 100% (Balanced)`
+                            : `Weight Total: ${totalWeight}% (${totalWeight > 100 ? `${totalWeight - 100}% over 100%` : `${100 - totalWeight}% remaining`})`}
                         </div>
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
                           {isBalanced
-                            ? `All criteria weights add up to exactly 100%. Scores will calculate weighted contribution averages correctly.`
-                            : `Individual criteria weights must sum up to exactly 100% for proper weighted grading calculations.`}
+                            ? `Shows whether your criteria percentages add up to 100%. (Currently balanced)`
+                            : `Shows whether your criteria percentages add up to 100%. (Criteria must add up to 100%)`}
                         </div>
                       </div>
                     </div>
@@ -6794,10 +7211,10 @@ export const AdminDashboard: React.FC = () => {
               >
                 <div data-tour="eval-simulator-card" style={{ marginTop: '2rem', backgroundColor: 'var(--primary-light)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--primary)' }}>
                   <h4 style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <Sparkles size={18} /> Student Interface Experience Preview
+                    <Sparkles size={18} /> Preview Student View
                   </h4>
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-                    Students see an engaging, professional tier evaluation selector. Selecting a contribution tier snaps the score, which can then be fine-tuned:
+                    Test-drives what students see when filling out peer reviews on their phones/laptops:
                   </p>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -7010,14 +7427,14 @@ export const AdminDashboard: React.FC = () => {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                          Live Presentation Day Scoring Cockpit
+                          Live Presentation Scoring
                         </h3>
                         <span className="badge badge-teal" style={{ fontSize: '0.68rem' }}>
-                          Mobile QR Live Scoring
+                          Real-Time Scoring
                         </span>
                       </div>
                       <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                        Display interactive QR code on projector for real-time audience voting, presentation countdown timer, and dynamic leaderboard rankings.
+                        Lets audience and professors score live group presentations in real time.
                       </p>
                     </div>
                   </div>
@@ -7145,11 +7562,11 @@ export const AdminDashboard: React.FC = () => {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                           <div>
                             <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.98rem', fontWeight: 800 }}>
-                              <Activity size={17} className="text-primary" /> Competency Spider Radar
-                              <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Competency Radar Guide" />
+                              <Activity size={17} className="text-primary" /> Skills Radar Chart
+                              <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Skills Radar Chart Guide" />
                             </h3>
                             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
-                              Class rubric benchmarks vs individual team averages.
+                              Visual chart comparing team strengths across all rubric criteria.
                             </p>
                           </div>
 
@@ -7274,12 +7691,12 @@ export const AdminDashboard: React.FC = () => {
                             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
                               <div>
                                 <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                                  <UserCheck size={17} className="text-teal" /> Self-Awareness &amp; Johari Alignment
-                                  <FeatureInfoButton featureId="johari-window" size="sm" tooltipText="Johari Alignment Guide" />
+                                  <UserCheck size={17} className="text-teal" /> Self vs. Peer Rating Comparison
+                                  <FeatureInfoButton featureId="johari-window" size="sm" tooltipText="Self vs. Peer Rating Comparison Guide" />
                                   <ContextHelpPopover topicKey="johari" />
                                 </h3>
                                 <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
-                                  Self-evaluation alignment vs anonymous peer consensus (±7.5% threshold).
+                                  Shows if students rate themselves much higher or lower than teammates rated them.
                                 </p>
                               </div>
 
@@ -7332,11 +7749,11 @@ export const AdminDashboard: React.FC = () => {
                             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
                               <div>
                                 <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                                  <MessageSquare size={17} className="text-primary" /> Qualitative Feedback Themes
-                                  <FeatureInfoButton featureId="feedback-sentiment" size="sm" tooltipText="Feedback Themes Guide" />
+                                  <MessageSquare size={17} className="text-primary" /> Written Feedback Summary
+                                  <FeatureInfoButton featureId="feedback-sentiment" size="sm" tooltipText="Written Feedback Summary Guide" />
                                 </h3>
                                 <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
-                                  Automated keyword extraction across all written teammate comments.
+                                  Summarizes common themes and praise words written by teammates.
                                 </p>
                               </div>
 
@@ -7389,10 +7806,10 @@ export const AdminDashboard: React.FC = () => {
             {(isEditMode || featureToggles.showWebPACalibration || featureToggles.showAnomalyAudit || featureToggles.showMilestonesHistory) && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
 
-                {/* Card 4: WebPA Grade Calibration */}
+                {/* Card 4: Peer Score Adjustment */}
                 <EditableModuleSlot
                   moduleKey="showWebPACalibration"
-                  title="WebPA Grade Calibration"
+                  title="Peer Score Adjustment"
                   isVisible={featureToggles.showWebPACalibration}
                   isEditMode={isEditMode}
                   onToggle={handleToggleModule}
@@ -7400,12 +7817,12 @@ export const AdminDashboard: React.FC = () => {
                   <div className="card" data-tour="webpa-calibrator-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
                     <div>
                       <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                        <Sliders size={17} className="text-teal" /> WebPA Grade Calibration
-                        <FeatureInfoButton featureId="webpa-calibration" size="sm" tooltipText="WebPA Calibration & Fudge Weight Guide" />
+                        <Sliders size={17} className="text-teal" /> Peer Score Adjustment
+                        <FeatureInfoButton featureId="webpa-calibration" size="sm" tooltipText="Peer Score Adjustment Guide" />
                         <ContextHelpPopover topicKey="webpa" />
                       </h3>
                       <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
-                        Compare peer vs team averages to calculate individual multipliers.
+                        Adjusts individual student grades up or down based on teammate reviews.
                       </p>
                     </div>
 
@@ -7491,7 +7908,7 @@ export const AdminDashboard: React.FC = () => {
                       {/* Fudge Weight Slider */}
                       <div className="form-group" style={{ margin: 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                          <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem' }}>Calibrator Fudge Weight</label>
+                          <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem' }}>Peer Review Impact (0–100%)</label>
                           <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>{Math.round(fudgeWeight * 100)}%</span>
                         </div>
                         <input
@@ -7514,7 +7931,7 @@ export const AdminDashboard: React.FC = () => {
                 {/* Card 5: Anomaly Conflict Audit */}
                 <EditableModuleSlot
                   moduleKey="showAnomalyAudit"
-                  title="Anomaly & Collusion Audit"
+                  title="Suspicious Ratings Alert"
                   isVisible={featureToggles.showAnomalyAudit}
                   isEditMode={isEditMode}
                   onToggle={handleToggleModule}
@@ -7522,11 +7939,11 @@ export const AdminDashboard: React.FC = () => {
                   <div className="card" data-tour="anomaly-audit-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
                     <div>
                       <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                        <ShieldCheck size={17} className="text-rose" /> Anomaly &amp; Collusion Audit
-                        <FeatureInfoButton featureId="anomaly-detection" size="sm" tooltipText="Anomaly Audit Guide" />
+                        <ShieldCheck size={17} className="text-rose" /> Suspicious Ratings Alert
+                        <FeatureInfoButton featureId="anomaly-detection" size="sm" tooltipText="Suspicious Ratings Guide" />
                       </h3>
                       <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
-                        Statistical auditing flags collusion, outlier ratings, and uniform grades.
+                        Detects students who trade high scores, grade randomly, or give uniform marks.
                       </p>
                     </div>
 
@@ -7570,11 +7987,11 @@ export const AdminDashboard: React.FC = () => {
                   <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
                     <div>
                       <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                        <RefreshCw size={17} className="text-indigo" /> Milestone &amp; Sprints History
-                        <FeatureInfoButton featureId="milestones-sprints" size="sm" tooltipText="Milestone History Guide" />
+                        <RefreshCw size={17} className="text-indigo" /> Past Review Rounds
+                        <FeatureInfoButton featureId="milestones-sprints" size="sm" tooltipText="Past Review Rounds Guide" />
                       </h3>
                       <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
-                        Archive evaluations into permanent records to freeze sprint marks.
+                        Archives past peer evaluations (e.g., Midterm Review, Final Review).
                       </p>
                     </div>
 
@@ -7627,7 +8044,7 @@ export const AdminDashboard: React.FC = () => {
           {/* LMS Gradebook Integration & Smart Export Formats */}
           <EditableModuleSlot
             moduleKey="showLmsExport"
-            title="LMS Gradebook Integration"
+            title="Export to Canvas / Blackboard / Moodle"
             isVisible={featureToggles.showLmsExport}
             isEditMode={isEditMode}
             onToggle={handleToggleModule}
@@ -7660,8 +8077,8 @@ export const AdminDashboard: React.FC = () => {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                     <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
-                      <GraduationCap size={22} className="text-teal" /> LMS Gradebook Integration &amp; Smart Export Formats
-                      <FeatureInfoButton featureId="lms-export" size="sm" tooltipText="LMS Gradebook Integration Guide" />
+                      <GraduationCap size={22} className="text-teal" /> Export to Canvas / Blackboard / Moodle
+                      <FeatureInfoButton featureId="lms-export" size="sm" tooltipText="LMS Gradebook Export Guide" />
                     </h3>
                     <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px' }}>
                       Smart LMS Sync
@@ -10605,7 +11022,7 @@ export const AdminDashboard: React.FC = () => {
               >
                 <Info size={14} style={{ flexShrink: 0 }} />
                 <span>Format Guide &amp; Column Requirements</span>
-                <span className={`format-guide-chevron ${showFormatGuide ? 'open' : ''}`}>▾</span>
+                <ChevronDown size={14} className={`format-guide-chevron ${showFormatGuide ? 'open' : ''}`} />
               </button>
 
               {showFormatGuide && (
@@ -11653,10 +12070,10 @@ export const AdminDashboard: React.FC = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
                       <div>
                         <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <Sliders size={18} className="text-teal" /> Who Rated Whom: Evaluation Audit Matrix
+                          <Sliders size={18} className="text-teal" /> Who Rated Whom Grid
                         </h3>
                         <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0', lineHeight: 1.4 }}>
-                          Select a specific rubric metric to inspect individual raw ratings. Rows represent **Reviewers** and columns represent **Recipients**.
+                          Breakdown table showing exactly who gave what score to whom. Rows represent Reviewers and columns represent Recipients.
                         </p>
                       </div>
                       <div className="hide-on-print" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -11822,7 +12239,7 @@ export const AdminDashboard: React.FC = () => {
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <MessageSquare size={20} className="text-indigo" /> Teammate Evaluation Audit Log
+                      <MessageSquare size={20} className="text-indigo" /> Student Comments Log
                     </h3>
 
                   {teamStudents.map(reviewer => {
@@ -12828,165 +13245,7 @@ export const AdminDashboard: React.FC = () => {
         }}
       />
 
-      {/* FLOATING QUICK ACTION PILL (STILL AT BOTTOM OF WINDOW) */}
-      {featureToggles.showQuickActionPill && (
-        <QuickActionPill
-          activeTab={activeTab}
-          onNavigateTab={(tab) => setActiveTab(tab)}
-          activeClass={activeClass}
-          classes={classes}
-          onSelectClass={(id) => selectClass(id)}
-          onDeleteClass={(id) => {
-            triggerConfirm(
-              'Delete Classroom Group',
-              `Are you sure you want to permanently delete the classroom "${activeClass.name}" and all of its student rosters, evaluations, and metrics? This action cannot be undone.`,
-              () => deleteClass(id),
-              'Delete Classroom',
-              'Cancel'
-            );
-          }}
-          onNewClass={() => setIsNewClassModalOpen(true)}
-          onOpenSearch={() => setIsCommandPaletteOpen(true)}
-          onOpenGuideCenter={(tab) => openGuideCenter(tab || 'system')}
-          onOpenProjector={() => setIsProjectorModalOpen(true)}
-          onOpenEmailDispatcher={() => setIsLinkDispatcherOpen(true)}
-          onOpenEvaluationControls={() => setIsEvaluationControlsModalOpen(true)}
-          onOpenSettings={(tab) => {
-            if (tab) setSettingsInitialTab(tab);
-            setIsSettingsModalOpen(true);
-          }}
-          onOpenProfile={() => setIsMobileProfileModalOpen(true)}
-          onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
-          onOpenTour={handleStartTour}
-          isCloudSynced={isCloudSynced}
-          activeAdminProfile={activeAdminProfile}
-          onToggleTheme={toggleThemeMode}
-          featureToggles={featureToggles}
-          onToggleFeature={(key, val) => {
-            const updated = { ...featureToggles, [key]: val };
-            saveFeatureToggles(updated);
-            syncWorkspaceSettingsToCloud({ featureToggles: updated });
-          }}
-          onApplyPreset={(preset) => {
-            const updated = preset === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (preset === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
-            saveFeatureToggles(updated);
-            syncWorkspaceSettingsToCloud({ featureToggles: updated });
-          }}
-          showChecklist={showOnboardingChecklist}
-          onToggleChecklist={(show) => {
-            setShowOnboardingChecklist(show);
-            localStorage.setItem('peer_onboarding_dismissed', show ? 'false' : 'true');
-          }}
-          onAddStudent={() => setIsAddStudentModalOpen(true)}
-          onOpenAutoGroup={() => setIsAutoGroupModalOpen(true)}
-          onOpenQRCode={() => setIsQRCodeModalOpen(true)}
-          onPopulate100Demo={() => {
-            if (activeClass) {
-              importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
-              addToast('Loaded 100 diverse sample students across 35+ countries!', 'success');
-            }
-          }}
-          onExportCSV={() => {
-            if (activeClass) {
-              exportRosterToCSV(activeClass);
-              addToast('Exported classroom roster to CSV!', 'success');
-            }
-          }}
-          onExportExcel={handleExportExcel}
-          onAddCriterion={() => {
-            setActiveTab('grading');
-            if (activeClass) {
-              const nextNum = activeClass.fields.length + 1;
-              const newField: GradingScaleField = {
-                id: 'f_' + Math.random().toString(36).substring(2, 9),
-                name: `Criterion ${nextNum}`,
-                description: '',
-                min: 1,
-                max: 20,
-                weight: 1
-              };
-              updateGradingConfig(activeClass.id, [...activeClass.fields, newField]);
-              addToast(`Added Criterion ${nextNum} (Scale 1 to 20).`, 'success');
-            }
-          }}
-          onAutoBalanceWeights={() => {
-            if (activeClass && activeClass.fields.length > 0) {
-              const count = activeClass.fields.length;
-              const baseWeight = Math.floor(100 / count);
-              const remainder = 100 - (baseWeight * count);
-              const balanced = activeClass.fields.map((f, idx) => ({
-                ...f,
-                weight: baseWeight + (idx === 0 ? remainder : 0)
-              }));
-              updateGradingConfig(activeClass.id, balanced);
-              addToast(`Auto-balanced ${count} criteria weights to exactly 100%!`, 'success');
-            }
-          }}
-          onApplyIPAF={() => {
-            handleApplyPreset('ipaf_research_synthesized');
-            addToast('Applied Integrated Peer Assessment Framework (IPAF) Rubric Preset (100% balanced)!', 'success');
-          }}
-          onLaunchSimulator={() => {
-            if (activeClass && activeClass.students.length > 0) {
-              setPreviewingStudent(activeClass.students[0]);
-              addToast(`Launched Student Simulator for "${activeClass.students[0].name}"`, 'info');
-            } else {
-              addToast('Please enroll at least one student to launch simulator.', 'warning');
-            }
-          }}
-          onOpenWizard={() => setIsWizardOpen(true)}
-          onPopulateAuditData={handlePopulateAuditData}
-          onOpenStudentReport={() => openReportModal()}
-          onOpenArchive={() => setIsArchiveModalOpen(true)}
-          onOpenTeamBaseGrades={() => setIsTeamBaseGradesModalOpen(true)}
-          onOpenLmsGuide={() => setShowLmsGuideModal(true)}
-          onCopyJoinLink={() => {
-            if (activeClass) {
-              const url = getClassEnrollmentUrl(activeClass.id);
-              navigator.clipboard.writeText(url);
-              addToast('Student self-enrollment link copied to clipboard!', 'success');
-            }
-          }}
-          onResetReviews={() => {
-            if (activeClass) {
-              triggerConfirm(
-                'Reset All Classroom Submissions',
-                `Are you sure you want to clear all ${activeClass.reviews.length} peer evaluations submitted for "${activeClass.name}"? This allows you to start a fresh evaluation cycle.`,
-                () => {
-                  resetClassReviews(activeClass.id);
-                  addToast('Cleared all peer evaluation submissions for this classroom.', 'info');
-                },
-                'Reset Submissions',
-                'Cancel'
-              );
-            }
-          }}
-          onBackupJSON={() => {
-            if (activeClass) {
-              const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeClass, null, 2));
-              const downloadAnchor = document.createElement('a');
-              downloadAnchor.setAttribute("href", dataStr);
-              downloadAnchor.setAttribute("download", `${activeClass.name.toLowerCase().replace(/[^a-z0-9]/gi, '_')}_backup.json`);
-              document.body.appendChild(downloadAnchor);
-              downloadAnchor.click();
-              downloadAnchor.remove();
-              addToast(`Downloaded JSON snapshot backup for "${activeClass.name}"!`, 'success');
-            }
-          }}
-          onHidePill={() => {
-            const updated = { ...featureToggles, showQuickActionPill: false };
-            saveFeatureToggles(updated);
-            syncWorkspaceSettingsToCloud({ featureToggles: updated });
-            addToast('Quick Action Pill hidden. Re-enable anytime in Settings or Command Palette.', 'info');
-          }}
-          onOpenEditMode={() => setIsEditMode(true)}
-          shortcutsEnabled={shortcutsEnabled}
-          onToggleShortcutsEnabled={(val) => {
-            setShortcutsEnabled(val);
-            saveShortcutsEnabled(val);
-          }}
-        />
-      )}
+
 
       {/* MODAL: LIVE PRESENTATION DAY SCORING COCKPIT */}
       {activeClass && (
@@ -13025,97 +13284,222 @@ export const AdminDashboard: React.FC = () => {
         />
       )}
 
-      {/* FLOATING IN-PLACE LAYOUT EDIT MODE BAR */}
-      <LayoutEditBar
-        isOpen={isEditMode}
-        onClose={() => setIsEditMode(false)}
-        activeTab={activeTab}
-        onNavigateTab={(tab) => setActiveTab(tab)}
-        featureToggles={featureToggles}
-        onApplyPreset={(preset) => {
-          const updated = preset === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (preset === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
-          saveFeatureToggles(updated);
-          syncWorkspaceSettingsToCloud({ featureToggles: updated });
-          addToast(`Applied ${preset.toUpperCase()} density preset!`, 'info');
+      {/* =========================================================================
+          SAMSUNG ONE UI 7 "NOW BAR" BOTTOM ACTIVITY PILL STACK
+          Unifies Quick Action Dock, Guided Sandbox HUD, Layout Edit Mode,
+          and Sticky Section Summaries into a cohesive, non-overlapping stack.
+          ========================================================================= */}
+      <NowBarStack
+        showQuickActionPill={featureToggles.showQuickActionPill}
+        quickActionProps={{
+          activeTab,
+          onNavigateTab: (tab) => setActiveTab(tab),
+          activeClass,
+          classes,
+          onSelectClass: (id) => selectClass(id),
+          onDeleteClass: (id) => {
+            triggerConfirm(
+              'Delete Classroom Group',
+              `Are you sure you want to permanently delete the classroom "${activeClass.name}" and all of its student rosters, evaluations, and metrics? This action cannot be undone.`,
+              () => deleteClass(id),
+              'Delete Classroom',
+              'Cancel'
+            );
+          },
+          onNewClass: () => setIsNewClassModalOpen(true),
+          onOpenSearch: () => setIsCommandPaletteOpen(true),
+          onOpenGuideCenter: (tab) => openGuideCenter(tab || 'system'),
+          onOpenProjector: () => setIsProjectorModalOpen(true),
+          onOpenEmailDispatcher: () => setIsLinkDispatcherOpen(true),
+          onOpenEvaluationControls: () => setIsEvaluationControlsModalOpen(true),
+          onOpenSettings: (tab) => {
+            if (tab) setSettingsInitialTab(tab);
+            setIsSettingsModalOpen(true);
+          },
+          onOpenProfile: () => setIsMobileProfileModalOpen(true),
+          onOpenShortcuts: () => setIsShortcutsModalOpen(true),
+          onOpenTour: handleStartTour,
+          isCloudSynced,
+          activeAdminProfile,
+          onToggleTheme: toggleThemeMode,
+          featureToggles,
+          onToggleFeature: (key, val) => {
+            const updated = { ...featureToggles, [key]: val };
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          },
+          onApplyPreset: (preset) => {
+            const updated = preset === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (preset === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          },
+          showChecklist: showOnboardingChecklist,
+          onToggleChecklist: (show) => {
+            setShowOnboardingChecklist(show);
+            localStorage.setItem('peer_onboarding_dismissed', show ? 'false' : 'true');
+          },
+          onAddStudent: () => setIsAddStudentModalOpen(true),
+          onOpenAutoGroup: () => setIsAutoGroupModalOpen(true),
+          onOpenQRCode: () => setIsQRCodeModalOpen(true),
+          onPopulate100Demo: () => {
+            if (activeClass) {
+              importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+              addToast('Loaded 100 diverse sample students across 35+ countries!', 'success');
+            }
+          },
+          onExportCSV: () => {
+            if (activeClass) {
+              exportRosterToCSV(activeClass);
+              addToast('Exported classroom roster to CSV!', 'success');
+            }
+          },
+          onExportExcel: handleExportExcel,
+          onAddCriterion: () => {
+            setActiveTab('grading');
+            if (activeClass) {
+              const nextNum = activeClass.fields.length + 1;
+              const newField: GradingScaleField = {
+                id: 'f_' + Math.random().toString(36).substring(2, 9),
+                name: `Criterion ${nextNum}`,
+                description: '',
+                min: 1,
+                max: 20,
+                weight: 1
+              };
+              updateGradingConfig(activeClass.id, [...activeClass.fields, newField]);
+              addToast(`Added Criterion ${nextNum} (Scale 1 to 20).`, 'success');
+            }
+          },
+          onAutoBalanceWeights: () => {
+            if (activeClass && activeClass.fields.length > 0) {
+              const count = activeClass.fields.length;
+              const baseWeight = Math.floor(100 / count);
+              const remainder = 100 - (baseWeight * count);
+              const balanced = activeClass.fields.map((f, idx) => ({
+                ...f,
+                weight: baseWeight + (idx === 0 ? remainder : 0)
+              }));
+              updateGradingConfig(activeClass.id, balanced);
+              addToast(`Auto-balanced ${count} criteria weights to exactly 100%!`, 'success');
+            }
+          },
+          onApplyIPAF: () => {
+            handleApplyPreset('ipaf_research_synthesized');
+            addToast('Applied Integrated Peer Assessment Framework (IPAF) Rubric Preset (100% balanced)!', 'success');
+          },
+          onLaunchSimulator: () => {
+            if (activeClass && activeClass.students.length > 0) {
+              setPreviewingStudent(activeClass.students[0]);
+              addToast(`Launched Student Simulator for "${activeClass.students[0].name}"`, 'info');
+            } else {
+              addToast('Please enroll at least one student to launch simulator.', 'warning');
+            }
+          },
+          onOpenWizard: () => setIsWizardOpen(true),
+          onPopulateAuditData: handlePopulateAuditData,
+          onOpenStudentReport: () => openReportModal(),
+          onOpenArchive: () => setIsArchiveModalOpen(true),
+          onOpenTeamBaseGrades: () => setIsTeamBaseGradesModalOpen(true),
+          onOpenLmsGuide: () => setShowLmsGuideModal(true),
+          onCopyJoinLink: () => {
+            if (activeClass) {
+              const url = getClassEnrollmentUrl(activeClass.id);
+              navigator.clipboard.writeText(url);
+              addToast('Student self-enrollment link copied to clipboard!', 'success');
+            }
+          },
+          onResetReviews: () => {
+            if (activeClass) {
+              triggerConfirm(
+                'Reset All Classroom Submissions',
+                `Are you sure you want to clear all ${activeClass.reviews.length} peer evaluations submitted for "${activeClass.name}"? This allows you to start a fresh evaluation cycle.`,
+                () => {
+                  resetClassReviews(activeClass.id);
+                  addToast('Cleared all peer evaluation submissions for this classroom.', 'info');
+                },
+                'Reset Submissions',
+                'Cancel'
+              );
+            }
+          },
+          onBackupJSON: () => {
+            if (activeClass) {
+              const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeClass, null, 2));
+              const downloadAnchor = document.createElement('a');
+              downloadAnchor.setAttribute("href", dataStr);
+              downloadAnchor.setAttribute("download", `${activeClass.name.toLowerCase().replace(/[^a-z0-9]/gi, '_')}_backup.json`);
+              document.body.appendChild(downloadAnchor);
+              downloadAnchor.click();
+              downloadAnchor.remove();
+              addToast(`Downloaded JSON snapshot backup for "${activeClass.name}"!`, 'success');
+            }
+          },
+          onHidePill: () => {
+            const updated = { ...featureToggles, showQuickActionPill: false };
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+            addToast('Quick Action Pill hidden. Re-enable anytime in Settings or Command Palette.', 'info');
+          },
+          onOpenEditMode: () => setIsEditMode(true),
+          onOpenLivePresentation: () => setIsLivePresentationModalOpen(true),
+          onOpenTeamKickoff: (tab?: 'roles_config' | 'icebreakers' | 'charters') => handleOpenTeamKickoff(tab || 'roles_config'),
+          shortcutsEnabled,
+          onToggleShortcutsEnabled: (val) => {
+            setShortcutsEnabled(val);
+            saveShortcutsEnabled(val);
+          }
         }}
-        shortcutsEnabled={shortcutsEnabled}
-        onToggleShortcutsEnabled={(val) => {
-          setShortcutsEnabled(val);
-          saveShortcutsEnabled(val);
+        isSandboxActive={isSandboxActive}
+        sandboxProps={{
+          currentMissionIndex: sandboxMissionIndex,
+          onSelectMission: (idx) => setSandboxMissionIndex(idx),
+          onAutoCompleteStep: handleAutoCompleteSandboxStep,
+          onExitAndReset: handleExitSandbox,
+          onKeepData: handleKeepSandboxData,
+          missions: sandboxMissions,
+          onNavigateTab: (tab) => setActiveTab(tab)
         }}
-        onToast={(msg, type) => addToast(msg, type || 'info')}
+        isEditMode={isEditMode}
+        layoutEditProps={{
+          onClose: () => setIsEditMode(false),
+          activeTab,
+          onNavigateTab: (tab) => setActiveTab(tab),
+          featureToggles,
+          onApplyPreset: (preset) => {
+            const updated = preset === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (preset === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+            addToast(`Applied ${preset.toUpperCase()} density preset!`, 'info');
+          },
+          shortcutsEnabled,
+          onToggleShortcutsEnabled: (val) => {
+            setShortcutsEnabled(val);
+            saveShortcutsEnabled(val);
+          },
+          onToast: (msg, type) => addToast(msg, type || 'info'),
+          onToggleFeature: (key, val) => {
+            const updated = { ...featureToggles, [key]: val };
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          }
+        }}
+        isStickySummaryVisible={isStickySummaryVisible}
+        stickySummaryProps={{
+          activeTab,
+          filteredStudentsCount: filteredStudents.length,
+          totalStudentsCount: activeClass.students.length,
+          teamsCount: new Set(activeClass.students.map(s => s.groupName)).size,
+          submittedCount: stats.submittedCount,
+          completionRate: stats.completionRate,
+          searchTerm,
+          onSearchChange: (val) => setSearchTerm(val),
+          onAddStudent: () => setIsAddStudentModalOpen(true),
+          onExportExcel: handleExportExcel,
+          onScrollToTop: () => window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
       />
-
-      {/* QoL: Sticky Section Action Summary Bar (Appears on scroll in Roster and Grading sections) */}
-      {isStickySummaryVisible && (activeTab === 'roster' || activeTab === 'results') && (
-        <div className="sticky-action-summary-bar">
-          <div className="sticky-summary-stat">
-            {activeTab === 'roster' ? (
-              <>
-                <Users size={14} className="text-primary" />
-                <span>{filteredStudents.length} of {activeClass.students.length} Students ({new Set(activeClass.students.map(s => s.groupName)).size} Teams)</span>
-              </>
-            ) : (
-              <>
-                <Award size={14} className="text-teal" />
-                <span>{stats.submittedCount}/{stats.totalStudents} Reviews Submitted ({stats.completionRate}%)</span>
-              </>
-            )}
-          </div>
-
-          <div className="sticky-summary-divider" />
-
-          {activeTab === 'roster' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-              <div style={{ position: 'relative', width: '160px' }}>
-                <Search size={12} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input
-                  type="text"
-                  placeholder="Quick filter..."
-                  className="form-input"
-                  style={{ paddingLeft: '1.75rem', height: '28px', fontSize: '0.74rem', borderRadius: '14px', background: 'var(--bg-app)', paddingRight: '0.5rem' }}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => setIsAddStudentModalOpen(true)}
-                style={{ height: '28px', padding: '0 0.65rem', fontSize: '0.74rem', borderRadius: '14px', gap: '0.25rem', fontWeight: 700 }}
-              >
-                <Plus size={12} /> Add Student
-              </button>
-            </div>
-          )}
-
-          {activeTab === 'results' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-              <button
-                type="button"
-                className="btn btn-teal btn-sm"
-                onClick={handleExportExcel}
-                style={{ height: '28px', padding: '0 0.65rem', fontSize: '0.74rem', borderRadius: '14px', gap: '0.3rem', fontWeight: 700 }}
-              >
-                <Download size={12} /> Excel Report
-              </button>
-            </div>
-          )}
-
-          <div className="sticky-summary-divider" />
-
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            style={{ width: '28px', height: '28px', padding: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            title="Scroll back to top"
-          >
-            <ArrowUp size={13} />
-          </button>
-        </div>
-      )}
+      {/* SPACEBAR HOVER QUICK LOOK HUD */}
+      <QuickLookHUD payload={quickLookPayload} cursorPos={quickLookPos} />
     </div>
   );
 };

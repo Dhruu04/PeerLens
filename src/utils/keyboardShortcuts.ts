@@ -233,8 +233,57 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     label: 'Copy Student Self-Enrollment Link',
     category: 'Roster & Teams',
     description: 'Copy direct URL for students to self-enroll in this course section.',
-    suggestedKey: 'l',
+    suggestedKey: 'p',
     suggestedModifiers: { alt: true }
+  },
+
+  {
+    id: 'swap_teammate',
+    label: '2-Click Swap Teammates Mode',
+    category: 'Roster & Teams',
+    description: 'Activate instant 2-click teammate swap mode to exchange students between teams (Alt+W).',
+    suggestedKey: 'w',
+    suggestedModifiers: { alt: true }
+  },
+  {
+    id: 'toggle_unassigned_dock',
+    label: 'Toggle Unassigned Students Quick Drawer',
+    category: 'Roster & Teams',
+    description: 'Expand or collapse the floating quick drawer for unassigned students (Alt+U).',
+    suggestedKey: 'u',
+    suggestedModifiers: { alt: true }
+  },
+  {
+    id: 'toggle_quick_targets',
+    label: 'Toggle Quick Team Drop Targets',
+    category: 'Roster & Teams',
+    description: 'Pin or unpin all-teams quick jump & drop strip to top of studio (Alt+J).',
+    suggestedKey: 'j',
+    suggestedModifiers: { alt: true }
+  },
+  {
+    id: 'reshuffle_teams',
+    label: 'Re-Optimize / Reshuffle Diverse Teams',
+    category: 'Roster & Teams',
+    description: 'Re-run combinatorial diversity optimization while preserving locked student assignments (Alt+R).',
+    suggestedKey: 'r',
+    suggestedModifiers: { alt: true }
+  },
+  {
+    id: 'undo_team_move',
+    label: 'Undo Team Assignment',
+    category: 'Roster & Teams',
+    description: 'Revert the most recent student team move or swap (Ctrl+Z).',
+    suggestedKey: 'z',
+    suggestedModifiers: { ctrl: true }
+  },
+  {
+    id: 'redo_team_move',
+    label: 'Redo Team Assignment',
+    category: 'Roster & Teams',
+    description: 'Redo the previously reverted student team move or swap (Ctrl+Y).',
+    suggestedKey: 'y',
+    suggestedModifiers: { ctrl: true }
   },
   {
     id: 'export_roster_csv',
@@ -451,8 +500,23 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     suggestedKey: 'c',
     suggestedModifiers: { alt: true }
   },
+  {
+    id: 'hover_dismiss_module',
+    label: 'Hover & Hide Module (Alt+D)',
+    category: 'Layout & Presets',
+    description: 'Instantly hide the dashboard module or tool currently under mouse pointer (Alt+D). Revert anytime with Ctrl+Z.',
+    suggestedKey: 'd',
+    suggestedModifiers: { alt: true }
+  },
 
-  // --- General ---
+
+  {
+    id: 'quick_look_inspect',
+    label: 'Hold Space: Hover Quick Look',
+    category: 'General',
+    description: 'Hold Spacebar while hovering over any student, team, module, or tool to preview full details. Release to dismiss.',
+    suggestedKey: ' '
+  },
   {
     id: 'undo_action',
     label: 'Undo Last Action (30s Safety Net)',
@@ -580,6 +644,16 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     modifiers: { alt: true },
     description: 'Highlight all dashboard modules on-screen to directly hide or make them visible.'
   },
+  {
+    id: 'hover_dismiss_module',
+    actionId: 'hover_dismiss_module',
+    label: 'Hover & Hide Module (Alt+D)',
+    category: 'Layout & Presets',
+    key: 'd',
+    modifiers: { alt: true },
+    description: 'Instantly hide the dashboard module or tool currently under mouse pointer (Alt+D). Revert anytime with Ctrl+Z.'
+  },
+
 
   // Actions
   {
@@ -605,6 +679,43 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     category: 'Roster & Teams',
     key: 'i',
     description: 'Open CSV/Excel roster import wizard.'
+  },
+
+  {
+    id: 'swap_teammate',
+    actionId: 'swap_teammate',
+    label: '2-Click Swap Teammates Mode',
+    category: 'Roster & Teams',
+    key: 'w',
+    modifiers: { alt: true },
+    description: 'Activate instant 2-click teammate swap mode to exchange students between teams (Alt+W).'
+  },
+  {
+    id: 'toggle_unassigned_dock',
+    actionId: 'toggle_unassigned_dock',
+    label: 'Toggle Unassigned Students Quick Drawer',
+    category: 'Roster & Teams',
+    key: 'u',
+    modifiers: { alt: true },
+    description: 'Expand or collapse the floating quick drawer for unassigned students (Alt+U).'
+  },
+  {
+    id: 'toggle_quick_targets',
+    actionId: 'toggle_quick_targets',
+    label: 'Toggle Quick Team Drop Targets',
+    category: 'Roster & Teams',
+    key: 'j',
+    modifiers: { alt: true },
+    description: 'Pin or unpin all-teams quick jump & drop strip to top of studio (Alt+J).'
+  },
+  {
+    id: 'reshuffle_teams',
+    actionId: 'reshuffle_teams',
+    label: 'Re-Optimize / Reshuffle Diverse Teams',
+    category: 'Roster & Teams',
+    key: 'r',
+    modifiers: { alt: true },
+    description: 'Re-run combinatorial diversity optimization while preserving locked student assignments (Alt+R).'
   },
   {
     id: 'add_criterion',
@@ -693,10 +804,24 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
           saveStoredShortcuts(list);
         }
 
+        // Free up Alt+L if previously used by copy_portal_url
+        const portalUrlIdx = list.findIndex(s => s.actionId === 'copy_portal_url' || s.id === 'copy_portal_url');
+        if (portalUrlIdx !== -1 && list[portalUrlIdx].key?.toLowerCase() === 'l' && list[portalUrlIdx].modifiers?.alt) {
+          list[portalUrlIdx].key = 'p';
+          list[portalUrlIdx].modifiers = { alt: true };
+          saveStoredShortcuts(list);
+        }
+
+        const removedActionIds = new Set(['hover_toggle_section', 'hover_focus_module', 'toggle_lock_all_teams']);
+        const hadRemoved = list.some(s => removedActionIds.has(s.actionId) || removedActionIds.has(s.id));
+        if (hadRemoved) {
+          list = list.filter(s => !removedActionIds.has(s.actionId) && !removedActionIds.has(s.id));
+        }
+
         // Add any other missing default shortcuts
         const existingActionIds = new Set(list.map((p) => p.actionId || p.id));
         const missingDefaults = DEFAULT_KEYBOARD_SHORTCUTS.filter(d => !existingActionIds.has(d.actionId || d.id));
-        if (missingDefaults.length > 0) {
+        if (missingDefaults.length > 0 || hadRemoved) {
           list.push(...missingDefaults);
           saveStoredShortcuts(list);
         }
@@ -807,4 +932,22 @@ export function matchShortcut(e: KeyboardEvent, shortcut: KeyboardShortcut): boo
   }
 
   return true;
+}
+
+/** Formats and returns a human-readable shortcut badge text like 'Alt+L' for a given action ID */
+export function getShortcutBadgeText(actionId: string): string | null {
+  try {
+    const list = getStoredShortcuts();
+    const match = list.find(s => (s.actionId === actionId || s.id === actionId) && !s.disabled);
+    if (!match || !match.key) return null;
+    return formatShortcutDisplay(match.key, match.modifiers);
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Formats a tooltip title string with the shortcut badge appended in parentheses, e.g. "Lock All Formations (Alt+L)" */
+export function getShortcutTooltip(baseLabel: string, actionId: string): string {
+  const badge = getShortcutBadgeText(actionId);
+  return badge ? `${baseLabel} (${badge})` : baseLabel;
 }

@@ -403,7 +403,7 @@ export const LivePresentationScoringModal: React.FC<LivePresentationScoringModal
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  Live Presentation Day Scoring Cockpit
+                  Live Presentation Scoring
                 </h3>
                 <span
                   style={{

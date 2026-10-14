@@ -14,38 +14,38 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
   // --- INTERFACE & LAYOUT PRESETS ---
   'density-presets': {
     id: 'density-presets',
-    title: 'Interface Density & Layout Presets',
+    title: 'Layout Presets (Essentials, Recommended, Show All)',
     category: 'Interface & Layout',
-    summary: 'Instant single-click workspace personalization switching between Minimal, Standard, and Full Suite layouts.',
-    whatItDoes: 'Provides pre-calibrated interface density configurations that toggle visibility across 40+ granular UI elements (Header icons, Home Hub widgets, Section 1 roster tools, Section 2 rubric cards, and Section 3 analytics cards).',
+    summary: 'Switch between Essentials Only, Recommended, and Show All Modules to keep the workspace clean.',
+    whatItDoes: 'Provides pre-calibrated layout settings that toggle visibility across 40+ interface elements (Header icons, Home Hub widgets, Section 1 roster tools, Section 2 rubric cards, and Section 3 reports).',
     whatToDo: [
-      'Click the "Interface Density & Layout Presets" card on the Home Hub or navigate to Settings → Interface & Modules.',
-      'Select "Standard Default" for a balanced, professional workflow showing essential tools without clutter.',
-      'Select "Minimal Mode" for an ultra-focused distraction-free layout (hides meters, export bars, advanced audit cards, and secondary icons).',
-      'Select "Full Suite" to unlock all 40+ advanced modules and diagnostic panels simultaneously.',
-      'Click "Customize View" in the top navigation bar to fine-tune individual toggles to your personal teaching style.'
+      'Click the Layout Presets buttons on the header or floating tools pill.',
+      'Select "Recommended" for a balanced layout showing essential classroom tools without clutter.',
+      'Select "Essentials Only" for an ultra-focused layout that hides advanced analytics to keep the interface simple.',
+      'Select "Show All Modules" to turn on every available feature and tool simultaneously.',
+      'Click "Customize View" to fine-tune individual modules to your personal teaching style.'
     ],
     whatYouGet: [
       'Zero visual clutter: customize exactly what appears on your screen.',
       'Optimized projector and classroom presentation layouts.',
       'Instant configuration persistence stored automatically in your browser profile.'
     ],
-    proTip: 'Use Minimal Mode during initial classroom onboarding sessions so students and instructors focus exclusively on roster verification and basic rubric review.'
+    proTip: 'Use Essentials Only during initial classroom onboarding sessions so students and instructors focus exclusively on roster verification and basic rubric review.'
   },
 
   // --- SECTION 1: ENROLLMENT & TEAMS ---
   'auto-group-studio': {
     id: 'auto-group-studio',
-    title: 'Intelligent Auto-Group & Diversity Studio',
+    title: 'Auto-Group Teams',
     category: 'Algorithm',
-    summary: 'Combinatorial simulated annealing partitioner creating high-synergy, multi-dimensionally balanced student teams.',
-    whatItDoes: 'Solves the complex NP-hard group formation problem by balancing student teams across multi-dimensional criteria: home vs. host university dispersion, cross-border nationality mixing (195+ countries), 50/50 gender parity, and CEFR English language proficiency spread.',
+    summary: 'Automatically forms balanced student groups using rules (diversity, skills, size).',
+    whatItDoes: 'Solves the complex group formation problem by balancing student teams across multi-dimensional criteria: home vs. host university dispersion, cross-border nationality mixing (195+ countries), 50/50 gender parity, and CEFR English language proficiency spread.',
     whatToDo: [
       'Choose whether to optimize by target group size (e.g., 4–5 members) or a fixed number of teams.',
-      'Select an algorithmic strategy: "Multi-Dimensional (Gender + Nationality + University + English)", "50/50 Gender Parity", or "Nationality & University Mixing".',
-      'Click "Generate Optimized Groups" to run the combinatorial simulated annealing optimizer.',
+      'Select balance rules: Gender, Nationality, Major, University, and Language.',
+      'Click "Reshuffle Teams" to automatically generate balanced student groups.',
       'Inspect computed team diversity scores and drag-and-drop students between teams if manual fine-tuning is desired.',
-      'Click "Apply Formed Groups to Roster" to lock the teams into the classroom directory.'
+      'Click "Save Groups to Roster" to lock the teams into the classroom directory.'
     ],
     whatYouGet: [
       'Balanced teams with zero demographic isolation and rich multi-institutional collaboration.',
@@ -59,9 +59,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'classroom-qr': {
     id: 'classroom-qr',
-    title: 'Self-Enrollment QR Code & Mobile Portal',
+    title: 'Student Join Code & Link',
     category: 'Student Portal',
-    summary: 'High-resolution presentation QR display and direct mobile registration link for frictionless in-class onboarding.',
+    summary: 'Generates a QR code and URL for students to register themselves.',
     whatItDoes: 'Allows 100+ students to onboard simultaneously in under 30 seconds using their smartphones. Captures full names, institutional emails, academic degrees, gender, CEFR English proficiency, and international exchange status.',
     whatToDo: [
       'Click "Open QR Presentation Mode" to project a large, clean QR code on your auditorium display.',
@@ -79,12 +79,12 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'quick-actions': {
     id: 'quick-actions',
-    title: 'Quick Actions & 100 Demo Cohort Generator',
+    title: 'Load Demo Students & Roster Tools',
     category: 'Roster',
-    summary: 'Instant realistic demo student cohort populator, single participant additions, and roster spreadsheet downloads.',
+    summary: 'Populates 100 sample students to test the software and provides quick roster actions.',
     whatItDoes: 'Populates the classroom with 100 realistic, culturally diverse demo student records spanning 35+ countries, multiple universities, CEFR English proficiencies (B2 to Native), and degrees for instant testing and faculty demonstrations.',
     whatToDo: [
-      'Click "100 Demo Sample" inside Section 1 to instantly generate a diverse student cohort.',
+      'Click "Load Demo Students" inside Section 1 to instantly generate a diverse student cohort.',
       'Click "Download Sample Template (.xlsx)" for a pre-formatted Excel template ready for university LMS data.',
       'Use "Manual Add Participant" to quickly append a late-enrolling student to any team.'
     ],
@@ -93,7 +93,7 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
       'Ready-to-use template files formatted for Canvas, Blackboard, and Moodle imports.',
       'Pre-populated international and Erasmus exchange attributes.'
     ],
-    proTip: 'Combine "100 Demo Sample" with "AutoGroup Studio" to showcase simulated annealing diversity optimization during faculty workshops.'
+    proTip: 'Combine "Load Demo Students" with "Auto-Group Teams" to showcase automated diversity optimization during faculty workshops.'
   },
 
   'import-wizard': {
@@ -139,9 +139,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'duplicate-detector': {
     id: 'duplicate-detector',
-    title: 'Duplicate Enrollment Warning & Audit Banner',
+    title: 'Duplicate Student Alert',
     category: 'Roster',
-    summary: 'Real-time detection and resolution of duplicate student emails, names, or student IDs.',
+    summary: 'Flags identical student names, IDs, or emails in the roster.',
     whatItDoes: 'Continuously monitors the classroom roster during self-registration and spreadsheet imports. Flags duplicate entries with actionable resolution controls to prevent duplicate evaluation submissions.',
     whatToDo: [
       'When duplicates are detected, an alert banner appears above the roster table.',
@@ -152,15 +152,15 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
       'Guaranteed roster integrity before evaluation links are dispatched.',
       'Prevention of double-voting or split grades for the same student.'
     ],
-    proTip: 'Always resolve duplicate warnings prior to launching Section 2 (Review System) or generating student evaluation links.'
+    proTip: 'Always resolve duplicate warnings prior to launching Section 2 (Grading Rubric) or generating student evaluation links.'
   },
 
   // --- SECTION 2: REVIEW SYSTEM ---
   'rubric-builder': {
     id: 'rubric-builder',
-    title: '100% Balanced Rubric Builder & Weight Auto-Balancer',
+    title: 'Weight Total (100%) & Rubric Builder',
     category: 'Grading',
-    summary: 'Design multi-criteria evaluation rubrics with qualitative performance anchors and mathematical 100% weight balancing.',
+    summary: 'Shows whether your criteria percentages add up to 100% and configures rubric criteria.',
     whatItDoes: 'Configures criteria dimensions (e.g., Technical Contribution, Communication, Reliability, Quality of Work) with customizable scale ranges and qualitative descriptors. Ensures weights sum exactly to 100% for mathematical validity in academic peer grading.',
     whatToDo: [
       'Add custom criteria or load an accredited preset from the templates ribbon.',
@@ -179,7 +179,7 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'grading-rubric': {
     id: 'grading-rubric',
-    title: 'Rubric Criteria & Weightage Management',
+    title: 'Grading Rubric Criteria',
     category: 'Grading',
     summary: 'Configure multi-dimensional evaluation dimensions with customized score bounds and weights.',
     whatItDoes: 'Controls the criteria used by students to assess their teammates. Each criterion has an adjustable minimum and maximum score, weight percentage, and qualitative behavioral descriptions.',
@@ -197,29 +197,29 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'rubric-presets': {
     id: 'rubric-presets',
-    title: 'Integrated Peer Assessment Framework (IPAF) Ribbon',
+    title: 'Rubric Presets (IPAF Standard)',
     category: 'Grading',
-    summary: 'Instant 1-click loading of the research-synthesized IPAF standard derived from CATME, Salas Big Five, AAC&U VALUE, and WebPA.',
+    summary: 'Instant 1-click loading of the research-synthesized IPAF standard rubric.',
     whatItDoes: 'Pre-populates criteria with 6 empirically validated dimensions with behaviorally anchored rating scale (BARS) indicators: Contribution Quality (20%), Reliability (20%), Problem-Solving (15%), Communication (15%), Initiative (15%), and Quality Drive (15%) — totaling exactly 100%.',
     whatToDo: [
-      'Locate the Standardized Rubric Ribbon in Section 2: Review System.',
+      'Locate the Rubric Presets ribbon in Section 2: Grading Rubric.',
       'Click the "IPAF Standard" button to instantly load the research-synthesized framework.',
       'The rubric automatically configures 6 behaviorally anchored dimensions totaling exactly 100% weight.',
       'Feel free to fine-tune descriptors or weights if needed for specific course syllabi.'
     ],
     whatYouGet: [
-      'Empirically validated peer evaluation dimensions supported by meta-analytic research (Falchikov & Goldfinch; Ohland et al.).',
-      'Differentiated weighting consensus: task contribution and reliability carry higher weight, while collaborative processes carry balanced weight.',
+      'Empirically validated peer evaluation dimensions supported by meta-analytic research.',
+      'Differentiated weighting consensus: task contribution and reliability carry higher weight.',
       'Clear behavioral indicators preventing rater ambiguity and halo effects.'
     ],
-    proTip: 'IPAF consolidates CATME, Salas\'s Big Five, AAC&U VALUE, and Loughborough WebPA into one unified 6-dimension instrument, saving hours of manual rubric design.'
+    proTip: 'IPAF consolidates CATME, Salas\'s Big Five, AAC&U VALUE, and Loughborough WebPA into one unified 6-dimension instrument.'
   },
 
   'target-scale': {
     id: 'target-scale',
-    title: 'Final Grade Scaling Target Scale Card',
+    title: 'Grade Scale',
     category: 'Grading',
-    summary: 'Configure target score bounds: Likert (1–5), Out of 20 (Standard), Out of 100 (Percentage), or Direct Rubric Sum.',
+    summary: 'Sets whether final grades are out of 20, 100, or a custom maximum.',
     whatItDoes: 'Defines the mathematical scale to which individual final peer grades are normalized. Allows instructors to seamlessly match their university grading scheme (e.g., scale of 20 in France/Belgium, percentage 100 in UK/US, or 1–5 GPA).',
     whatToDo: [
       'Select a target scale from the dropdown: "Out of 20", "Out of 100 (Percentage)", "Scale of 1–5", or "Direct Rubric Sum".',
@@ -235,9 +235,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'eval-simulator': {
     id: 'eval-simulator',
-    title: 'Student Interface Experience Preview & Simulator',
+    title: 'Preview Student View',
     category: 'Student Portal',
-    summary: 'Interactive preview simulating what students experience on their mobile devices with qualitative snap score buttons.',
+    summary: 'Test-drives what students see when filling out peer reviews on their phones/laptops.',
     whatItDoes: 'Allows instructors to test evaluation scales before student links are dispatched. Demonstrates qualitative score tier snap buttons ("Needs Work", "Good", "Excellent") and fine-tuning sliders with color-coded feedback.',
     whatToDo: [
       'Click the qualitative snap buttons ("Needs Work (50%)", "Good (80%)", "Excellent (100%)") to test scale responses.',
@@ -253,9 +253,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'evaluation-controls': {
     id: 'evaluation-controls',
-    title: 'Peer Evaluation Form Fields & Student Permissions',
+    title: 'Feedback Settings',
     category: 'Student Portal',
-    summary: 'Configure which question prompts, constructive suggestions, praise tags, self-review steps, and identity permissions appear on student portals.',
+    summary: 'Toggles praise badges, written comments, and self-evaluations.',
     whatItDoes: 'Controls student evaluation form fields including Self-Review calibration, Primary Strengths formative feedback, Constructive Improvement suggestions, Praise tags, Role Baseline archetype selection, and Student Profile self-editing freeze locks.',
     whatToDo: [
       'Toggle Self-Review on or off to calibrate student self-assessment vs team ratings.',
@@ -273,12 +273,12 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'team-health-pulse': {
     id: 'team-health-pulse',
-    title: 'Team Health "Micro-Pulse" Check-ins & Early Blocker Radar',
+    title: 'Team Health Check-ins',
     category: 'Analytics',
-    summary: 'On-demand 30-second sprint pulse surveys with sparklines, morale metrics, blocker detection, and natural team sorting.',
+    summary: 'Quick 30-second morale and blocker check-ins during group projects.',
     whatItDoes: 'Empowers instructors to launch lightweight 30-second pulse surveys during active milestones to track student team morale, collaboration velocity, and project roadblocks. Presents an interactive, naturally sorted matrix table with multi-column sorting (Team Name, Members Responded, Morale, Milestone Status, Blocker Notes), live search, and filter pills (All, Needs Attention, Pending Check-ins, On Track). On the student dashboard, it renders a dedicated 30s check-in form with instant feedback and cross-tab reminder banners without affecting formal peer reviews.',
     whatToDo: [
-      'Navigate to Section 2: Review System (shortcut: 2) to locate the Team Health Micro-Pulse card.',
+      'Navigate to Section 2: Grading Rubric to locate the Team Health Check-ins card.',
       'Click "Launch New Pulse Round" or "Load Sample 3-Round Sprints" to initialize sprint monitoring.',
       'Select a rating scale: 5-Star Rating, 5-Point Likert, 1-10 Velocity Slider, Traffic Light (RAG), or Emoji Sentiment.',
       'Add optional custom questions tailored to specific project deliverables.',
@@ -299,13 +299,13 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'milestones-sprints': {
     id: 'milestones-sprints',
-    title: 'Milestone Sprints & Session Archiver',
+    title: 'Past Review Rounds',
     category: 'Grading',
-    summary: 'Freeze and archive active grading sessions into permanent milestone records across multi-phase project sprints.',
+    summary: 'Archives past peer evaluations (e.g., Midterm Review, Final Review).',
     whatItDoes: 'Saves a complete snapshot of all peer evaluations, scores, and multipliers for a project sprint (e.g., Sprint 1 Midterm 30%, Sprint 2 Final Delivery 70%), allowing instructors to reset the active evaluation matrix for the next sprint while preserving past marks.',
     whatToDo: [
       'Once a sprint deadline passes, click "Archive Active Session".',
-      'Give the milestone a name (e.g. "Sprint 1: Architecture & Design").',
+      'Give the milestone a name (e.g. "Midterm Review" or "Final Review").',
       'The milestone is permanently archived and can be reviewed, compared, or deleted at any time.'
     ],
     whatYouGet: [
@@ -319,9 +319,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
   // --- SECTION 3: GRADING & PERFORMANCE ANALYTICS ---
   'webpa-scoring': {
     id: 'webpa-scoring',
-    title: 'WebPA Mathematical Peer Scoring Engine',
+    title: 'Peer Score Adjustment',
     category: 'Grading',
-    summary: 'Loughborough University WebPA algorithm for objective individual grade adjustments.',
+    summary: 'Adjusts individual student grades up or down based on teammate reviews.',
     whatItDoes: 'Compiles multi-criteria anonymous peer reviews within each team, standardizes raw marks against team consensus, and derives an individual contribution multiplier (WebPA Factor). Self-grading reviews are strictly excluded to eliminate self-inflation bias.',
     whatToDo: [
       'Define your rubric criteria in Section 2.',
@@ -337,21 +337,21 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
       'Clear mathematical audit trail ready for academic accreditation.'
     ],
     formula: 'WebPA Multiplier = (Student Received Peer Average) ÷ (Combined Team Average)',
-    proTip: 'WebPA is the gold standard peer assessment algorithm used across UK, European, and US universities for capstone and STEM group work.'
+    proTip: 'Peer score adjustment ensures individual grades reflect true contributions without subjective guesswork.'
   },
 
   'webpa-calibration': {
     id: 'webpa-calibration',
-    title: 'WebPA Grade Calibration & Fudge Factor Tuning',
+    title: 'Peer Review Impact (0–100%)',
     category: 'Grading',
-    summary: 'Fine-tune the sensitivity and bounds of individual grade adjustments with the 0%–100% Fudge Weight slider.',
+    summary: 'How heavily peer reviews influence the final group grade.',
     whatItDoes: 'Controls how much weight is given to the shared group project deliverable mark vs. individual peer evaluation scores. Uses the official Loughborough weighting model with instructor-tunable sensitivity.',
     whatToDo: [
       'Enter the Project Base Mark (e.g., 85/100 awarded by the instructor for the shared group submission).',
-      'Adjust the Calibrator Fudge Weight slider (0% to 100%):',
-      '• 0% Fudge: Everyone receives the exact same team grade (no individual adjustment).',
-      '• 50% Fudge (Recommended): 50% based on shared team deliverable + 50% scaled by peer ratings.',
-      '• 100% Fudge: Grade is fully determined by peer contribution multiplier.',
+      'Adjust the Peer Review Impact slider (0% to 100%):',
+      '• 0%: Everyone receives the exact same team grade (no individual adjustment).',
+      '• 50% (Recommended): 50% based on shared team deliverable + 50% scaled by peer ratings.',
+      '• 100%: Grade is fully determined by peer review scores.',
       'Check the live Calibrated Mark column in the Gradebook table to preview results.'
     ],
     whatYouGet: [
@@ -359,8 +359,8 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
       'Safety rails that prevent a single low review from catastrophically failing a student.',
       'Transparent, defensible calculations to show students during grade inquiries.'
     ],
-    formula: 'Final Grade = Base Team Mark × [ (1 - Fudge Weight) + (Fudge Weight × WebPA Multiplier) ]',
-    proTip: 'A 50% Fudge Factor provides the optimal academic balance: it provides meaningful reward for outstanding effort while keeping final marks within a reasonable distribution.'
+    formula: 'Final Grade = Base Team Mark × [ (1 - Impact Weight) + (Impact Weight × Peer Multiplier) ]',
+    proTip: 'A 50% impact provides the optimal balance: meaningful reward for outstanding effort while keeping final marks within a reasonable distribution.'
   },
 
   'calculation-matrix': {
@@ -385,9 +385,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'radar-analytics': {
     id: 'radar-analytics',
-    title: 'Multi-Axis Competency Spider Radar Analytics',
+    title: 'Skills Radar Chart',
     category: 'Analytics',
-    summary: 'Interactive polygon diagram comparing student and team performance across rubric dimensions.',
+    summary: 'Visual chart comparing team strengths across all rubric criteria.',
     whatItDoes: 'Plots peer evaluations across all rubric dimensions (e.g., Quality, Leadership, Communication, Problem Solving) on concentric radial axes, allowing immediate visual recognition of team strengths and skill gaps.',
     whatToDo: [
       'Use the "Overlay" dropdown to compare the Class Benchmark against any specific Team.',
@@ -404,9 +404,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'johari-window': {
     id: 'johari-window',
-    title: 'Self-Awareness & Johari Window Alignment Matrix',
+    title: 'Self vs. Peer Rating Comparison',
     category: 'Analytics',
-    summary: 'Psychological perception alignment comparing a student\'s self-rating with anonymous peer consensus.',
+    summary: 'Shows if students rate themselves much higher or lower than teammates rated them.',
     whatItDoes: 'Compares the score a student gives themselves during self-reflection against the anonymous scores given to them by teammates, classifying each student into 3 psychological self-awareness quadrants (±7.5% threshold):',
     whatToDo: [
       'Review the Class Self-Awareness distribution bar (Calibrated vs Blind Spot vs Imposter).',
@@ -421,14 +421,14 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
       'A safe, objective metric for teaching self-reflection in professional engineering and business education.'
     ],
     formula: 'Delta = (Self Rating Score - Peer Average Score) ÷ Max Score  [Threshold: ±7.5%]',
-    proTip: 'Research demonstrates that students with high Johari calibration show 40% higher career advancement in collaborative professional environments.'
+    proTip: 'Research demonstrates that students with high calibration show higher career advancement in collaborative professional environments.'
   },
 
   'feedback-sentiment': {
     id: 'feedback-sentiment',
-    title: 'Qualitative Feedback Themes & Praise Badges',
+    title: 'Written Feedback Summary',
     category: 'Analytics',
-    summary: 'Automated natural language keyword extraction and anonymous peer praise tokens.',
+    summary: 'Summarizes common themes and praise words written by teammates.',
     whatItDoes: 'Extracts top positive themes and constructive growth suggestions from all written peer reviews. Displays peer praise badges (e.g., "Problem Solver", "Great Communicator", "Reliable", "Creative Thinker") awarded by teammates.',
     whatToDo: [
       'Inspect the Top Strengths and Growth Areas keyword clouds in Section 3.',
@@ -440,17 +440,17 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
       'Anonymized, constructive qualitative comments that give students concrete steps for improvement.',
       'Instant sentiment overview of classroom collaboration dynamics.'
     ],
-    proTip: 'Combining quantitative WebPA multipliers with qualitative praise tags ensures grading feels both fair and encouraging.'
+    proTip: 'Combining quantitative scores with qualitative praise tags ensures grading feels both fair and encouraging.'
   },
 
   'anomaly-detection': {
     id: 'anomaly-detection',
-    title: 'Statistical Anomaly & Collusion Audit',
+    title: 'Suspicious Ratings Alert',
     category: 'Algorithm',
-    summary: 'Automated detection of score manipulation, collusion rings, extreme bias, and retaliatory ratings.',
+    summary: 'Detects students who trade high scores, grade randomly, or give uniform marks.',
     whatItDoes: 'Continuously scans submission patterns for statistical discrepancies that deviate from normal grading distributions, flagging potential grading bad-faith for instructor review.',
     whatToDo: [
-      'Check the Anomaly Audit box in Section 3 for flagged alerts:',
+      'Check the Suspicious Ratings Alert box in Section 3 for flagged alerts:',
       '• Self-Inflation Alert: Student gave themselves 100% while team gave them significantly lower marks.',
       '• Collusion Ring: Two or more students giving each other reciprocal maximum marks while downgrading others.',
       '• Outlier / Retaliatory Score: A reviewer giving extreme 1-star ratings when all other peers give 5-star ratings (>1.5 StdDev).',
@@ -467,9 +467,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'results-summary-sheet': {
     id: 'results-summary-sheet',
-    title: 'Results Summary Sheet & Gradebook Table',
+    title: 'Class Gradebook Table',
     category: 'Grading',
-    summary: 'Comprehensive classroom performance gradebook with raw rubric averages, standard deviations, and calibrated marks.',
+    summary: 'Complete gradebook table with all student scores, averages, and calibrated marks.',
     whatItDoes: 'Presents an exhaustive master table showing each student\'s enrollment status, review count, per-criterion peer averages, consensus standard deviations, praise badges, WebPA factor, and final calibrated mark.',
     whatToDo: [
       'Filter by Team Group or search by Student Name, Degree, or ID.',
@@ -487,9 +487,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'who-rated-whom': {
     id: 'who-rated-whom',
-    title: 'Who Rated Whom: Evaluation Audit Cross-Matrix',
+    title: 'Who Rated Whom Grid',
     category: 'Analytics',
-    summary: 'Double-blind peer rating matrix displaying exact ratings given and received across teammates.',
+    summary: 'Breakdown table showing exactly who gave what score to whom.',
     whatItDoes: 'Displays a cross-tabular grid showing exactly how each student in a team rated each peer across criteria. Enables instructors to instantly audit peer consensus, check for reciprocal biases, and inspect written comments in context.',
     whatToDo: [
       'Select a team to view their internal evaluation cross-matrix.',
@@ -545,9 +545,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'link-dispatcher': {
     id: 'link-dispatcher',
-    title: 'Classroom Email Center & Personal Link Dispatcher',
+    title: 'Email Links to Students',
     category: 'Student Portal',
-    summary: 'Automated personal access URL distributor and customized email notifier via Brevo SMTP or EmailJS.',
+    summary: 'Sends private evaluation links to students via email.',
     whatItDoes: 'Generates secure, personalized evaluation links for each enrolled student and provides copy-paste email templates or direct mailing triggers with real-time delivery logs.',
     whatToDo: [
       'Click the Email icon in the top navigation dock.',
@@ -565,9 +565,9 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'student-grading-matrix': {
     id: 'student-grading-matrix',
-    title: 'Anonymous Teammate Assessment Matrix (Student View)',
+    title: 'Peer Review Form',
     category: 'Student Portal',
-    summary: 'Student evaluation workspace with double-blind peer rating sliders and praise badges.',
+    summary: 'Where students submit ratings and feedback for teammates.',
     whatItDoes: 'Provides an intuitive, mobile-friendly interface for students to grade teammates across rubric criteria, select praise tags, and complete self-calibration ratings without seeing other students\' grades.',
     whatToDo: [
       'Rate each assigned teammate on the rubric criteria scales.',
@@ -585,13 +585,13 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'lms-export': {
     id: 'lms-export',
-    title: 'LMS Gradebook Integration & Smart Export Formats',
+    title: 'Export to Canvas / Blackboard / Moodle',
     category: 'Grading',
-    summary: '1-click, compliant CSV gradebooks ready for direct upload into Canvas, Blackboard, Moodle, and Brightspace D2L.',
+    summary: '1-click grade exports formatted for standard school LMS gradebooks.',
     whatItDoes: 'Generates specialized CSV gradebook exports strictly adhering to import specifications of major Learning Management Systems (Canvas LMS, Blackboard Learn, Moodle, and Brightspace D2L), eliminating manual column restructuring.',
     whatToDo: [
       'Choose your institution\'s LMS platform (Canvas, Blackboard, Moodle, or Brightspace D2L).',
-      'Select your desired grade output format: WebPA Calibrated Final Grade, Rubric Scaled Mark, or Percentage (0–100%).',
+      'Select your desired grade output format: Calibrated Final Grade, Rubric Scaled Mark, or Percentage (0–100%).',
       'Review the live CSV preview table showing the exact format and column mapping.',
       'Click "Download CSV" or "Copy CSV" to transfer grades into your LMS course gradebook.',
       'Click "LMS Import Step-by-Step Guide" to see exact import instructions for your platform.'
@@ -606,15 +606,15 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'team-cohorts': {
     id: 'team-cohorts',
-    title: 'Team Cohorts Overview & Formation Inspector',
+    title: 'Team Overview Cards',
     category: 'Roster',
-    summary: 'Comprehensive cohort dashboard displaying group balances, member allocations, base marks, and submission progress.',
+    summary: 'Cards showing all teams and their members, completion status, and scores.',
     whatItDoes: 'Provides instructors with a holistic overview of all student teams in Section 1, tracking peer review submission status, team size equity, and diversity factors across the cohort.',
     whatToDo: [
-      'Navigate to Section 1: Enrollment & Teams.',
+      'Navigate to Section 1: Students & Teams.',
       'View the Team Overview Cards grid showing each team, its members, and completion badges.',
       'Filter roster or gradebook by individual teams with a single click.',
-      'Use AutoGroup Studio to balance teams by gender, nationality, and language proficiency.'
+      'Use Auto-Group Teams to balance teams by gender, nationality, and language proficiency.'
     ],
     whatYouGet: [
       'Instant visibility into which teams have complete vs. pending peer evaluations.',
@@ -626,14 +626,14 @@ export const FEATURE_INFO_REGISTRY: Record<string, FeatureInfoItem> = {
 
   'evaluation-form-controls': {
     id: 'evaluation-form-controls',
-    title: 'Evaluation Form Controls & Student Permissions',
+    title: 'Feedback Settings',
     category: 'Grading',
-    summary: 'Customizable student portal permissions: self-evaluations, praise tags, qualitative prompts, role baselines, and profile lock.',
+    summary: 'Toggles praise badges, written comments, and self-evaluations.',
     whatItDoes: 'Gives course instructors granular pedagogical control over which elements appear on the student evaluation form. Toggles self-reflection, qualitative strengths and growth text areas, research-backed praise tags across 6 soft-skill dimensions, role archetype baselines, and student profile locking.',
     whatToDo: [
-      'Navigate to Section 2: Review System and locate the Evaluation Form Controls card.',
+      'Navigate to Section 2: Grading Rubric and locate the Feedback Settings card.',
       'Toggle "Allow Self-Review" to mandate or omit self-assessment.',
-      'Toggle "Praise Tags" so students can celebrate peers as Creative Problem Solvers, Reliable & Punctual, Supportive Team Players, etc.',
+      'Toggle "Praise Badges" so students can celebrate peers as Creative Problem Solvers, Reliable & Punctual, Supportive Team Players, etc.',
       'Toggle "Qualitative Written Feedback" to collect formative written comments alongside numerical ratings.',
       'Toggle "Lock Profile Info Editing" once your roster is finalized to prevent unauthorized name or email changes.'
     ],

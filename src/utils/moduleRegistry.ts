@@ -5,11 +5,11 @@ import {
   Sparkles, Users, CheckCircle, Download, ShieldCheck, Clock, 
   SlidersHorizontal, Activity, Award, RefreshCw, MessageSquare, 
   Key, Zap, Edit3, Plus, Type, UserCheck, Presentation,
-  Layers, Kanban, Table, Columns3, Undo2, Shuffle, Settings2, Target, RotateCcw, Check
+  Layers, Kanban, Table, Columns3, Undo2, Shuffle, Settings2, Target, RotateCcw, Check, Percent, Globe, UserX
 } from 'lucide-react';
 import type { FeatureToggles } from './featurePreferences';
 
-export type ModuleCategory = 'header' | 'hub' | 'roster' | 'rubric' | 'analytics' | 'footer';
+export type ModuleCategory = 'header' | 'hub' | 'roster' | 'autogroup' | 'rubric' | 'analytics' | 'footer';
 export type ModuleSlotType = 'card' | 'button' | 'bar' | 'table' | 'banner' | 'dock';
 
 export interface ModuleItem {
@@ -100,8 +100,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showEmailButton',
-    title: 'Classroom Email Center Button',
-    desc: 'Dispatches secure assessment links to students via Brevo or EmailJS.',
+    title: 'Email Links to Students',
+    desc: 'Sends private evaluation links to students via email.',
     icon: Mail,
     category: 'header',
     slotType: 'button'
@@ -116,8 +116,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showCloudStatus',
-    title: 'Cloud Sync Status Indicator',
-    desc: 'Minimal cloud connection icon button in top navigation bar.',
+    title: 'Cloud Sync / Offline Mode',
+    desc: 'Shows whether class data is saved in Firebase cloud or local browser storage.',
     icon: Database,
     category: 'header',
     slotType: 'button'
@@ -150,8 +150,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   // --- Home Hub & Sub-Bar Navigation ---
   {
     key: 'showPresetsBanner',
-    title: 'Interface Density & Layout Presets Card',
-    desc: 'Quick preset density buttons at the top of the Interface & Modules tab.',
+    title: 'Layout Presets',
+    desc: 'Switch between Essentials, Recommended, or Show All layouts.',
     icon: LayoutGrid,
     category: 'hub',
     slotType: 'banner'
@@ -191,8 +191,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showEnrollmentCard',
-    title: 'Hub Card: Section 1 (Enrollment & Teams)',
-    desc: 'Large interactive section card on the Home Hub screen.',
+    title: 'Hub Card: 1. Students & Teams',
+    desc: 'Large interactive section card on the Class Overview screen.',
     icon: Users,
     category: 'hub',
     slotType: 'card',
@@ -200,8 +200,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showReviewSystemCard',
-    title: 'Hub Card: Section 2 (Review System)',
-    desc: 'Large interactive section card on the Home Hub screen.',
+    title: 'Hub Card: 2. Grading Rubric',
+    desc: 'Large interactive section card on the Class Overview screen.',
     icon: Sliders,
     category: 'hub',
     slotType: 'card',
@@ -209,8 +209,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showGradingAnalyticsCard',
-    title: 'Hub Card: Section 3 (Grading & Analytics)',
-    desc: 'Large interactive section card on the Home Hub screen.',
+    title: 'Hub Card: 3. Grades & Reports',
+    desc: 'Large interactive section card on the Class Overview screen.',
     icon: Award,
     category: 'hub',
     slotType: 'card',
@@ -238,8 +238,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   // --- Section 1: Enrollment & Teams ---
   {
     key: 'showSelfEnrollmentCard',
-    title: 'Self-Enrollment QR Code & Link Card',
-    desc: 'Card showing class QR code preview and 1-click student self-enrollment URL.',
+    title: 'Student Join Code & Link',
+    desc: 'Generates a QR code and URL for students to register themselves.',
     icon: QrCode,
     category: 'roster',
     slotType: 'card',
@@ -283,8 +283,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showDemoSampleButton',
-    title: 'Load 100 Demo Sample Button',
-    desc: 'One-click action to populate the class with 100 diverse sample student records and teams.',
+    title: 'Load Demo Students',
+    desc: 'Populates 100 sample students to test the software.',
     icon: Sparkles,
     category: 'roster',
     slotType: 'button',
@@ -337,10 +337,10 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showAutoGroupStudio',
-    title: 'AutoGroup Algorithmic Formation Studio',
-    desc: 'Automated team formation studio balancing cohorts by diversity, skill, and size.',
+    title: 'Auto-Group Teams',
+    desc: 'Automatically forms balanced student groups using rules (diversity, skills, size).',
     icon: Users,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'card',
     defaultHeight: 120
   },
@@ -349,16 +349,16 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Target Team Size Controls',
     desc: 'Target size stepper input, planned team count indicator, and quick size preset buttons.',
     icon: Users,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'card',
     parentKey: 'showAutoGroupStudio'
   },
   {
     key: 'showAutoGroupNamingFormat',
-    title: 'AutoGroup: Group Naming Format Selector',
-    desc: 'Sequential prefix selector (Team, Group, Squad, Cohort, Custom) and preview tag.',
+    title: 'Team Name Style',
+    desc: 'Chooses naming format (e.g., "Team 1", "Group A", "Squad").',
     icon: Layers,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'card',
     parentKey: 'showAutoGroupStudio'
   },
@@ -367,7 +367,7 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Rules & Constraints Studio Card',
     desc: 'Active custom grouping rules, attribute weightage buttons, and optimization constraints card.',
     icon: Settings2,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'card',
     parentKey: 'showAutoGroupStudio'
   },
@@ -376,16 +376,16 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Reset Defaults & Clear Rules Buttons',
     desc: 'Reset to balanced rules and Clear All buttons in the rules header.',
     icon: RotateCcw,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'
   },
   {
     key: 'showAutoGroupDiscoveredFields',
-    title: 'AutoGroup: Discovered Fields Quick Chips',
-    desc: 'Quick-add rule chips for auto-detected roster fields (Gender, Nationality, Degree, etc.).',
+    title: 'Balance by (Gender, Major, etc.)',
+    desc: 'Auto-detected spreadsheet columns to balance across teams.',
     icon: Sparkles,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'bar',
     parentKey: 'showAutoGroupStudio'
   },
@@ -394,7 +394,7 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Quick Team Drop & Jump Strip',
     desc: 'Sticky or scrollable target strip to jump between teams and drop students with live simulation.',
     icon: Target,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'bar',
     parentKey: 'showAutoGroupStudio'
   },
@@ -403,7 +403,7 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Preview Layout & History Toolbar',
     desc: 'Toolbar containing layout switchers, undo/redo move history, and roster search filter.',
     icon: LayoutGrid,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'bar',
     parentKey: 'showAutoGroupStudio'
   },
@@ -412,16 +412,16 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup Layout: Grid View Option',
     desc: 'Grid preview layout tab showing responsive team cards with member rosters.',
     icon: LayoutGrid,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'
   },
   {
     key: 'showAutoGroupViewKanban',
-    title: 'AutoGroup Layout: Column Board Option',
-    desc: 'Column Board (Kanban) preview layout tab with drag-and-drop columns and wrap/scroll modes.',
+    title: 'Board View',
+    desc: 'Drag-and-drop column view to move students between teams.',
     icon: Kanban,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'
   },
@@ -430,16 +430,16 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup Layout: Detailed Table Option',
     desc: 'Comprehensive spreadsheet table layout tab listing all team compositions and demographics.',
     icon: Table,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'
   },
   {
     key: 'showAutoGroupViewCompact',
-    title: 'AutoGroup Layout: Compact Matrix Option',
-    desc: 'Ultra-dense compact team cards preview layout tab for quick multi-team overview.',
+    title: 'Compact Cards',
+    desc: 'Dense view showing all teams side-by-side.',
     icon: Columns3,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'
   },
@@ -448,7 +448,16 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Undo & Redo History Buttons',
     desc: 'Undo and Redo buttons to revert or re-apply manual student drag-and-drop moves.',
     icon: Undo2,
-    category: 'roster',
+    category: 'autogroup',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupUnassignedDrawer',
+    title: 'AutoGroup: Unassigned Students Drawer Trigger',
+    desc: 'Quick toolbar trigger button that toggles the floating drawer for unassigned students.',
+    icon: UserX,
+    category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'
   },
@@ -457,7 +466,7 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Search & Filter Input',
     desc: 'Instant search input to filter students across all teams by name, nationality, or skill.',
     icon: Search,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'bar',
     parentKey: 'showAutoGroupStudio'
   },
@@ -466,7 +475,7 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Bottom Finalization Action Bar',
     desc: 'Bottom bar containing formation summary status, reshuffle, agreements, and roster save buttons.',
     icon: CheckCircle,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'bar',
     parentKey: 'showAutoGroupStudio'
   },
@@ -475,7 +484,7 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Shuffle Combinations Button',
     desc: 'Button in the bottom bar to re-run optimization and produce a fresh balanced allocation.',
     icon: Shuffle,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'
   },
@@ -484,7 +493,7 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Team Agreements & Roles Button',
     desc: 'Button at the bottom to launch Team Collaboration Agreements, activity roles, and icebreakers.',
     icon: Sparkles,
-    category: 'roster',
+    category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'
   },
@@ -493,14 +502,68 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'AutoGroup: Apply to Class Roster Button',
     desc: 'Primary button in bottom bar to commit and save generated team assignments to the class roster.',
     icon: Check,
-    category: 'roster',
+    category: 'autogroup',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupRuleCompliance',
+    title: 'AutoGroup: Rule Compliance Overall Score',
+    desc: 'Displays the class-wide diversity rule compliance percentage score in the Auto-Group header.',
+    icon: CheckCircle,
+    category: 'autogroup',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupWeightDistribution',
+    title: 'AutoGroup: Overall Optimization Weight Distribution',
+    desc: 'Shows the criteria weight distribution progress bar and percentage breakdown across active grouping rules.',
+    icon: Sliders,
+    category: 'autogroup',
+    slotType: 'card',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupDiversityPercentages',
+    title: 'AutoGroup: Team Header % Score Badge',
+    desc: 'Displays the percentage score badge (e.g. 99%, 100%) in each team card header.',
+    icon: Percent,
+    category: 'autogroup',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupDiversityStrip',
+    title: 'AutoGroup: Rule Satisfaction Breakdown Strip',
+    desc: 'Displays the sub-metrics strip (Gender, University, Nationality percentages) under team headers.',
+    icon: Sliders,
+    category: 'autogroup',
+    slotType: 'bar',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupTeamComposition',
+    title: 'AutoGroup: Team Demographic Composition Strip',
+    desc: 'Displays the demographic composition summary strip (e.g. 4 Countries, 4 Unis, 2F 1M) under team headers.',
+    icon: Globe,
+    category: 'autogroup',
+    slotType: 'bar',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupStudentDemographics',
+    title: 'AutoGroup: Student Demographics Line',
+    desc: 'Displays the country, gender, and language metadata row at the bottom of student cards.',
+    icon: User,
+    category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'
   },
   {
     key: 'showDuplicateDetector',
-    title: 'Duplicate Enrollment Warning Banner',
-    desc: 'Alert banner flagging duplicate student names or emails in roster.',
+    title: 'Duplicate Student Alert',
+    desc: 'Flags identical student names, IDs, or emails in the roster.',
     icon: ShieldCheck,
     category: 'roster',
     slotType: 'banner'
@@ -561,8 +624,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showTeamKickoffAndRoles',
-    title: 'Team Collaboration Agreement & Roles Studio',
-    desc: 'Customizable role allocator (Lead, Scribe, Presenter), team collaboration agreements, and tailored 5-min kickoff icebreakers.',
+    title: 'Team Roles & Icebreaker',
+    desc: 'Assigns student roles (Lead, Scribe, Presenter) and sets group agreements.',
     icon: UserCheck,
     category: 'roster',
     slotType: 'card',
@@ -598,8 +661,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showTargetScaleCard',
-    title: 'Final Grade Scaling Target Scale Card',
-    desc: 'Sets grade scaling target (Out of 20, Out of 100, or Rubric Sum).',
+    title: 'Grade Scale',
+    desc: 'Sets whether final grades are out of 20, 100, or a custom maximum.',
     icon: Sliders,
     category: 'rubric',
     slotType: 'card',
@@ -607,8 +670,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showDeadlineTimer',
-    title: 'Milestone Deadline & Countdown Timer Card',
-    desc: 'Submission cutoff date & countdown timer that locks evaluations upon expiration.',
+    title: 'Submission Deadline',
+    desc: 'Sets the date/time when peer evaluation closes.',
     icon: Clock,
     category: 'rubric',
     slotType: 'card',
@@ -616,8 +679,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showWeightBalanceBar',
-    title: 'Rubric Weight Auto-Balance Bar',
-    desc: 'Validation bar indicating criteria weight percentage sum and 100% balance.',
+    title: 'Weight Total (100%)',
+    desc: 'Shows whether your criteria percentages add up to 100%.',
     icon: CheckCircle,
     category: 'rubric',
     slotType: 'bar'
@@ -633,8 +696,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showEvaluationSimulator',
-    title: 'Student Interface Experience Preview',
-    desc: 'Interactive simulator showing how students see and submit peer evaluation sliders.',
+    title: 'Preview Student View',
+    desc: 'Test-drives what students see when filling out peer reviews on their phones/laptops.',
     icon: Sparkles,
     category: 'rubric',
     slotType: 'card',
@@ -642,8 +705,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showEvaluationFormControls',
-    title: 'Peer Evaluation Form Fields & Controls Card',
-    desc: 'Card to toggle question prompts, praise tags, self-review, and permissions directly on the page.',
+    title: 'Feedback Settings',
+    desc: 'Toggles praise badges, written comments, and self-evaluations.',
     icon: SlidersHorizontal,
     category: 'rubric',
     slotType: 'card',
@@ -651,8 +714,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showTeamHealthPulse',
-    title: 'Team Health "Micro-Pulse" Check-ins',
-    desc: 'On-demand 30-second pulse surveys tracking team morale, communication, and project blockers with sparklines.',
+    title: 'Team Health Check-ins',
+    desc: 'Quick 30-second morale and blocker check-ins during group projects.',
     icon: Activity,
     category: 'rubric',
     slotType: 'card',
@@ -660,8 +723,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showLivePresentationScoring',
-    title: 'Live Presentation Day Scoring Cockpit',
-    desc: 'Mobile QR code for real-time audience voting, presentation countdown timer, live criteria analytics, and leaderboard.',
+    title: 'Live Presentation Scoring',
+    desc: 'Lets audience and professors score live group presentations in real time.',
     icon: Presentation,
     category: 'rubric',
     slotType: 'card',
@@ -687,8 +750,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showCompetencyRadar',
-    title: 'Competency Spider Radar Chart',
-    desc: 'Multi-axis radar chart showing class rubric benchmarks vs individual team averages.',
+    title: 'Skills Radar Chart',
+    desc: 'Visual chart comparing team strengths across all rubric criteria.',
     icon: Sparkles,
     category: 'analytics',
     slotType: 'card',
@@ -696,8 +759,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showJohariMatrix',
-    title: 'Johari Window & Self-Awareness Alignment',
-    desc: 'Identifies student self-awareness anomalies, over-raters, and under-raters vs team consensus.',
+    title: 'Self vs. Peer Rating Comparison',
+    desc: 'Shows if students rate themselves much higher or lower than teammates rated them.',
     icon: Award,
     category: 'analytics',
     slotType: 'card',
@@ -705,8 +768,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showQualitativeFeedback',
-    title: 'Qualitative Feedback Themes Card',
-    desc: 'Automated keyword extraction across all written teammate feedback comments.',
+    title: 'Written Feedback Summary',
+    desc: 'Summarizes common themes and praise words written by teammates.',
     icon: MessageSquare,
     category: 'analytics',
     slotType: 'card',
@@ -714,8 +777,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showWebPACalibration',
-    title: 'WebPA Grade Calibration Card',
-    desc: 'Base Grade mark input and Fudge weight slider for individual peer mark multipliers.',
+    title: 'Peer Score Adjustment',
+    desc: 'Adjusts individual student grades up or down based on teammate reviews.',
     icon: Sliders,
     category: 'analytics',
     slotType: 'card',
@@ -723,8 +786,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showAnomalyAudit',
-    title: 'Statistical Anomaly & Collusion Audit Card',
-    desc: 'Statistical conflict auditing flagging collusion, outlier ratings, and uniform grades.',
+    title: 'Suspicious Ratings Alert',
+    desc: 'Detects students who trade high scores, grade randomly, or give uniform marks.',
     icon: ShieldCheck,
     category: 'analytics',
     slotType: 'card',
@@ -732,8 +795,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showMilestonesHistory',
-    title: 'Milestone & Sprints History Card',
-    desc: 'Archive evaluations into permanent sprint records to freeze marks over time.',
+    title: 'Past Review Rounds',
+    desc: 'Archives past peer evaluations (e.g., Midterm Review, Final Review).',
     icon: RefreshCw,
     category: 'analytics',
     slotType: 'card',
@@ -741,8 +804,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showLmsExport',
-    title: 'LMS Gradebook Integration & Smart Export Formats',
-    desc: '1-click export presets for Canvas LMS, Blackboard Learn, Moodle, and Brightspace D2L.',
+    title: 'Export to Canvas / Blackboard / Moodle',
+    desc: '1-click grade exports formatted for standard school LMS gradebooks.',
     icon: Download,
     category: 'analytics',
     slotType: 'card',
@@ -777,8 +840,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showDetailedReviewMatrix',
-    title: 'Who Rated Whom: Evaluation Audit Cross-Matrix',
-    desc: 'Cross-grid audit matrix in Team modal displaying reviewer vs recipient ratings.',
+    title: 'Who Rated Whom Grid',
+    desc: 'Breakdown table showing exactly who gave what score to whom.',
     icon: Sliders,
     category: 'analytics',
     slotType: 'card',
@@ -787,8 +850,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showTeammateAuditLog',
-    title: 'Teammate Evaluation Audit Log',
-    desc: 'Written qualitative feedback comments and review records in Team modal.',
+    title: 'Student Comments Log',
+    desc: 'Full list of written feedback comments per team.',
     icon: MessageSquare,
     category: 'analytics',
     slotType: 'card',
@@ -831,8 +894,8 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showFooterDoubleBlindBadge',
-    title: 'Footer Double-Blind Anonymity Trust Badge',
-    desc: 'Display the double-blind privacy shield indicator on the bottom-right of the footer.',
+    title: '100% Anonymous Reviews',
+    desc: 'Assures students that teammates cannot see who gave which score.',
     icon: Zap,
     category: 'footer',
     slotType: 'button'
@@ -866,43 +929,50 @@ export const getModuleByKey = (key: keyof FeatureToggles): ModuleItem | undefine
 export const MODULE_GROUPS: ModuleGroup[] = [
   {
     id: 'header',
-    title: 'Header & Top Navigation',
+    title: 'Header & Navigation',
     icon: Settings,
     keys: MODULE_ITEMS.filter(m => m.category === 'header').map(m => m.key),
     items: MODULE_ITEMS.filter(m => m.category === 'header')
   },
   {
     id: 'hub',
-    title: 'Home Hub & Sub-Bar Navigation',
+    title: 'Class Overview',
     icon: LayoutGrid,
     keys: MODULE_ITEMS.filter(m => m.category === 'hub').map(m => m.key),
     items: MODULE_ITEMS.filter(m => m.category === 'hub')
   },
   {
     id: 'roster',
-    title: 'Section 1: Enrollment & Teams',
+    title: '1. Enrollment & Roster',
     icon: Users,
     keys: MODULE_ITEMS.filter(m => m.category === 'roster').map(m => m.key),
     items: MODULE_ITEMS.filter(m => m.category === 'roster')
   },
   {
+    id: 'autogroup',
+    title: 'AutoGroup Studio & Teams',
+    icon: Sparkles,
+    keys: MODULE_ITEMS.filter(m => m.category === 'autogroup').map(m => m.key),
+    items: MODULE_ITEMS.filter(m => m.category === 'autogroup')
+  },
+  {
     id: 'rubric',
-    title: 'Section 2: Review System',
+    title: '2. Grading Rubric',
     icon: Sliders,
     keys: MODULE_ITEMS.filter(m => m.category === 'rubric').map(m => m.key),
     items: MODULE_ITEMS.filter(m => m.category === 'rubric')
   },
   {
     id: 'analytics',
-    title: 'Section 3: Grading & Performance Analytics',
+    title: '3. Grades & Reports',
     icon: Award,
     keys: MODULE_ITEMS.filter(m => m.category === 'analytics').map(m => m.key),
     items: MODULE_ITEMS.filter(m => m.category === 'analytics')
   },
   {
     id: 'footer',
-    title: 'Footer Elements',
-    icon: Compass,
+    title: 'Footer & Trust Badges',
+    icon: ShieldCheck,
     keys: MODULE_ITEMS.filter(m => m.category === 'footer').map(m => m.key),
     items: MODULE_ITEMS.filter(m => m.category === 'footer')
   }
@@ -910,4 +980,30 @@ export const MODULE_GROUPS: ModuleGroup[] = [
 
 export function hasSubmodules(key: keyof FeatureToggles): boolean {
   return MODULE_ITEMS.some(m => m.parentKey === key);
+}
+
+export type DashboardTab = 'hub' | 'roster' | 'grading' | 'results';
+
+export function getTabForModuleCategory(category: ModuleCategory): DashboardTab | null {
+  switch (category) {
+    case 'hub':
+      return 'hub';
+    case 'roster':
+    case 'autogroup':
+      return 'roster';
+    case 'rubric':
+      return 'grading';
+    case 'analytics':
+      return 'results';
+    case 'header':
+    case 'footer':
+    default:
+      return null;
+  }
+}
+
+export function getModuleTab(key: keyof FeatureToggles): DashboardTab | null {
+  const item = getModuleByKey(key);
+  if (!item) return null;
+  return getTabForModuleCategory(item.category);
 }

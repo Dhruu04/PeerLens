@@ -230,10 +230,10 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'autogroup_studio',
     targetSelector: '[data-tour="autogroup-studio"]',
-    stage: 'Section 1: Enrollment & Teams',
+    stage: 'Section 1: Students & Teams',
     featureKey: 'showAutoGroupStudio',
-    title: 'AutoGroup Diversity Studio',
-    description: 'Form balanced teams using simulated annealing to optimize for skill distribution, gender, and nationality.',
+    title: 'Auto-Group Teams',
+    description: 'Form balanced teams using rules to optimize for skill distribution, gender, and nationality.',
     demoLabel: 'Open AutoGroup',
     tab: 'roster',
     preferredPlacement: 'top',
@@ -242,7 +242,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'classroom_roster',
     targetSelector: '[data-tour="classroom-roster-table"]',
-    stage: 'Section 1: Enrollment & Teams',
+    stage: 'Section 1: Students & Teams',
     title: 'Interactive Roster Table',
     description: 'Search, filter, and bulk-manage students, team transfers, and individual submission statuses.',
     demoLabel: 'Filter by Student',
@@ -251,13 +251,13 @@ export const TOUR_STEPS: TourStep[] = [
     icon: <Users size={16} style={{ color: 'var(--primary)' }} />
   },
 
-  // --- STAGE 4: SECTION 2 (REVIEW SYSTEM & RUBRICS) ---
+  // --- STAGE 4: SECTION 2 (GRADING RUBRIC) ---
   {
     id: 'rubric_tab',
     targetSelector: '[data-tour="rubric-tab-btn"]',
-    stage: 'Section 2: Review System',
-    title: 'Review System & Rubrics Tab',
-    description: 'Define evaluation criteria, auto-balance weights to 100%, and configure student form permissions.',
+    stage: 'Section 2: Grading Rubric',
+    title: 'Grading Rubric Tab',
+    description: 'Define evaluation criteria, auto-balance weights to 100%, and configure feedback settings.',
     demoLabel: 'Open Section 2',
     tab: 'grading',
     preferredPlacement: 'bottom',
@@ -266,8 +266,8 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'rubric_builder',
     targetSelector: '[data-tour="rubric-builder-card"]',
-    stage: 'Section 2: Review System',
-    title: 'Rubric Builder & IPAF Preset',
+    stage: 'Section 2: Grading Rubric',
+    title: 'Weight Total (100%) & Rubric Builder',
     description: 'Create multi-criteria rubrics with auto-balancing weights, or load the research-backed 6-dimension IPAF standard.',
     demoLabel: 'Apply IPAF Preset',
     tab: 'grading',
@@ -277,10 +277,10 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'target_scale',
     targetSelector: '[data-tour="target-scale-card"]',
-    stage: 'Section 2: Review System',
+    stage: 'Section 2: Grading Rubric',
     featureKey: 'showTargetScaleCard',
-    title: 'Target Grading Scale',
-    description: 'Normalize rubric marks into standard institutional grading scales: Percentage (0-100), French (0-20), or GPA 4.0.',
+    title: 'Grade Scale',
+    description: 'Normalize rubric marks into standard institutional grading scales: Percentage (0-100), Standard (0-20), or GPA 4.0.',
     demoLabel: 'Check Scale Converter',
     tab: 'grading',
     preferredPlacement: 'bottom',
@@ -289,9 +289,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'eval_simulator',
     targetSelector: '[data-tour="eval-simulator-card"]',
-    stage: 'Section 2: Review System',
+    stage: 'Section 2: Grading Rubric',
     featureKey: 'showEvaluationSimulator',
-    title: 'Student Simulator Preview',
+    title: 'Preview Student View',
     description: 'Test the exact smartphone peer review experience your students see before publishing evaluation rounds.',
     demoLabel: 'Simulate Rating Mark',
     tab: 'grading',
@@ -301,11 +301,11 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'eval_controls',
     targetSelector: '[data-tour="eval-controls-card"]',
-    stage: 'Section 2: Review System',
+    stage: 'Section 2: Grading Rubric',
     featureKey: 'showEvaluationFormControls',
-    title: 'Evaluation Form Controls',
+    title: 'Feedback Settings',
     description: 'Govern student forms: toggle self-evaluations, praise badges across 6 competency dimensions, and lock profiles.',
-    demoLabel: 'Inspect Form Controls',
+    demoLabel: 'Inspect Feedback Settings',
     tab: 'grading',
     preferredPlacement: 'top',
     icon: <ShieldCheck size={16} style={{ color: 'var(--accent-amber)' }} />
@@ -313,9 +313,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'team_health_pulse',
     targetSelector: '[data-tour="team-health-pulse-card"]',
-    stage: 'Section 2: Review System',
+    stage: 'Section 2: Grading Rubric',
     featureKey: 'showTeamHealthPulse',
-    title: 'Team Health Micro-Pulse',
+    title: 'Team Health Check-ins',
     description: 'Launch 30-second check-in surveys with 5 scale presets and qualitative blocker triage to spot failing teams early.',
     demoLabel: 'View Pulse Radar',
     tab: 'grading',
@@ -323,13 +323,13 @@ export const TOUR_STEPS: TourStep[] = [
     icon: <Heart size={16} style={{ color: 'var(--accent-rose)' }} />
   },
 
-  // --- STAGE 5: SECTION 3 (GRADING & ANALYTICS) ---
+  // --- STAGE 5: SECTION 3 (GRADES & REPORTS) ---
   {
     id: 'analytics_tab',
     targetSelector: '[data-tour="analytics-tab-btn"]',
-    stage: 'Section 3: Grading & Analytics',
-    title: 'Grading & Analytics Tab',
-    description: 'Inspect individual WebPA multipliers, perception radars, statistical collusion flags, and gradebook exports.',
+    stage: 'Section 3: Grades & Reports',
+    title: 'Grades & Reports Tab',
+    description: 'Inspect individual peer score adjustments, skills radar, suspicious ratings alerts, and gradebook exports.',
     demoLabel: 'Open Section 3',
     tab: 'results',
     preferredPlacement: 'bottom',
@@ -338,9 +338,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'perception_deck',
     targetSelector: '[data-tour="perception-deck-card"]',
-    stage: 'Section 3: Grading & Analytics',
+    stage: 'Section 3: Grades & Reports',
     featureKey: 'showCompetencyRadar',
-    title: 'Competency Radar & Johari Window',
+    title: 'Skills Radar & Self vs. Peer Comparison',
     description: 'Overlay individual competency spider radars against team averages and identify self-evaluation blind spots.',
     demoLabel: 'Select Alpha Team Radar',
     tab: 'results',
@@ -350,11 +350,11 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'webpa_calibrator',
     targetSelector: '[data-tour="webpa-calibrator-card"]',
-    stage: 'Section 3: Grading & Analytics',
+    stage: 'Section 3: Grades & Reports',
     featureKey: 'showWebPACalibration',
-    title: 'WebPA Calibrator & Fudge Weight',
-    description: 'Tune the 0%-100% Fudge Weight slider to control how strongly peer ratings adjust final marks relative to team base grades.',
-    demoLabel: 'Set 50% Weighting',
+    title: 'Peer Score Adjustment (0–100% Impact)',
+    description: 'Tune the Peer Review Impact (0–100%) slider to control how strongly peer reviews influence final grades.',
+    demoLabel: 'Set 50% Impact',
     tab: 'results',
     preferredPlacement: 'bottom',
     icon: <Calculator size={16} style={{ color: 'var(--accent-teal)' }} />
@@ -362,11 +362,11 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'anomaly_audit',
     targetSelector: '[data-tour="anomaly-audit-card"]',
-    stage: 'Section 3: Grading & Analytics',
+    stage: 'Section 3: Grades & Reports',
     featureKey: 'showAnomalyAudit',
-    title: 'Anomaly & Collusion Audit',
+    title: 'Suspicious Ratings Alert',
     description: 'Statistical audit flagging reciprocal score pacts, outlier harsh graders, and spiteful scoring discrepancies.',
-    demoLabel: 'Inspect Collusion Flags',
+    demoLabel: 'Inspect Suspicious Ratings',
     tab: 'results',
     preferredPlacement: 'top',
     icon: <ShieldCheck size={16} style={{ color: 'var(--accent-rose)' }} />
@@ -374,9 +374,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'results_summary',
     targetSelector: '[data-tour="results-summary-card"]',
-    stage: 'Section 3: Grading & Analytics',
+    stage: 'Section 3: Grades & Reports',
     featureKey: 'showResultsSummarySheet',
-    title: 'Results Summary & Export Suite',
+    title: 'Class Gradebook Table & Exports',
     description: 'Review final calibrated grades and export complete workbooks for Canvas, Moodle, Blackboard, or Excel in 1 click.',
     demoLabel: 'Inspect Grade Breakdown',
     tab: 'results',
@@ -386,7 +386,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'gradebook_matrix',
     targetSelector: '[data-tour="gradebook-matrix-card"]',
-    stage: 'Section 3: Grading & Analytics',
+    stage: 'Section 3: Grades & Reports',
     title: 'Master Gradebook Matrix',
     description: 'Detailed student-by-student mark matrix with per-criterion scores, WebPA factors, and batch student PDF reports.',
     demoLabel: 'Review Gradebook',

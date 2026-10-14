@@ -379,7 +379,7 @@ export const StudentReportModal: React.FC<StudentReportModalProps> = ({
             Viewing student <b>{currentIndex + 1}</b> of <b>{classData.students.length}</b> • PDF format: <b>Vector A4 Portrait</b>
           </span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-            <CheckCircle2 size={12} className="text-teal" /> WebPA Calibration &amp; Anonymized Teammate Reviews Included
+            <CheckCircle2 size={12} className="text-teal" /> Peer Score Adjustment &amp; Anonymized Teammate Reviews Included
           </span>
         </div>
       </div>

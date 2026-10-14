@@ -385,7 +385,7 @@ export const StudentEnrollmentPortal: React.FC<StudentEnrollmentPortalProps> = (
             {targetClass ? targetClass.name : 'Classroom Enrollment'}
           </h1>
           <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-secondary)' }}>
-            Student Enrollment Form
+            Class Join Page
           </p>
         </div>
 

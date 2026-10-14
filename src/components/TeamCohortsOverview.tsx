@@ -531,6 +531,7 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
             return (
               <div
                 key={t.group}
+                data-group-name={t.group}
                 onClick={() => onSelectGroup(isSelected ? 'All Groups' : t.group)}
                 style={{
                   padding: '0.9rem 1rem',
@@ -1104,6 +1105,7 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
                 return (
                   <div
                     key={student.id}
+                    data-student-id={student.id}
                     style={{
                       padding: '1rem',
                       borderRadius: 'var(--radius-md, 10px)',
