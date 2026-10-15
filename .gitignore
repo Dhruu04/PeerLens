@@ -23,3 +23,14 @@ dist-ssr
 *.sln
 *.sw?
 .firebase
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Netlify build artifacts
+.netlify/
+
+# Agent & IDE caches
+.gemini/

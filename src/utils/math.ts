@@ -44,7 +44,7 @@ export interface Student {
   lastProfileEditAt?: number;
   flaggedForReview?: boolean;
   suspiciousReason?: string | null;
-  customFields?: Record<string, string>;
+  customFields?: Record<string, string | number | boolean>;
   role?: string; // Assigned team charter role (e.g. "Tech Specialist", "Project Lead")
   roleDetails?: string; // Specific responsibility note or charter agreement
 }
@@ -354,6 +354,133 @@ export const DEFAULT_PRESENTATION_CRITERIA: PresentationCriterion[] = [
   { id: 'pres_qa', name: 'Q&A Defense & Time Mastery', description: 'Poise, mastery of unexpected questions, and respecting the time limit.', weight: 25, maxScore: 5 }
 ];
 
+export type EnrollmentFieldType = 'text' | 'dropdown' | 'boolean' | 'number';
+
+export interface CustomEnrollmentField {
+  id: string;
+  label: string;
+  type: EnrollmentFieldType;
+  description?: string;
+  placeholder?: string;
+  options?: string[]; // for dropdown type
+  required?: boolean;
+  includeInGrouping?: boolean; // include in team distribution / auto-grouping
+  defaultValue?: string | number | boolean;
+  checkboxLabel?: string; // custom confirmation/agreement statement for checkbox type
+  min?: number; // optional lower bound for numeric fields
+  max?: number; // optional upper bound for numeric fields
+  step?: number; // optional step increment for numeric fields
+}
+
+export const DEFAULT_ENROLLMENT_FIELDS: CustomEnrollmentField[] = [
+  {
+    id: 'name',
+    label: 'Full Student Name',
+    type: 'text',
+    placeholder: 'e.g. Alice Johnson',
+    required: true,
+    includeInGrouping: false,
+    description: 'Student primary legal or preferred name'
+  },
+  {
+    id: 'email',
+    label: 'Institutional Email',
+    type: 'text',
+    placeholder: 'e.g. alice@university.edu',
+    required: true,
+    includeInGrouping: false,
+    description: 'Official university or school email for sign-in'
+  },
+  {
+    id: 'gender',
+    label: 'Gender Identity',
+    type: 'dropdown',
+    options: ['Female', 'Male', 'Non-binary', 'Prefer not to say'],
+    required: true,
+    includeInGrouping: true,
+    description: 'Used for balanced gender representation across teams'
+  },
+  {
+    id: 'degree',
+    label: 'Degree / Field of Study',
+    type: 'text',
+    placeholder: 'e.g. Computer Science, Mechanical Engineering, MBA',
+    required: true,
+    includeInGrouping: false,
+    description: 'Academic background or current major'
+  },
+  {
+    id: 'englishProficiency',
+    label: 'CEFR English Proficiency',
+    type: 'dropdown',
+    options: ['Native Speaker', 'Fluent (C1/C2)', 'Intermediate (B1/B2)', 'Basic (A1/A2)'],
+    required: true,
+    includeInGrouping: true,
+    description: 'Used to equalize language capability across groups'
+  },
+  {
+    id: 'nationality',
+    label: 'Country of Origin / Nationality',
+    type: 'text',
+    placeholder: 'e.g. Germany, Spain, Japan',
+    required: true,
+    includeInGrouping: true,
+    description: 'Home citizenship or culture for diversity'
+  },
+  {
+    id: 'currentCountry',
+    label: 'Current Residence / Study Country',
+    type: 'text',
+    placeholder: 'e.g. Italy, Germany',
+    required: false,
+    includeInGrouping: false,
+    description: 'Current host or residing country'
+  },
+  {
+    id: 'university',
+    label: 'University / Institution',
+    type: 'text',
+    placeholder: 'e.g. Stanford University, TU Munich',
+    required: true,
+    includeInGrouping: false,
+    description: 'Home or host educational institution'
+  },
+  {
+    id: 'isInternational',
+    label: 'International Student Status',
+    type: 'boolean',
+    checkboxLabel: 'Yes, I am an International Student (studying abroad from home country)',
+    required: false,
+    includeInGrouping: true,
+    description: 'Identifies students studying outside their home country to balance international representation'
+  },
+  {
+    id: 'isExchange',
+    label: 'Exchange / Erasmus Student',
+    type: 'boolean',
+    checkboxLabel: 'Yes, I am currently an Exchange or Erasmus student',
+    required: false,
+    includeInGrouping: true,
+    description: 'Helps balance international exchange participants'
+  }
+];
+
+export const STANDARD_ENROLLMENT_FIELD_IDS = new Set<string>([
+  ...DEFAULT_ENROLLMENT_FIELDS.map(f => f.id),
+  'id',
+  'groupName',
+  'university',
+  'originalUniversity',
+  'originalCountry',
+  'currentUniversity',
+  'studentType'
+]);
+
+export const isStandardEnrollmentField = (fieldId: string): boolean => {
+  if (!fieldId) return false;
+  return STANDARD_ENROLLMENT_FIELD_IDS.has(fieldId.trim());
+};
+
 export interface ClassData {
   id: string;
   name: string;
@@ -368,6 +495,7 @@ export interface ClassData {
   pulseRounds?: PulseRound[];
   presentationSession?: PresentationDaySession;
   teamCharterConfig?: TeamCharterConfig;
+  enrollmentFormFields?: CustomEnrollmentField[];
 }
 
 /**

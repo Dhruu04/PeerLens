@@ -87,7 +87,7 @@ export interface QuickActionPillProps {
   onToggleTheme: () => void;
   featureToggles: FeatureToggles;
   onToggleFeature: (key: keyof FeatureToggles, value: boolean) => void;
-  onApplyPreset: (preset: 'minimal' | 'standard' | 'full') => void;
+  onApplyPreset: (preset: 'minimal' | 'standard' | 'full' | 'none') => void;
   showChecklist: boolean;
   onToggleChecklist: (show: boolean) => void;
   onAddStudent: () => void;
@@ -114,6 +114,9 @@ export interface QuickActionPillProps {
   onOpenEditMode?: () => void;
   onOpenLivePresentation?: () => void;
   onOpenTeamKickoff?: (tab?: 'roles_config' | 'icebreakers' | 'charters') => void;
+  onClearRoster?: () => void;
+  onExportLMS?: (platform: 'canvas' | 'blackboard' | 'moodle' | 'brightspace') => void;
+  onExportPulseCSV?: () => void;
   shortcutsEnabled?: boolean;
   onToggleShortcutsEnabled?: (enabled: boolean) => void;
   embedded?: boolean;
@@ -170,6 +173,9 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
   onOpenEditMode,
   onOpenLivePresentation,
   onOpenTeamKickoff,
+  onClearRoster,
+  onExportLMS,
+  onExportPulseCSV,
   shortcutsEnabled: propShortcutsEnabled,
   onToggleShortcutsEnabled,
   embedded = false,
@@ -567,6 +573,13 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
   const activeModuleCount = allModuleKeys.filter((k) => featureToggles[k]).length;
   const densityPercentage = Math.round((activeModuleCount / Math.max(1, allModuleKeys.length)) * 100);
 
+  const activePreset: 'minimal' | 'standard' | 'full' | 'none' = useMemo(() => {
+    if (activeModuleCount === 0) return 'none';
+    if (densityPercentage <= 30) return 'minimal';
+    if (densityPercentage >= 75) return 'full';
+    return 'standard';
+  }, [activeModuleCount, densityPercentage]);
+
   const quickToolsCount = useMemo(() => {
     let c = 23;
     if (onOpenTeamKickoff) c++;
@@ -580,6 +593,9 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     if (onOpenArchive) c++;
     if (onOpenEditMode) c++;
     if (onBackupJSON) c++;
+    if (onClearRoster) c++;
+    if (onExportLMS) c++;
+    if (onExportPulseCSV) c++;
     return c;
   }, [
     onOpenTeamKickoff,
@@ -592,7 +608,10 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     onOpenLmsGuide,
     onOpenArchive,
     onOpenEditMode,
-    onBackupJSON
+    onBackupJSON,
+    onClearRoster,
+    onExportLMS,
+    onExportPulseCSV
   ]);
 
   return (
@@ -1387,7 +1406,14 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         type="button"
                         onClick={() => onApplyPreset('minimal')}
                         className="btn btn-secondary btn-sm"
-                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 700 }}
+                        style={{
+                          fontSize: '0.72rem',
+                          padding: '0.2rem 0.55rem',
+                          fontWeight: 700,
+                          backgroundColor: activePreset === 'minimal' ? 'rgba(245, 158, 11, 0.16)' : undefined,
+                          borderColor: activePreset === 'minimal' ? '#f59e0b' : undefined,
+                          color: activePreset === 'minimal' ? '#b45309' : undefined
+                        }}
                         title="Essentials Only: Hides advanced analytics to keep the interface clean and simple."
                       >
                         Essentials
@@ -1396,7 +1422,14 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         type="button"
                         onClick={() => onApplyPreset('standard')}
                         className="btn btn-secondary btn-sm"
-                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 700 }}
+                        style={{
+                          fontSize: '0.72rem',
+                          padding: '0.2rem 0.55rem',
+                          fontWeight: 700,
+                          backgroundColor: activePreset === 'standard' ? 'rgba(99, 102, 241, 0.16)' : undefined,
+                          borderColor: activePreset === 'standard' ? 'var(--primary)' : undefined,
+                          color: activePreset === 'standard' ? 'var(--primary)' : undefined
+                        }}
                         title="Recommended: The balanced classroom layout with essential tools."
                       >
                         Recommended
@@ -1405,10 +1438,33 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         type="button"
                         onClick={() => onApplyPreset('full')}
                         className="btn btn-teal btn-sm"
-                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 700 }}
+                        style={{
+                          fontSize: '0.72rem',
+                          padding: '0.2rem 0.55rem',
+                          fontWeight: 700,
+                          backgroundColor: activePreset === 'full' ? 'rgba(16, 185, 129, 0.22)' : undefined,
+                          borderColor: activePreset === 'full' ? '#10b981' : undefined
+                        }}
                         title="Show All Modules: Turns on every available feature and tool."
                       >
                         Show All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onApplyPreset('none')}
+                        className="btn btn-secondary btn-sm"
+                        style={{
+                          fontSize: '0.72rem',
+                          padding: '0.2rem 0.55rem',
+                          fontWeight: 700,
+                          backgroundColor: activePreset === 'none' ? 'rgba(239, 68, 68, 0.16)' : undefined,
+                          borderColor: activePreset === 'none' ? '#ef4444' : undefined,
+                          color: activePreset === 'none' ? '#ef4444' : 'var(--accent-rose, #ef4444)'
+                        }}
+                        title="Hide All Modules: Clear optional modules for a blank canvas"
+                      >
+                        <EyeOff size={11} style={{ marginRight: '3px' }} />
+                        Hide All
                       </button>
                       <button
                         type="button"
@@ -2314,6 +2370,26 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Multi-tab cohort workbook</div>
                       </div>
                     </button>
+
+                    {onClearRoster && activeClass.students.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onClearRoster();
+                        }}
+                        className="quick-tool-card text-rose"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#dc2626', flexShrink: 0 }}>
+                          <Trash2 size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: '#dc2626' }}>Clear Roster</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Remove {activeClass.students.length} students</div>
+                        </div>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2606,6 +2682,26 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         </div>
                       </button>
                     )}
+
+                    {onExportPulseCSV && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onExportPulseCSV();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(20, 184, 166, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0d9488', flexShrink: 0 }}>
+                          <Download size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Export Pulse CSV</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Morale ratings &amp; blockers</div>
+                        </div>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2885,6 +2981,52 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
           </>
         )}
 
+        {/* Clean Canvas (0 modules) quick restore pill */}
+        {activeModuleCount === 0 && (
+          <>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                height: '30px',
+                padding: '0 0.6rem',
+                borderRadius: '9999px',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.28)',
+                fontSize: '0.72rem',
+                fontWeight: 750,
+                color: 'var(--accent-rose, #ef4444)'
+              }}
+              title="Clean Canvas mode active (all optional modules hidden). Click Restore to apply Recommended modules."
+            >
+              <EyeOff size={12} />
+              <span>Clean Canvas</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onApplyPreset('standard');
+                }}
+                style={{
+                  border: 'none',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  color: '#ef4444',
+                  fontSize: '0.62rem',
+                  fontWeight: 800,
+                  padding: '0.1rem 0.35rem',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+                title="Restore Recommended modules"
+              >
+                Restore
+              </button>
+            </div>
+            <span style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-color)', margin: '0 0.05rem' }} />
+          </>
+        )}
+
         {/* Search Trigger Button */}
         <button
           type="button"
@@ -3035,14 +3177,14 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
             setDockTab('modules');
             setIsExpanded(true);
           }}
-          title={`Module Visibility (${activeModuleCount} active modules)`}
+          title={activeModuleCount === 0 ? 'Clean Canvas mode (all optional modules hidden). Click to customize.' : `Module Visibility (${activeModuleCount} active modules)`}
           style={{
             padding: '0 0.55rem',
             height: '28px',
             borderRadius: '9999px',
-            border: '1px solid var(--border-color)',
-            backgroundColor: 'var(--bg-app)',
-            color: 'var(--text-primary)',
+            border: activeModuleCount === 0 ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border-color)',
+            backgroundColor: activeModuleCount === 0 ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-app)',
+            color: activeModuleCount === 0 ? '#ef4444' : 'var(--text-primary)',
             fontSize: '0.72rem',
             fontWeight: 700,
             cursor: 'pointer',
@@ -3052,19 +3194,19 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
             transition: 'all 0.15s ease'
           }}
         >
-          <Sliders size={12} className="text-primary" />
-          <span>Modules</span>
+          {activeModuleCount === 0 ? <EyeOff size={12} className="text-rose" /> : <Sliders size={12} className="text-primary" />}
+          <span>{activeModuleCount === 0 ? 'Canvas' : 'Modules'}</span>
           <span
             style={{
               fontSize: '0.64rem',
               padding: '0.05rem 0.35rem',
               borderRadius: '9999px',
-              backgroundColor: 'var(--primary-light)',
-              color: 'var(--primary)',
+              backgroundColor: activeModuleCount === 0 ? 'rgba(239, 68, 68, 0.2)' : 'var(--primary-light)',
+              color: activeModuleCount === 0 ? '#ef4444' : 'var(--primary)',
               fontWeight: 800
             }}
           >
-            {activeModuleCount}
+            {activeModuleCount === 0 ? 'Clean' : activeModuleCount}
           </span>
         </button>
 

@@ -46,6 +46,7 @@ export interface FeatureToggles {
   showAutoGroupNamingFormat: boolean;
   showAutoGroupRulesCard: boolean;
   showAutoGroupResetRulesBtn: boolean;
+  showAutoGroupRulePercentages: boolean;
   showAutoGroupDiscoveredFields: boolean;
   showAutoGroupQuickTargets: boolean;
   showAutoGroupToolbar: boolean;
@@ -159,7 +160,8 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showAutoGroupTargetSize: true,
   showAutoGroupNamingFormat: true,
   showAutoGroupRulesCard: true,
-  showAutoGroupResetRulesBtn: true,
+  showAutoGroupResetRulesBtn: false, // Hidden by default as requested
+  showAutoGroupRulePercentages: false, // Hidden by default as requested
   showAutoGroupDiscoveredFields: true,
   showAutoGroupQuickTargets: true,
   showAutoGroupToolbar: true,
@@ -273,7 +275,8 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showAutoGroupTargetSize: true,
   showAutoGroupNamingFormat: true,
   showAutoGroupRulesCard: true,
-  showAutoGroupResetRulesBtn: true,
+  showAutoGroupResetRulesBtn: false, // Hidden by default as requested
+  showAutoGroupRulePercentages: false,
   showAutoGroupDiscoveredFields: true,
   showAutoGroupQuickTargets: true,
   showAutoGroupToolbar: true,
@@ -386,6 +389,7 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showAutoGroupNamingFormat: true,
   showAutoGroupRulesCard: true,
   showAutoGroupResetRulesBtn: true,
+  showAutoGroupRulePercentages: true,
   showAutoGroupDiscoveredFields: true,
   showAutoGroupQuickTargets: true,
   showAutoGroupToolbar: true,
@@ -452,15 +456,26 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showFooterCopyright: true,
 };
 
-const STORAGE_KEY = 'peerlens_feature_toggles_v6';
+export const NONE_FEATURE_TOGGLES: FeatureToggles = Object.keys(DEFAULT_FEATURE_TOGGLES).reduce<FeatureToggles>((acc, key) => {
+  (acc as any)[key] = false;
+  return acc;
+}, { ...DEFAULT_FEATURE_TOGGLES });
+
+const STORAGE_KEY = 'peerlens_feature_toggles_v7';
 const EVENT_KEY = 'peerlens_features_changed';
 
 export const loadFeatureToggles = (): FeatureToggles => {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('peerlens_feature_toggles_v5');
+    const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       return { ...DEFAULT_FEATURE_TOGGLES, ...parsed };
+    }
+    const legacy = localStorage.getItem('peerlens_feature_toggles_v6') || localStorage.getItem('peerlens_feature_toggles_v5');
+    if (legacy) {
+      const parsed = JSON.parse(legacy);
+      // Ensure requested defaults remain hidden on upgrade
+      return { ...DEFAULT_FEATURE_TOGGLES, ...parsed, showAutoGroupResetRulesBtn: false, showAutoGroupRulePercentages: false };
     }
   } catch (e) {
     console.warn('Failed to parse feature toggles from storage, using defaults', e);

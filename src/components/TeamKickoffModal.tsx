@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   X,
   Users,
@@ -263,7 +263,13 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
   }, [customNorms]);
 
   // Sync all custom roles, active roles, icebreaker tasks, active topic, and team norms to classData in real-time
+  const isFirstMountRef = useRef(true);
   useEffect(() => {
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      return;
+    }
+    if (!isOpen) return;
     updateTeamCharterConfig(classData.id, {
       customRoles,
       selectedRoleIds: activeRoleIds,
@@ -271,7 +277,7 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
       selectedIcebreakerId,
       teamNorms: customNorms
     });
-  }, [classData.id, customRoles, activeRoleIds, customIcebreakers, selectedIcebreakerId, customNorms]);
+  }, [isOpen, classData.id, customRoles, activeRoleIds, customIcebreakers, selectedIcebreakerId, customNorms, updateTeamCharterConfig]);
 
   // Filtered active roles
   const activeRolesList = useMemo(() => {

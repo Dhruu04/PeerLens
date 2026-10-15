@@ -306,16 +306,22 @@ const MODULE_SPECIFIC_GUIDES: Record<string, {
     pedagogicalValue: 'Personalizes team identities according to course conventions and themes.'
   },
   showAutoGroupRulesCard: {
-    badge: 'Diversity Criteria Weights',
-    whatItDoes: 'Interactive weighting sliders for University, Nationality, Gender, and Language.',
-    howToUse: 'Adjust sliders (0 to 10) to prioritize which demographic attributes to balance.',
-    pedagogicalValue: 'Gives instructors precise mathematical control over classroom diversity goals.'
+    badge: 'Diversity Criteria Priority Levels',
+    whatItDoes: '3 priority level controls (Low, Medium, High) for University, Nationality, Gender, Language, and Custom Attributes.',
+    howToUse: 'Select priority levels (Low, Medium, High) for each rule. The algorithm dynamically splits total weight to an exact 100% allocation.',
+    pedagogicalValue: 'Gives instructors intuitive, balanced control over classroom diversity without complex slider calibration.'
   },
   showAutoGroupResetRulesBtn: {
     badge: 'Reset Weights to Default',
     whatItDoes: 'Restores diversity rule weightings to scientifically balanced baseline presets.',
     howToUse: 'Click to reset all rule weights back to standard pedagogically validated values.',
     pedagogicalValue: 'Quickly recovers default multi-attribute balance after experimental testing.'
+  },
+  showAutoGroupRulePercentages: {
+    badge: 'Rule Focus % Weight Badges',
+    whatItDoes: 'Toggles visibility of dynamic percentage focus badges on each grouping rule and the 100% allocated header tag.',
+    howToUse: 'Click the % icon in the rules header or toggle in settings to display exact mathematical focus percentages.',
+    pedagogicalValue: 'Keeps the grouping rules interface minimal and uncluttered by default, with complete transparency available on demand.'
   },
   showAutoGroupDiscoveredFields: {
     badge: 'Custom Roster Attribute Detector',

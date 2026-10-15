@@ -365,7 +365,7 @@ export const MODULE_ITEMS: ModuleItem[] = [
   {
     key: 'showAutoGroupRulesCard',
     title: 'AutoGroup: Rules & Constraints Studio Card',
-    desc: 'Active custom grouping rules, attribute weightage buttons, and optimization constraints card.',
+    desc: 'Active custom grouping rules, 3-level priority buttons (Low, Medium, High), and dynamic 100% weightage card.',
     icon: Settings2,
     category: 'autogroup',
     slotType: 'card',
@@ -373,9 +373,18 @@ export const MODULE_ITEMS: ModuleItem[] = [
   },
   {
     key: 'showAutoGroupResetRulesBtn',
-    title: 'AutoGroup: Reset Defaults & Clear Rules Buttons',
-    desc: 'Reset to balanced rules and Clear All buttons in the rules header.',
+    title: 'AutoGroup: Rules Header Action Icons',
+    desc: 'Minimal icon buttons in rules header: customize enrollment, reset defaults, clear all, and collapse.',
     icon: RotateCcw,
+    category: 'autogroup',
+    slotType: 'button',
+    parentKey: 'showAutoGroupStudio'
+  },
+  {
+    key: 'showAutoGroupRulePercentages',
+    title: 'AutoGroup: Rule Focus % Weight Badges',
+    desc: 'Displays the percentage weight badges (e.g. 17% Focus, 100% Allocated) on grouping rules and headers.',
+    icon: Percent,
     category: 'autogroup',
     slotType: 'button',
     parentKey: 'showAutoGroupStudio'

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import {
@@ -25,10 +25,11 @@ import {
   DEFAULT_FEATURE_TOGGLES,
   MINIMAL_FEATURE_TOGGLES,
   FULL_FEATURE_TOGGLES,
+  NONE_FEATURE_TOGGLES,
   type FeatureToggles
 } from '../utils/featurePreferences';
 import type { FirebaseConfig } from '../context/ClassContext';
-import { calculateClassStats, calculateStudentMetrics, calculateStudentWebPAScore, detectClassAnomalies, getTargetScale, normalizeNationality } from '../utils/math';
+import { calculateClassStats, calculateStudentMetrics, calculateStudentWebPAScore, detectClassAnomalies, getTargetScale, normalizeNationality, DEFAULT_ENROLLMENT_FIELDS, isStandardEnrollmentField } from '../utils/math';
 import type { GradingScaleField, Student, ClassData, Review } from '../utils/math';
 import { detectDuplicateEnrollments } from '../utils/duplicateDetector';
 import type { DuplicateFlag } from '../utils/duplicateDetector';
@@ -64,6 +65,7 @@ import { NATIONALITY_OPTIONS } from '../utils/nationalities';
 import ClassQRCodeModal from '../components/ClassQRCodeModal';
 import AutoGroupModal from '../components/AutoGroupModal';
 import AutoGroupStudio from '../components/AutoGroupStudio';
+import { EnrollmentFormBuilderModal } from '../components/EnrollmentFormBuilderModal';
 import { StudentReportModal } from '../components/StudentReportModal';
 import { RadarChart } from '../components/RadarChart';
 import ProjectorView from './ProjectorView';
@@ -90,7 +92,7 @@ import { LivePresentationScoringModal } from '../components/LivePresentationScor
 import { TeamKickoffModal } from '../components/TeamKickoffModal';
 import { Smartphone, Edit3, Presentation } from 'lucide-react';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
-import { EditableModuleSlot } from '../components/EditableModuleSlot';
+import { EditableModuleSlot, EditModeContext } from '../components/EditableModuleSlot';
 import { getModuleTab, getModuleByKey } from '../utils/moduleRegistry';
 import {
   getShortcutsEnabled,
@@ -390,6 +392,7 @@ export const AdminDashboard: React.FC = () => {
     logoutAdmin,
     syncWorkspaceSettingsToCloud,
     toggleStudentExcused,
+    updateEnrollmentFields,
     addToast
   } = useClass();
   const { toggleThemeMode } = useTheme();
@@ -448,6 +451,7 @@ export const AdminDashboard: React.FC = () => {
   const [newProfileName, setNewProfileName] = useState('');
   const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
   const [isAutoGroupModalOpen, setIsAutoGroupModalOpen] = useState(false);
+  const [isEnrollmentFormBuilderOpen, setIsEnrollmentFormBuilderOpen] = useState(false);
   const [isLivePresentationModalOpen, setIsLivePresentationModalOpen] = useState(false);
   const [isTeamKickoffModalOpen, setIsTeamKickoffModalOpen] = useState(false);
   const [copiedEnrollLink, setCopiedEnrollLink] = useState(false);
@@ -455,8 +459,12 @@ export const AdminDashboard: React.FC = () => {
   const [teamKickoffAutoPrint, setTeamKickoffAutoPrint] = useState(false);
   const [stagedAutoGroups, setStagedAutoGroups] = useState<Student[] | null>(null);
 
+  const handleStagedGroupsChange = useCallback((staged: Student[]) => {
+    setStagedAutoGroups(staged);
+  }, []);
+
   const handleOpenTeamKickoff = (
-    tab: 'roles_config' | 'icebreakers' | 'charters' = 'roles_config', 
+    tab: 'roles_config' | 'icebreakers' | 'charters' = 'roles_config',
     autoPrint = false,
     staged?: Student[]
   ) => {
@@ -694,7 +702,8 @@ export const AdminDashboard: React.FC = () => {
     originalUniversity: '',
     originalCountry: '',
     currentUniversity: '',
-    studentType: 'Normal'
+    studentType: 'Normal',
+    customFields: {} as Record<string, any>
   });
 
   // UI Filtering, Searching & Duplicate Flagging
@@ -712,7 +721,7 @@ export const AdminDashboard: React.FC = () => {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) return parsed.slice(0, 6);
       }
-    } catch (e) {}
+    } catch (e) { }
     return [];
   });
   const [activeQuickFilter, setActiveQuickFilter] = useState<'all' | 'pending' | 'submitted' | 'unassigned' | 'with_role' | 'erasmus' | 'duplicates'>('all');
@@ -727,7 +736,7 @@ export const AdminDashboard: React.FC = () => {
       const next = [trimmed, ...filtered].slice(0, 6);
       try {
         localStorage.setItem('peer_roster_search_history_v1', JSON.stringify(next));
-      } catch (e) {}
+      } catch (e) { }
       return next;
     });
   };
@@ -742,6 +751,12 @@ export const AdminDashboard: React.FC = () => {
     if (!activeClass?.students) return new Map<string, DuplicateFlag[]>();
     return detectDuplicateEnrollments(activeClass.students, ignoredDuplicatePairs);
   }, [activeClass?.students, ignoredDuplicatePairs]);
+
+  // Only custom questions added beyond the standard predefined profile questions
+  const activeCustomQuestions = useMemo(() => {
+    if (!activeClass?.enrollmentFormFields) return [];
+    return activeClass.enrollmentFormFields.filter(f => !isStandardEnrollmentField(f.id));
+  }, [activeClass?.enrollmentFormFields]);
 
   // Firebase Config panel states
   const [fbApiKey, setFbApiKey] = useState('');
@@ -769,7 +784,8 @@ export const AdminDashboard: React.FC = () => {
     originalUniversity: '',
     originalCountry: '',
     currentUniversity: '',
-    studentType: 'Normal'
+    studentType: 'Normal',
+    customFields: {} as Record<string, any>
   });
 
   // Advanced settings and controls states
@@ -826,7 +842,7 @@ export const AdminDashboard: React.FC = () => {
         document.querySelectorAll('details').forEach(el => {
           el.open = false;
         });
-      } catch (e) {}
+      } catch (e) { }
     };
     const handleExpandAll = () => {
       setIsRosterTableExpanded(true);
@@ -837,7 +853,7 @@ export const AdminDashboard: React.FC = () => {
         document.querySelectorAll('details').forEach(el => {
           el.open = true;
         });
-      } catch (e) {}
+      } catch (e) { }
     };
     window.addEventListener('peerlens_collapse_all', handleCollapseAll);
     window.addEventListener('peerlens_expand_all', handleExpandAll);
@@ -870,6 +886,16 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     return subscribeShortcutsEnabled((enabled) => setShortcutsEnabled(enabled));
   }, []);
+
+  const toggleEditMode = useCallback(() => {
+    setIsEditMode(prev => {
+      const next = !prev;
+      setTimeout(() => {
+        addToast(next ? 'Interactive Layout Edit Mode activated (Alt+E)' : 'Exited Layout Edit Mode', 'info');
+      }, 0);
+      return next;
+    });
+  }, [addToast]);
 
   const handleToggleModule = (key: keyof FeatureToggles, nextVal: boolean) => {
     const updated = { ...featureToggles, [key]: nextVal };
@@ -950,6 +976,21 @@ export const AdminDashboard: React.FC = () => {
   const [quickLookPos, setQuickLookPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const isSpaceQuickLookActiveRef = useRef<boolean>(false);
 
+  // QuickAdd Hold-Key State (KeyA)
+  const [isQuickAddActive, setIsQuickAddActive] = useState<boolean>(false);
+  const isQuickAddActiveRef = useRef<boolean>(false);
+
+  const startQuickAdd = () => {
+    setIsQuickAddActive(true);
+    isQuickAddActiveRef.current = true;
+  };
+
+  const dismissQuickAdd = () => {
+    setIsQuickAddActive(false);
+    isQuickAddActiveRef.current = false;
+  };
+
+
   const triggerQuickLookInspect = () => {
     const x = mousePosRef.current.x;
     const y = mousePosRef.current.y;
@@ -961,7 +1002,7 @@ export const AdminDashboard: React.FC = () => {
     if (studentEl) {
       const studentId = studentEl.getAttribute('data-student-id');
       const student = activeClass?.students.find(s => s.id === studentId) ||
-                      stagedAutoGroups?.find(s => s.id === studentId);
+        stagedAutoGroups?.find(s => s.id === studentId);
       if (student) {
         setQuickLookPos({ x, y });
         setQuickLookPayload({ type: 'student', student });
@@ -1086,9 +1127,9 @@ export const AdminDashboard: React.FC = () => {
       }
 
       setQuickLookPos({ x, y });
-      setQuickLookPayload({ 
-        type: 'action', 
-        label: richLabel, 
+      setQuickLookPayload({
+        type: 'action',
+        label: richLabel,
         description: richDesc,
         shortcut: shortcutHint || undefined
       });
@@ -1101,7 +1142,7 @@ export const AdminDashboard: React.FC = () => {
     if (cardEl) {
       const heading = cardEl.querySelector('h1, h2, h3, h4, h5')?.textContent?.trim() || '';
       const text = cardEl.textContent?.trim().slice(0, 120) || '';
-      
+
       let richTitle = heading || text.slice(0, 36) || 'Workspace Component';
       let richSubtitle = 'Classroom Activity';
       let richDetails = '';
@@ -1153,11 +1194,11 @@ export const AdminDashboard: React.FC = () => {
     const preventSpaceScroll = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.key === ' ' || e.keyCode === 32) {
         const activeEl = document.activeElement;
-        const isInput = activeEl instanceof HTMLInputElement || 
-                        activeEl instanceof HTMLTextAreaElement || 
-                        activeEl instanceof HTMLSelectElement ||
-                        activeEl?.getAttribute('contenteditable') === 'true' ||
-                        (activeEl as HTMLElement)?.isContentEditable;
+        const isInput = activeEl instanceof HTMLInputElement ||
+          activeEl instanceof HTMLTextAreaElement ||
+          activeEl instanceof HTMLSelectElement ||
+          activeEl?.getAttribute('contenteditable') === 'true' ||
+          (activeEl as HTMLElement)?.isContentEditable;
         if (!isInput) {
           e.preventDefault();
         }
@@ -1168,9 +1209,13 @@ export const AdminDashboard: React.FC = () => {
       if (e.code === 'Space' || e.key === ' ' || e.keyCode === 32) {
         dismissQuickLook();
       }
+      if (e.code === 'KeyA' || e.key?.toLowerCase() === 'a') {
+        dismissQuickAdd();
+      }
     };
     const handleBlur = () => {
       dismissQuickLook();
+      dismissQuickAdd();
     };
     window.addEventListener('keydown', preventSpaceScroll, { capture: true, passive: false });
     window.addEventListener('keyup', handleKeyUp);
@@ -1193,7 +1238,7 @@ export const AdminDashboard: React.FC = () => {
       }
       try {
         window.dispatchEvent(new CustomEvent('peerlens_expand_all'));
-      } catch (err) {}
+      } catch (err) { }
 
       setTimeout(() => {
         let el = document.querySelector(`[data-module-key="${key}"], #module-slot-${key}`) as HTMLElement | null;
@@ -1493,6 +1538,7 @@ export const AdminDashboard: React.FC = () => {
       duplicates: students.filter(s => duplicateFlagsMap.has(s.id)).length
     };
   }, [activeClass?.students, duplicateFlagsMap]);
+
 
   const filteredStudents = useMemo(() => {
     if (!activeClass?.students) return [];
@@ -1832,7 +1878,7 @@ export const AdminDashboard: React.FC = () => {
     }
   }, [activeClass?.id, isCloudSynced, user, firebaseConfig]);
 
-  const executeShortcutActionRef = useRef<(actionId: string) => void>(() => {});
+  const executeShortcutActionRef = useRef<(actionId: string) => void>(() => { });
 
   // Global Keyboard Shortcuts Event Handler (Strictly called before any early return)
   useEffect(() => {
@@ -1847,6 +1893,7 @@ export const AdminDashboard: React.FC = () => {
 
       // Handle Escape to dismiss open overlays/modals or exit edit mode
       if (e.key === 'Escape') {
+        if (isQuickAddActiveRef.current) { dismissQuickAdd(); return; }
         if (isEditMode) { setIsEditMode(false); addToast('Exited Layout Edit Mode', 'info'); return; }
         if (isShortcutsModalOpen) { setIsShortcutsModalOpen(false); return; }
         if (isGuideCenterOpen) { setIsGuideCenterOpen(false); return; }
@@ -1894,11 +1941,7 @@ export const AdminDashboard: React.FC = () => {
         }
         e.preventDefault();
         e.stopPropagation();
-        setIsEditMode(prev => {
-          const next = !prev;
-          addToast(next ? 'Interactive Layout Edit Mode activated (Alt+E)' : 'Exited Layout Edit Mode', 'info');
-          return next;
-        });
+        toggleEditMode();
         return;
       }
 
@@ -1939,16 +1982,43 @@ export const AdminDashboard: React.FC = () => {
       // 4. Spacebar: Hold to Hover-Quick-Inspect ("Quick Look")
       if (e.code === 'Space' || e.key === ' ' || e.keyCode === 32) {
         const activeEl = document.activeElement;
-        const isInput = activeEl instanceof HTMLInputElement || 
-                        activeEl instanceof HTMLTextAreaElement || 
-                        activeEl instanceof HTMLSelectElement ||
-                        activeEl?.getAttribute('contenteditable') === 'true' ||
-                        (activeEl as HTMLElement)?.isContentEditable;
+        const isInput = activeEl instanceof HTMLInputElement ||
+          activeEl instanceof HTMLTextAreaElement ||
+          activeEl instanceof HTMLSelectElement ||
+          activeEl?.getAttribute('contenteditable') === 'true' ||
+          (activeEl as HTMLElement)?.isContentEditable;
         if (!isInput) {
           e.preventDefault();
           e.stopPropagation();
           if (!isSpaceQuickLookActiveRef.current) {
             triggerQuickLookInspect();
+          }
+          return;
+        }
+      }
+
+      // 5. 'A' key: Hold for QuickAdd (Instant In-Place Module Slot Revealer)
+      if ((e.code === 'KeyA' || e.key?.toLowerCase() === 'a') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const activeEl = document.activeElement;
+        const isInput = activeEl instanceof HTMLInputElement ||
+          activeEl instanceof HTMLTextAreaElement ||
+          activeEl instanceof HTMLSelectElement ||
+          activeEl?.getAttribute('contenteditable') === 'true' ||
+          (activeEl as HTMLElement)?.isContentEditable;
+        if (!isInput) {
+          // If any overlay modal is open, do not trigger background QuickAdd
+          const isAnyModalOpen = isShortcutsModalOpen || isGuideCenterOpen || !!previewingStudent || isTourOpen ||
+            isCommandPaletteOpen || isSettingsModalOpen || isLinkDispatcherOpen ||
+            isProjectorModalOpen || isAutoGroupModalOpen || isQRCodeModalOpen ||
+            isReportModalOpen || isAddStudentModalOpen || isWizardOpen ||
+            isArchiveModalOpen || confirmModal.isOpen || isNewClassModalOpen ||
+            isNewProfileModalOpen || isMobileProfileModalOpen;
+          if (isAnyModalOpen) return;
+
+          e.preventDefault();
+          e.stopPropagation();
+          if (!isQuickAddActiveRef.current) {
+            startQuickAdd();
           }
           return;
         }
@@ -1985,12 +2055,14 @@ export const AdminDashboard: React.FC = () => {
       }
 
       // If any modal/overlay is currently active, don't fire background shortcuts
-      const isAnyModalOpen = isShortcutsModalOpen || isGuideCenterOpen || !!previewingStudent || isTourOpen || 
-        isCommandPaletteOpen || isSettingsModalOpen || isLinkDispatcherOpen || 
-        isProjectorModalOpen || isAutoGroupModalOpen || isQRCodeModalOpen || 
-        isReportModalOpen || isAddStudentModalOpen || isWizardOpen || 
-        isArchiveModalOpen || confirmModal.isOpen || isNewClassModalOpen || 
-        isNewProfileModalOpen || isMobileProfileModalOpen;
+      const isAnyModalOpen = isShortcutsModalOpen || isGuideCenterOpen || !!previewingStudent || isTourOpen ||
+        isCommandPaletteOpen || isSettingsModalOpen || isLinkDispatcherOpen ||
+        isProjectorModalOpen || isAutoGroupModalOpen || isQRCodeModalOpen ||
+        isReportModalOpen || isAddStudentModalOpen || isWizardOpen ||
+        isArchiveModalOpen || confirmModal.isOpen || isNewClassModalOpen ||
+        isNewProfileModalOpen || isMobileProfileModalOpen ||
+        isEnrollmentFormBuilderOpen || isLivePresentationModalOpen ||
+        isTeamKickoffModalOpen || isEvaluationControlsModalOpen;
 
       if (isAnyModalOpen) return;
 
@@ -2026,6 +2098,10 @@ export const AdminDashboard: React.FC = () => {
     isArchiveModalOpen,
     confirmModal.isOpen,
     isNewClassModalOpen,
+    isEnrollmentFormBuilderOpen,
+    isLivePresentationModalOpen,
+    isTeamKickoffModalOpen,
+    isEvaluationControlsModalOpen,
     activeTab,
     shortcutsEnabled,
     isEditMode
@@ -2504,7 +2580,8 @@ export const AdminDashboard: React.FC = () => {
       originalUniversity: newStudent.isExchange ? newStudent.originalUniversity.trim() || undefined : undefined,
       originalCountry: newStudent.isExchange ? normalizeNationality(newStudent.originalCountry) || undefined : undefined,
       currentUniversity: newStudent.isExchange ? newStudent.currentUniversity.trim() || undefined : undefined,
-      studentType: newStudent.isExchange ? 'Erasmus' : newStudent.isInternational ? 'International' : 'Normal'
+      studentType: newStudent.isExchange ? 'Erasmus' : newStudent.isInternational ? 'International' : 'Normal',
+      customFields: newStudent.customFields || {}
     });
 
     // Reset inputs
@@ -2524,7 +2601,8 @@ export const AdminDashboard: React.FC = () => {
       originalUniversity: '',
       originalCountry: '',
       currentUniversity: '',
-      studentType: 'Normal'
+      studentType: 'Normal',
+      customFields: {}
     });
     setIsAddStudentModalOpen(false);
     addToast('Student participant enrolled successfully!', 'success');
@@ -2556,6 +2634,7 @@ export const AdminDashboard: React.FC = () => {
       originalCountry: editStudentData.isExchange ? normalizeNationality(editStudentData.originalCountry) || undefined : undefined,
       currentUniversity: editStudentData.isExchange ? editStudentData.currentUniversity.trim() || undefined : undefined,
       studentType: editStudentData.isExchange ? 'Erasmus' : editStudentData.isInternational ? 'International' : 'Normal',
+      customFields: editStudentData.customFields || {},
       flaggedForReview: false,
       suspiciousReason: null
     });
@@ -2796,7 +2875,7 @@ export const AdminDashboard: React.FC = () => {
           const isCollusionForward = collusionPair && reviewer.id === collusionPair[0].id && recipient.id === collusionPair[1].id;
           const isCollusionBackward = collusionPair && reviewer.id === collusionPair[1].id && recipient.id === collusionPair[0].id;
           const isOtherToCollusionStudent = collusionPair && (recipient.id === collusionPair[0].id || recipient.id === collusionPair[1].id) && reviewer.id !== collusionPair[0].id && reviewer.id !== collusionPair[1].id;
-          
+
           const isSpitefulReview = outlierPair && reviewer.id === outlierPair.reviewer.id && recipient.id === outlierPair.victim.id;
           const isOtherToVictim = outlierPair && recipient.id === outlierPair.victim.id && reviewer.id !== outlierPair.reviewer.id && !isSelf;
 
@@ -3006,6 +3085,9 @@ export const AdminDashboard: React.FC = () => {
       case 'scroll_top':
         window.scrollTo({ top: 0, behavior: 'smooth' });
         break;
+      case 'scroll_bottom':
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        break;
 
       // --- Tools & Modals ---
       case 'focus_search':
@@ -3048,6 +3130,15 @@ export const AdminDashboard: React.FC = () => {
           addToast('Please enroll at least one student to launch simulator.', 'warning');
         }
         break;
+      case 'open_live_presentation':
+        setIsLivePresentationModalOpen(true);
+        break;
+      case 'open_team_kickoff':
+        handleOpenTeamKickoff('charters', false);
+        break;
+      case 'open_evaluation_controls':
+        setIsEvaluationControlsModalOpen(true);
+        break;
       case 'toggle_theme':
         toggleThemeMode();
         addToast('Toggled interface color theme', 'info');
@@ -3064,14 +3155,13 @@ export const AdminDashboard: React.FC = () => {
         }
         break;
       case 'toggle_edit_mode':
-        setIsEditMode(prev => {
-          const next = !prev;
-          addToast(next ? 'Interactive Layout Edit Mode activated (Alt+E)' : 'Exited Layout Edit Mode', 'info');
-          return next;
-        });
+        toggleEditMode();
         break;
 
       // --- Roster & Teams ---
+      case 'open_enrollment_builder':
+        setIsEnrollmentFormBuilderOpen(true);
+        break;
       case 'new_class':
         setIsNewClassModalOpen(true);
         break;
@@ -3152,6 +3242,16 @@ export const AdminDashboard: React.FC = () => {
       case 'reshuffle_teams':
         window.dispatchEvent(new CustomEvent('peerlens_reshuffle_teams'));
         break;
+      case 'populate_minimal_demo':
+        if (activeClass) {
+          importRoster(activeClass.id, DIVERSE_100_STUDENTS.slice(0, 10), true);
+          addToast('Loaded 10 sample students!', 'success');
+        }
+        break;
+      case 'lock_all_teams':
+        window.dispatchEvent(new CustomEvent('peerlens_toggle_lock_all_teams'));
+        addToast('Toggled team formation locks', 'info');
+        break;
 
       // --- Rubric & Scales ---
       case 'add_criterion':
@@ -3186,6 +3286,11 @@ export const AdminDashboard: React.FC = () => {
       case 'apply_ipaf_preset':
         handleApplyPreset('ipaf_research_synthesized');
         addToast('Applied Integrated Peer Assessment Framework (IPAF) Rubric Preset (100% balanced)!', 'success');
+        break;
+      case 'open_rubric_presets':
+        setActiveTab('grading');
+        window.dispatchEvent(new CustomEvent('peerlens_open_rubric_presets'));
+        addToast('Switched to Section 2: Rubric Presets', 'info');
         break;
       case 'set_deadline':
         setIsArchiveModalOpen(true);
@@ -3236,6 +3341,79 @@ export const AdminDashboard: React.FC = () => {
           addToast('No students enrolled to export report cards.', 'warning');
         }
         break;
+      case 'export_pulse_csv':
+        if (activeClass) {
+          const rounds = activeClass.pulseRounds || [];
+          if (rounds.length === 0) {
+            addToast('No pulse check-in rounds found. Launch a round in Section 2 first.', 'warning');
+            break;
+          }
+          const targetRound = rounds.find(r => r.status === 'active') || rounds[0];
+          const headers = ['Round Title', 'Status', 'Student Name', 'Team Name', 'Morale Rating', 'Scale Type', 'Milestone Status', 'Blocker Note', 'Submitted At', 'Custom Answers'];
+          const rows: string[][] = [];
+          targetRound.responses.forEach(resp => {
+            const customFormatted = resp.customAnswers ? Object.entries(resp.customAnswers).map(([k, v]) => `${k}: ${v}`).join('; ') : '';
+            rows.push([
+              `"${targetRound.title.replace(/"/g, '""')}"`,
+              targetRound.status,
+              `"${resp.studentName.replace(/"/g, '""')}"`,
+              `"${resp.groupName.replace(/"/g, '""')}"`,
+              String(resp.moraleScore),
+              resp.scaleType,
+              resp.status,
+              `"${(resp.blockerNote || '').replace(/"/g, '""')}"`,
+              new Date(resp.submittedAt).toLocaleString(),
+              `"${customFormatted.replace(/"/g, '""')}"`
+            ]);
+          });
+          const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          const safeTitle = targetRound.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+          link.setAttribute('download', `${activeClass.name.replace(/\s+/g, '_')}_${safeTitle}_Pulse_Export.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          addToast('Downloaded pulse responses CSV successfully!', 'success');
+        }
+        break;
+      case 'export_lms_canvas':
+        if (activeClass) {
+          exportLMSGradebook('canvas', activeClass, 'calibrated');
+          addToast('Exported Canvas LMS gradebook successfully!', 'success');
+        }
+        break;
+      case 'export_lms_moodle':
+        if (activeClass) {
+          exportLMSGradebook('moodle', activeClass, 'calibrated');
+          addToast('Exported Moodle LMS gradebook successfully!', 'success');
+        }
+        break;
+      case 'export_lms_blackboard':
+        if (activeClass) {
+          exportLMSGradebook('blackboard', activeClass, 'calibrated');
+          addToast('Exported Blackboard LMS gradebook successfully!', 'success');
+        }
+        break;
+      case 'export_lms_brightspace':
+        if (activeClass) {
+          exportLMSGradebook('brightspace', activeClass, 'calibrated');
+          addToast('Exported Brightspace LMS gradebook successfully!', 'success');
+        }
+        break;
+      case 'open_audit_matrix':
+        setActiveTab('results');
+        window.dispatchEvent(new CustomEvent('peerlens_open_audit_matrix'));
+        addToast('Jumped to Section 3: Audit Matrix', 'info');
+        break;
+      case 'open_johari_window':
+        setActiveTab('results');
+        window.dispatchEvent(new CustomEvent('peerlens_open_johari'));
+        addToast('Jumped to Section 3: Johari Matrix', 'info');
+        break;
       case 'calibrate_webpa_0':
         setFudgeWeight(0.0);
         addToast('WebPA Calibrator set to 0% (Pure Class Mean)', 'info');
@@ -3273,17 +3451,26 @@ export const AdminDashboard: React.FC = () => {
       case 'preset_standard':
         saveFeatureToggles(DEFAULT_FEATURE_TOGGLES);
         syncWorkspaceSettingsToCloud({ featureToggles: DEFAULT_FEATURE_TOGGLES });
+        setFeatureToggles(DEFAULT_FEATURE_TOGGLES);
         addToast('Applied Standard Mode layout preset (Default)', 'success');
         break;
       case 'preset_minimal':
         saveFeatureToggles(MINIMAL_FEATURE_TOGGLES);
         syncWorkspaceSettingsToCloud({ featureToggles: MINIMAL_FEATURE_TOGGLES });
+        setFeatureToggles(MINIMAL_FEATURE_TOGGLES);
         addToast('Applied Minimal Mode layout preset', 'info');
         break;
       case 'preset_full':
         saveFeatureToggles(FULL_FEATURE_TOGGLES);
         syncWorkspaceSettingsToCloud({ featureToggles: FULL_FEATURE_TOGGLES });
+        setFeatureToggles(FULL_FEATURE_TOGGLES);
         addToast('Applied Full Suite layout preset (All modules enabled)', 'success');
+        break;
+      case 'preset_none':
+        saveFeatureToggles(NONE_FEATURE_TOGGLES);
+        syncWorkspaceSettingsToCloud({ featureToggles: NONE_FEATURE_TOGGLES });
+        setFeatureToggles(NONE_FEATURE_TOGGLES);
+        addToast('Applied Clean Canvas layout preset (All modules hidden)', 'info');
         break;
       case 'expand_all_sections':
         window.dispatchEvent(new CustomEvent('peerlens_expand_all'));
@@ -3295,6 +3482,12 @@ export const AdminDashboard: React.FC = () => {
         break;
       case 'hover_dismiss_module':
         handleHoverDismissModule();
+        break;
+      case 'sync_cloud_now':
+        if (activeClass) {
+          syncWorkspaceSettingsToCloud({ activeClassId: activeClass.id, updatedAt: new Date().toISOString() });
+          addToast('Synchronized workspace to Firebase cloud!', 'success');
+        }
         break;
 
       default:
@@ -3476,7 +3669,8 @@ export const AdminDashboard: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, width: '100%' }}>
+    <EditModeContext.Provider value={{ isEditMode, featureToggles, onToggle: handleToggleModule }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, width: '100%' }}>
       {/* UNIFIED PERSISTENT APP TOPBAR */}
       <header className="app-header">
         {/* Left: Brand + Course Picker + ID + Delete */}
@@ -3802,13 +3996,7 @@ export const AdminDashboard: React.FC = () => {
               type="button"
               className={`btn btn-sm dock-btn ${isEditMode ? 'btn-primary' : 'btn-secondary'}`}
               data-tour="edit-layout-btn"
-              onClick={() => {
-                setIsEditMode(prev => {
-                  const next = !prev;
-                  addToast(next ? 'Interactive Layout Edit Mode activated (Alt+E)' : 'Exited Layout Edit Mode', 'info');
-                  return next;
-                });
-              }}
+              onClick={toggleEditMode}
               title={isEditMode ? 'Exit Layout Edit Mode' : 'Toggle Interactive Layout Edit Mode (Alt+E or Alt+L)'}
               style={{
                 width: isEditMode ? 'auto' : '34px',
@@ -3904,8 +4092,8 @@ export const AdminDashboard: React.FC = () => {
           width: '100%',
           maxWidth: activeTab === 'hub' ? '1320px' : '1380px',
           margin: '0 auto',
-          padding: activeTab === 'hub' ? '0.75rem 1.5rem' : '0 1.5rem 2rem',
-          justifyContent: activeTab === 'hub' ? 'center' : 'flex-start'
+          padding: activeTab === 'hub' ? '0.75rem 1.5rem 2.5rem' : '0 1.5rem 2rem',
+          justifyContent: 'flex-start'
         }}
       >
 
@@ -4004,994 +4192,1759 @@ export const AdminDashboard: React.FC = () => {
           </div>
         )}
 
-      {/* Admin Workspace & Account Center Modal */}
-      {isMobileProfileModalOpen && createPortal(
-        <div className="modal-overlay" onClick={() => setIsMobileProfileModalOpen(false)}>
-          <div className="modal-content" style={{ maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
-                <User size={17} className="text-primary" /> Admin Workspace & Account Center
-              </h3>
-              <button className="btn-close" onClick={() => setIsMobileProfileModalOpen(false)} title="Close" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                <X size={16} />
-              </button>
-            </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Workspace Profile</label>
-                <CustomSelect
-                  options={profileOptions}
-                  value={activeAdminProfile}
-                  onChange={(val) => {
-                    if (val === '__new__') {
-                      setIsMobileProfileModalOpen(false);
-                      setIsNewProfileModalOpen(true);
-                    } else {
-                      switchAdminProfile(val);
-                    }
-                  }}
-                  triggerStyle={{ height: '42px', fontSize: '0.88rem', fontWeight: 700 }}
-                />
-              </div>
-
-              {/* Cloud Synchronization Card */}
-              <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>CLOUD SYNCHRONIZATION</div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.74rem', color: isCloudSynced ? 'var(--accent-teal)' : 'var(--text-muted)', fontWeight: 700 }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: isCloudSynced ? 'var(--accent-teal)' : 'var(--text-muted)' }} />
-                    {isCloudSynced ? 'Cloud Synced' : 'Local Sandbox Mode'}
-                  </span>
-                </div>
-                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                  {isCloudSynced ? 'Connected to Firebase cloud database. Changes sync automatically.' : 'Operating offline on local browser storage. Connect Firebase for multi-device sync.'}
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ width: '100%', justifyContent: 'center', height: '34px', marginTop: '0.25rem', fontWeight: 600, fontSize: '0.78rem' }}
-                  onClick={() => {
-                    setIsMobileProfileModalOpen(false);
-                    setSettingsInitialTab('cloud');
-                    setIsSettingsModalOpen(true);
-                  }}
-                >
-                  <Database size={13} className="text-primary" /> {isCloudSynced ? 'Manage Cloud Settings' : 'Connect Cloud Database'}
+        {/* Admin Workspace & Account Center Modal */}
+        {isMobileProfileModalOpen && createPortal(
+          <div className="modal-overlay" onClick={() => setIsMobileProfileModalOpen(false)}>
+            <div className="modal-content" style={{ maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800 }}>
+                  <User size={17} className="text-primary" /> Admin Workspace & Account Center
+                </h3>
+                <button className="btn-close" onClick={() => setIsMobileProfileModalOpen(false)} title="Close" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={16} />
                 </button>
               </div>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Workspace Profile</label>
+                  <CustomSelect
+                    options={profileOptions}
+                    value={activeAdminProfile}
+                    onChange={(val) => {
+                      if (val === '__new__') {
+                        setIsMobileProfileModalOpen(false);
+                        setIsNewProfileModalOpen(true);
+                      } else {
+                        switchAdminProfile(val);
+                      }
+                    }}
+                    triggerStyle={{ height: '42px', fontSize: '0.88rem', fontWeight: 700 }}
+                  />
+                </div>
 
-              {isCloudSynced && user && (
-                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>SIGNED IN ACCOUNT</div>
-                  <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-all' }}>{user.email}</div>
+                {/* Cloud Synchronization Card */}
+                <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>CLOUD SYNCHRONIZATION</div>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.74rem', color: isCloudSynced ? 'var(--accent-teal)' : 'var(--text-muted)', fontWeight: 700 }}>
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: isCloudSynced ? 'var(--accent-teal)' : 'var(--text-muted)' }} />
+                      {isCloudSynced ? 'Cloud Synced' : 'Local Sandbox Mode'}
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                    {isCloudSynced ? 'Connected to Firebase cloud database. Changes sync automatically.' : 'Operating offline on local browser storage. Connect Firebase for multi-device sync.'}
+                  </p>
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', width: '100%', justifyContent: 'center', height: '36px', marginTop: '0.4rem', fontWeight: 700 }}
+                    style={{ width: '100%', justifyContent: 'center', height: '34px', marginTop: '0.25rem', fontWeight: 600, fontSize: '0.78rem' }}
                     onClick={() => {
                       setIsMobileProfileModalOpen(false);
-                      logoutAdmin();
+                      setSettingsInitialTab('cloud');
+                      setIsSettingsModalOpen(true);
                     }}
                   >
-                    <LogOut size={13} style={{ marginRight: '0.35rem' }} /> Sign Out of Account
+                    <Database size={13} className="text-primary" /> {isCloudSynced ? 'Manage Cloud Settings' : 'Connect Cloud Database'}
                   </button>
                 </div>
-              )}
 
-              {activeAdminProfile !== 'default' && (
-                <button
-                  type="button"
-                  className="btn btn-rose btn-sm"
-                  style={{ width: '100%', justifyContent: 'center', height: '36px' }}
-                  onClick={() => {
-                    setIsMobileProfileModalOpen(false);
-                    triggerConfirm(
-                      'Delete Admin Workspace Profile',
-                      `Are you sure you want to permanently delete the admin workspace profile "${activeAdminProfile}" and ALL of its associated classroom groups? This action cannot be undone.`,
-                      () => deleteAdminProfile(activeAdminProfile),
-                      'Delete Workspace',
-                      'Cancel'
-                    );
-                  }}
-                >
-                  <Trash2 size={13} /> Delete Current Workspace
+                {isCloudSynced && user && (
+                  <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>SIGNED IN ACCOUNT</div>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-all' }}>{user.email}</div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ borderColor: 'var(--accent-rose)', color: 'var(--accent-rose)', width: '100%', justifyContent: 'center', height: '36px', marginTop: '0.4rem', fontWeight: 700 }}
+                      onClick={() => {
+                        setIsMobileProfileModalOpen(false);
+                        logoutAdmin();
+                      }}
+                    >
+                      <LogOut size={13} style={{ marginRight: '0.35rem' }} /> Sign Out of Account
+                    </button>
+                  </div>
+                )}
+
+                {activeAdminProfile !== 'default' && (
+                  <button
+                    type="button"
+                    className="btn btn-rose btn-sm"
+                    style={{ width: '100%', justifyContent: 'center', height: '36px' }}
+                    onClick={() => {
+                      setIsMobileProfileModalOpen(false);
+                      triggerConfirm(
+                        'Delete Admin Workspace Profile',
+                        `Are you sure you want to permanently delete the admin workspace profile "${activeAdminProfile}" and ALL of its associated classroom groups? This action cannot be undone.`,
+                        () => deleteAdminProfile(activeAdminProfile),
+                        'Delete Workspace',
+                        'Cancel'
+                      );
+                    }}
+                  >
+                    <Trash2 size={13} /> Delete Current Workspace
+                  </button>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" style={{ width: '100%' }} onClick={() => setIsMobileProfileModalOpen(false)}>
+                  Done
                 </button>
-              )}
+              </div>
             </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" style={{ width: '100%' }} onClick={() => setIsMobileProfileModalOpen(false)}>
-                Done
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )}
 
-      {/* HANDS-ON GUIDED SANDBOX MISSION HUD (Now integrated into the bottom Now Bar Stack) */}
+        {/* HANDS-ON GUIDED SANDBOX MISSION HUD (Now integrated into the bottom Now Bar Stack) */}
 
-      {/* INSTRUCTOR ONBOARDING & SETUP TRACKER */}
-      {!isSandboxActive && showOnboardingChecklist && (
-        <OnboardingChecklistWidget
-          studentCount={stats.totalStudents}
-          rubricWeightSum={activeClass.fields.reduce((sum, f) => sum + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0)}
-          hasEvaluations={stats.submittedCount > 0}
-          onNavigateTab={(tab) => setActiveTab(tab)}
-          onStartTour={() => setIsTourOpen(true)}
-          onLaunchSandbox={handleLaunchSandbox}
-          onDismiss={() => {
-            setShowOnboardingChecklist(false);
-            localStorage.setItem('peer_onboarding_dismissed', 'true');
-          }}
-        />
-      )}
+        {/* INSTRUCTOR ONBOARDING & SETUP TRACKER */}
+        {!isSandboxActive && showOnboardingChecklist && (
+          <OnboardingChecklistWidget
+            studentCount={stats.totalStudents}
+            rubricWeightSum={activeClass.fields.reduce((sum, f) => sum + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0)}
+            hasEvaluations={stats.submittedCount > 0}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onStartTour={() => setIsTourOpen(true)}
+            onLaunchSandbox={handleLaunchSandbox}
+            onDismiss={() => {
+              setShowOnboardingChecklist(false);
+              localStorage.setItem('peer_onboarding_dismissed', 'true');
+            }}
+          />
+        )}
 
-      {/* =========================================================================
+        {/* =========================================================================
           HOME HUB: 3 BIG CORE SECTIONS (Directly matching wireframe sketch)
           ========================================================================= */}
-      {activeTab === 'hub' && (
-        <div className="hub-fullscreen-wrapper">
-          {/* Elegant Centered Hero Header */}
-          <div className="hub-hero-header">
+        {activeTab === 'hub' && (
+          <div className="hub-fullscreen-wrapper">
+            {/* Elegant Centered Hero Header */}
+            <div className="hub-hero-header">
 
-            <h1 className="hub-hero-title">
-              Peer Assessment Workflow
-            </h1>
-            <p className="hub-hero-subtitle">
-              Manage student cohorts, calibrate evaluation rubrics, and inspect real-time performance analytics in three streamlined stages.
-            </p>
-          </div>
+              <h1 className="hub-hero-title">
+                Peer Assessment Workflow
+              </h1>
+              <p className="hub-hero-subtitle">
+                Manage student cohorts, calibrate evaluation rubrics, and inspect real-time performance analytics in three streamlined stages.
+              </p>
+            </div>
 
-          {/* Minimal but Informative Hub Overview Banner - Only shown if explicitly toggled on */}
-          {(isEditMode || featureToggles.showHubOverviewBanner) && (
-            <EditableModuleSlot
-              moduleKey="showHubOverviewBanner"
-              isEditMode={isEditMode}
-              isVisible={featureToggles.showHubOverviewBanner}
-              onToggle={handleToggleModule}
-              slotType="banner"
-              style={{ marginBottom: '1rem', width: '100%' }}
-            >
-              <div className="hub-overview-banner" style={{ marginBottom: '1rem', width: '100%' }}>
-                <div className="hub-overview-left">
-                  <div className="hub-overview-heading-row">
-                    <h2 className="hub-overview-title">{activeClass.name} Overview</h2>
-                    <span className="badge badge-teal" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.12rem 0.45rem' }}>
-                      Active Classroom
-                    </span>
+            {/* Minimal but Informative Hub Overview Banner - Only shown if explicitly toggled on */}
+            {(isEditMode || featureToggles.showHubOverviewBanner) && (
+              <EditableModuleSlot
+                moduleKey="showHubOverviewBanner"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showHubOverviewBanner}
+                onToggle={handleToggleModule}
+                slotType="banner"
+                style={{ marginBottom: '1rem', width: '100%' }}
+              >
+                <div className="hub-overview-banner" style={{ marginBottom: '1rem', width: '100%' }}>
+                  <div className="hub-overview-left">
+                    <div className="hub-overview-heading-row">
+                      <h2 className="hub-overview-title">{activeClass.name} Overview</h2>
+                      <span className="badge badge-teal" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.12rem 0.45rem' }}>
+                        Active Classroom
+                      </span>
+                    </div>
+                    <p className="hub-overview-desc">
+                      Select a core module below to get started.
+                    </p>
                   </div>
-                  <p className="hub-overview-desc">
-                    Select a core module below to get started.
-                  </p>
+
+                  <div className="hub-overview-right">
+                    {(isEditMode || featureToggles.showHubOverviewStats) && (
+                      <EditableModuleSlot
+                        moduleKey="showHubOverviewStats"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showHubOverviewStats}
+                        onToggle={handleToggleModule}
+                        inline
+                        slotType="bar"
+                      >
+                        <div className="hub-summary-stats-strip">
+                          <div className="hub-summary-stat-item" title="Enrolled students and peer teams">
+                            <Users size={13} className="text-primary" />
+                            <span className="hub-summary-stat-val">{stats.totalStudents}</span>
+                            <span className="hub-summary-stat-lbl">Students</span>
+                            <span className="hub-summary-stat-sub">({stats.groupCount} Teams)</span>
+                          </div>
+
+                          <div className="hub-summary-stat-divider" />
+
+                          <div className="hub-summary-stat-item" title="Configured evaluation criteria and scale">
+                            <Sliders size={13} className="text-amber" />
+                            <span className="hub-summary-stat-val">{activeClass.fields.length}</span>
+                            <span className="hub-summary-stat-lbl">Criteria</span>
+                            <span className="hub-summary-stat-sub">(Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20})</span>
+                          </div>
+
+                          <div className="hub-summary-stat-divider" />
+
+                          <div className="hub-summary-stat-item" title="Evaluation submission progress">
+                            <Award size={13} className="text-teal" />
+                            <span className="hub-summary-stat-val">{stats.completionRate}%</span>
+                            <span className="hub-summary-stat-lbl">Submitted</span>
+                            <span className="hub-summary-stat-sub">({stats.submittedCount}/{stats.totalStudents})</span>
+                          </div>
+                        </div>
+                      </EditableModuleSlot>
+                    )}
+                  </div>
                 </div>
+              </EditableModuleSlot>
+            )}
 
-                <div className="hub-overview-right">
-                  {(isEditMode || featureToggles.showHubOverviewStats) && (
+            {/* THE 3 BIG SECTIONS GRID */}
+            {(() => {
+              const isHubOptionsActive = featureToggles.showHubCardMetrics || featureToggles.showHubQuickActions;
+              return (
+                <div className="hub-grid">
+                  {/* Section 1: Enrollment & Teams */}
+                  {(isEditMode || featureToggles.showEnrollmentCard) && (
                     <EditableModuleSlot
-                      moduleKey="showHubOverviewStats"
+                      moduleKey="showEnrollmentCard"
                       isEditMode={isEditMode}
-                      isVisible={featureToggles.showHubOverviewStats}
+                      isVisible={featureToggles.showEnrollmentCard}
                       onToggle={handleToggleModule}
-                      inline
-                      slotType="bar"
                     >
-                      <div className="hub-summary-stats-strip">
-                        <div className="hub-summary-stat-item" title="Enrolled students and peer teams">
-                          <Users size={13} className="text-primary" />
-                          <span className="hub-summary-stat-val">{stats.totalStudents}</span>
-                          <span className="hub-summary-stat-lbl">Students</span>
-                          <span className="hub-summary-stat-sub">({stats.groupCount} Teams)</span>
+                      <div
+                        className="hub-card hub-card-accent-indigo"
+                        data-tour="hub-enrollment-card"
+                        onClick={() => setActiveTab('roster')}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => e.key === 'Enter' && setActiveTab('roster')}
+                        title="Enter Section 1: Enrollment & Teams"
+                      >
+                        <div className="hub-card-top">
+                          <div className="hub-card-header-row">
+                            <div className="hub-card-icon-badge" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
+                              <Users size={24} />
+                            </div>
+                            <span className="hub-step-pill hub-step-indigo">
+                              Step 1
+                            </span>
+                          </div>
+
+                          <div>
+                            <h3 className="hub-card-title">Students &amp; Teams</h3>
+                            <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
+                              {isHubOptionsActive
+                                ? "Manage enrolled students, configure diverse student cohorts, generate QR join links, and organize peer teams."
+                                : "Manage enrolled students, configure diverse student cohorts, generate interactive QR join codes, and organize balanced peer teams with intelligent automated grouping tools. Track active rosters, import spreadsheet rosters, and streamline student onboarding seamlessly."}
+                            </p>
+                          </div>
+
+                          {/* Clean Unified Status & Metric */}
+                          {(isEditMode || featureToggles.showHubCardMetrics) && (
+                            <EditableModuleSlot
+                              moduleKey="showHubCardMetrics"
+                              isEditMode={isEditMode}
+                              isVisible={featureToggles.showHubCardMetrics}
+                              onToggle={handleToggleModule}
+                              slotType="bar"
+                            >
+                              <div className="hub-card-progress-box">
+                                <div className="hub-card-progress-labels">
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    <Users size={12} className="text-primary" /> {stats.totalStudents} Students • {stats.groupCount} Teams
+                                  </span>
+                                  <span style={{ color: stats.totalStudents > 0 ? 'var(--accent-teal)' : 'var(--text-muted)', fontWeight: 600 }}>
+                                    {stats.totalStudents > 0 ? 'Active' : 'Setup Needed'}
+                                  </span>
+                                </div>
+                                <div className="hub-card-progress-track">
+                                  <div
+                                    className="hub-card-progress-fill hub-progress-indigo"
+                                    style={{ width: stats.totalStudents > 0 ? `${Math.min(100, Math.max(20, stats.totalStudents * 4))}%` : '8%' }}
+                                  />
+                                </div>
+                              </div>
+                            </EditableModuleSlot>
+                          )}
+
+                          {/* Minimal Quick Actions */}
+                          {(isEditMode || featureToggles.showHubQuickActions) && (
+                            <EditableModuleSlot
+                              moduleKey="showHubQuickActions"
+                              isEditMode={isEditMode}
+                              isVisible={featureToggles.showHubQuickActions}
+                              onToggle={handleToggleModule}
+                              slotType="bar"
+                            >
+                              <div className="hub-card-quick-actions">
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-indigo"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsAddStudentModalOpen(true);
+                                  }}
+                                  title="Add student manually"
+                                >
+                                  <Plus size={11} /> <span>Add Student</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-indigo"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsQRCodeModalOpen(true);
+                                  }}
+                                  title="Open student QR join presentation"
+                                >
+                                  <QrCode size={11} /> <span>QR Link</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-indigo"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsAutoGroupModalOpen(true);
+                                  }}
+                                  title="Auto-Group Teams"
+                                >
+                                  <Users size={11} /> <span>Auto-Group</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-indigo"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenTeamKickoff('roles_config');
+                                  }}
+                                  title="Team Roles & Icebreaker"
+                                >
+                                  <Sparkles size={11} /> <span>Team Roles</span>
+                                </button>
+                              </div>
+                            </EditableModuleSlot>
+                          )}
                         </div>
 
-                        <div className="hub-summary-stat-divider" />
+                        <div className="hub-card-bottom">
+                          <button
+                            type="button"
+                            className="hub-cta-btn hub-cta-indigo"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveTab('roster');
+                            }}
+                          >
+                            <span>Go to Students &amp; Teams</span>
+                            <ArrowRight size={14} className="hub-cta-arrow" />
+                          </button>
+                        </div>
+                      </div>
+                    </EditableModuleSlot>
+                  )}
 
-                        <div className="hub-summary-stat-item" title="Configured evaluation criteria and scale">
-                          <Sliders size={13} className="text-amber" />
-                          <span className="hub-summary-stat-val">{activeClass.fields.length}</span>
-                          <span className="hub-summary-stat-lbl">Criteria</span>
-                          <span className="hub-summary-stat-sub">(Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20})</span>
+                  {/* Section 2: Review System */}
+                  {(isEditMode || featureToggles.showReviewSystemCard) && (
+                    <EditableModuleSlot
+                      moduleKey="showReviewSystemCard"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showReviewSystemCard}
+                      onToggle={handleToggleModule}
+                    >
+                      <div
+                        className="hub-card hub-card-accent-amber"
+                        data-tour="hub-review-card"
+                        onClick={() => setActiveTab('grading')}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => e.key === 'Enter' && setActiveTab('grading')}
+                        title="Go to Step 2: Grading Rubric"
+                      >
+                        <div className="hub-card-top">
+                          <div className="hub-card-header-row">
+                            <div className="hub-card-icon-badge" style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#d97706' }}>
+                              <Sliders size={24} />
+                            </div>
+                            <span className="hub-step-pill hub-step-amber">
+                              Step 2
+                            </span>
+                          </div>
+
+                          <div>
+                            <h3 className="hub-card-title">Grading Rubric</h3>
+                            <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
+                              {isHubOptionsActive
+                                ? "Design multi-criteria evaluation rubrics, define performance anchors, adjust weights, and apply templates."
+                                : "Design multi-criteria evaluation rubrics, define performance anchors, adjust weights, and apply the accredited IPAF Standard template. Calibrate custom scoring scales, configure peer review submission deadlines, and balance criteria weights for transparent assessment."}
+                            </p>
+                          </div>
+
+                          {/* Clean Unified Status & Metric */}
+                          {(isEditMode || featureToggles.showHubCardMetrics) && (
+                            <EditableModuleSlot
+                              moduleKey="showHubCardMetrics"
+                              isEditMode={isEditMode}
+                              isVisible={featureToggles.showHubCardMetrics}
+                              onToggle={handleToggleModule}
+                              slotType="bar"
+                            >
+                              <div className="hub-card-progress-box">
+                                <div className="hub-card-progress-labels">
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    <Sliders size={12} className="text-amber" /> {activeClass.fields.length} Criteria • Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20}
+                                  </span>
+                                  <span style={{ color: '#b45309', fontWeight: 600 }}>
+                                    {activeClass.fields.length >= 3 ? 'Calibrated' : 'Basic Scale'}
+                                  </span>
+                                </div>
+                                <div className="hub-card-progress-track">
+                                  <div
+                                    className="hub-card-progress-fill hub-progress-amber"
+                                    style={{ width: `${Math.min(100, Math.max(25, activeClass.fields.length * 25))}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </EditableModuleSlot>
+                          )}
+
+                          {/* Minimal Quick Actions */}
+                          {(isEditMode || featureToggles.showHubQuickActions) && (
+                            <EditableModuleSlot
+                              moduleKey="showHubQuickActions"
+                              isEditMode={isEditMode}
+                              isVisible={featureToggles.showHubQuickActions}
+                              onToggle={handleToggleModule}
+                              slotType="bar"
+                            >
+                              <div className="hub-card-quick-actions">
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-amber"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveTab('grading');
+                                  }}
+                                  title="Add new grading criteria"
+                                >
+                                  <Plus size={11} /> <span>Add Criterion</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-amber"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveTab('grading');
+                                  }}
+                                  title="Apply IPAF Standard Rubric Template"
+                                >
+                                  <Sliders size={11} /> <span>IPAF Template</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-amber"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveTab('grading');
+                                  }}
+                                  title="Set peer review deadline"
+                                >
+                                  <Clock size={11} /> <span>Deadline</span>
+                                </button>
+                              </div>
+                            </EditableModuleSlot>
+                          )}
                         </div>
 
-                        <div className="hub-summary-stat-divider" />
+                        <div className="hub-card-bottom">
+                          <button
+                            type="button"
+                            className="hub-cta-btn hub-cta-amber"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveTab('grading');
+                            }}
+                          >
+                            <span>Go to Grading Rubric</span>
+                            <ArrowRight size={14} className="hub-cta-arrow" />
+                          </button>
+                        </div>
+                      </div>
+                    </EditableModuleSlot>
+                  )}
 
-                        <div className="hub-summary-stat-item" title="Evaluation submission progress">
-                          <Award size={13} className="text-teal" />
-                          <span className="hub-summary-stat-val">{stats.completionRate}%</span>
-                          <span className="hub-summary-stat-lbl">Submitted</span>
-                          <span className="hub-summary-stat-sub">({stats.submittedCount}/{stats.totalStudents})</span>
+                  {/* Section 3: Grading & Performance Analytics */}
+                  {(isEditMode || featureToggles.showGradingAnalyticsCard) && (
+                    <EditableModuleSlot
+                      moduleKey="showGradingAnalyticsCard"
+                      isEditMode={isEditMode}
+                      isVisible={featureToggles.showGradingAnalyticsCard}
+                      onToggle={handleToggleModule}
+                    >
+                      <div
+                        className="hub-card hub-card-accent-teal"
+                        data-tour="hub-analytics-card"
+                        onClick={() => setActiveTab('results')}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => e.key === 'Enter' && setActiveTab('results')}
+                        title="Go to Step 3: Grades &amp; Reports"
+                      >
+                        <div className="hub-card-top">
+                          <div className="hub-card-header-row">
+                            <div className="hub-card-icon-badge" style={{ backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)' }}>
+                              <Award size={24} />
+                            </div>
+                            <span className="hub-step-pill hub-step-teal">
+                              Step 3
+                            </span>
+                          </div>
+
+                          <div>
+                            <h3 className="hub-card-title">Grades &amp; Reports</h3>
+                            <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
+                              {isHubOptionsActive
+                                ? "Real-time calculation matrix, peer perception radar benchmarks, PDF report cards, and gradebook exports."
+                                : "Real-time calculation matrix, skills radar chart, student report cards, and LMS gradebook exports. Adjust grades based on peer reviews, compare self vs. peer ratings, and export directly to Excel or Canvas."}
+                            </p>
+                          </div>
+
+                          {/* Clean Unified Status & Metric */}
+                          {(isEditMode || featureToggles.showHubCardMetrics) && (
+                            <EditableModuleSlot
+                              moduleKey="showHubCardMetrics"
+                              isEditMode={isEditMode}
+                              isVisible={featureToggles.showHubCardMetrics}
+                              onToggle={handleToggleModule}
+                              slotType="bar"
+                            >
+                              <div className="hub-card-progress-box">
+                                <div className="hub-card-progress-labels">
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    <Award size={12} className="text-teal" /> {stats.submittedCount}/{stats.totalStudents} Evaluated
+                                  </span>
+                                  <span style={{ color: 'var(--accent-teal)', fontWeight: 600 }}>
+                                    {stats.completionRate}% Submitted
+                                  </span>
+                                </div>
+                                <div className="hub-card-progress-track">
+                                  <div
+                                    className="hub-card-progress-fill hub-progress-teal"
+                                    style={{ width: `${Math.max(stats.submittedCount > 0 ? 10 : 0, stats.completionRate)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </EditableModuleSlot>
+                          )}
+
+                          {/* Minimal Quick Actions */}
+                          {(isEditMode || featureToggles.showHubQuickActions) && (
+                            <EditableModuleSlot
+                              moduleKey="showHubQuickActions"
+                              isEditMode={isEditMode}
+                              isVisible={featureToggles.showHubQuickActions}
+                              onToggle={handleToggleModule}
+                              slotType="bar"
+                            >
+                              <div className="hub-card-quick-actions">
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-teal"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveTab('results');
+                                  }}
+                                  title="Open Class Gradebook Table"
+                                >
+                                  <BarChart2 size={11} /> <span>Matrix</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-teal"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveTab('results');
+                                  }}
+                                  title="Open Skills Radar &amp; Self vs. Peer Comparison"
+                                >
+                                  <Activity size={11} /> <span>Radar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-quick-action-pill hub-quick-pill-teal"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      exportClassroomToExcel(activeClass);
+                                    } catch (err) {
+                                      console.error(err);
+                                    }
+                                  }}
+                                  title="Export class data to Excel"
+                                >
+                                  <Download size={11} /> <span>Excel</span>
+                                </button>
+                              </div>
+                            </EditableModuleSlot>
+                          )}
+                        </div>
+
+                        <div className="hub-card-bottom">
+                          <button
+                            type="button"
+                            className="hub-cta-btn hub-cta-teal"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveTab('results');
+                            }}
+                          >
+                            <span>Go to Grades &amp; Reports</span>
+                            <ArrowRight size={14} className="hub-cta-arrow" />
+                          </button>
                         </div>
                       </div>
                     </EditableModuleSlot>
                   )}
                 </div>
-              </div>
-            </EditableModuleSlot>
-          )}
+              );
+            })()}
+          </div>
+        )}
 
-          {/* THE 3 BIG SECTIONS GRID */}
-          {(() => {
-            const isHubOptionsActive = featureToggles.showHubCardMetrics || featureToggles.showHubQuickActions;
-            return (
-              <div className="hub-grid">
-                {/* Section 1: Enrollment & Teams */}
-                {(isEditMode || featureToggles.showEnrollmentCard) && (
+        {/* TAB CONTENT: ROSTER MANAGER */}
+        {activeTab === 'roster' && (
+          <div
+            className="tab-pane"
+            style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', position: 'relative' }}
+            onDragEnter={handleSection1DragEnter}
+            onDragLeave={handleSection1DragLeave}
+            onDragOver={handleSection1DragOver}
+            onDrop={handleSection1Drop}
+          >
+            {/* QoL: Direct Full-Screen Drag-and-Drop Ingestion Overlay */}
+            {isSection1Dragging && (
+              <div className="roster-drag-overlay">
+                <div className="roster-drag-icon-box">
+                  <Upload size={36} />
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '0 0 0.35rem 0', color: '#ffffff' }}>
+                    Drop Roster File Anywhere
+                  </h2>
+                  <p style={{ fontSize: '0.88rem', color: 'rgba(255, 255, 255, 0.85)', margin: 0 }}>
+                    Supports Excel (.xlsx, .xls), CSV, or PDF rosters to open Onboarding Wizard
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Top Auxiliary Cards Row - Only rendered if at least 1 card is enabled, leaving zero blank space when all are hidden */}
+            {(isEditMode || featureToggles.showSelfEnrollmentCard || featureToggles.showQuickActionsCard || featureToggles.showImportWizardCard) && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
+                {/* 1. Student Self-Enrollment QR & Link Card */}
+                {(isEditMode || featureToggles.showSelfEnrollmentCard) && (
                   <EditableModuleSlot
-                    moduleKey="showEnrollmentCard"
+                    moduleKey="showSelfEnrollmentCard"
                     isEditMode={isEditMode}
-                    isVisible={featureToggles.showEnrollmentCard}
+                    isVisible={featureToggles.showSelfEnrollmentCard}
                     onToggle={handleToggleModule}
                   >
-                    <div
-                      className="hub-card hub-card-accent-indigo"
-                      data-tour="hub-enrollment-card"
-                      onClick={() => setActiveTab('roster')}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === 'Enter' && setActiveTab('roster')}
-                      title="Enter Section 1: Enrollment & Teams"
-                    >
-                      <div className="hub-card-top">
-                        <div className="hub-card-header-row">
-                          <div className="hub-card-icon-badge" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
-                            <Users size={24} />
-                          </div>
-                          <span className="hub-step-pill hub-step-indigo">
-                            Step 1
+                    <div className="card" data-tour="self-enrollment-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
+                      {/* Tier 1: Header & Dynamic Description */}
+                      <div>
+                        <div className="card-header" style={{ marginBottom: '0.35rem' }}>
+                          <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
+                            <QrCode size={18} className="text-primary" /> Student Join Code &amp; Link
+                            <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Student Join Code &amp; Link Guide" />
+                          </h3>
+                          <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                            QR &amp; Link
                           </span>
                         </div>
-
-                        <div>
-                          <h3 className="hub-card-title">Students &amp; Teams</h3>
-                          <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
-                            {isHubOptionsActive
-                              ? "Manage enrolled students, configure diverse student cohorts, generate QR join links, and organize peer teams."
-                              : "Manage enrolled students, configure diverse student cohorts, generate interactive QR join codes, and organize balanced peer teams with intelligent automated grouping tools. Track active rosters, import spreadsheet rosters, and streamline student onboarding seamlessly."}
-                          </p>
-                        </div>
-
-                        {/* Clean Unified Status & Metric */}
-                        {(isEditMode || featureToggles.showHubCardMetrics) && (
-                          <EditableModuleSlot
-                            moduleKey="showHubCardMetrics"
-                            isEditMode={isEditMode}
-                            isVisible={featureToggles.showHubCardMetrics}
-                            onToggle={handleToggleModule}
-                            slotType="bar"
-                          >
-                            <div className="hub-card-progress-box">
-                              <div className="hub-card-progress-labels">
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                  <Users size={12} className="text-primary" /> {stats.totalStudents} Students • {stats.groupCount} Teams
-                                </span>
-                                <span style={{ color: stats.totalStudents > 0 ? 'var(--accent-teal)' : 'var(--text-muted)', fontWeight: 600 }}>
-                                  {stats.totalStudents > 0 ? 'Active' : 'Setup Needed'}
-                                </span>
-                              </div>
-                              <div className="hub-card-progress-track">
-                                <div
-                                  className="hub-card-progress-fill hub-progress-indigo"
-                                  style={{ width: stats.totalStudents > 0 ? `${Math.min(100, Math.max(20, stats.totalStudents * 4))}%` : '8%' }}
-                                />
-                              </div>
-                            </div>
-                          </EditableModuleSlot>
-                        )}
-
-                        {/* Minimal Quick Actions */}
-                        {(isEditMode || featureToggles.showHubQuickActions) && (
-                          <EditableModuleSlot
-                            moduleKey="showHubQuickActions"
-                            isEditMode={isEditMode}
-                            isVisible={featureToggles.showHubQuickActions}
-                            onToggle={handleToggleModule}
-                            slotType="bar"
-                          >
-                            <div className="hub-card-quick-actions">
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-indigo"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setIsAddStudentModalOpen(true);
-                                }}
-                                title="Add student manually"
-                              >
-                                <Plus size={11} /> <span>Add Student</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-indigo"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setIsQRCodeModalOpen(true);
-                                }}
-                                title="Open student QR join presentation"
-                              >
-                                <QrCode size={11} /> <span>QR Link</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-indigo"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setIsAutoGroupModalOpen(true);
-                                }}
-                                title="Auto-Group Teams"
-                              >
-                                <Users size={11} /> <span>Auto-Group</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-indigo"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenTeamKickoff('roles_config');
-                                }}
-                                title="Team Roles & Icebreaker"
-                              >
-                                <Sparkles size={11} /> <span>Team Roles</span>
-                              </button>
-                            </div>
-                          </EditableModuleSlot>
-                        )}
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
+                          {(() => {
+                            const hasQr = isEditMode || featureToggles.showSelfEnrollmentQr !== false;
+                            const hasBtn = isEditMode || featureToggles.showSelfEnrollmentPresentationBtn !== false;
+                            if (hasQr && hasBtn) return 'Generates a QR code and URL for students to register themselves.';
+                            if (hasQr) return 'Share class QR code or direct join link with students for mobile self-registration.';
+                            if (hasBtn) return 'Launch live full-screen presentation mode for classroom student self-registration.';
+                            return 'Generates a QR code and URL for students to register themselves.';
+                          })()}
+                        </p>
                       </div>
 
-                      <div className="hub-card-bottom">
-                        <button
-                          type="button"
-                          className="hub-cta-btn hub-cta-indigo"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveTab('roster');
-                          }}
-                        >
-                          <span>Go to Students &amp; Teams</span>
-                          <ArrowRight size={14} className="hub-cta-arrow" />
-                        </button>
-                      </div>
-                    </div>
-                  </EditableModuleSlot>
-                )}
-
-                {/* Section 2: Review System */}
-                {(isEditMode || featureToggles.showReviewSystemCard) && (
-                  <EditableModuleSlot
-                    moduleKey="showReviewSystemCard"
-                    isEditMode={isEditMode}
-                    isVisible={featureToggles.showReviewSystemCard}
-                    onToggle={handleToggleModule}
-                  >
-                    <div
-                      className="hub-card hub-card-accent-amber"
-                      data-tour="hub-review-card"
-                      onClick={() => setActiveTab('grading')}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === 'Enter' && setActiveTab('grading')}
-                      title="Go to Step 2: Grading Rubric"
-                    >
-                      <div className="hub-card-top">
-                        <div className="hub-card-header-row">
-                          <div className="hub-card-icon-badge" style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#d97706' }}>
-                            <Sliders size={24} />
-                          </div>
-                          <span className="hub-step-pill hub-step-amber">
-                            Step 2
-                          </span>
-                        </div>
-
-                        <div>
-                          <h3 className="hub-card-title">Grading Rubric</h3>
-                          <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
-                            {isHubOptionsActive
-                              ? "Design multi-criteria evaluation rubrics, define performance anchors, adjust weights, and apply templates."
-                              : "Design multi-criteria evaluation rubrics, define performance anchors, adjust weights, and apply the accredited IPAF Standard template. Calibrate custom scoring scales, configure peer review submission deadlines, and balance criteria weights for transparent assessment."}
-                          </p>
-                        </div>
-
-                        {/* Clean Unified Status & Metric */}
-                        {(isEditMode || featureToggles.showHubCardMetrics) && (
-                          <EditableModuleSlot
-                            moduleKey="showHubCardMetrics"
-                            isEditMode={isEditMode}
-                            isVisible={featureToggles.showHubCardMetrics}
-                            onToggle={handleToggleModule}
-                            slotType="bar"
-                          >
-                            <div className="hub-card-progress-box">
-                              <div className="hub-card-progress-labels">
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                  <Sliders size={12} className="text-amber" /> {activeClass.fields.length} Criteria • Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20}
-                                </span>
-                                <span style={{ color: '#b45309', fontWeight: 600 }}>
-                                  {activeClass.fields.length >= 3 ? 'Calibrated' : 'Basic Scale'}
-                                </span>
-                              </div>
-                              <div className="hub-card-progress-track">
-                                <div
-                                  className="hub-card-progress-fill hub-progress-amber"
-                                  style={{ width: `${Math.min(100, Math.max(25, activeClass.fields.length * 25))}%` }}
-                                />
-                              </div>
-                            </div>
-                          </EditableModuleSlot>
-                        )}
-
-                        {/* Minimal Quick Actions */}
-                        {(isEditMode || featureToggles.showHubQuickActions) && (
-                          <EditableModuleSlot
-                            moduleKey="showHubQuickActions"
-                            isEditMode={isEditMode}
-                            isVisible={featureToggles.showHubQuickActions}
-                            onToggle={handleToggleModule}
-                            slotType="bar"
-                          >
-                            <div className="hub-card-quick-actions">
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-amber"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveTab('grading');
-                                }}
-                                title="Add new grading criteria"
-                              >
-                                <Plus size={11} /> <span>Add Criterion</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-amber"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveTab('grading');
-                                }}
-                                title="Apply IPAF Standard Rubric Template"
-                              >
-                                <Sliders size={11} /> <span>IPAF Template</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-amber"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveTab('grading');
-                                }}
-                                title="Set peer review deadline"
-                              >
-                                <Clock size={11} /> <span>Deadline</span>
-                              </button>
-                            </div>
-                          </EditableModuleSlot>
-                        )}
-                      </div>
-
-                      <div className="hub-card-bottom">
-                        <button
-                          type="button"
-                          className="hub-cta-btn hub-cta-amber"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveTab('grading');
-                          }}
-                        >
-                          <span>Go to Grading Rubric</span>
-                          <ArrowRight size={14} className="hub-cta-arrow" />
-                        </button>
-                      </div>
-                    </div>
-                  </EditableModuleSlot>
-                )}
-
-                {/* Section 3: Grading & Performance Analytics */}
-                {(isEditMode || featureToggles.showGradingAnalyticsCard) && (
-                  <EditableModuleSlot
-                    moduleKey="showGradingAnalyticsCard"
-                    isEditMode={isEditMode}
-                    isVisible={featureToggles.showGradingAnalyticsCard}
-                    onToggle={handleToggleModule}
-                  >
-                    <div
-                      className="hub-card hub-card-accent-teal"
-                      data-tour="hub-analytics-card"
-                      onClick={() => setActiveTab('results')}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === 'Enter' && setActiveTab('results')}
-                      title="Go to Step 3: Grades &amp; Reports"
-                    >
-                      <div className="hub-card-top">
-                        <div className="hub-card-header-row">
-                          <div className="hub-card-icon-badge" style={{ backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)' }}>
-                            <Award size={24} />
-                          </div>
-                          <span className="hub-step-pill hub-step-teal">
-                            Step 3
-                          </span>
-                        </div>
-
-                        <div>
-                          <h3 className="hub-card-title">Grades &amp; Reports</h3>
-                          <p className={isHubOptionsActive ? "hub-card-desc hub-card-desc-minimized" : "hub-card-desc hub-card-desc-full"}>
-                            {isHubOptionsActive
-                              ? "Real-time calculation matrix, peer perception radar benchmarks, PDF report cards, and gradebook exports."
-                              : "Real-time calculation matrix, skills radar chart, student report cards, and LMS gradebook exports. Adjust grades based on peer reviews, compare self vs. peer ratings, and export directly to Excel or Canvas."}
-                          </p>
-                        </div>
-
-                        {/* Clean Unified Status & Metric */}
-                        {(isEditMode || featureToggles.showHubCardMetrics) && (
-                          <EditableModuleSlot
-                            moduleKey="showHubCardMetrics"
-                            isEditMode={isEditMode}
-                            isVisible={featureToggles.showHubCardMetrics}
-                            onToggle={handleToggleModule}
-                            slotType="bar"
-                          >
-                            <div className="hub-card-progress-box">
-                              <div className="hub-card-progress-labels">
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                  <Award size={12} className="text-teal" /> {stats.submittedCount}/{stats.totalStudents} Evaluated
-                                </span>
-                                <span style={{ color: 'var(--accent-teal)', fontWeight: 600 }}>
-                                  {stats.completionRate}% Submitted
-                                </span>
-                              </div>
-                              <div className="hub-card-progress-track">
-                                <div
-                                  className="hub-card-progress-fill hub-progress-teal"
-                                  style={{ width: `${Math.max(stats.submittedCount > 0 ? 10 : 0, stats.completionRate)}%` }}
-                                />
-                              </div>
-                            </div>
-                          </EditableModuleSlot>
-                        )}
-
-                        {/* Minimal Quick Actions */}
-                        {(isEditMode || featureToggles.showHubQuickActions) && (
-                          <EditableModuleSlot
-                            moduleKey="showHubQuickActions"
-                            isEditMode={isEditMode}
-                            isVisible={featureToggles.showHubQuickActions}
-                            onToggle={handleToggleModule}
-                            slotType="bar"
-                          >
-                            <div className="hub-card-quick-actions">
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-teal"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveTab('results');
-                                }}
-                                title="Open Class Gradebook Table"
-                              >
-                                <BarChart2 size={11} /> <span>Matrix</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-teal"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveTab('results');
-                                }}
-                                title="Open Skills Radar &amp; Self vs. Peer Comparison"
-                              >
-                                <Activity size={11} /> <span>Radar</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="hub-quick-action-pill hub-quick-pill-teal"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  try {
-                                    exportClassroomToExcel(activeClass);
-                                  } catch (err) {
-                                    console.error(err);
-                                  }
-                                }}
-                                title="Export class data to Excel"
-                              >
-                                <Download size={11} /> <span>Excel</span>
-                              </button>
-                            </div>
-                          </EditableModuleSlot>
-                        )}
-                      </div>
-
-                      <div className="hub-card-bottom">
-                        <button
-                          type="button"
-                          className="hub-cta-btn hub-cta-teal"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveTab('results');
-                          }}
-                        >
-                          <span>Go to Grades &amp; Reports</span>
-                          <ArrowRight size={14} className="hub-cta-arrow" />
-                        </button>
-                      </div>
-                    </div>
-                  </EditableModuleSlot>
-                )}
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* TAB CONTENT: ROSTER MANAGER */}
-      {activeTab === 'roster' && (
-        <div
-          className="tab-pane"
-          style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', position: 'relative' }}
-          onDragEnter={handleSection1DragEnter}
-          onDragLeave={handleSection1DragLeave}
-          onDragOver={handleSection1DragOver}
-          onDrop={handleSection1Drop}
-        >
-          {/* QoL: Direct Full-Screen Drag-and-Drop Ingestion Overlay */}
-          {isSection1Dragging && (
-            <div className="roster-drag-overlay">
-              <div className="roster-drag-icon-box">
-                <Upload size={36} />
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '0 0 0.35rem 0', color: '#ffffff' }}>
-                  Drop Roster File Anywhere
-                </h2>
-                <p style={{ fontSize: '0.88rem', color: 'rgba(255, 255, 255, 0.85)', margin: 0 }}>
-                  Supports Excel (.xlsx, .xls), CSV, or PDF rosters to open Onboarding Wizard
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Top Auxiliary Cards Row - Only rendered if at least 1 card is enabled, leaving zero blank space when all are hidden */}
-          {(isEditMode || featureToggles.showSelfEnrollmentCard || featureToggles.showQuickActionsCard || featureToggles.showImportWizardCard) && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
-              {/* 1. Student Self-Enrollment QR & Link Card */}
-              {(isEditMode || featureToggles.showSelfEnrollmentCard) && (
-                <EditableModuleSlot
-                  moduleKey="showSelfEnrollmentCard"
-                  isEditMode={isEditMode}
-                  isVisible={featureToggles.showSelfEnrollmentCard}
-                  onToggle={handleToggleModule}
-                >
-                  <div className="card" data-tour="self-enrollment-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
-                    {/* Tier 1: Header & Dynamic Description */}
-                    <div>
-                      <div className="card-header" style={{ marginBottom: '0.35rem' }}>
-                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
-                          <QrCode size={18} className="text-primary" /> Student Join Code &amp; Link
-                          <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Student Join Code &amp; Link Guide" />
-                        </h3>
-                        <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                          QR &amp; Link
-                        </span>
-                      </div>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
-                        {(() => {
-                          const hasQr = isEditMode || featureToggles.showSelfEnrollmentQr !== false;
-                          const hasBtn = isEditMode || featureToggles.showSelfEnrollmentPresentationBtn !== false;
-                          if (hasQr && hasBtn) return 'Generates a QR code and URL for students to register themselves.';
-                          if (hasQr) return 'Share class QR code or direct join link with students for mobile self-registration.';
-                          if (hasBtn) return 'Launch live full-screen presentation mode for classroom student self-registration.';
-                          return 'Generates a QR code and URL for students to register themselves.';
-                        })()}
-                      </p>
-                    </div>
-
-                    {/* Tier 2: Interactive QR & URL Canvas */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, justifyContent: 'center' }}>
-                      <EditableModuleSlot
-                        moduleKey="showSelfEnrollmentQr"
-                        isEditMode={isEditMode}
-                        isVisible={featureToggles.showSelfEnrollmentQr !== false}
-                        onToggle={handleToggleModule}
-                        slotType="bar"
-                        style={{ width: '100%' }}
-                      >
-                        <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.55rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', width: '100%', boxSizing: 'border-box', minHeight: '68px' }}>
-                          {miniQrUrl ? (
-                            <div
-                              onClick={() => setIsQRCodeModalOpen(true)}
-                              style={{ cursor: 'pointer', flexShrink: 0, width: '54px', height: '54px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                              title="Click to expand QR Presentation Mode"
-                            >
-                              <img src={miniQrUrl} alt="Classroom QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                            </div>
-                          ) : (
-                            <div
-                              onClick={() => setIsQRCodeModalOpen(true)}
-                              style={{ cursor: 'pointer', flexShrink: 0, width: '54px', height: '54px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}
-                              title="Click to expand QR Presentation Mode"
-                            >
-                              <QrCode size={24} />
-                            </div>
-                          )}
-
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', gap: '0.3rem' }}>
-                              <input
-                                type="text"
-                                readOnly
-                                className="form-input"
-                                value={getClassEnrollmentUrl(activeClass.id)}
-                                style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '0.3rem 0.5rem', height: '30px', flex: 1 }}
-                                onClick={(e) => (e.target as HTMLInputElement).select()}
-                              />
-                              <button
-                                type="button"
-                                className={`btn ${copiedEnrollLink ? 'btn-copy-success' : 'btn-secondary'} btn-sm`}
-                                style={{ flexShrink: 0, padding: '0.2rem 0.55rem', height: '30px', position: 'relative' }}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
-                                  setCopiedEnrollLink(true);
-                                  addToast('Classroom enrollment link copied to clipboard!', 'success');
-                                  setTimeout(() => setCopiedEnrollLink(false), 2500);
-                                }}
-                                title="Copy enrollment link to clipboard"
-                              >
-                                {copiedEnrollLink ? <Check size={13} /> : <Copy size={13} />}
-                                {copiedEnrollLink && (
-                                  <span className="copy-badge-pill">
-                                    <Check size={10} /> Copied!
-                                  </span>
-                                )}
-                              </button>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <ShieldCheck size={11} className="text-teal" /> Cloud Sync Active
-                              </span>
-                              <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
-                                {activeClass.students.length} Enrolled
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </EditableModuleSlot>
-                    </div>
-
-                    {/* Tier 3: Bottom Action Dock */}
-                    {(isEditMode || featureToggles.showSelfEnrollmentPresentationBtn !== false) && (
-                      <div style={{ marginTop: 'auto', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', width: '100%' }}>
+                      {/* Tier 2: Interactive QR & URL Canvas */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, justifyContent: 'center' }}>
                         <EditableModuleSlot
-                          moduleKey="showSelfEnrollmentPresentationBtn"
+                          moduleKey="showSelfEnrollmentQr"
                           isEditMode={isEditMode}
-                          isVisible={featureToggles.showSelfEnrollmentPresentationBtn !== false}
+                          isVisible={featureToggles.showSelfEnrollmentQr !== false}
                           onToggle={handleToggleModule}
-                          slotType="button"
-                          style={{ width: '100%', display: 'flex' }}
+                          slotType="bar"
+                          style={{ width: '100%' }}
                         >
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            style={{ width: '100%', height: '36px', justifyContent: 'center', gap: '0.45rem', padding: '0.45rem', fontSize: '0.82rem', fontWeight: 700 }}
-                            onClick={() => setIsQRCodeModalOpen(true)}
-                          >
-                            <QrCode size={14} /> Open QR Presentation Mode
-                          </button>
+                          <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.55rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', width: '100%', boxSizing: 'border-box', minHeight: '68px' }}>
+                            {miniQrUrl ? (
+                              <div
+                                onClick={() => setIsQRCodeModalOpen(true)}
+                                style={{ cursor: 'pointer', flexShrink: 0, width: '54px', height: '54px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                title="Click to expand QR Presentation Mode"
+                              >
+                                <img src={miniQrUrl} alt="Classroom QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                              </div>
+                            ) : (
+                              <div
+                                onClick={() => setIsQRCodeModalOpen(true)}
+                                style={{ cursor: 'pointer', flexShrink: 0, width: '54px', height: '54px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}
+                                title="Click to expand QR Presentation Mode"
+                              >
+                                <QrCode size={24} />
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', gap: '0.3rem' }}>
+                                <input
+                                  type="text"
+                                  readOnly
+                                  className="form-input"
+                                  value={getClassEnrollmentUrl(activeClass.id)}
+                                  style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: 'var(--bg-surface)', color: 'var(--text-main)', padding: '0.3rem 0.5rem', height: '30px', flex: 1 }}
+                                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                                />
+                                <button
+                                  type="button"
+                                  className={`btn ${copiedEnrollLink ? 'btn-copy-success' : 'btn-secondary'} btn-sm`}
+                                  style={{ flexShrink: 0, padding: '0.2rem 0.55rem', height: '30px', position: 'relative' }}
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(getClassEnrollmentUrl(activeClass.id));
+                                    setCopiedEnrollLink(true);
+                                    addToast('Classroom enrollment link copied to clipboard!', 'success');
+                                    setTimeout(() => setCopiedEnrollLink(false), 2500);
+                                  }}
+                                  title="Copy enrollment link to clipboard"
+                                >
+                                  {copiedEnrollLink ? <Check size={13} /> : <Copy size={13} />}
+                                  {copiedEnrollLink && (
+                                    <span className="copy-badge-pill">
+                                      <Check size={10} /> Copied!
+                                    </span>
+                                  )}
+                                </button>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                  <ShieldCheck size={11} className="text-teal" /> Cloud Sync Active
+                                </span>
+                                <span style={{ fontWeight: 700, color: 'var(--accent-teal)' }}>
+                                  {activeClass.students.length} Enrolled
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                         </EditableModuleSlot>
                       </div>
-                    )}
-                  </div>
-                </EditableModuleSlot>
-              )}
 
-              {/* 2. Quick Actions Card */}
-              {(isEditMode || featureToggles.showQuickActionsCard) && (
-                <EditableModuleSlot
-                  moduleKey="showQuickActionsCard"
-                  isEditMode={isEditMode}
-                  isVisible={featureToggles.showQuickActionsCard}
-                  onToggle={handleToggleModule}
-                >
-                  <div className="card" data-tour="quick-actions-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
-                    {/* Tier 1: Header & Dynamic Description */}
-                    <div>
-                      <div className="card-header" style={{ marginBottom: '0.35rem' }}>
-                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
-                          <Sliders size={18} className="text-indigo" /> Quick Actions
-                        </h3>
-                        <span className="badge badge-secondary" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                          Tools
-                        </span>
-                      </div>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
-                        {(() => {
-                          const hasAdd = isEditMode || featureToggles.showAddStudentButton !== false;
-                          const hasDemo = isEditMode || !!featureToggles.showDemoSampleButton;
-                          const hasClear = isEditMode || featureToggles.showClearRosterButton !== false;
-                          if (hasAdd && hasDemo && hasClear) return 'Add students manually, populate with 100 sample records, or clear class records.';
-                          if (hasAdd && hasDemo) return 'Add students manually or populate class with 100 diverse sample student records.';
-                          if (hasAdd && hasClear) return 'Add individual students manually to the active roster or clear class records.';
-                          if (hasAdd) return 'Manually enroll individual students with email and team assignments.';
-                          if (hasDemo && hasClear) return 'Populate class with 100 demo records or clear active roster records.';
-                          if (hasDemo) return 'Populate class with 100 diverse sample student records to test evaluation workflows.';
-                          if (hasClear) return 'Manage and clear active class student roster records.';
-                          return 'Classroom roster shortcuts and enrollment actions.';
-                        })()}
-                      </p>
-                    </div>
-
-                    {/* Tier 2: Interactive Actions Canvas */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', flex: 1, justifyContent: 'center' }}>
-                      <EditableModuleSlot
-                        moduleKey="showAddStudentButton"
-                        isEditMode={isEditMode}
-                        isVisible={featureToggles.showAddStudentButton !== false}
-                        onToggle={handleToggleModule}
-                        slotType="button"
-                        style={{ width: '100%', display: 'flex' }}
-                      >
-                        <button
-                          className="btn btn-primary"
-                          onClick={() => setIsAddStudentModalOpen(true)}
-                          style={{ justifyContent: 'center', gap: '0.45rem', padding: '0.55rem 0.65rem', fontSize: '0.84rem', fontWeight: 700, width: '100%', minHeight: '38px' }}
-                        >
-                          <UserPlus size={15} /> Add Student Manually
-                        </button>
-                      </EditableModuleSlot>
-
-                      {(isEditMode || !!featureToggles.showDemoSampleButton) && (
-                        <EditableModuleSlot
-                          moduleKey="showDemoSampleButton"
-                          isEditMode={isEditMode}
-                          isVisible={!!featureToggles.showDemoSampleButton}
-                          onToggle={handleToggleModule}
-                          slotType="button"
-                          style={{ width: '100%', display: 'flex' }}
-                        >
-                          <button
-                            type="button"
-                            className="btn btn-teal btn-sm"
-                            onClick={() => {
-                              importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
-                              addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
-                            }}
-                            style={{ fontSize: '0.8rem', gap: '0.35rem', justifyContent: 'center', padding: '0.45rem', fontWeight: 600, width: '100%', minHeight: '34px' }}
-                            title="Populate classroom with 100 sample students to test the software"
-                          >
-                            <Sparkles size={13} /> Load Demo Students
-                          </button>
-                        </EditableModuleSlot>
-                      )}
-                    </div>
-
-                    {/* Tier 3: Bottom Action Dock */}
-                    {(isEditMode || featureToggles.showClearRosterButton !== false) && (
-                      <div style={{ marginTop: 'auto', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', width: '100%' }}>
-                        <EditableModuleSlot
-                          moduleKey="showClearRosterButton"
-                          isEditMode={isEditMode}
-                          isVisible={featureToggles.showClearRosterButton !== false}
-                          onToggle={handleToggleModule}
-                          slotType="button"
-                          style={{ width: '100%', display: 'flex' }}
-                        >
-                          <button
-                            type="button"
-                            className="btn btn-secondary text-rose btn-sm"
-                            style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--accent-rose)', fontSize: '0.78rem', height: '36px', padding: '0.45rem', justifyContent: 'center', gap: '0.35rem', width: '100%', fontWeight: 600 }}
-                            onClick={() => {
-                              triggerConfirm(
-                                'Clear Class Roster',
-                                'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
-                                () => {
-                                  clearClassRoster(activeClass.id);
-                                },
-                                'Clear Roster',
-                                'Cancel'
-                              );
-                            }}
-                            title="Clear all students from this classroom"
-                          >
-                            <Trash2 size={13} /> Clear Class Roster
-                          </button>
-                        </EditableModuleSlot>
-                      </div>
-                    )}
-                  </div>
-                </EditableModuleSlot>
-              )}
-
-              {/* 3. Import & Export Hub Card */}
-              {(isEditMode || featureToggles.showImportWizardCard) && (
-                <EditableModuleSlot
-                  moduleKey="showImportWizardCard"
-                  isEditMode={isEditMode}
-                  isVisible={featureToggles.showImportWizardCard}
-                  onToggle={handleToggleModule}
-                >
-                  <div className="card" data-tour="import-wizard-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
-                    {/* Tier 1: Header & Dynamic Description */}
-                    <div>
-                      <div className="card-header" style={{ marginBottom: '0.35rem' }}>
-                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
-                          <Upload size={18} className="text-teal" /> Import &amp; Export Hub
-                          <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import &amp; Export Hub Guide" />
-                        </h3>
-                        <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                          Hub
-                        </span>
-                      </div>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
-                        {(() => {
-                          const hasDropzone = isEditMode || featureToggles.showImportDropzone !== false;
-                          const hasExport = isEditMode || featureToggles.showExportRosterBtn !== false;
-                          const hasTemplate = isEditMode || !!featureToggles.showDownloadTemplateBtn;
-                          if (hasDropzone && hasExport && hasTemplate) return 'Onboard rosters from CSV, Excel, PDF, or clipboard, export active records, and download templates.';
-                          if (hasDropzone && hasExport) return 'Onboard student rosters from CSV, Excel, PDF, or clipboard, and export active roster records.';
-                          if (hasDropzone && hasTemplate) return 'Onboard student rosters from files or clipboard and download spreadsheet templates.';
-                          if (hasDropzone) return 'Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema mapping.';
-                          if (hasExport && hasTemplate) return 'Export active class roster records and download spreadsheet templates.';
-                          if (hasExport) return 'Export active classroom student roster and team assignments to Excel (.xlsx).';
-                          if (hasTemplate) return 'Download sample student roster spreadsheet templates (.xlsx).';
-                          return 'Roster data import and export hub for CSV, Excel, and PDF formats.';
-                        })()}
-                      </p>
-                    </div>
-
-                    {/* Tier 2: Interactive Dropzone Canvas */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, justifyContent: 'center' }}>
-                      <EditableModuleSlot
-                        moduleKey="showImportDropzone"
-                        isEditMode={isEditMode}
-                        isVisible={featureToggles.showImportDropzone !== false}
-                        onToggle={handleToggleModule}
-                        slotType="banner"
-                      >
-                        <div
-                          onClick={() => {
-                            setWizardStep(1);
-                            setIsWizardOpen(true);
-                          }}
-                          style={{
-                            padding: '0.55rem 0.65rem',
-                            borderRadius: '8px',
-                            border: '1.5px dashed var(--accent-teal)',
-                            backgroundColor: 'rgba(20, 184, 166, 0.04)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.35rem',
-                            textAlign: 'center',
-                            transition: 'all 0.2s ease',
-                            width: '100%',
-                            boxSizing: 'border-box',
-                            minHeight: '68px'
-                          }}
-                          title="Click to launch Roster Onboarding Wizard"
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent-teal)' }}>
-                            <Upload size={13} /> Click to Upload or Paste File
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem', width: '100%' }}>
-                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-teal)' }}>XLSX</span>
-                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-rose)' }}>PDF</span>
-                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}>CSV</span>
-                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-amber)' }}>PASTE</span>
-                          </div>
-                        </div>
-                      </EditableModuleSlot>
-                    </div>
-
-                    {/* Tier 3: Bottom Action Dock */}
-                    {(isEditMode || featureToggles.showExportRosterBtn !== false || !!featureToggles.showDownloadTemplateBtn) && (
-                      <div style={{ marginTop: 'auto', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', width: '100%' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: (featureToggles.showExportRosterBtn !== false && (isEditMode || !!featureToggles.showDownloadTemplateBtn)) ? '1fr 1fr' : '1fr', gap: '0.4rem', width: '100%' }}>
+                      {/* Tier 3: Bottom Action Dock */}
+                      {(isEditMode || featureToggles.showSelfEnrollmentPresentationBtn !== false) && (
+                        <div style={{ marginTop: 'auto', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', width: '100%' }}>
                           <EditableModuleSlot
-                            moduleKey="showExportRosterBtn"
+                            moduleKey="showSelfEnrollmentPresentationBtn"
                             isEditMode={isEditMode}
-                            isVisible={featureToggles.showExportRosterBtn !== false}
+                            isVisible={featureToggles.showSelfEnrollmentPresentationBtn !== false}
                             onToggle={handleToggleModule}
                             slotType="button"
                             style={{ width: '100%', display: 'flex' }}
                           >
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              style={{ width: '100%', height: '36px', justifyContent: 'center', gap: '0.45rem', padding: '0.45rem', fontSize: '0.82rem', fontWeight: 700 }}
+                              onClick={() => setIsQRCodeModalOpen(true)}
+                            >
+                              <QrCode size={14} /> Open QR Presentation Mode
+                            </button>
+                          </EditableModuleSlot>
+                        </div>
+                      )}
+                    </div>
+                  </EditableModuleSlot>
+                )}
+
+                {/* 2. Quick Actions Card */}
+                {(isEditMode || featureToggles.showQuickActionsCard) && (
+                  <EditableModuleSlot
+                    moduleKey="showQuickActionsCard"
+                    isEditMode={isEditMode}
+                    isVisible={featureToggles.showQuickActionsCard}
+                    onToggle={handleToggleModule}
+                  >
+                    <div className="card" data-tour="quick-actions-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
+                      {/* Tier 1: Header & Dynamic Description */}
+                      <div>
+                        <div className="card-header" style={{ marginBottom: '0.35rem' }}>
+                          <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
+                            <Sliders size={18} className="text-indigo" /> Quick Actions
+                          </h3>
+                          <span className="badge badge-secondary" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                            Tools
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
+                          {(() => {
+                            const hasAdd = isEditMode || featureToggles.showAddStudentButton !== false;
+                            const hasDemo = isEditMode || !!featureToggles.showDemoSampleButton;
+                            const hasClear = isEditMode || featureToggles.showClearRosterButton !== false;
+                            if (hasAdd && hasDemo && hasClear) return 'Add students manually, populate with 100 sample records, or clear class records.';
+                            if (hasAdd && hasDemo) return 'Add students manually or populate class with 100 diverse sample student records.';
+                            if (hasAdd && hasClear) return 'Add individual students manually to the active roster or clear class records.';
+                            if (hasAdd) return 'Manually enroll individual students with email and team assignments.';
+                            if (hasDemo && hasClear) return 'Populate class with 100 demo records or clear active roster records.';
+                            if (hasDemo) return 'Populate class with 100 diverse sample student records to test evaluation workflows.';
+                            if (hasClear) return 'Manage and clear active class student roster records.';
+                            return 'Classroom roster shortcuts and enrollment actions.';
+                          })()}
+                        </p>
+                      </div>
+
+                      {/* Tier 2: Interactive Actions Canvas */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', flex: 1, justifyContent: 'center' }}>
+                        <EditableModuleSlot
+                          moduleKey="showAddStudentButton"
+                          isEditMode={isEditMode}
+                          isVisible={featureToggles.showAddStudentButton !== false}
+                          onToggle={handleToggleModule}
+                          slotType="button"
+                          style={{ width: '100%', display: 'flex' }}
+                        >
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => setIsAddStudentModalOpen(true)}
+                            style={{ justifyContent: 'center', gap: '0.45rem', padding: '0.55rem 0.65rem', fontSize: '0.84rem', fontWeight: 700, width: '100%', minHeight: '38px' }}
+                          >
+                            <UserPlus size={15} /> Add Student Manually
+                          </button>
+                        </EditableModuleSlot>
+
+                        {(isEditMode || !!featureToggles.showDemoSampleButton) && (
+                          <EditableModuleSlot
+                            moduleKey="showDemoSampleButton"
+                            isEditMode={isEditMode}
+                            isVisible={!!featureToggles.showDemoSampleButton}
+                            onToggle={handleToggleModule}
+                            slotType="button"
+                            style={{ width: '100%', display: 'flex' }}
+                          >
+                            <button
+                              type="button"
+                              className="btn btn-teal btn-sm"
+                              onClick={() => {
+                                importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+                                addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+                              }}
+                              style={{ fontSize: '0.8rem', gap: '0.35rem', justifyContent: 'center', padding: '0.45rem', fontWeight: 600, width: '100%', minHeight: '34px' }}
+                              title="Populate classroom with 100 sample students to test the software"
+                            >
+                              <Sparkles size={13} /> Load Demo Students
+                            </button>
+                          </EditableModuleSlot>
+                        )}
+                      </div>
+
+                      {/* Tier 3: Bottom Action Dock */}
+                      {(isEditMode || featureToggles.showClearRosterButton !== false) && (
+                        <div style={{ marginTop: 'auto', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', width: '100%' }}>
+                          <EditableModuleSlot
+                            moduleKey="showClearRosterButton"
+                            isEditMode={isEditMode}
+                            isVisible={featureToggles.showClearRosterButton !== false}
+                            onToggle={handleToggleModule}
+                            slotType="button"
+                            style={{ width: '100%', display: 'flex' }}
+                          >
+                            <button
+                              type="button"
+                              className="btn btn-secondary text-rose btn-sm"
+                              style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--accent-rose)', fontSize: '0.78rem', height: '36px', padding: '0.45rem', justifyContent: 'center', gap: '0.35rem', width: '100%', fontWeight: 600 }}
+                              onClick={() => {
+                                triggerConfirm(
+                                  'Clear Class Roster',
+                                  'Are you sure you want to delete all students and peer evaluations for this class? This will wipe the slate completely clean for this classroom group.',
+                                  () => {
+                                    clearClassRoster(activeClass.id);
+                                  },
+                                  'Clear Roster',
+                                  'Cancel'
+                                );
+                              }}
+                              title="Clear all students from this classroom"
+                            >
+                              <Trash2 size={13} /> Clear Class Roster
+                            </button>
+                          </EditableModuleSlot>
+                        </div>
+                      )}
+                    </div>
+                  </EditableModuleSlot>
+                )}
+
+                {/* 3. Import & Export Hub Card */}
+                {(isEditMode || featureToggles.showImportWizardCard) && (
+                  <EditableModuleSlot
+                    moduleKey="showImportWizardCard"
+                    isEditMode={isEditMode}
+                    isVisible={featureToggles.showImportWizardCard}
+                    onToggle={handleToggleModule}
+                  >
+                    <div className="card" data-tour="import-wizard-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
+                      {/* Tier 1: Header & Dynamic Description */}
+                      <div>
+                        <div className="card-header" style={{ marginBottom: '0.35rem' }}>
+                          <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
+                            <Upload size={18} className="text-teal" /> Import &amp; Export Hub
+                            <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import &amp; Export Hub Guide" />
+                          </h3>
+                          <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                            Hub
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
+                          {(() => {
+                            const hasDropzone = isEditMode || featureToggles.showImportDropzone !== false;
+                            const hasExport = isEditMode || featureToggles.showExportRosterBtn !== false;
+                            const hasTemplate = isEditMode || !!featureToggles.showDownloadTemplateBtn;
+                            if (hasDropzone && hasExport && hasTemplate) return 'Onboard rosters from CSV, Excel, PDF, or clipboard, export active records, and download templates.';
+                            if (hasDropzone && hasExport) return 'Onboard student rosters from CSV, Excel, PDF, or clipboard, and export active roster records.';
+                            if (hasDropzone && hasTemplate) return 'Onboard student rosters from files or clipboard and download spreadsheet templates.';
+                            if (hasDropzone) return 'Onboard student rosters from CSV, Excel, PDF, or clipboard with automatic schema mapping.';
+                            if (hasExport && hasTemplate) return 'Export active class roster records and download spreadsheet templates.';
+                            if (hasExport) return 'Export active classroom student roster and team assignments to Excel (.xlsx).';
+                            if (hasTemplate) return 'Download sample student roster spreadsheet templates (.xlsx).';
+                            return 'Roster data import and export hub for CSV, Excel, and PDF formats.';
+                          })()}
+                        </p>
+                      </div>
+
+                      {/* Tier 2: Interactive Dropzone Canvas */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, justifyContent: 'center' }}>
+                        <EditableModuleSlot
+                          moduleKey="showImportDropzone"
+                          isEditMode={isEditMode}
+                          isVisible={featureToggles.showImportDropzone !== false}
+                          onToggle={handleToggleModule}
+                          slotType="banner"
+                        >
+                          <div
+                            onClick={() => {
+                              setWizardStep(1);
+                              setIsWizardOpen(true);
+                            }}
+                            style={{
+                              padding: '0.55rem 0.65rem',
+                              borderRadius: '8px',
+                              border: '1.5px dashed var(--accent-teal)',
+                              backgroundColor: 'rgba(20, 184, 166, 0.04)',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.35rem',
+                              textAlign: 'center',
+                              transition: 'all 0.2s ease',
+                              width: '100%',
+                              boxSizing: 'border-box',
+                              minHeight: '68px'
+                            }}
+                            title="Click to launch Roster Onboarding Wizard"
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent-teal)' }}>
+                              <Upload size={13} /> Click to Upload or Paste File
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem', width: '100%' }}>
+                              <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-teal)' }}>XLSX</span>
+                              <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-rose)' }}>PDF</span>
+                              <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}>CSV</span>
+                              <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '0.18rem 0.25rem', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--accent-amber)' }}>PASTE</span>
+                            </div>
+                          </div>
+                        </EditableModuleSlot>
+                      </div>
+
+                      {/* Tier 3: Bottom Action Dock */}
+                      {(isEditMode || featureToggles.showExportRosterBtn !== false || !!featureToggles.showDownloadTemplateBtn) && (
+                        <div style={{ marginTop: 'auto', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', width: '100%' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: (featureToggles.showExportRosterBtn !== false && (isEditMode || !!featureToggles.showDownloadTemplateBtn)) ? '1fr 1fr' : '1fr', gap: '0.4rem', width: '100%' }}>
+                            <EditableModuleSlot
+                              moduleKey="showExportRosterBtn"
+                              isEditMode={isEditMode}
+                              isVisible={featureToggles.showExportRosterBtn !== false}
+                              onToggle={handleToggleModule}
+                              slotType="button"
+                              style={{ width: '100%', display: 'flex' }}
+                            >
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                  if (activeClass.students.length === 0) {
+                                    addToast('No students enrolled to export.', 'warning');
+                                    return;
+                                  }
+                                  exportRosterToExcel(activeClass);
+                                  addToast('Class roster exported to Excel (.xlsx)!', 'success');
+                                }}
+                                style={{ fontSize: '0.78rem', height: '36px', padding: '0.45rem 0.4rem', justifyContent: 'center', gap: '0.3rem', fontWeight: 600, width: '100%' }}
+                                title="Export current classroom roster to Excel"
+                              >
+                                <Download size={13} className="text-teal" /> Export Roster
+                              </button>
+                            </EditableModuleSlot>
+
+                            {(isEditMode || !!featureToggles.showDownloadTemplateBtn) && (
+                              <EditableModuleSlot
+                                moduleKey="showDownloadTemplateBtn"
+                                isEditMode={isEditMode}
+                                isVisible={!!featureToggles.showDownloadTemplateBtn}
+                                onToggle={handleToggleModule}
+                                slotType="button"
+                                style={{ width: '100%', display: 'flex' }}
+                              >
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => {
+                                    downloadSampleStudentsFile('xlsx');
+                                    addToast('Downloaded diverse student template spreadsheet (.xlsx)!', 'success');
+                                  }}
+                                  style={{ fontSize: '0.78rem', height: '36px', padding: '0.45rem 0.4rem', justifyContent: 'center', gap: '0.3rem', fontWeight: 600, width: '100%' }}
+                                  title="Download sample spreadsheet template with student headers"
+                                >
+                                  <Download size={13} className="text-indigo" /> Template
+                                </button>
+                              </EditableModuleSlot>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </EditableModuleSlot>
+                )}
+              </div>
+            )}
+
+            {/* Intelligent Auto-Group & Diversity Studio - Only rendered when toggled on */}
+            {(isEditMode || featureToggles.showAutoGroupStudio) && (
+              <EditableModuleSlot
+                moduleKey="showAutoGroupStudio"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showAutoGroupStudio}
+                onToggle={handleToggleModule}
+              >
+                <div data-tour="autogroup-studio">
+                  <AutoGroupStudio
+                    students={activeClass.students}
+                    defaultExpanded={true}
+                    onApplyGroups={(updatedStudents) => {
+                      importRoster(activeClass.id, updatedStudents, true);
+                      const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
+                      addToast(`Successfully partitioned ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
+                    }}
+                    onLoadSampleStudents={() => {
+                      importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+                      addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+                    }}
+                    onOpenTeamCharter={(staged) => handleOpenTeamKickoff('charters', false, staged)}
+                    isEditMode={isEditMode}
+                    featureToggles={featureToggles}
+                    onToggleModule={handleToggleModule}
+                    classId={activeClass.id}
+                    onOpenEnrollmentBuilder={() => setIsEnrollmentFormBuilderOpen(true)}
+                    onStagedGroupsChange={handleStagedGroupsChange}
+                  />
+                </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Team Charter, Role Allocator & Icebreaker Studio Showcase Card */}
+            {(isEditMode || featureToggles.showTeamKickoffAndRoles) && (
+              <EditableModuleSlot
+                moduleKey="showTeamKickoffAndRoles"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showTeamKickoffAndRoles}
+                onToggle={handleToggleModule}
+              >
+                <div
+                  className="card"
+                  style={{
+                    padding: '1.5rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1.15rem',
+                    background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(99, 102, 241, 0.035) 100%)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '16px',
+                    boxShadow: 'var(--shadow-xs)'
+                  }}
+                >
+                  {/* Header Row */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem', minWidth: '280px', flex: 1 }}>
+                      <div
+                        style={{
+                          width: '42px',
+                          height: '42px',
+                          borderRadius: '12px',
+                          backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                          color: 'var(--primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}
+                      >
+                        <UserCheck size={22} />
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                            Team Roles &amp; Icebreaker
+                          </h3>
+                          <span className="badge badge-primary" style={{ fontSize: '0.66rem', padding: '0.12rem 0.5rem' }}>
+                            Roles &amp; Norms
+                          </span>
+                        </div>
+                        <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                          Assigns student roles (Lead, Scribe, Presenter) and sets group agreements.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Actions & Launch Button */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleOpenTeamKickoff('charters', true)}
+                        style={{ gap: '0.35rem', fontWeight: 650, fontSize: '0.8rem', padding: '0.55rem 0.95rem' }}
+                        title="Open Team Agreements & trigger quick print view"
+                      >
+                        <Printer size={13} /> Print Agreements
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => handleOpenTeamKickoff('roles_config', false)}
+                        style={{ gap: '0.45rem', fontWeight: 750, fontSize: '0.82rem', padding: '0.55rem 1.15rem' }}
+                      >
+                        <Sparkles size={14} /> Open Full Studio
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 3 Value Pillars - Each leads to its tailored tab */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+
+                    {/* Pillar 1: Custom Roles -> opens 'roles_config' */}
+                    <div
+                      onClick={() => handleOpenTeamKickoff('roles_config')}
+                      style={{
+                        padding: '0.95rem 1rem',
+                        borderRadius: '12px',
+                        backgroundColor: 'var(--bg-app)',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '0.65rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-app)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <Sliders size={14} style={{ color: 'var(--primary)' }} /> 1. Custom Roles &amp; Allocation
+                          </span>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--primary)', backgroundColor: 'rgba(99, 102, 241, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                            Tab 1
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                          Create activity roles (Tech Lead, Scribe, Presenter) &amp; auto-allocate balanced responsibilities across all teams in 1-click.
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--primary)' }}>
+                          Manage Roles &rarr;
+                        </span>
+                        <ArrowRight size={12} style={{ color: 'var(--primary)' }} />
+                      </div>
+                    </div>
+
+                    {/* Pillar 2: 5-Min Icebreakers -> opens 'icebreakers' */}
+                    <div
+                      onClick={() => handleOpenTeamKickoff('icebreakers')}
+                      style={{
+                        padding: '0.95rem 1rem',
+                        borderRadius: '12px',
+                        backgroundColor: 'var(--bg-app)',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '0.65rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-app)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <MessageSquare size={14} style={{ color: '#0d9488' }} /> 2. 5-Min Kickoff Icebreakers
+                          </span>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#0d9488', backgroundColor: 'rgba(13, 148, 136, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                            Tab 2
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                          Build psychological safety and empathy. Craft custom prompts (superpowers, anti-goals, cultural passport) with a built-in timer.
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#0d9488' }}>
+                          Configure Prompts &rarr;
+                        </span>
+                        <ArrowRight size={12} style={{ color: '#0d9488' }} />
+                      </div>
+                    </div>
+
+                    {/* Pillar 3: Team Charters & Norms -> opens 'charters' */}
+                    <div
+                      onClick={() => handleOpenTeamKickoff('charters')}
+                      style={{
+                        padding: '0.95rem 1rem',
+                        borderRadius: '12px',
+                        backgroundColor: 'var(--bg-app)',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '0.65rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#d97706'; e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-app)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <FileText size={14} style={{ color: '#d97706' }} /> 3. Working Agreements &amp; Print
+                          </span>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#d97706', backgroundColor: 'rgba(217, 119, 6, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                            Tab 3
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                          Define response-time norms, dispute protocols, and generate formatted team table cards ready for in-class print or PDF export.
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#d97706' }}>
+                          Preview &amp; Print Agreements &rarr;
+                        </span>
+                        <ArrowRight size={12} style={{ color: '#d97706' }} />
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Status & Quick-Tab Navigation Strip */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', fontSize: '0.74rem', color: 'var(--text-muted)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <Users size={12} className="text-primary" /> {activeClass.students.length} Students in {new Set(activeClass.students.map(s => s.groupName || 'Unassigned')).size} Teams
+                      </span>
+                      <span>&bull;</span>
+                      <span
+                        onClick={() => handleOpenTeamKickoff('roles_config')}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          cursor: 'pointer',
+                          color: activeClass.students.filter(s => !!s.role).length === activeClass.students.length ? '#10b981' : '#f59e0b',
+                          fontWeight: 650
+                        }}
+                        title="Click to manage role allocations"
+                      >
+                        <CheckCircle2 size={12} /> {activeClass.students.filter(s => !!s.role).length} of {activeClass.students.length} Roles Assigned
+                      </span>
+                    </div>
+
+                    {/* Direct Jump Pills */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Jump to:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenTeamKickoff('roles_config')}
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: 'auto', lineHeight: '1.4' }}
+                      >
+                        Roles
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenTeamKickoff('icebreakers')}
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: 'auto', lineHeight: '1.4' }}
+                      >
+                        Icebreakers
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenTeamKickoff('charters')}
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: 'auto', lineHeight: '1.4' }}
+                      >
+                        Working Agreements
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Roster Filter & List Table - Toggleable in Settings */}
+            {(isEditMode || featureToggles.showRosterTable) && (
+              <EditableModuleSlot
+                moduleKey="showRosterTable"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showRosterTable}
+                onToggle={handleToggleModule}
+                slotType="table"
+              >
+                <div className="card" data-tour="classroom-roster-table" style={{ padding: isRosterTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
+                  <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isRosterTableExpanded ? '1.25rem' : 0 }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
+                      onClick={() => setIsRosterTableExpanded(!isRosterTableExpanded)}
+                      title={isRosterTableExpanded ? 'Click to collapse table' : 'Click to expand table'}
+                    >
+                      <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
+                        <Users size={20} className="text-indigo" /> Classroom Roster
+                        <FeatureInfoButton featureId="classroom-roster" size="sm" tooltipText="Classroom Roster Guide" />
+                      </h3>
+                      <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+                        {filteredStudents.length} of {activeClass.students.length} members
+                      </span>
+                      {duplicateFlagsMap.size > 0 && !isRosterTableExpanded && (
+                        <span className="badge badge-amber" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <AlertTriangle size={11} /> {duplicateFlagsMap.size} flags
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      {(isEditMode || featureToggles.showRosterSearchFilter) && (
+                        <EditableModuleSlot
+                          moduleKey="showRosterSearchFilter"
+                          isEditMode={isEditMode}
+                          isVisible={featureToggles.showRosterSearchFilter}
+                          onToggle={handleToggleModule}
+                          inline
+                          slotType="bar"
+                        >
+                          <div style={{ display: 'inline-flex', gap: '0.45rem', alignItems: 'center', flexWrap: 'nowrap' }}>
+                            {/* Power Search Bar with Autocomplete Dropdown */}
+                            <div style={{ position: 'relative', width: '280px' }}>
+                              <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: searchTerm ? 'var(--primary)' : 'var(--text-muted)', pointerEvents: 'none' }} />
+                              <input
+                                ref={searchInputRef}
+                                type="text"
+                                placeholder="Search name, ID, role, group, country..."
+                                className="form-input"
+                                style={{
+                                  paddingLeft: '2.2rem',
+                                  paddingRight: searchTerm ? '2.2rem' : '2.4rem',
+                                  height: '36px',
+                                  fontSize: '0.82rem',
+                                  borderRadius: '8px',
+                                  borderColor: isSearchFocused || searchTerm ? 'var(--primary)' : 'var(--border-color)',
+                                  boxShadow: isSearchFocused ? '0 0 0 3px rgba(99, 102, 241, 0.15)' : 'none'
+                                }}
+                                value={searchTerm}
+                                onFocus={() => setIsSearchFocused(true)}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    saveSearchToHistory(searchTerm);
+                                    setIsSearchFocused(false);
+                                  } else if (e.key === 'Escape') {
+                                    setSearchTerm('');
+                                    setIsSearchFocused(false);
+                                  }
+                                }}
+                              />
+
+                              {/* Right Action: Clear Button or Keyboard Hint */}
+                              {searchTerm ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSearchTerm('');
+                                    searchInputRef.current?.focus();
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    right: '0.5rem',
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    background: 'var(--bg-app)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '50%',
+                                    width: '20px',
+                                    height: '20px',
+                                    color: 'var(--text-muted)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    padding: 0
+                                  }}
+                                  title="Clear search (Esc)"
+                                >
+                                  <X size={11} />
+                                </button>
+                              ) : (
+                                <kbd
+                                  style={{
+                                    position: 'absolute',
+                                    right: '0.55rem',
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    fontSize: '0.68rem',
+                                    color: 'var(--text-muted)',
+                                    backgroundColor: 'var(--bg-app)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '4px',
+                                    padding: '0.1rem 0.35rem',
+                                    pointerEvents: 'none',
+                                    fontWeight: 700
+                                  }}
+                                >
+                                  /
+                                </kbd>
+                              )}
+
+                              {/* Autocomplete & Smart Suggestions Dropdown */}
+                              {isSearchFocused && (
+                                <div
+                                  ref={searchDropdownRef}
+                                  className="card"
+                                  style={{
+                                    position: 'absolute',
+                                    top: 'calc(100% + 6px)',
+                                    left: 0,
+                                    width: '380px',
+                                    maxHeight: '380px',
+                                    overflowY: 'auto',
+                                    zIndex: 1000,
+                                    backgroundColor: 'var(--bg-surface)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '12px',
+                                    boxShadow: 'var(--shadow-xl)',
+                                    padding: '0.75rem',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.65rem',
+                                    animation: 'fadeIn 0.15s ease'
+                                  }}
+                                >
+                                  {/* Matching Student Results */}
+                                  {searchMatchingStudents.length > 0 && (
+                                    <div>
+                                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '0.35rem' }}>
+                                        Matching Students ({filteredStudents.length})
+                                      </span>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                        {searchMatchingStudents.map(student => (
+                                          <div
+                                            key={student.id}
+                                            onClick={() => {
+                                              setSearchTerm(student.name);
+                                              saveSearchToHistory(student.name);
+                                              setIsSearchFocused(false);
+                                            }}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'space-between',
+                                              padding: '0.4rem 0.55rem',
+                                              borderRadius: '7px',
+                                              cursor: 'pointer',
+                                              backgroundColor: 'var(--bg-app)',
+                                              border: '1px solid transparent',
+                                              transition: 'all 0.12s ease'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                              e.currentTarget.style.borderColor = 'var(--primary)';
+                                              e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                              e.currentTarget.style.borderColor = 'transparent';
+                                              e.currentTarget.style.backgroundColor = 'var(--bg-app)';
+                                            }}
+                                          >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                              <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: '#fff', fontSize: '0.65rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {student.name.charAt(0)}
+                                              </div>
+                                              <div>
+                                                <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block' }}>
+                                                  {student.name}
+                                                </strong>
+                                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                                  ID: {student.id} &bull; {student.groupName || 'Unassigned'}
+                                                </span>
+                                              </div>
+                                            </div>
+
+                                            {student.role && (
+                                              <span className="badge badge-primary" style={{ fontSize: '0.64rem', padding: '0.1rem 0.35rem' }}>
+                                                {student.role}
+                                              </span>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Matching Teams */}
+                                  {searchMatchingTeams.length > 0 && (
+                                    <div>
+                                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '0.35rem' }}>
+                                        Matching Teams
+                                      </span>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                        {searchMatchingTeams.map(team => {
+                                          const teamCount = activeClass.students.filter(s => s.groupName === team).length;
+                                          return (
+                                            <button
+                                              key={team}
+                                              type="button"
+                                              onClick={() => {
+                                                setGroupFilter(team);
+                                                setSearchTerm('');
+                                                setIsSearchFocused(false);
+                                              }}
+                                              style={{
+                                                fontSize: '0.72rem',
+                                                fontWeight: 700,
+                                                padding: '0.25rem 0.55rem',
+                                                borderRadius: '6px',
+                                                backgroundColor: 'var(--bg-app)',
+                                                border: '1px solid var(--border-color)',
+                                                color: 'var(--primary)',
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '0.25rem'
+                                              }}
+                                            >
+                                              <Users size={11} /> {team} ({teamCount})
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Quick-Apply Filter Presets */}
+                                  <div>
+                                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '0.35rem' }}>
+                                      Filter Presets &amp; Operators
+                                    </span>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSearchTerm('status:pending');
+                                          setIsSearchFocused(false);
+                                        }}
+                                        style={{
+                                          fontSize: '0.72rem',
+                                          fontWeight: 650,
+                                          padding: '0.3rem 0.5rem',
+                                          borderRadius: '6px',
+                                          backgroundColor: 'var(--bg-app)',
+                                          border: '1px solid var(--border-color)',
+                                          color: 'var(--text-primary)',
+                                          cursor: 'pointer',
+                                          textAlign: 'left',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.35rem'
+                                        }}
+                                      >
+                                        <Clock size={12} className="text-amber" /> Pending Reviews
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSearchTerm('status:submitted');
+                                          setIsSearchFocused(false);
+                                        }}
+                                        style={{
+                                          fontSize: '0.72rem',
+                                          fontWeight: 650,
+                                          padding: '0.3rem 0.5rem',
+                                          borderRadius: '6px',
+                                          backgroundColor: 'var(--bg-app)',
+                                          border: '1px solid var(--border-color)',
+                                          color: 'var(--text-primary)',
+                                          cursor: 'pointer',
+                                          textAlign: 'left',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.35rem'
+                                        }}
+                                      >
+                                        <CheckCircle size={12} className="text-teal" /> Submitted Reviews
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSearchTerm('group:unassigned');
+                                          setIsSearchFocused(false);
+                                        }}
+                                        style={{
+                                          fontSize: '0.72rem',
+                                          fontWeight: 650,
+                                          padding: '0.3rem 0.5rem',
+                                          borderRadius: '6px',
+                                          backgroundColor: 'var(--bg-app)',
+                                          border: '1px solid var(--border-color)',
+                                          color: 'var(--text-primary)',
+                                          cursor: 'pointer',
+                                          textAlign: 'left',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.35rem'
+                                        }}
+                                      >
+                                        <Users size={12} className="text-rose" /> Unassigned Members
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSearchTerm('type:erasmus');
+                                          setIsSearchFocused(false);
+                                        }}
+                                        style={{
+                                          fontSize: '0.72rem',
+                                          fontWeight: 650,
+                                          padding: '0.3rem 0.5rem',
+                                          borderRadius: '6px',
+                                          backgroundColor: 'var(--bg-app)',
+                                          border: '1px solid var(--border-color)',
+                                          color: 'var(--text-primary)',
+                                          cursor: 'pointer',
+                                          textAlign: 'left',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.35rem'
+                                        }}
+                                      >
+                                        <Globe size={12} className="text-indigo" /> Erasmus / Int'l
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Recent Searches */}
+                                  {searchHistory.length > 0 && (
+                                    <div style={{ paddingTop: '0.35rem', borderTop: '1px solid var(--border-color)' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+                                        <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                          Recent Searches
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSearchHistory([]);
+                                            localStorage.removeItem('peer_roster_search_history_v1');
+                                          }}
+                                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.65rem', cursor: 'pointer' }}
+                                        >
+                                          Clear History
+                                        </button>
+                                      </div>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                                        {searchHistory.map(hist => (
+                                          <button
+                                            key={hist}
+                                            type="button"
+                                            onClick={() => {
+                                              setSearchTerm(hist);
+                                              setIsSearchFocused(false);
+                                            }}
+                                            style={{
+                                              fontSize: '0.7rem',
+                                              fontWeight: 600,
+                                              padding: '0.2rem 0.5rem',
+                                              borderRadius: '5px',
+                                              backgroundColor: 'var(--bg-app)',
+                                              border: '1px solid var(--border-color)',
+                                              color: 'var(--text-secondary)',
+                                              cursor: 'pointer'
+                                            }}
+                                          >
+                                            {hist}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Syntax Tip Strip */}
+                                  <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.35rem 0.55rem', borderRadius: '6px', fontSize: '0.67rem', color: 'var(--text-muted)', display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
+                                    <b>Syntax Tips:</b>
+                                    <code>role:lead</code>
+                                    <code>group:1</code>
+                                    <code>status:pending</code>
+                                    <code>country:spain</code>
+                                    <code>-submitted</code>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <CustomSelect
+                              options={groupOptions}
+                              value={groupFilter}
+                              onChange={(val) => setGroupFilter(val)}
+                              style={{ width: 'auto', minWidth: '140px' }}
+                              triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
+                            />
+                          </div>
+                        </EditableModuleSlot>
+                      )}
+
+                      {(isEditMode || featureToggles.showExportButtons) && (
+                        <EditableModuleSlot
+                          moduleKey="showExportButtons"
+                          isEditMode={isEditMode}
+                          isVisible={featureToggles.showExportButtons}
+                          onToggle={handleToggleModule}
+                          inline
+                          slotType="button"
+                        >
+                          <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
                             <button
                               type="button"
                               className="btn btn-secondary btn-sm"
@@ -5003,4912 +5956,4150 @@ export const AdminDashboard: React.FC = () => {
                                 exportRosterToExcel(activeClass);
                                 addToast('Class roster exported to Excel (.xlsx)!', 'success');
                               }}
-                              style={{ fontSize: '0.78rem', height: '36px', padding: '0.45rem 0.4rem', justifyContent: 'center', gap: '0.3rem', fontWeight: 600, width: '100%' }}
-                              title="Export current classroom roster to Excel"
+                              style={{ fontSize: '0.8rem', padding: '0 0.75rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
+                              title="Export complete roster with academic & demographic metadata to Excel"
                             >
-                              <Download size={13} className="text-teal" /> Export Roster
+                              <Download size={14} className="text-teal" /> Excel
                             </button>
-                          </EditableModuleSlot>
-
-                          {(isEditMode || !!featureToggles.showDownloadTemplateBtn) && (
-                            <EditableModuleSlot
-                              moduleKey="showDownloadTemplateBtn"
-                              isEditMode={isEditMode}
-                              isVisible={!!featureToggles.showDownloadTemplateBtn}
-                              onToggle={handleToggleModule}
-                              slotType="button"
-                              style={{ width: '100%', display: 'flex' }}
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                if (activeClass.students.length === 0) {
+                                  addToast('No students enrolled to export.', 'warning');
+                                  return;
+                                }
+                                exportRosterToCSV(activeClass);
+                                addToast('Class roster exported to CSV!', 'success');
+                              }}
+                              style={{ fontSize: '0.8rem', padding: '0 0.65rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
+                              title="Export roster to CSV"
                             >
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => {
-                                  downloadSampleStudentsFile('xlsx');
-                                  addToast('Downloaded diverse student template spreadsheet (.xlsx)!', 'success');
-                                }}
-                                style={{ fontSize: '0.78rem', height: '36px', padding: '0.45rem 0.4rem', justifyContent: 'center', gap: '0.3rem', fontWeight: 600, width: '100%' }}
-                                title="Download sample spreadsheet template with student headers"
-                              >
-                                <Download size={13} className="text-indigo" /> Template
-                              </button>
-                            </EditableModuleSlot>
-                          )}
+                              <Download size={14} /> CSV
+                            </button>
+                          </div>
+                        </EditableModuleSlot>
+                      )}
+
+                      {(isEditMode || featureToggles.showRosterAddStudentBtn) && (
+                        <EditableModuleSlot
+                          moduleKey="showRosterAddStudentBtn"
+                          isEditMode={isEditMode}
+                          isVisible={featureToggles.showRosterAddStudentBtn}
+                          onToggle={handleToggleModule}
+                          inline
+                          slotType="button"
+                        >
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setIsAddStudentModalOpen(true)}
+                            style={{ height: '36px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, gap: '0.35rem' }}
+                            title="Enroll new student manually"
+                          >
+                            <Plus size={14} /> Add Student
+                          </button>
+                        </EditableModuleSlot>
+                      )}
+
+                      {/* Expand / Collapse Roster Table Toggle */}
+                      <button
+                        type="button"
+                        className={isRosterTableExpanded ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
+                        onClick={() => setIsRosterTableExpanded(!isRosterTableExpanded)}
+                        style={{
+                          height: '36px',
+                          borderRadius: '8px',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          gap: '0.35rem',
+                          boxShadow: 'none'
+                        }}
+                        title={isRosterTableExpanded ? 'Collapse classroom roster table' : 'Expand classroom roster table'}
+                      >
+                        {isRosterTableExpanded ? (
+                          <>
+                            <ChevronUp size={14} /> Collapse Table
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown size={14} /> Expand Table ({filteredStudents.length})
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Intelligent Duplicate Enrollment Detection Banner - Shown when table is expanded */}
+                  {isRosterTableExpanded && featureToggles.showDuplicateDetector && duplicateFlagsMap.size > 0 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        backgroundColor: '#fffbeb',
+                        border: '1.5px solid #f59e0b',
+                        borderRadius: '10px',
+                        padding: '0.75rem 1rem',
+                        marginBottom: '1rem',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <AlertTriangle size={18} />
+                        </div>
+                        <div>
+                          <strong style={{ color: '#b45309', fontSize: '0.88rem', display: 'block' }}>
+                            Duplicate Student Alert ({duplicateFlagsMap.size} detected)
+                          </strong>
+                          <span style={{ fontSize: '0.75rem', color: '#92400e' }}>
+                            Flags identical student names, IDs, or emails in the roster.
+                          </span>
                         </div>
                       </div>
+
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => setShowOnlyDuplicates(prev => !prev)}
+                          style={{
+                            backgroundColor: showOnlyDuplicates ? '#f59e0b' : '#ffffff',
+                            color: showOnlyDuplicates ? '#ffffff' : '#b45309',
+                            border: '1px solid #f59e0b',
+                            fontWeight: 700,
+                            fontSize: '0.78rem',
+                            height: '32px',
+                            padding: '0 0.75rem'
+                          }}
+                        >
+                          {showOnlyDuplicates ? 'Show All Students' : 'Filter Suspected Duplicates'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            const allPairs = new Set<string>();
+                            activeClass.students.forEach(s => {
+                              const flags = duplicateFlagsMap.get(s.id) || [];
+                              flags.forEach(f => allPairs.add([s.id, f.matchedStudentId].sort().join(':::')));
+                            });
+                            setIgnoredDuplicatePairs(allPairs);
+                            setShowOnlyDuplicates(false);
+                            addToast('Dismissed all current duplicate warning flags.', 'info');
+                          }}
+                          style={{ height: '32px', fontSize: '0.74rem', padding: '0 0.6rem' }}
+                          title="Dismiss all current duplicate flags"
+                        >
+                          Dismiss All Flags
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quick-Filter Chips Bar & Active Search Status Strip */}
+                  {isRosterTableExpanded && activeClass.students.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '1rem' }}>
+                      {/* 1-Click Quick Filter Chips */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveQuickFilter('all');
+                            setShowOnlyDuplicates(false);
+                          }}
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: activeQuickFilter === 'all' && !showOnlyDuplicates ? 750 : 600,
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '8px',
+                            backgroundColor: activeQuickFilter === 'all' && !showOnlyDuplicates ? 'var(--primary)' : 'var(--bg-app)',
+                            color: activeQuickFilter === 'all' && !showOnlyDuplicates ? '#fff' : 'var(--text-secondary)',
+                            border: `1px solid ${activeQuickFilter === 'all' && !showOnlyDuplicates ? 'var(--primary)' : 'var(--border-color)'}`,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          All ({quickFilterCounts.total})
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveQuickFilter(activeQuickFilter === 'pending' ? 'all' : 'pending');
+                            setShowOnlyDuplicates(false);
+                          }}
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: activeQuickFilter === 'pending' ? 750 : 600,
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '8px',
+                            backgroundColor: activeQuickFilter === 'pending' ? '#f59e0b' : 'var(--bg-app)',
+                            color: activeQuickFilter === 'pending' ? '#fff' : 'var(--text-secondary)',
+                            border: `1px solid ${activeQuickFilter === 'pending' ? '#f59e0b' : 'var(--border-color)'}`,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <Clock size={11} className={activeQuickFilter === 'pending' ? '' : 'text-amber'} /> Pending ({quickFilterCounts.pending})
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveQuickFilter(activeQuickFilter === 'submitted' ? 'all' : 'submitted');
+                            setShowOnlyDuplicates(false);
+                          }}
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: activeQuickFilter === 'submitted' ? 750 : 600,
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '8px',
+                            backgroundColor: activeQuickFilter === 'submitted' ? '#0d9488' : 'var(--bg-app)',
+                            color: activeQuickFilter === 'submitted' ? '#fff' : 'var(--text-secondary)',
+                            border: `1px solid ${activeQuickFilter === 'submitted' ? '#0d9488' : 'var(--border-color)'}`,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <CheckCircle size={11} className={activeQuickFilter === 'submitted' ? '' : 'text-teal'} /> Submitted ({quickFilterCounts.submitted})
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveQuickFilter(activeQuickFilter === 'unassigned' ? 'all' : 'unassigned');
+                            setShowOnlyDuplicates(false);
+                          }}
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: activeQuickFilter === 'unassigned' ? 750 : 600,
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '8px',
+                            backgroundColor: activeQuickFilter === 'unassigned' ? '#e11d48' : 'var(--bg-app)',
+                            color: activeQuickFilter === 'unassigned' ? '#fff' : 'var(--text-secondary)',
+                            border: `1px solid ${activeQuickFilter === 'unassigned' ? '#e11d48' : 'var(--border-color)'}`,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <Users size={11} className={activeQuickFilter === 'unassigned' ? '' : 'text-rose'} /> Unassigned ({quickFilterCounts.unassigned})
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveQuickFilter(activeQuickFilter === 'with_role' ? 'all' : 'with_role');
+                            setShowOnlyDuplicates(false);
+                          }}
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: activeQuickFilter === 'with_role' ? 750 : 600,
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '8px',
+                            backgroundColor: activeQuickFilter === 'with_role' ? '#8b5cf6' : 'var(--bg-app)',
+                            color: activeQuickFilter === 'with_role' ? '#fff' : 'var(--text-secondary)',
+                            border: `1px solid ${activeQuickFilter === 'with_role' ? '#8b5cf6' : 'var(--border-color)'}`,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <UserCheck size={11} className={activeQuickFilter === 'with_role' ? '' : 'text-purple'} /> With Role ({quickFilterCounts.with_role})
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveQuickFilter(activeQuickFilter === 'erasmus' ? 'all' : 'erasmus');
+                            setShowOnlyDuplicates(false);
+                          }}
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: activeQuickFilter === 'erasmus' ? 750 : 600,
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '8px',
+                            backgroundColor: activeQuickFilter === 'erasmus' ? '#0284c7' : 'var(--bg-app)',
+                            color: activeQuickFilter === 'erasmus' ? '#fff' : 'var(--text-secondary)',
+                            border: `1px solid ${activeQuickFilter === 'erasmus' ? '#0284c7' : 'var(--border-color)'}`,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <Globe size={11} className={activeQuickFilter === 'erasmus' ? '' : 'text-sky'} /> Erasmus / Int'l ({quickFilterCounts.erasmus})
+                        </button>
+
+                        {quickFilterCounts.duplicates > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowOnlyDuplicates(prev => !prev);
+                              if (!showOnlyDuplicates) setActiveQuickFilter('all');
+                            }}
+                            style={{
+                              fontSize: '0.74rem',
+                              fontWeight: showOnlyDuplicates ? 750 : 600,
+                              padding: '0.25rem 0.65rem',
+                              borderRadius: '8px',
+                              backgroundColor: showOnlyDuplicates ? '#f59e0b' : 'var(--bg-app)',
+                              color: showOnlyDuplicates ? '#fff' : '#b45309',
+                              border: `1px solid ${showOnlyDuplicates ? '#f59e0b' : '#fcd34d'}`,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <AlertTriangle size={11} /> Duplicates ({quickFilterCounts.duplicates})
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Active Filter Strip (when any search/filter is active) */}
+                      {(searchTerm || groupFilter !== 'All Groups' || activeQuickFilter !== 'all' || showOnlyDuplicates) && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            backgroundColor: 'var(--bg-app)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '0.4rem 0.75rem',
+                            fontSize: '0.75rem',
+                            gap: '0.5rem',
+                            flexWrap: 'wrap'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 650 }}>
+                              Showing <b>{filteredStudents.length}</b> of <b>{activeClass.students.length}</b> students
+                            </span>
+
+                            {searchTerm && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                                  color: 'var(--primary)',
+                                  border: '1px solid rgba(99, 102, 241, 0.25)',
+                                  padding: '0.1rem 0.45rem',
+                                  borderRadius: '5px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700
+                                }}
+                              >
+                                Query: "{searchTerm}"
+                                <X
+                                  size={10}
+                                  style={{ cursor: 'pointer' }}
+                                  onClick={() => setSearchTerm('')}
+                                />
+                              </span>
+                            )}
+
+                            {groupFilter !== 'All Groups' && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  backgroundColor: 'var(--bg-surface)',
+                                  color: 'var(--text-primary)',
+                                  border: '1px solid var(--border-color)',
+                                  padding: '0.1rem 0.45rem',
+                                  borderRadius: '5px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700
+                                }}
+                              >
+                                Group: {groupFilter}
+                                <X
+                                  size={10}
+                                  style={{ cursor: 'pointer' }}
+                                  onClick={() => setGroupFilter('All Groups')}
+                                />
+                              </span>
+                            )}
+
+                            {activeQuickFilter !== 'all' && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  backgroundColor: 'var(--bg-surface)',
+                                  color: 'var(--text-primary)',
+                                  border: '1px solid var(--border-color)',
+                                  padding: '0.1rem 0.45rem',
+                                  borderRadius: '5px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700
+                                }}
+                              >
+                                Filter: {activeQuickFilter}
+                                <X
+                                  size={10}
+                                  style={{ cursor: 'pointer' }}
+                                  onClick={() => setActiveQuickFilter('all')}
+                                />
+                              </span>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearchTerm('');
+                              setGroupFilter('All Groups');
+                              setActiveQuickFilter('all');
+                              setShowOnlyDuplicates(false);
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--primary)',
+                              cursor: 'pointer',
+                              fontSize: '0.72rem',
+                              fontWeight: 750,
+                              padding: '0.1rem 0.35rem'
+                            }}
+                          >
+                            Reset All Filters
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeClass.students.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{ width: '60px', height: '60px', borderRadius: '18px', background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.25rem' }}>
+                        <Users size={28} style={{ color: 'var(--primary)' }} />
+                      </div>
+                      <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: 0 }}>No participants yet</p>
+                      <p style={{ fontSize: '0.82rem', margin: 0, maxWidth: '380px', lineHeight: 1.5 }}>
+                        Use the <strong>Roster Onboarding Wizard</strong> to upload a spreadsheet, or load our diverse dataset of 100 students to explore all app features.
+                      </p>
+                      <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => {
+                            setWizardStep(1);
+                            setIsWizardOpen(true);
+                          }}
+                        >
+                          <Upload size={14} /> Open Onboarding Wizard
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-teal btn-sm"
+                          onClick={() => {
+                            importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
+                            addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
+                          }}
+                        >
+                          <Sparkles size={14} /> Load 100 Sample Students
+                        </button>
+                      </div>
+                    </div>
+                  ) : filteredStudents.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary)' }}>
+                      <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: '0 0 0.5rem 0' }}>No students found matching your filters</p>
+                      <p style={{ fontSize: '0.82rem', margin: '0 0 1rem 0' }}>Try a different search keyword or reset the group filter.</p>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          setSearchTerm('');
+                          setGroupFilter('All Groups');
+                        }}
+                      >
+                        Reset Filters
+                      </button>
+                    </div>
+                  ) : !isRosterTableExpanded ? null : (
+                    <>
+                      <div className="table-container table-container-sticky">
+                        <table className="custom-table">
+                          <thead>
+                            <tr>
+                              <th style={{ width: '38px', textAlign: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.has(s.id))}
+                                  onChange={() => {
+                                    if (filteredStudents.every(s => selectedStudentIds.has(s.id))) {
+                                      setSelectedStudentIds(new Set());
+                                    } else {
+                                      setSelectedStudentIds(new Set(filteredStudents.map(s => s.id)));
+                                    }
+                                  }}
+                                  aria-label="Select all students"
+                                />
+                              </th>
+                              <th style={{ minWidth: '180px' }}>Participant</th>
+                              <th style={{ minWidth: '150px' }}>Academic Info</th>
+                              <th style={{ minWidth: '130px' }}>Origin &amp; Type</th>
+                              <th style={{ minWidth: '140px' }}>Group &amp; English</th>
+                              <th style={{ minWidth: '110px' }}>Portal Status</th>
+                              <th style={{ width: '130px', textAlign: 'right' }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredStudents.map((s) => {
+                              let gradingUrl = `${window.location.origin}${window.location.pathname}?classId=${activeClass.id}&studentId=${s.id}`;
+                              if (isCloudSynced && firebaseConfig && user) {
+                                const payload = {
+                                  a: firebaseConfig.apiKey,
+                                  p: firebaseConfig.projectId,
+                                  d: firebaseConfig.authDomain,
+                                  i: firebaseConfig.appId,
+                                  o: user.uid
+                                };
+                                const encoded = btoa(JSON.stringify(payload));
+                                gradingUrl += `&fb=${encoded}`;
+                              }
+                              const isSelected = selectedStudentIds.has(s.id);
+
+                              return (
+                                <tr key={s.id} data-student-id={s.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : undefined }}>
+                                  {/* Checkbox */}
+                                  <td style={{ textAlign: 'center' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        setSelectedStudentIds(prev => {
+                                          const next = new Set(prev);
+                                          if (next.has(s.id)) next.delete(s.id);
+                                          else next.add(s.id);
+                                          return next;
+                                        });
+                                      }}
+                                      aria-label={`Select ${s.name}`}
+                                    />
+                                  </td>
+
+                                  {/* Participant Identity (Name + Email + ID + Duplicate Flag) */}
+                                  <td>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                        <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.88rem' }}>{s.name}</span>
+                                        <code style={{ fontSize: '0.68rem', padding: '0.05rem 0.25rem', borderRadius: '4px', backgroundColor: 'var(--bg-app)', color: 'var(--text-muted)' }}>
+                                          #{s.id}
+                                        </code>
+
+                                        {/* Tamper & Identity Provenance Alert for Professors */}
+                                        {((s.originalName && s.originalName !== s.name) || s.flaggedForReview || (s.nameChangeCount && s.nameChangeCount > 0)) && (
+                                          <span
+                                            className="badge"
+                                            style={{
+                                              backgroundColor: '#fef2f2',
+                                              color: '#dc2626',
+                                              border: '1px solid #fecaca',
+                                              fontSize: '0.65rem',
+                                              padding: '0.05rem 0.35rem',
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '0.2rem',
+                                              fontWeight: 700,
+                                              cursor: 'help'
+                                            }}
+                                            title={
+                                              `[Audit Alert] Identity Modification Detected:\n` +
+                                              `Enrolled Name: ${s.originalName || s.name}\n` +
+                                              `Enrolled Email: ${s.originalEmail || s.email}\n` +
+                                              (s.suspiciousReason ? `Audit note: ${s.suspiciousReason}\n` : '') +
+                                              (s.editHistory && s.editHistory.length > 0
+                                                ? `\nChange Log (${s.editHistory.length}):\n` + s.editHistory.map(h => `• ${h.field}: "${h.from}" → "${h.to}"`).join('\n')
+                                                : '')
+                                            }
+                                          >
+                                            <ShieldAlert size={9} />
+                                            {s.originalName && s.originalName !== s.name ? `Formerly: ${s.originalName}` : 'Modified'}
+                                          </span>
+                                        )}
+
+                                        {/* Subtle Edit History Count if not flagged */}
+                                        {s.editHistory && s.editHistory.length > 0 && !(s.originalName && s.originalName !== s.name) && !s.flaggedForReview && (
+                                          <span
+                                            style={{
+                                              fontSize: '0.65rem',
+                                              color: 'var(--text-muted)',
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '0.2rem',
+                                              cursor: 'help'
+                                            }}
+                                            title={`Profile edit history (${s.editHistory.length} changes):\n` + s.editHistory.map(h => `• ${h.field}: "${h.from}" → "${h.to}"`).join('\n')}
+                                          >
+                                            <History size={10} /> {s.editHistory.length}
+                                          </span>
+                                        )}
+
+                                        {duplicateFlagsMap.has(s.id) && (
+                                          <span
+                                            className="badge"
+                                            style={{
+                                              backgroundColor: '#fef3c7',
+                                              color: '#b45309',
+                                              border: '1px solid #fde68a',
+                                              fontSize: '0.65rem',
+                                              padding: '0.05rem 0.35rem',
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '0.2rem',
+                                              fontWeight: 700,
+                                              cursor: 'help'
+                                            }}
+                                            title={(duplicateFlagsMap.get(s.id) || []).map(f => f.reason).join('\n')}
+                                          >
+                                            <AlertTriangle size={9} /> Duplicate
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                                        {s.email}
+                                        {s.originalEmail && s.originalEmail.toLowerCase() !== s.email.toLowerCase() && (
+                                          <span style={{ marginLeft: '0.35rem', color: '#dc2626', fontSize: '0.68rem', fontWeight: 600 }}>
+                                            (Originally: {s.originalEmail})
+                                          </span>
+                                        )}
+                                      </span>
+                                    </div>
+                                  </td>
+
+                                  {/* Academic Info (University + Degree) */}
+                                  <td>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                                      <span style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                                        {s.university || '—'}
+                                      </span>
+                                      {s.degree && (
+                                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                          {s.degree}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Origin & Demographics (Nationality + Gender + Student Type) */}
+                                  <td>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                        {s.nationality ? (
+                                          <span style={{ fontWeight: 600, fontSize: '0.78rem', color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                            <Globe size={11} className="text-teal" /> {s.nationality}
+                                          </span>
+                                        ) : (
+                                          <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>
+                                        )}
+                                        {s.gender && s.gender !== 'Prefer not to say' && (
+                                          <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>&bull; {s.gender}</span>
+                                        )}
+                                      </div>
+                                      <div>
+                                        {s.studentType === 'Erasmus' ? (
+                                          <span className="badge badge-secondary" style={{ background: 'linear-gradient(135deg, #FF007F, #7F00FF)', color: '#fff', border: 'none', fontWeight: 'bold', fontSize: '0.66rem', padding: '0.1rem 0.4rem' }}>Erasmus</span>
+                                        ) : (
+                                          <span className="badge badge-secondary" style={{ opacity: 0.85, fontSize: '0.66rem', padding: '0.1rem 0.4rem' }}>{s.studentType || 'Normal'}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* Group & Language (Team + English Level) */}
+                                  <td>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                      <div>
+                                        {s.groupName && s.groupName !== 'Unassigned' ? (
+                                          <span className="badge badge-teal" style={{ fontWeight: 700, fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}>
+                                            {s.groupName}
+                                          </span>
+                                        ) : (
+                                          <span className="badge" style={{ backgroundColor: 'var(--accent-amber-light)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)', fontWeight: 600, fontSize: '0.68rem', padding: '0.15rem 0.4rem' }}>
+                                            Unassigned
+                                          </span>
+                                        )}
+                                      </div>
+                                      {s.englishProficiency && (
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                          {s.englishProficiency}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Portal Status & Direct Link */}
+                                  <td>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                      <a
+                                        href={gradingUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}
+                                        title="Open Student Portal"
+                                      >
+                                        <Eye size={12} /> Open Portal
+                                      </a>
+                                      <div>
+                                        {s.submitted ? (
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                                            <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', gap: '0.2rem' }}>
+                                              <CheckCircle size={9} /> Done
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                triggerConfirm(
+                                                  'Reset Student Submission',
+                                                  `Are you sure you want to reset the peer review submission for "${s.name}"? This will clear their submitted ratings and return their portal status to Pending so they can evaluate again.`,
+                                                  () => resetStudentReviews(activeClass.id, s.id),
+                                                  'Reset Submission',
+                                                  'Cancel'
+                                                );
+                                              }}
+                                              style={{
+                                                fontSize: '0.64rem',
+                                                fontWeight: 700,
+                                                padding: '0.08rem 0.35rem',
+                                                borderRadius: '4px',
+                                                border: '1px solid var(--border-color)',
+                                                backgroundColor: 'var(--bg-surface)',
+                                                color: 'var(--accent-amber)',
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '0.2rem'
+                                              }}
+                                              title={`Reset reviews submitted by ${s.name} so they can re-evaluate`}
+                                            >
+                                              <RotateCcw size={9} /> Reset
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <span className="badge badge-amber" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', gap: '0.2rem' }}>
+                                            <Clock size={9} /> Pending
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* 1-Click Minimal Segmented Action Dock */}
+                                  <td style={{ textAlign: 'right' }}>
+                                    <div className="table-action-dock">
+                                      {s.submitted && (
+                                        <button
+                                          type="button"
+                                          className="table-action-btn action-reset"
+                                          onClick={() => {
+                                            triggerConfirm(
+                                              'Reset Student Submission',
+                                              `Are you sure you want to reset the peer review submission for "${s.name}"? This will clear their submitted ratings and return their portal status to Pending so they can evaluate again.`,
+                                              () => resetStudentReviews(activeClass.id, s.id),
+                                              'Reset Submission',
+                                              'Cancel'
+                                            );
+                                          }}
+                                          title={`Reset ${s.name}'s review submission`}
+                                          style={{ color: 'var(--accent-amber)' }}
+                                        >
+                                          <RotateCcw size={13} />
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="table-action-btn action-simulator"
+                                        onClick={() => setPreviewingStudent(s)}
+                                        title="Simulate smartphone student portal"
+                                      >
+                                        <Smartphone size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="table-action-btn action-copy"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(gradingUrl);
+                                          addToast(`Copied evaluation link for ${s.name}!`, 'success');
+                                        }}
+                                        title="Copy personal evaluation link"
+                                      >
+                                        <Copy size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="table-action-btn action-report"
+                                        onClick={() => openReportModal(s.id)}
+                                        title="View & Download PDF Report Card"
+                                      >
+                                        <FileText size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="table-action-btn action-edit"
+                                        onClick={() => {
+                                          const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
+                                          setEditStudentData({
+                                            id: s.id,
+                                            name: s.name,
+                                            email: s.email,
+                                            groupName: s.groupName,
+                                            gender: s.gender || 'Prefer not to say',
+                                            isInternational: isIntl,
+                                            isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
+                                            nationality: s.nationality || '',
+                                            currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
+                                            englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
+                                            university: s.university || '',
+                                            degree: s.degree || '',
+                                            originalUniversity: s.originalUniversity || '',
+                                            originalCountry: s.originalCountry || '',
+                                            currentUniversity: s.currentUniversity || s.university || '',
+                                            studentType: s.studentType || 'Normal',
+                                            customFields: s.customFields || {}
+                                          });
+                                          setIsEditStudentModalOpen(true);
+                                        }}
+                                        title="Edit student details"
+                                      >
+                                        <Edit2 size={13} />
+                                      </button>
+                                      {duplicateFlagsMap.has(s.id) && (
+                                        <button
+                                          type="button"
+                                          className="table-action-btn action-dismiss"
+                                          onClick={() => {
+                                            const flags = duplicateFlagsMap.get(s.id) || [];
+                                            setIgnoredDuplicatePairs(prev => {
+                                              const next = new Set(prev);
+                                              flags.forEach(f => next.add([s.id, f.matchedStudentId].sort().join(':::')));
+                                              return next;
+                                            });
+                                            addToast(`Dismissed duplicate flag for ${s.name}.`, 'info');
+                                          }}
+                                          title="Dismiss / Ignore duplicate flag"
+                                        >
+                                          <EyeOff size={13} />
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="table-action-btn action-delete"
+                                        onClick={() => {
+                                          triggerConfirm(
+                                            'Remove Student Record',
+                                            `Are you sure you want to remove "${s.name}"? This will permanently delete their student record and ALL peer reviews they have either submitted or received.`,
+                                            () => deleteStudent(activeClass.id, s.id),
+                                            'Remove Student',
+                                            'Cancel'
+                                          );
+                                        }}
+                                        title="Delete student record"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Floating Bulk Actions Bar */}
+                      {featureToggles.showBulkActionBar && selectedStudentIds.size > 0 && (
+                        <div className="bulk-actions-floating-bar">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                            <span className="badge badge-primary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', fontWeight: 800 }}>
+                              {selectedStudentIds.size} Selected
+                            </span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                              of {filteredStudents.length} students
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            {/* Assign to Group */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <CustomSelect
+                                value={bulkTargetTeam}
+                                onChange={(val) => setBulkTargetTeam(val)}
+                                options={[
+                                  { value: '', label: '-- Assign to Team --' },
+                                  ...groupOptions.filter(g => g.value !== 'All Groups').map(g => ({ value: g.value, label: g.label }))
+                                ]}
+                                style={{ width: 'auto', minWidth: '150px' }}
+                                triggerStyle={{ height: '34px', fontSize: '0.78rem', padding: '0 0.6rem' }}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={!bulkTargetTeam}
+                                onClick={() => {
+                                  selectedStudentIds.forEach(id => updateStudent(activeClass.id, id, { groupName: bulkTargetTeam }));
+                                  addToast(`Assigned ${selectedStudentIds.size} students to "${bulkTargetTeam}"!`, 'success');
+                                  setSelectedStudentIds(new Set());
+                                  setBulkTargetTeam('');
+                                }}
+                                style={{ height: '34px', fontSize: '0.78rem', padding: '0 0.75rem' }}
+                              >
+                                Apply
+                              </button>
+                            </div>
+
+                            {/* Bulk Export */}
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                const selectedData: ClassData = {
+                                  ...activeClass,
+                                  students: activeClass.students.filter(s => selectedStudentIds.has(s.id))
+                                };
+                                exportRosterToExcel(selectedData);
+                                addToast(`Exported ${selectedStudentIds.size} selected students to Excel!`, 'success');
+                              }}
+                              style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
+                              title="Export selected students to Excel"
+                            >
+                              <Download size={13} className="text-teal" /> Excel
+                            </button>
+
+                            {/* Bulk Delete */}
+                            <button
+                              type="button"
+                              className="btn btn-rose btn-sm"
+                              onClick={() => {
+                                triggerConfirm(
+                                  'Delete Selected Students',
+                                  `Are you sure you want to delete ${selectedStudentIds.size} selected students and ALL associated peer evaluations? This action cannot be undone.`,
+                                  () => {
+                                    deleteStudents(activeClass.id, Array.from(selectedStudentIds));
+                                    setSelectedStudentIds(new Set());
+                                  },
+                                  'Delete Selected',
+                                  'Cancel'
+                                );
+                              }}
+                              style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
+                              title="Delete selected students from roster"
+                            >
+                              <Trash2 size={13} /> Delete
+                            </button>
+
+                            {/* Deselect All */}
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => setSelectedStudentIds(new Set())}
+                              style={{ height: '34px', fontSize: '0.78rem' }}
+                            >
+                              Deselect
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Team Overview Cards - Rendered when enabled in Settings */}
+            {(isEditMode || featureToggles.showTeamOverviewCards) && (
+              <EditableModuleSlot
+                moduleKey="showTeamOverviewCards"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showTeamOverviewCards}
+                onToggle={handleToggleModule}
+              >
+                {uniqueGroups.length > 0 && (
+                  <TeamCohortsOverview
+                    activeClass={activeClass}
+                    selectedGroup={groupFilter}
+                    onSelectGroup={(grp) => setGroupFilter(grp)}
+                    baseGroupGrade={baseGroupGrade}
+                    fudgeWeight={fudgeWeight}
+                    onUpdateTeamBaseGrade={updateTeamBaseGrade}
+                    onPreviewStudent={(s) => setPreviewingStudent(s)}
+                    onEditStudent={(s) => {
+                      const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
+                      setEditStudentData({
+                        id: s.id,
+                        name: s.name,
+                        email: s.email,
+                        groupName: s.groupName,
+                        gender: s.gender || 'Prefer not to say',
+                        isInternational: isIntl,
+                        isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
+                        nationality: s.nationality || '',
+                        currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
+                        englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
+                        university: s.university || '',
+                        degree: s.degree || '',
+                        originalUniversity: s.originalUniversity || '',
+                        originalCountry: s.originalCountry || '',
+                        currentUniversity: s.currentUniversity || s.university || '',
+                        studentType: s.studentType || 'Normal',
+                        customFields: s.customFields || {}
+                      });
+                      setIsEditStudentModalOpen(true);
+                    }}
+                    onOpenReport={(studentId) => openReportModal(studentId)}
+                    onResetStudentReviews={(classId, studentId) => resetStudentReviews(classId, studentId)}
+                    addToast={(msg, type) => addToast(msg, type)}
+                    triggerConfirm={triggerConfirm}
+                    firebaseConfig={firebaseConfig}
+                    isCloudSynced={isCloudSynced}
+                    user={user}
+                  />
+                )}
+              </EditableModuleSlot>
+            )}
+          </div>
+        )}
+
+        {/* TAB CONTENT: GRADING SCALE CONFIG */}
+        {activeTab === 'grading' && (
+          <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div className="card" data-tour="rubric-builder-card" style={{ padding: '1.25rem' }}>
+              {/* Header & Presets Bar */}
+              {(isEditMode || featureToggles.showRubricHeader) && (
+                <EditableModuleSlot
+                  moduleKey="showRubricHeader"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showRubricHeader}
+                  onToggle={handleToggleModule}
+                >
+                  <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
+                          <Sliders size={20} className="text-indigo" /> Evaluation Rubric &amp; Grading Scales
+                          <FeatureInfoButton featureId="grading-rubric" size="sm" tooltipText="Rubric & Grading Scales Guide" />
+                        </h3>
+                        <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+                          {activeClass.fields.length} Criteria
+                        </span>
+                      </div>
+                      <p className="card-subtitle" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.4 }}>
+                        Configure multi-criteria rubrics with behavioral guidance. Define custom scales and load accredited academic presets.
+                      </p>
+                    </div>
+
+                    {(isEditMode || featureToggles.showCustomCriterionButton) && (
+                      <EditableModuleSlot
+                        moduleKey="showCustomCriterionButton"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showCustomCriterionButton}
+                        onToggle={handleToggleModule}
+                        slotType="button"
+                      >
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                          <button className="btn btn-primary btn-sm" onClick={handleAddField} style={{ height: '36px', gap: '0.35rem', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700, padding: '0 0.85rem' }}>
+                            <Plus size={15} /> Add Custom Criterion
+                          </button>
+                        </div>
+                      </EditableModuleSlot>
                     )}
                   </div>
                 </EditableModuleSlot>
               )}
-            </div>
-          )}
 
-          {/* Intelligent Auto-Group & Diversity Studio - Only rendered when toggled on */}
-          {(isEditMode || featureToggles.showAutoGroupStudio) && (
-            <EditableModuleSlot
-              moduleKey="showAutoGroupStudio"
-              isEditMode={isEditMode}
-              isVisible={featureToggles.showAutoGroupStudio}
-              onToggle={handleToggleModule}
-            >
-              <div data-tour="autogroup-studio">
-                <AutoGroupStudio
-                  students={activeClass.students}
-                  defaultExpanded={isEditMode || false}
-                  onApplyGroups={(updatedStudents) => {
-                    importRoster(activeClass.id, updatedStudents, true);
-                    const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
-                    addToast(`Successfully partitioned ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
-                  }}
-                  onLoadSampleStudents={() => {
-                    importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
-                    addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
-                  }}
-                  onOpenTeamCharter={(staged) => handleOpenTeamKickoff('charters', false, staged)}
+              {/* Rubric Presets Library Banner - Only rendered when enabled in Settings */}
+              {(isEditMode || featureToggles.showRubricPresets) && (
+                <EditableModuleSlot
+                  moduleKey="showRubricPresets"
                   isEditMode={isEditMode}
-                  featureToggles={featureToggles}
-                  onToggleModule={handleToggleModule}
-                  classId={activeClass.id}
-                  onStagedGroupsChange={setStagedAutoGroups}
-                />
-              </div>
-            </EditableModuleSlot>
-          )}
+                  isVisible={featureToggles.showRubricPresets}
+                  onToggle={handleToggleModule}
+                  slotType="banner"
+                >
+                  <div
+                    style={{
+                      backgroundColor: 'var(--bg-app)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '0.85rem 1.15rem',
+                      marginBottom: '1.25rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '0.85rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <BookOpen size={17} />
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <h4 style={{ margin: 0, fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                            Standardized Rubric Framework (IPAF)
+                          </h4>
+                          <FeatureInfoButton featureId="rubric-presets" size="sm" tooltipText="IPAF Rubric Guide" />
+                        </div>
+                        <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                          1-Click load research-synthesized peer evaluation criteria &amp; 100% balanced weights (CATME, Salas, AAC&amp;U, WebPA).
+                        </p>
+                      </div>
+                    </div>
 
-          {/* Team Charter, Role Allocator & Icebreaker Studio Showcase Card */}
-          {(isEditMode || featureToggles.showTeamKickoffAndRoles) && (
-            <EditableModuleSlot
-              moduleKey="showTeamKickoffAndRoles"
-              isEditMode={isEditMode}
-              isVisible={featureToggles.showTeamKickoffAndRoles}
-              onToggle={handleToggleModule}
-            >
-              <div
-                className="card"
-                style={{
-                  padding: '1.5rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '1.15rem',
-                  background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(99, 102, 241, 0.035) 100%)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '16px',
-                  boxShadow: 'var(--shadow-xs)'
-                }}
-              >
-                {/* Header Row */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem', minWidth: '280px', flex: 1 }}>
+                    {/* Quick Preset Buttons in a Clean Flex Wrap Ribbon */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      {RUBRIC_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleApplyPreset(preset.id)}
+                          style={{
+                            fontSize: '0.76rem',
+                            padding: '0.35rem 0.7rem',
+                            height: '32px',
+                            borderRadius: '6px',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--border-color)',
+                            whiteSpace: 'nowrap'
+                          }}
+                          title={`${preset.name}: ${preset.description}`}
+                        >
+                          <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
+                            {preset.id === 'ipaf_research_synthesized' ? 'IPAF Standard (Research-Synthesized)' : preset.name}
+                          </span>
+                          <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '1px 5px', height: '16px', lineHeight: '14px' }}>
+                            {preset.fields.length} criteria
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </EditableModuleSlot>
+              )}
+
+              {/* Target final scale setting */}
+              {(isEditMode || featureToggles.showTargetScaleCard) && (
+                <EditableModuleSlot
+                  moduleKey="showTargetScaleCard"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showTargetScaleCard}
+                  onToggle={handleToggleModule}
+                >
+                  <div data-tour="target-scale-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'var(--primary-light)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid hsla(243, 75%, 59%, 0.15)', marginBottom: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                      <div style={{ maxWidth: '520px' }}>
+                        <h4 style={{ fontWeight: 700, color: 'var(--primary)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <Sliders size={15} /> Grade Scale
+                        </h4>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
+                          Sets whether final grades are out of 20, 100, or a custom maximum.
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '240px', flexWrap: 'wrap' }}>
+                        <CustomSelect
+                          value={activeClass.targetScale === 0 ? 'sum' : activeClass.targetScale ? 'custom' : 'default'}
+                          onChange={(val) => {
+                            if (val === 'default') {
+                              updateGradingConfig(activeClass.id, activeClass.fields, null, true);
+                            } else if (val === 'sum') {
+                              updateGradingConfig(activeClass.id, activeClass.fields, 0, true);
+                            } else {
+                              updateGradingConfig(activeClass.id, activeClass.fields, 20, true);
+                            }
+                          }}
+                          options={[
+                            { value: 'default', label: 'Default Benchmark (Out of 20)' },
+                            { value: 'sum', label: 'Sum of Rubrics Scale (Direct Sum)' },
+                            { value: 'custom', label: 'Custom Scaled Total Target' }
+                          ]}
+                          style={{ width: 'auto', minWidth: '230px' }}
+                          triggerStyle={{ height: '36px', fontSize: '0.82rem', fontWeight: 600, borderRadius: '8px' }}
+                        />
+
+                        {activeClass.targetScale !== 0 && activeClass.targetScale !== undefined && activeClass.targetScale !== null && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Out of</span>
+                            <input
+                              type="number"
+                              className="form-input"
+                              value={activeClass.targetScale}
+                              min={1}
+                              max={1000}
+                              onChange={(e) => updateGradingConfig(activeClass.id, activeClass.fields, Number(e.target.value) || 20, true)}
+                              style={{ width: '70px', height: '36px', fontSize: '0.85rem', textAlign: 'center', fontWeight: 700, borderRadius: '8px' }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </EditableModuleSlot>
+              )}
+
+              {/* Milestone Evaluation Deadline Setting Card - Only rendered when enabled in Settings */}
+              {(isEditMode || featureToggles.showDeadlineTimer) && (
+                <EditableModuleSlot
+                  moduleKey="showDeadlineTimer"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showDeadlineTimer}
+                  onToggle={handleToggleModule}
+                >
+                  <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                      <div style={{ maxWidth: '520px' }}>
+                        <h4 style={{ fontWeight: 700, color: 'var(--accent-amber)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <Clock size={15} /> Submission Deadline
+                        </h4>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
+                          Sets the date/time when peer evaluation closes.
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <input
+                          type="datetime-local"
+                          className="form-input"
+                          value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              const iso = new Date(e.target.value).toISOString();
+                              saveClassDeadline(activeClass.id, iso);
+                            } else {
+                              saveClassDeadline(activeClass.id, null);
+                            }
+                          }}
+                          style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', height: '36px' }}
+                        />
+                        {activeClass.deadline && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm text-rose"
+                            onClick={() => {
+                              saveClassDeadline(activeClass.id, null);
+                            }}
+                            style={{ height: '36px', padding: '0.4rem 0.6rem' }}
+                            title="Clear Deadline"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </EditableModuleSlot>
+              )}
+
+              {/* Weightage Validation & Auto-Balance Bar */}
+              {(isEditMode || featureToggles.showWeightBalanceBar) && (() => {
+                const totalWeight = activeClass.fields.reduce((sum, f) => sum + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0);
+                const isBalanced = totalWeight === 100;
+                return (
+                  <EditableModuleSlot
+                    moduleKey="showWeightBalanceBar"
+                    isEditMode={isEditMode}
+                    isVisible={featureToggles.showWeightBalanceBar}
+                    onToggle={handleToggleModule}
+                    slotType="bar"
+                  >
                     <div
                       style={{
-                        width: '42px',
-                        height: '42px',
-                        borderRadius: '12px',
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                        color: 'var(--primary)',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem',
+                        padding: '0.75rem 1.15rem',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: isBalanced ? 'rgba(20, 184, 166, 0.08)' : 'rgba(245, 158, 11, 0.1)',
+                        border: `1px solid ${isBalanced ? 'rgba(20, 184, 166, 0.25)' : 'rgba(245, 158, 11, 0.3)'}`,
+                        marginBottom: '1.25rem'
                       }}
                     >
-                      <UserCheck size={22} />
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                          Team Roles &amp; Icebreaker
-                        </h3>
-                        <span className="badge badge-primary" style={{ fontSize: '0.66rem', padding: '0.12rem 0.5rem' }}>
-                          Roles &amp; Norms
-                        </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {isBalanced ? (
+                          <CheckCircle size={16} className="text-teal" />
+                        ) : (
+                          <AlertTriangle size={16} className="text-amber" />
+                        )}
+                        <div>
+                          <div style={{ fontSize: '0.84rem', fontWeight: 800, color: isBalanced ? 'var(--accent-teal)' : 'var(--accent-amber)' }}>
+                            {isBalanced
+                              ? `Weight Total: 100% (Balanced)`
+                              : `Weight Total: ${totalWeight}% (${totalWeight > 100 ? `${totalWeight - 100}% over 100%` : `${100 - totalWeight}% remaining`})`}
+                          </div>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                            {isBalanced
+                              ? `Shows whether your criteria percentages add up to 100%. (Currently balanced)`
+                              : `Shows whether your criteria percentages add up to 100%. (Criteria must add up to 100%)`}
+                          </div>
+                        </div>
                       </div>
-                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                        Assigns student roles (Lead, Scribe, Presenter) and sets group agreements.
-                      </p>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={handleAutoBalanceWeights}
+                        style={{
+                          fontSize: '0.76rem',
+                          height: '32px',
+                          fontWeight: 700,
+                          gap: '0.35rem',
+                          backgroundColor: 'var(--bg-surface)'
+                        }}
+                        title="Distribute 100% weight evenly across all criteria"
+                      >
+                        <Sparkles size={13} className="text-primary" /> Auto-Distribute Evenly (100%)
+                      </button>
                     </div>
-                  </div>
+                  </EditableModuleSlot>
+                );
+              })()}
 
-                  {/* Actions & Launch Button */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => handleOpenTeamKickoff('charters', true)}
-                      style={{ gap: '0.35rem', fontWeight: 650, fontSize: '0.8rem', padding: '0.55rem 0.95rem' }}
-                      title="Open Team Agreements & trigger quick print view"
-                    >
-                      <Printer size={13} /> Print Agreements
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => handleOpenTeamKickoff('roles_config', false)}
-                      style={{ gap: '0.45rem', fontWeight: 750, fontSize: '0.82rem', padding: '0.55rem 1.15rem' }}
-                    >
-                      <Sparkles size={14} /> Open Full Studio
-                    </button>
-                  </div>
-                </div>
-
-                {/* 3 Value Pillars - Each leads to its tailored tab */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
-                  
-                  {/* Pillar 1: Custom Roles -> opens 'roles_config' */}
-                  <div
-                    onClick={() => handleOpenTeamKickoff('roles_config')}
-                    style={{
-                      padding: '0.95rem 1rem',
-                      borderRadius: '12px',
-                      backgroundColor: 'var(--bg-app)',
-                      border: '1px solid var(--border-color)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '0.65rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-app)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <Sliders size={14} style={{ color: 'var(--primary)' }} /> 1. Custom Roles &amp; Allocation
-                        </span>
-                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--primary)', backgroundColor: 'rgba(99, 102, 241, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                          Tab 1
-                        </span>
-                      </div>
-                      <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                        Create activity roles (Tech Lead, Scribe, Presenter) &amp; auto-allocate balanced responsibilities across all teams in 1-click.
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
-                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--primary)' }}>
-                        Manage Roles &rarr;
-                      </span>
-                      <ArrowRight size={12} style={{ color: 'var(--primary)' }} />
-                    </div>
-                  </div>
-
-                  {/* Pillar 2: 5-Min Icebreakers -> opens 'icebreakers' */}
-                  <div
-                    onClick={() => handleOpenTeamKickoff('icebreakers')}
-                    style={{
-                      padding: '0.95rem 1rem',
-                      borderRadius: '12px',
-                      backgroundColor: 'var(--bg-app)',
-                      border: '1px solid var(--border-color)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '0.65rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-app)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <MessageSquare size={14} style={{ color: '#0d9488' }} /> 2. 5-Min Kickoff Icebreakers
-                        </span>
-                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#0d9488', backgroundColor: 'rgba(13, 148, 136, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                          Tab 2
-                        </span>
-                      </div>
-                      <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                        Build psychological safety and empathy. Craft custom prompts (superpowers, anti-goals, cultural passport) with a built-in timer.
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
-                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#0d9488' }}>
-                        Configure Prompts &rarr;
-                      </span>
-                      <ArrowRight size={12} style={{ color: '#0d9488' }} />
-                    </div>
-                  </div>
-
-                  {/* Pillar 3: Team Charters & Norms -> opens 'charters' */}
-                  <div
-                    onClick={() => handleOpenTeamKickoff('charters')}
-                    style={{
-                      padding: '0.95rem 1rem',
-                      borderRadius: '12px',
-                      backgroundColor: 'var(--bg-app)',
-                      border: '1px solid var(--border-color)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '0.65rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#d97706'; e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-app)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <FileText size={14} style={{ color: '#d97706' }} /> 3. Working Agreements &amp; Print
-                        </span>
-                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#d97706', backgroundColor: 'rgba(217, 119, 6, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                          Tab 3
-                        </span>
-                      </div>
-                      <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                        Define response-time norms, dispute protocols, and generate formatted team table cards ready for in-class print or PDF export.
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.35rem', borderTop: '1px dashed var(--border-color)' }}>
-                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#d97706' }}>
-                        Preview &amp; Print Agreements &rarr;
-                      </span>
-                      <ArrowRight size={12} style={{ color: '#d97706' }} />
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* Status & Quick-Tab Navigation Strip */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', fontSize: '0.74rem', color: 'var(--text-muted)', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <Users size={12} className="text-primary" /> {activeClass.students.length} Students in {new Set(activeClass.students.map(s => s.groupName || 'Unassigned')).size} Teams
-                    </span>
-                    <span>&bull;</span>
-                    <span
-                      onClick={() => handleOpenTeamKickoff('roles_config')}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.3rem',
-                        cursor: 'pointer',
-                        color: activeClass.students.filter(s => !!s.role).length === activeClass.students.length ? '#10b981' : '#f59e0b',
-                        fontWeight: 650
-                      }}
-                      title="Click to manage role allocations"
-                    >
-                      <CheckCircle2 size={12} /> {activeClass.students.filter(s => !!s.role).length} of {activeClass.students.length} Roles Assigned
-                    </span>
-                  </div>
-
-                  {/* Direct Jump Pills */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Jump to:</span>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenTeamKickoff('roles_config')}
-                      className="btn btn-secondary btn-sm"
-                      style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: 'auto', lineHeight: '1.4' }}
-                    >
-                      Roles
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenTeamKickoff('icebreakers')}
-                      className="btn btn-secondary btn-sm"
-                      style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: 'auto', lineHeight: '1.4' }}
-                    >
-                      Icebreakers
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenTeamKickoff('charters')}
-                      className="btn btn-secondary btn-sm"
-                      style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: 'auto', lineHeight: '1.4' }}
-                    >
-                      Working Agreements
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </EditableModuleSlot>
-          )}
-
-          {/* Roster Filter & List Table - Toggleable in Settings */}
-          {(isEditMode || featureToggles.showRosterTable) && (
-            <EditableModuleSlot
-              moduleKey="showRosterTable"
-              isEditMode={isEditMode}
-              isVisible={featureToggles.showRosterTable}
-              onToggle={handleToggleModule}
-              slotType="table"
-            >
-              <div className="card" data-tour="classroom-roster-table" style={{ padding: isRosterTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
-              <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isRosterTableExpanded ? '1.25rem' : 0 }}>
-                <div
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
-                  onClick={() => setIsRosterTableExpanded(!isRosterTableExpanded)}
-                  title={isRosterTableExpanded ? 'Click to collapse table' : 'Click to expand table'}
+              {/* Criteria List Cards */}
+              {(isEditMode || featureToggles.showCriterionCards) && (
+                <EditableModuleSlot
+                  moduleKey="showCriterionCards"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showCriterionCards}
+                  onToggle={handleToggleModule}
                 >
-                  <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
-                    <Users size={20} className="text-indigo" /> Classroom Roster
-                    <FeatureInfoButton featureId="classroom-roster" size="sm" tooltipText="Classroom Roster Guide" />
-                  </h3>
-                  <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
-                    {filteredStudents.length} of {activeClass.students.length} members
-                  </span>
-                  {duplicateFlagsMap.size > 0 && !isRosterTableExpanded && (
-                    <span className="badge badge-amber" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                      <AlertTriangle size={11} /> {duplicateFlagsMap.size} flags
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                  {(isEditMode || featureToggles.showRosterSearchFilter) && (
-                    <EditableModuleSlot
-                      moduleKey="showRosterSearchFilter"
-                      isEditMode={isEditMode}
-                      isVisible={featureToggles.showRosterSearchFilter}
-                      onToggle={handleToggleModule}
-                      inline
-                      slotType="bar"
-                    >
-                      <div style={{ display: 'inline-flex', gap: '0.45rem', alignItems: 'center', flexWrap: 'nowrap' }}>
-                        {/* Power Search Bar with Autocomplete Dropdown */}
-                        <div style={{ position: 'relative', width: '280px' }}>
-                          <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: searchTerm ? 'var(--primary)' : 'var(--text-muted)', pointerEvents: 'none' }} />
-                          <input
-                            ref={searchInputRef}
-                            type="text"
-                            placeholder="Search name, ID, role, group, country..."
-                            className="form-input"
-                            style={{
-                              paddingLeft: '2.2rem',
-                              paddingRight: searchTerm ? '2.2rem' : '2.4rem',
-                              height: '36px',
-                              fontSize: '0.82rem',
-                              borderRadius: '8px',
-                              borderColor: isSearchFocused || searchTerm ? 'var(--primary)' : 'var(--border-color)',
-                              boxShadow: isSearchFocused ? '0 0 0 3px rgba(99, 102, 241, 0.15)' : 'none'
-                            }}
-                            value={searchTerm}
-                            onFocus={() => setIsSearchFocused(true)}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                saveSearchToHistory(searchTerm);
-                                setIsSearchFocused(false);
-                              } else if (e.key === 'Escape') {
-                                setSearchTerm('');
-                                setIsSearchFocused(false);
-                              }
-                            }}
-                          />
-
-                          {/* Right Action: Clear Button or Keyboard Hint */}
-                          {searchTerm ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {activeClass.fields.map((field, idx) => (
+                      <div
+                        key={field.id}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.75rem',
+                          backgroundColor: 'var(--bg-app)',
+                          padding: '1rem 1.25rem',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-color)'
+                        }}
+                      >
+                        {/* Top Row: Name, Scale, Editable Weightage, and Delete */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(110px, 1fr) auto', gap: '0.85rem', alignItems: 'flex-end' }}>
+                          <div>
+                            <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '1px 5px' }}>#{idx + 1}</span> Criterion Name
+                            </label>
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={field.name}
+                              placeholder="e.g. Quality of Contribution, Collaboration..."
+                              onChange={(e) => handleUpdateField(field.id, { name: e.target.value })}
+                              style={{ height: '36px', fontSize: '0.84rem', fontWeight: 600 }}
+                            />
+                          </div>
+                          <div>
+                            <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Min Scale</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              value={field.min}
+                              onChange={(e) => handleUpdateField(field.id, { min: Number(e.target.value) })}
+                              style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
+                            />
+                          </div>
+                          <div>
+                            <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Max Scale</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              value={field.max}
+                              onChange={(e) => handleUpdateField(field.id, { max: Number(e.target.value) })}
+                              style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
+                            />
+                          </div>
+                          <div>
+                            <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Weightage (%)</label>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: '85px', maxWidth: '105px', height: '36px' }}>
+                              <input
+                                type="number"
+                                className="form-input"
+                                value={field.weight !== undefined ? field.weight : Math.round(100 / activeClass.fields.length)}
+                                min={0}
+                                max={100}
+                                onChange={(e) => {
+                                  const val = Math.max(0, Math.min(100, Number(e.target.value)));
+                                  handleUpdateField(field.id, { weight: val });
+                                }}
+                                style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center', width: '100%', paddingRight: '26px', paddingLeft: '8px', fontWeight: 700 }}
+                              />
+                              <span style={{ position: 'absolute', right: '10px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', pointerEvents: 'none' }}>%</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
                             <button
-                              type="button"
-                              onClick={() => {
-                                setSearchTerm('');
-                                searchInputRef.current?.focus();
-                              }}
-                              style={{
-                                position: 'absolute',
-                                right: '0.5rem',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                background: 'var(--bg-app)',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: '50%',
-                                width: '20px',
-                                height: '20px',
-                                color: 'var(--text-muted)',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: 0
-                              }}
-                              title="Clear search (Esc)"
+                              className="btn btn-rose btn-sm"
+                              onClick={() => handleDeleteField(field.id)}
+                              title="Delete rubric scale"
+                              style={{ height: '34px', padding: '0 0.6rem' }}
                             >
-                              <X size={11} />
+                              <Trash2 size={15} />
                             </button>
-                          ) : (
-                            <kbd
-                              style={{
-                                position: 'absolute',
-                                right: '0.55rem',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                fontSize: '0.68rem',
-                                color: 'var(--text-muted)',
-                                backgroundColor: 'var(--bg-app)',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: '4px',
-                                padding: '0.1rem 0.35rem',
-                                pointerEvents: 'none',
-                                fontWeight: 700
-                              }}
-                            >
-                              /
-                            </kbd>
-                          )}
+                          </div>
+                        </div>
 
-                          {/* Autocomplete & Smart Suggestions Dropdown */}
-                          {isSearchFocused && (
-                            <div
-                              ref={searchDropdownRef}
-                              className="card"
-                              style={{
-                                position: 'absolute',
-                                top: 'calc(100% + 6px)',
-                                left: 0,
-                                width: '380px',
-                                maxHeight: '380px',
-                                overflowY: 'auto',
-                                zIndex: 1000,
-                                backgroundColor: 'var(--bg-surface)',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: '12px',
-                                boxShadow: 'var(--shadow-xl)',
-                                padding: '0.75rem',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '0.65rem',
-                                animation: 'fadeIn 0.15s ease'
-                              }}
-                            >
-                              {/* Matching Student Results */}
-                              {searchMatchingStudents.length > 0 && (
-                                <div>
-                                  <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '0.35rem' }}>
-                                    Matching Students ({filteredStudents.length})
-                                  </span>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                    {searchMatchingStudents.map(student => (
-                                      <div
-                                        key={student.id}
-                                        onClick={() => {
-                                          setSearchTerm(student.name);
-                                          saveSearchToHistory(student.name);
-                                          setIsSearchFocused(false);
-                                        }}
-                                        style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'space-between',
-                                          padding: '0.4rem 0.55rem',
-                                          borderRadius: '7px',
-                                          cursor: 'pointer',
-                                          backgroundColor: 'var(--bg-app)',
-                                          border: '1px solid transparent',
-                                          transition: 'all 0.12s ease'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          e.currentTarget.style.borderColor = 'var(--primary)';
-                                          e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.currentTarget.style.borderColor = 'transparent';
-                                          e.currentTarget.style.backgroundColor = 'var(--bg-app)';
-                                        }}
-                                      >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                          <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: '#fff', fontSize: '0.65rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            {student.name.charAt(0)}
-                                          </div>
-                                          <div>
-                                            <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block' }}>
-                                              {student.name}
-                                            </strong>
-                                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                                              ID: {student.id} &bull; {student.groupName || 'Unassigned'}
-                                            </span>
-                                          </div>
-                                        </div>
+                        {/* Bottom Row: Behavioral Guidance / Criterion Description */}
+                        <div>
+                          <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', margin: 0, marginBottom: '0.25rem' }}>
+                            Guidance &amp; Behavioral Indicator (Shown to students while grading):
+                          </label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={field.description || ''}
+                            placeholder="e.g. Produces thorough, accurate deliverables on schedule with high attention to detail..."
+                            onChange={(e) => handleUpdateField(field.id, { description: e.target.value })}
+                            style={{ fontSize: '0.78rem', height: '32px', color: 'var(--text-secondary)' }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </EditableModuleSlot>
+              )}
 
-                                        {student.role && (
-                                          <span className="badge badge-primary" style={{ fontSize: '0.64rem', padding: '0.1rem 0.35rem' }}>
-                                            {student.role}
-                                          </span>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
+              {/* Scale visual simulation - Only rendered when enabled in Settings */}
+              {(isEditMode || featureToggles.showEvaluationSimulator) && (
+                <EditableModuleSlot
+                  moduleKey="showEvaluationSimulator"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showEvaluationSimulator}
+                  onToggle={handleToggleModule}
+                >
+                  <div data-tour="eval-simulator-card" style={{ marginTop: '2rem', backgroundColor: 'var(--primary-light)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--primary)' }}>
+                    <h4 style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <Sparkles size={18} /> Preview Student View
+                    </h4>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                      Test-drives what students see when filling out peer reviews on their phones/laptops:
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                      {activeClass.fields.slice(0, 1).map(field => {
+                        const range = field.max - field.min;
+                        const isNarrowRange = range <= 15;
+                        const previewVal = Math.round(field.min + 0.63 * range); // Mimic "Solid Player" (63%)
+                        const scoreNodes = [];
+                        for (let val = field.min; val <= field.max; val++) {
+                          scoreNodes.push(val);
+                        }
+
+                        return (
+                          <div key={field.id} style={{ backgroundColor: 'var(--bg-surface)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                              <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{field.name}</span>
+                              <span className="slider-value-bubble" style={{ backgroundColor: 'var(--primary)', color: 'var(--text-inverse)', fontSize: '0.8rem', padding: '0.25rem 0.6rem', borderRadius: '4px', fontWeight: 700 }}>
+                                {previewVal} / {field.max}
+                              </span>
+                            </div>
+
+                            {/* Unified Single Scale Simulator Preview */}
+                            <div className="score-fine-tuner" style={{ margin: 0, padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-app)' }}>
+                              {/* Dynamic Qualitative Tier Indicator Simulation */}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.75rem',
+                                  padding: '0.65rem 0.85rem',
+                                  borderRadius: 'var(--radius-sm)',
+                                  backgroundColor: 'var(--primary-light)',
+                                  color: 'var(--primary)',
+                                  border: '1px solid hsla(243, 75%, 59%, 0.12)',
+                                  marginBottom: '0.75rem'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--primary)', color: '#fff', width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0 }}>
+                                  <ThumbsUp size={13} />
                                 </div>
-                              )}
-
-                              {/* Matching Teams */}
-                              {searchMatchingTeams.length > 0 && (
                                 <div>
-                                  <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '0.35rem' }}>
-                                    Matching Teams
-                                  </span>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                                    {searchMatchingTeams.map(team => {
-                                      const teamCount = activeClass.students.filter(s => s.groupName === team).length;
-                                      return (
-                                        <button
-                                          key={team}
-                                          type="button"
-                                          onClick={() => {
-                                            setGroupFilter(team);
-                                            setSearchTerm('');
-                                            setIsSearchFocused(false);
-                                          }}
-                                          style={{
-                                            fontSize: '0.72rem',
-                                            fontWeight: 700,
-                                            padding: '0.25rem 0.55rem',
-                                            borderRadius: '6px',
-                                            backgroundColor: 'var(--bg-app)',
-                                            border: '1px solid var(--border-color)',
-                                            color: 'var(--primary)',
-                                            cursor: 'pointer',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.25rem'
-                                          }}
-                                        >
-                                          <Users size={11} /> {team} ({teamCount})
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Quick-Apply Filter Presets */}
-                              <div>
-                                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '0.35rem' }}>
-                                  Filter Presets &amp; Operators
-                                </span>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem' }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSearchTerm('status:pending');
-                                      setIsSearchFocused(false);
-                                    }}
-                                    style={{
-                                      fontSize: '0.72rem',
-                                      fontWeight: 650,
-                                      padding: '0.3rem 0.5rem',
-                                      borderRadius: '6px',
-                                      backgroundColor: 'var(--bg-app)',
-                                      border: '1px solid var(--border-color)',
-                                      color: 'var(--text-primary)',
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '0.35rem'
-                                    }}
-                                  >
-                                    <Clock size={12} className="text-amber" /> Pending Reviews
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSearchTerm('status:submitted');
-                                      setIsSearchFocused(false);
-                                    }}
-                                    style={{
-                                      fontSize: '0.72rem',
-                                      fontWeight: 650,
-                                      padding: '0.3rem 0.5rem',
-                                      borderRadius: '6px',
-                                      backgroundColor: 'var(--bg-app)',
-                                      border: '1px solid var(--border-color)',
-                                      color: 'var(--text-primary)',
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '0.35rem'
-                                    }}
-                                  >
-                                    <CheckCircle size={12} className="text-teal" /> Submitted Reviews
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSearchTerm('group:unassigned');
-                                      setIsSearchFocused(false);
-                                    }}
-                                    style={{
-                                      fontSize: '0.72rem',
-                                      fontWeight: 650,
-                                      padding: '0.3rem 0.5rem',
-                                      borderRadius: '6px',
-                                      backgroundColor: 'var(--bg-app)',
-                                      border: '1px solid var(--border-color)',
-                                      color: 'var(--text-primary)',
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '0.35rem'
-                                    }}
-                                  >
-                                    <Users size={12} className="text-rose" /> Unassigned Members
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSearchTerm('type:erasmus');
-                                      setIsSearchFocused(false);
-                                    }}
-                                    style={{
-                                      fontSize: '0.72rem',
-                                      fontWeight: 650,
-                                      padding: '0.3rem 0.5rem',
-                                      borderRadius: '6px',
-                                      backgroundColor: 'var(--bg-app)',
-                                      border: '1px solid var(--border-color)',
-                                      color: 'var(--text-primary)',
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '0.35rem'
-                                    }}
-                                  >
-                                    <Globe size={12} className="text-indigo" /> Erasmus / Int'l
-                                  </button>
+                                  <strong style={{ fontSize: '0.82rem', display: 'block', color: 'var(--text-primary)' }}>Solid Player / Meets Expectations</strong>
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25 }}>Met all standards, cooperative, communicative, reliable teamwork.</span>
                                 </div>
                               </div>
 
-                              {/* Recent Searches */}
-                              {searchHistory.length > 0 && (
-                                <div style={{ paddingTop: '0.35rem', borderTop: '1px solid var(--border-color)' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
-                                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                      Recent Searches
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSearchHistory([]);
-                                        localStorage.removeItem('peer_roster_search_history_v1');
-                                      }}
-                                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.65rem', cursor: 'pointer' }}
-                                    >
-                                      Clear History
+                              {isNarrowRange ? (
+                                <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', justifyContent: 'center' }}>
+                                  {scoreNodes.map((nodeVal) => {
+                                    const isActive = previewVal === nodeVal;
+                                    return (
+                                      <div
+                                        key={nodeVal}
+                                        className={`score-node-btn ${isActive ? 'active' : ''}`}
+                                        style={isActive ? { backgroundColor: 'var(--primary)', borderColor: 'var(--primary)', color: '#fff', cursor: 'default' } : { cursor: 'default' }}
+                                      >
+                                        {nodeVal}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
+                                      <Minus size={14} />
+                                    </button>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '45px' }}>
+                                      <span className="score-stepper-value" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{previewVal}</span>
+                                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                                        63%
+                                      </span>
+                                    </div>
+
+                                    <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
+                                      <Plus size={14} />
                                     </button>
                                   </div>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                                    {searchHistory.map(hist => (
-                                      <button
-                                        key={hist}
-                                        type="button"
-                                        onClick={() => {
-                                          setSearchTerm(hist);
-                                          setIsSearchFocused(false);
-                                        }}
-                                        style={{
-                                          fontSize: '0.7rem',
-                                          fontWeight: 600,
-                                          padding: '0.2rem 0.5rem',
-                                          borderRadius: '5px',
-                                          backgroundColor: 'var(--bg-app)',
-                                          border: '1px solid var(--border-color)',
-                                          color: 'var(--text-secondary)',
-                                          cursor: 'pointer'
-                                        }}
-                                      >
-                                        {hist}
-                                      </button>
-                                    ))}
+
+                                  <div style={{ flex: 1, minWidth: '150px' }}>
+                                    <input
+                                      type="range"
+                                      className="custom-slider"
+                                      min={field.min}
+                                      max={field.max}
+                                      value={previewVal}
+                                      disabled
+                                      style={{
+                                        background: `linear-gradient(to right, var(--primary) 0%, var(--primary) 63%, var(--border-color) 63%, var(--border-color) 100%)`,
+                                        cursor: 'default'
+                                      }}
+                                    />
                                   </div>
                                 </div>
                               )}
+                            </div>
+                          </div>
+                        );
+                      })}
 
-                              {/* Syntax Tip Strip */}
-                              <div style={{ backgroundColor: 'var(--bg-app)', padding: '0.35rem 0.55rem', borderRadius: '6px', fontSize: '0.67rem', color: 'var(--text-muted)', display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
-                                <b>Syntax Tips:</b>
-                                <code>role:lead</code>
-                                <code>group:1</code>
-                                <code>status:pending</code>
-                                <code>country:spain</code>
-                                <code>-submitted</code>
+                      {activeClass.fields.length > 1 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Additional Configured Metrics ({activeClass.fields.length - 1})
+                          </span>
+                          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            {activeClass.fields.slice(1).map(field => (
+                              <div key={field.id} style={{ backgroundColor: 'var(--bg-surface)', padding: '0.6rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <span style={{ fontWeight: 600 }}>{field.name}</span>
+                                <span style={{ color: 'var(--text-muted)' }}>Range: {field.min} - {field.max}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </EditableModuleSlot>
+              )}
+
+              {/* Evaluation Form Controls & Student Permissions (Collapsible & Minimal) */}
+              {(isEditMode || featureToggles.showEvaluationFormControls) && (
+                <EditableModuleSlot
+                  moduleKey="showEvaluationFormControls"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showEvaluationFormControls}
+                  onToggle={handleToggleModule}
+                >
+                  <div data-tour="eval-controls-card" style={{ marginTop: '1.5rem' }}>
+                    <CollapsibleEvaluationControls
+                      activeClass={activeClass}
+                      onUpdateControls={(controls) => updateEvaluationControls(activeClass.id, controls)}
+                      defaultExpanded={false}
+                    />
+                  </div>
+                </EditableModuleSlot>
+              )}
+
+              {/* Team Health "Micro-Pulse" Check-ins (On-Demand & Customizable Scales) */}
+              {(isEditMode || featureToggles.showTeamHealthPulse || (activeClass.pulseRounds && activeClass.pulseRounds.length > 0)) && (
+                <EditableModuleSlot
+                  moduleKey="showTeamHealthPulse"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showTeamHealthPulse}
+                  onToggle={handleToggleModule}
+                >
+                  <div id="team-health-pulse-card" data-tour="team-health-pulse-card" style={{ marginTop: '1.5rem' }}>
+                    <TeamHealthPulseCard
+                      activeClass={activeClass}
+                      onCreateRound={(classId, roundData) => {
+                        if (!featureToggles.showTeamHealthPulse) {
+                          saveFeatureToggle('showTeamHealthPulse', true);
+                        }
+                        createPulseRound(classId, roundData);
+                      }}
+                      onUpdateRound={updatePulseRound}
+                      onSubmitResponse={submitPulseResponse}
+                      onDeleteRound={deletePulseRound}
+                      onSeedSampleData={(classId) => {
+                        if (!featureToggles.showTeamHealthPulse) {
+                          saveFeatureToggle('showTeamHealthPulse', true);
+                        }
+                        seedSamplePulseRounds(classId);
+                      }}
+                      addToast={addToast}
+                    />
+                  </div>
+                </EditableModuleSlot>
+              )}
+
+              {/* Live Presentation Day Scoring Cockpit - Togglable in Settings */}
+              {(isEditMode || featureToggles.showLivePresentationScoring) && (
+                <EditableModuleSlot
+                  moduleKey="showLivePresentationScoring"
+                  isEditMode={isEditMode}
+                  isVisible={featureToggles.showLivePresentationScoring}
+                  onToggle={handleToggleModule}
+                >
+                  <div
+                    id="live-presentation-scoring-card"
+                    style={{
+                      marginTop: '1.5rem',
+                      padding: '1.25rem 1.5rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '1rem',
+                      background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(13, 148, 136, 0.05) 100%)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-lg)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                      <div
+                        style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '12px',
+                          backgroundColor: 'rgba(13, 148, 136, 0.12)',
+                          color: 'var(--accent-teal, #0d9488)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <Presentation size={22} />
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                            Live Presentation Scoring
+                          </h3>
+                          <span className="badge badge-teal" style={{ fontSize: '0.68rem' }}>
+                            Real-Time Scoring
+                          </span>
+                        </div>
+                        <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          Lets audience and professors score live group presentations in real time.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-teal btn-sm"
+                        onClick={() => setIsLivePresentationModalOpen(true)}
+                        style={{ gap: '0.4rem', fontWeight: 700, padding: '0.45rem 0.95rem' }}
+                      >
+                        <Presentation size={14} /> Open Live Scoring Cockpit
+                      </button>
+                    </div>
+                  </div>
+                </EditableModuleSlot>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB CONTENT: INSTANT CALCULATIONS & RESULTS */}
+        {activeTab === 'results' && (
+          <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Action Header Card */}
+            {(isEditMode || featureToggles.showResultsHeaderCard) && (
+              <EditableModuleSlot
+                moduleKey="showResultsHeaderCard"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showResultsHeaderCard}
+                onToggle={handleToggleModule}
+              >
+                <div className="card" data-tour="gradebook-matrix-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <Award size={18} className="text-teal" /> Real-time Calculation Matrix
+                      <FeatureInfoButton featureId="calculation-matrix" size="sm" tooltipText="Calculation Matrix Guide" />
+                    </h3>
+                    <p className="card-subtitle">Self-excluded student averages recalculate instantly as submissions arrive. Calculations do not count self-grading reviews.</p>
+                  </div>
+
+                  <div className="responsive-btn-group">
+                    {(isEditMode || featureToggles.showExportReportButtons) && (
+                      <EditableModuleSlot
+                        moduleKey="showExportReportButtons"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showExportReportButtons}
+                        onToggle={handleToggleModule}
+                        slotType="button"
+                      >
+                        <button
+                          type="button"
+                          className="btn btn-teal"
+                          onClick={() => openReportModal()}
+                          title="View & Download Individual Student PDF Report Cards with Live Preview"
+                          style={{ gap: '0.4rem' }}
+                        >
+                          <FileText size={16} /> Student PDF Reports
+                        </button>
+                      </EditableModuleSlot>
+                    )}
+
+                    {(isEditMode || featureToggles.showSubmissionReset) && (
+                      <EditableModuleSlot
+                        moduleKey="showSubmissionReset"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showSubmissionReset}
+                        onToggle={handleToggleModule}
+                        slotType="button"
+                      >
+                        <button
+                          className="btn btn-secondary text-amber"
+                          style={{ borderColor: 'var(--accent-amber)' }}
+                          onClick={() => {
+                            triggerConfirm(
+                              'Reset All Peer Evaluations',
+                              'Are you sure you want to wipe all submitted peer reviews for this classroom? This will reset all student review statuses to pending. This action cannot be undone.',
+                              () => resetClassReviews(activeClass.id),
+                              'Reset Submissions',
+                              'Cancel'
+                            );
+                          }}
+                        >
+                          <RefreshCw size={16} /> Reset Submissions
+                        </button>
+                      </EditableModuleSlot>
+                    )}
+
+                    {featureToggles.showExportReportButtons && (
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleExportExcel}
+                        title="Download comprehensive multi-sheet Excel workbook with grades and written reviews"
+                      >
+                        <Download size={16} /> Download Excel Report (.xlsx)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Advanced Analytics & Grading Engine Grid - Only rendered if at least one analytics component is enabled */}
+            {(isEditMode || featureToggles.showCompetencyRadar || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback || featureToggles.showWebPACalibration || featureToggles.showAnomalyAudit || featureToggles.showMilestonesHistory) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+                {/* Tier 1: Competency Radar, Johari Matrix & Qualitative Themes - Only rendered if enabled */}
+                {(isEditMode || featureToggles.showCompetencyRadar || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback) && (
+                  <div data-tour="perception-deck-card" style={{
+                    display: 'grid',
+                    gridTemplateColumns: (featureToggles.showCompetencyRadar && (featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback)) ? 'repeat(auto-fit, minmax(340px, 1fr))' : '1fr',
+                    gap: '1.25rem',
+                    alignItems: 'stretch'
+                  }}>
+
+                    {/* Card 1: Multi-Axis Competency Spider Radar */}
+                    {(isEditMode || featureToggles.showCompetencyRadar) && (
+                      <EditableModuleSlot
+                        moduleKey="showCompetencyRadar"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showCompetencyRadar}
+                        onToggle={handleToggleModule}
+                      >
+                        <div className="card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            <div>
+                              <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.98rem', fontWeight: 800 }}>
+                                <Activity size={17} className="text-primary" /> Skills Radar Chart
+                                <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Skills Radar Chart Guide" />
+                              </h3>
+                              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                                Visual chart comparing team strengths across all rubric criteria.
+                              </p>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Overlay:</span>
+                              <CustomSelect
+                                value={radarTeamFilter}
+                                onChange={(val) => setRadarTeamFilter(val)}
+                                options={[
+                                  { value: 'All', label: 'Class Average' },
+                                  ...uniqueGroups.filter(g => g && g !== 'Unassigned').map(g => ({ value: g, label: g }))
+                                ]}
+                                style={{ width: 'auto', minWidth: '140px' }}
+                                triggerStyle={{ height: '30px', fontSize: '0.76rem', padding: '0 0.55rem' }}
+                              />
+                            </div>
+                          </div>
+
+                          {activeClass.fields.length >= 3 ? (
+                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, padding: '0.5rem 0' }}>
+                              <RadarChart
+                                metrics={activeClass.fields.map(f => ({ id: f.id, name: f.name, max: f.max }))}
+                                series={[
+                                  {
+                                    id: 'class_avg',
+                                    name: 'Class Average',
+                                    color: 'var(--primary)',
+                                    values: (() => {
+                                      const res: Record<string, number | null> = {};
+                                      activeClass.fields.forEach(f => {
+                                        let sum = 0, count = 0;
+                                        activeClass.students.forEach(s => {
+                                          const m = calculateStudentMetrics(s, activeClass);
+                                          const val = m.fieldAverages[f.id];
+                                          if (val !== null) { sum += val; count++; }
+                                        });
+                                        res[f.id] = count > 0 ? sum / count : null;
+                                      });
+                                      return res;
+                                    })()
+                                  },
+                                  ...(radarTeamFilter !== 'All' ? [{
+                                    id: 'team_avg',
+                                    name: `${radarTeamFilter} Average`,
+                                    color: 'var(--accent-teal)',
+                                    values: (() => {
+                                      const res: Record<string, number | null> = {};
+                                      const teamStudents = activeClass.students.filter(s => s.groupName === radarTeamFilter);
+                                      activeClass.fields.forEach(f => {
+                                        let sum = 0, count = 0;
+                                        teamStudents.forEach(s => {
+                                          const m = calculateStudentMetrics(s, activeClass);
+                                          const val = m.fieldAverages[f.id];
+                                          if (val !== null) { sum += val; count++; }
+                                        });
+                                        res[f.id] = count > 0 ? sum / count : null;
+                                      });
+                                      return res;
+                                    })()
+                                  }] : [])
+                                ]}
+                                size={270}
+                              />
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '2rem 1rem', textAlign: 'center', backgroundColor: 'var(--bg-app)', borderRadius: '10px', border: '1px dashed var(--border-color)', margin: '0.5rem 0' }}>
+                              <div style={{ width: '46px', height: '46px', borderRadius: '12px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', marginBottom: '0.75rem' }}>
+                                <Activity size={22} />
+                              </div>
+                              <h4 style={{ margin: '0 0 0.35rem 0', fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                Multi-Axis Radar Requires 3+ Criteria
+                              </h4>
+                              <p style={{ margin: '0 0 1rem 0', fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '340px', lineHeight: 1.45 }}>
+                                Your classroom currently has {activeClass.fields.length} {activeClass.fields.length === 1 ? 'criterion' : 'criteria'}. A multi-axis spider radar requires at least 3 evaluation axes to construct its geometric benchmark polygon.
+                              </p>
+                              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => {
+                                    handleApplyPreset('ipaf_research_synthesized');
+                                    addToast('Loaded 6-criteria research rubric preset! Spider radar is now active.', 'success');
+                                  }}
+                                  style={{ fontSize: '0.78rem', gap: '0.35rem', height: '32px' }}
+                                >
+                                  <Sparkles size={13} /> Load 6-Axis Rubric Preset
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => setActiveTab('grading')}
+                                  style={{ fontSize: '0.78rem', gap: '0.35rem', height: '32px' }}
+                                >
+                                  <Plus size={13} /> Add Criteria in Review System
+                                </button>
                               </div>
                             </div>
                           )}
                         </div>
-
-                        <CustomSelect
-                          options={groupOptions}
-                          value={groupFilter}
-                          onChange={(val) => setGroupFilter(val)}
-                          style={{ width: 'auto', minWidth: '140px' }}
-                          triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
-                        />
-                      </div>
-                    </EditableModuleSlot>
-                  )}
-
-                  {(isEditMode || featureToggles.showExportButtons) && (
-                    <EditableModuleSlot
-                      moduleKey="showExportButtons"
-                      isEditMode={isEditMode}
-                      isVisible={featureToggles.showExportButtons}
-                      onToggle={handleToggleModule}
-                      inline
-                      slotType="button"
-                    >
-                      <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            if (activeClass.students.length === 0) {
-                              addToast('No students enrolled to export.', 'warning');
-                              return;
-                            }
-                            exportRosterToExcel(activeClass);
-                            addToast('Class roster exported to Excel (.xlsx)!', 'success');
-                          }}
-                          style={{ fontSize: '0.8rem', padding: '0 0.75rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
-                          title="Export complete roster with academic & demographic metadata to Excel"
-                        >
-                          <Download size={14} className="text-teal" /> Excel
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            if (activeClass.students.length === 0) {
-                              addToast('No students enrolled to export.', 'warning');
-                              return;
-                            }
-                            exportRosterToCSV(activeClass);
-                            addToast('Class roster exported to CSV!', 'success');
-                          }}
-                          style={{ fontSize: '0.8rem', padding: '0 0.65rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
-                          title="Export roster to CSV"
-                        >
-                          <Download size={14} /> CSV
-                        </button>
-                      </div>
-                    </EditableModuleSlot>
-                  )}
-
-                  {(isEditMode || featureToggles.showRosterAddStudentBtn) && (
-                    <EditableModuleSlot
-                      moduleKey="showRosterAddStudentBtn"
-                      isEditMode={isEditMode}
-                      isVisible={featureToggles.showRosterAddStudentBtn}
-                      onToggle={handleToggleModule}
-                      inline
-                      slotType="button"
-                    >
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => setIsAddStudentModalOpen(true)}
-                        style={{ height: '36px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, gap: '0.35rem' }}
-                        title="Enroll new student manually"
-                      >
-                        <Plus size={14} /> Add Student
-                      </button>
-                    </EditableModuleSlot>
-                  )}
-
-                  {/* Expand / Collapse Roster Table Toggle */}
-                  <button
-                    type="button"
-                    className={isRosterTableExpanded ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
-                    onClick={() => setIsRosterTableExpanded(!isRosterTableExpanded)}
-                    style={{
-                      height: '36px',
-                      borderRadius: '8px',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      gap: '0.35rem',
-                      boxShadow: 'none'
-                    }}
-                    title={isRosterTableExpanded ? 'Collapse classroom roster table' : 'Expand classroom roster table'}
-                  >
-                    {isRosterTableExpanded ? (
-                      <>
-                        <ChevronUp size={14} /> Collapse Table
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown size={14} /> Expand Table ({filteredStudents.length})
-                      </>
+                      </EditableModuleSlot>
                     )}
-                  </button>
-                </div>
-              </div>
 
-              {/* Intelligent Duplicate Enrollment Detection Banner - Shown when table is expanded */}
-              {isRosterTableExpanded && featureToggles.showDuplicateDetector && duplicateFlagsMap.size > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  backgroundColor: '#fffbeb',
-                  border: '1.5px solid #f59e0b',
-                  borderRadius: '10px',
-                  padding: '0.75rem 1rem',
-                  marginBottom: '1rem',
-                  flexWrap: 'wrap',
-                  gap: '0.75rem'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <AlertTriangle size={18} />
+                    {/* Column 2: Johari Alignment & Qualitative Feedback Insights - Only rendered if enabled */}
+                    {(isEditMode || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+                        {/* Card 2: Johari Alignment */}
+                        {(isEditMode || featureToggles.showJohariMatrix) && (() => {
+                          const johariList = activeClass.students.map(s => calculateJohariWindowMetric(s.id, activeClass));
+                          const calibrated = johariList.filter(j => j.category === 'calibrated').length;
+                          const overestimating = johariList.filter(j => j.category === 'overestimating').length;
+                          const underestimating = johariList.filter(j => j.category === 'underestimating').length;
+                          const totalActive = calibrated + overestimating + underestimating;
+
+                          return (
+                            <EditableModuleSlot
+                              moduleKey="showJohariMatrix"
+                              isEditMode={isEditMode}
+                              isVisible={featureToggles.showJohariMatrix}
+                              onToggle={handleToggleModule}
+                            >
+                              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
+                                <div>
+                                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                                    <UserCheck size={17} className="text-teal" /> Self vs. Peer Rating Comparison
+                                    <FeatureInfoButton featureId="johari-window" size="sm" tooltipText="Self vs. Peer Rating Comparison Guide" />
+                                    <ContextHelpPopover topicKey="johari" />
+                                  </h3>
+                                  <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                                    Shows if students rate themselves much higher or lower than teammates rated them.
+                                  </p>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                                  <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
+                                      <span style={{ color: 'var(--accent-teal)', fontWeight: 700 }}>Accurately Calibrated</span>
+                                      <b>{calibrated} ({totalActive > 0 ? Math.round((calibrated / totalActive) * 100) : 0}%)</b>
+                                    </div>
+                                    <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
+                                      <div style={{ width: `${totalActive > 0 ? (calibrated / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-teal)', height: '100%', borderRadius: '3px' }} />
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
+                                      <span style={{ color: 'var(--accent-amber)', fontWeight: 700 }}>Blind Spot (Overestimating)</span>
+                                      <b>{overestimating} ({totalActive > 0 ? Math.round((overestimating / totalActive) * 100) : 0}%)</b>
+                                    </div>
+                                    <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
+                                      <div style={{ width: `${totalActive > 0 ? (overestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-amber)', height: '100%', borderRadius: '3px' }} />
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
+                                      <span style={{ color: 'var(--primary)', fontWeight: 700 }}>Imposter (Underestimating)</span>
+                                      <b>{underestimating} ({totalActive > 0 ? Math.round((underestimating / totalActive) * 100) : 0}%)</b>
+                                    </div>
+                                    <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
+                                      <div style={{ width: `${totalActive > 0 ? (underestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--primary)', height: '100%', borderRadius: '3px' }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </EditableModuleSlot>
+                          );
+                        })()}
+
+                        {/* Card 3: Qualitative Feedback Themes */}
+                        {(isEditMode || featureToggles.showQualitativeFeedback) && (() => {
+                          const insights = extractClassFeedbackInsights(activeClass);
+                          return (
+                            <EditableModuleSlot
+                              moduleKey="showQualitativeFeedback"
+                              isEditMode={isEditMode}
+                              isVisible={featureToggles.showQualitativeFeedback}
+                              onToggle={handleToggleModule}
+                            >
+                              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
+                                <div>
+                                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                                    <MessageSquare size={17} className="text-primary" /> Written Feedback Summary
+                                    <FeatureInfoButton featureId="feedback-sentiment" size="sm" tooltipText="Written Feedback Summary Guide" />
+                                  </h3>
+                                  <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                                    Summarizes common themes and praise words written by teammates.
+                                  </p>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                  <div>
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                      Top Strengths:
+                                    </span>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
+                                      {insights.topStrengthsThemes.length === 0 ? (
+                                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No strengths feedback yet</span>
+                                      ) : (
+                                        insights.topStrengthsThemes.slice(0, 4).map(t => (
+                                          <span key={t.word} className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
+                                            {t.word} ({t.count})
+                                          </span>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-amber)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                      Growth Areas:
+                                    </span>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
+                                      {insights.topGrowthThemes.length === 0 ? (
+                                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No constructive feedback yet</span>
+                                      ) : (
+                                        insights.topGrowthThemes.slice(0, 4).map(t => (
+                                          <span key={t.word} className="badge badge-amber" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
+                                            {t.word} ({t.count})
+                                          </span>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </EditableModuleSlot>
+                          );
+                        })()}
+
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <strong style={{ color: '#b45309', fontSize: '0.88rem', display: 'block' }}>
-                      Duplicate Student Alert ({duplicateFlagsMap.size} detected)
-                    </strong>
-                    <span style={{ fontSize: '0.75rem', color: '#92400e' }}>
-                      Flags identical student names, IDs, or emails in the roster.
-                    </span>
-                  </div>
-                </div>
+                )}
 
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => setShowOnlyDuplicates(prev => !prev)}
-                    style={{
-                      backgroundColor: showOnlyDuplicates ? '#f59e0b' : '#ffffff',
-                      color: showOnlyDuplicates ? '#ffffff' : '#b45309',
-                      border: '1px solid #f59e0b',
-                      fontWeight: 700,
-                      fontSize: '0.78rem',
-                      height: '32px',
-                      padding: '0 0.75rem'
-                    }}
-                  >
-                    {showOnlyDuplicates ? 'Show All Students' : 'Filter Suspected Duplicates'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      const allPairs = new Set<string>();
-                      activeClass.students.forEach(s => {
-                        const flags = duplicateFlagsMap.get(s.id) || [];
-                        flags.forEach(f => allPairs.add([s.id, f.matchedStudentId].sort().join(':::')));
-                      });
-                      setIgnoredDuplicatePairs(allPairs);
-                      setShowOnlyDuplicates(false);
-                      addToast('Dismissed all current duplicate warning flags.', 'info');
-                    }}
-                    style={{ height: '32px', fontSize: '0.74rem', padding: '0 0.6rem' }}
-                    title="Dismiss all current duplicate flags"
-                  >
-                    Dismiss All Flags
-                  </button>
-                </div>
-              </div>
-            )}
+                {/* Tier 2: WebPA Calibration, Anomaly Audit & Milestones (3 Equal Columns) */}
+                {(isEditMode || featureToggles.showWebPACalibration || featureToggles.showAnomalyAudit || featureToggles.showMilestonesHistory) && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
 
-            {/* Quick-Filter Chips Bar & Active Search Status Strip */}
-            {isRosterTableExpanded && activeClass.students.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '1rem' }}>
-                {/* 1-Click Quick Filter Chips */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveQuickFilter('all');
-                      setShowOnlyDuplicates(false);
-                    }}
-                    style={{
-                      fontSize: '0.74rem',
-                      fontWeight: activeQuickFilter === 'all' && !showOnlyDuplicates ? 750 : 600,
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '8px',
-                      backgroundColor: activeQuickFilter === 'all' && !showOnlyDuplicates ? 'var(--primary)' : 'var(--bg-app)',
-                      color: activeQuickFilter === 'all' && !showOnlyDuplicates ? '#fff' : 'var(--text-secondary)',
-                      border: `1px solid ${activeQuickFilter === 'all' && !showOnlyDuplicates ? 'var(--primary)' : 'var(--border-color)'}`,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    All ({quickFilterCounts.total})
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveQuickFilter(activeQuickFilter === 'pending' ? 'all' : 'pending');
-                      setShowOnlyDuplicates(false);
-                    }}
-                    style={{
-                      fontSize: '0.74rem',
-                      fontWeight: activeQuickFilter === 'pending' ? 750 : 600,
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '8px',
-                      backgroundColor: activeQuickFilter === 'pending' ? '#f59e0b' : 'var(--bg-app)',
-                      color: activeQuickFilter === 'pending' ? '#fff' : 'var(--text-secondary)',
-                      border: `1px solid ${activeQuickFilter === 'pending' ? '#f59e0b' : 'var(--border-color)'}`,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <Clock size={11} className={activeQuickFilter === 'pending' ? '' : 'text-amber'} /> Pending ({quickFilterCounts.pending})
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveQuickFilter(activeQuickFilter === 'submitted' ? 'all' : 'submitted');
-                      setShowOnlyDuplicates(false);
-                    }}
-                    style={{
-                      fontSize: '0.74rem',
-                      fontWeight: activeQuickFilter === 'submitted' ? 750 : 600,
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '8px',
-                      backgroundColor: activeQuickFilter === 'submitted' ? '#0d9488' : 'var(--bg-app)',
-                      color: activeQuickFilter === 'submitted' ? '#fff' : 'var(--text-secondary)',
-                      border: `1px solid ${activeQuickFilter === 'submitted' ? '#0d9488' : 'var(--border-color)'}`,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <CheckCircle size={11} className={activeQuickFilter === 'submitted' ? '' : 'text-teal'} /> Submitted ({quickFilterCounts.submitted})
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveQuickFilter(activeQuickFilter === 'unassigned' ? 'all' : 'unassigned');
-                      setShowOnlyDuplicates(false);
-                    }}
-                    style={{
-                      fontSize: '0.74rem',
-                      fontWeight: activeQuickFilter === 'unassigned' ? 750 : 600,
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '8px',
-                      backgroundColor: activeQuickFilter === 'unassigned' ? '#e11d48' : 'var(--bg-app)',
-                      color: activeQuickFilter === 'unassigned' ? '#fff' : 'var(--text-secondary)',
-                      border: `1px solid ${activeQuickFilter === 'unassigned' ? '#e11d48' : 'var(--border-color)'}`,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <Users size={11} className={activeQuickFilter === 'unassigned' ? '' : 'text-rose'} /> Unassigned ({quickFilterCounts.unassigned})
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveQuickFilter(activeQuickFilter === 'with_role' ? 'all' : 'with_role');
-                      setShowOnlyDuplicates(false);
-                    }}
-                    style={{
-                      fontSize: '0.74rem',
-                      fontWeight: activeQuickFilter === 'with_role' ? 750 : 600,
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '8px',
-                      backgroundColor: activeQuickFilter === 'with_role' ? '#8b5cf6' : 'var(--bg-app)',
-                      color: activeQuickFilter === 'with_role' ? '#fff' : 'var(--text-secondary)',
-                      border: `1px solid ${activeQuickFilter === 'with_role' ? '#8b5cf6' : 'var(--border-color)'}`,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <UserCheck size={11} className={activeQuickFilter === 'with_role' ? '' : 'text-purple'} /> With Role ({quickFilterCounts.with_role})
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveQuickFilter(activeQuickFilter === 'erasmus' ? 'all' : 'erasmus');
-                      setShowOnlyDuplicates(false);
-                    }}
-                    style={{
-                      fontSize: '0.74rem',
-                      fontWeight: activeQuickFilter === 'erasmus' ? 750 : 600,
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '8px',
-                      backgroundColor: activeQuickFilter === 'erasmus' ? '#0284c7' : 'var(--bg-app)',
-                      color: activeQuickFilter === 'erasmus' ? '#fff' : 'var(--text-secondary)',
-                      border: `1px solid ${activeQuickFilter === 'erasmus' ? '#0284c7' : 'var(--border-color)'}`,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <Globe size={11} className={activeQuickFilter === 'erasmus' ? '' : 'text-sky'} /> Erasmus / Int'l ({quickFilterCounts.erasmus})
-                  </button>
-
-                  {quickFilterCounts.duplicates > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowOnlyDuplicates(prev => !prev);
-                        if (!showOnlyDuplicates) setActiveQuickFilter('all');
-                      }}
-                      style={{
-                        fontSize: '0.74rem',
-                        fontWeight: showOnlyDuplicates ? 750 : 600,
-                        padding: '0.25rem 0.65rem',
-                        borderRadius: '8px',
-                        backgroundColor: showOnlyDuplicates ? '#f59e0b' : 'var(--bg-app)',
-                        color: showOnlyDuplicates ? '#fff' : '#b45309',
-                        border: `1px solid ${showOnlyDuplicates ? '#f59e0b' : '#fcd34d'}`,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.3rem',
-                        transition: 'all 0.15s ease'
-                      }}
+                    {/* Card 4: Peer Score Adjustment */}
+                    <EditableModuleSlot
+                      moduleKey="showWebPACalibration"
+                      title="Peer Score Adjustment"
+                      isVisible={featureToggles.showWebPACalibration}
+                      isEditMode={isEditMode}
+                      onToggle={handleToggleModule}
                     >
-                      <AlertTriangle size={11} /> Duplicates ({quickFilterCounts.duplicates})
-                    </button>
-                  )}
-                </div>
+                      <div className="card" data-tour="webpa-calibrator-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
+                        <div>
+                          <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                            <Sliders size={17} className="text-teal" /> Peer Score Adjustment
+                            <FeatureInfoButton featureId="webpa-calibration" size="sm" tooltipText="Peer Score Adjustment Guide" />
+                            <ContextHelpPopover topicKey="webpa" />
+                          </h3>
+                          <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
+                            Adjusts individual student grades up or down based on teammate reviews.
+                          </p>
+                        </div>
 
-                {/* Active Filter Strip (when any search/filter is active) */}
-                {(searchTerm || groupFilter !== 'All Groups' || activeQuickFilter !== 'all' || showOnlyDuplicates) && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      backgroundColor: 'var(--bg-app)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '0.4rem 0.75rem',
-                      fontSize: '0.75rem',
-                      gap: '0.5rem',
-                      flexWrap: 'wrap'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                      <span style={{ color: 'var(--text-muted)', fontWeight: 650 }}>
-                        Showing <b>{filteredStudents.length}</b> of <b>{activeClass.students.length}</b> students
-                      </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          {/* Default Project Base Mark */}
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                              <label className="form-label" style={{ fontWeight: 700, fontSize: '0.78rem', margin: 0 }}>
+                                Default Project Base Mark
+                              </label>
+                              {classTeams.length > 0 && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => {
+                                    const newGrades: Record<string, number> = {};
+                                    classTeams.forEach(t => { newGrades[t] = baseGroupGrade; });
+                                    setAllTeamBaseGrades(activeClass.id, newGrades);
+                                  }}
+                                  style={{ fontSize: '0.68rem', padding: '0.12rem 0.4rem', height: '22px', fontWeight: 700 }}
+                                  title="Set all teams in the class to this default base mark"
+                                >
+                                  Apply to All Teams
+                                </button>
+                              )}
+                            </div>
+                            <input
+                              type="number"
+                              className="form-input"
+                              min={0}
+                              max={1000}
+                              value={baseGroupGrade}
+                              onChange={(e) => setBaseGroupGrade(Number(e.target.value))}
+                              style={{ height: '34px', fontSize: '0.85rem', fontWeight: 700 }}
+                            />
+                          </div>
 
-                      {searchTerm && (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem',
-                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                            color: 'var(--primary)',
-                            border: '1px solid rgba(99, 102, 241, 0.25)',
-                            padding: '0.1rem 0.45rem',
-                            borderRadius: '5px',
-                            fontSize: '0.7rem',
-                            fontWeight: 700
-                          }}
-                        >
-                          Query: "{searchTerm}"
-                          <X
-                            size={10}
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => setSearchTerm('')}
-                          />
-                        </span>
-                      )}
+                          {/* Team-Specific Project Base Marks Quick Inputs */}
+                          {classTeams.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  <Users size={12} className="text-teal" /> Team Base Marks ({classTeams.length})
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn-link btn-sm"
+                                  onClick={() => setIsTeamBaseGradesModalOpen(true)}
+                                  style={{ fontSize: '0.72rem', padding: 0, fontWeight: 700, color: 'var(--primary)', textDecoration: 'none' }}
+                                >
+                                  Manage All &rarr;
+                                </button>
+                              </div>
 
-                      {groupFilter !== 'All Groups' && (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem',
-                            backgroundColor: 'var(--bg-surface)',
-                            color: 'var(--text-primary)',
-                            border: '1px solid var(--border-color)',
-                            padding: '0.1rem 0.45rem',
-                            borderRadius: '5px',
-                            fontSize: '0.7rem',
-                            fontWeight: 700
-                          }}
-                        >
-                          Group: {groupFilter}
-                          <X
-                            size={10}
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => setGroupFilter('All Groups')}
-                          />
-                        </span>
-                      )}
+                              <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.35rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                                {classTeams.map(team => {
+                                  const teamMark = activeClass?.teamBaseGrades?.[team] ?? baseGroupGrade;
+                                  const isCustom = activeClass?.teamBaseGrades && typeof activeClass.teamBaseGrades[team] === 'number';
+                                  const members = activeClass.students.filter(s => s.groupName === team);
+                                  return (
+                                    <div key={team} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem', fontSize: '0.74rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 0, overflow: 'hidden' }}>
+                                        <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={team}>
+                                          {team}
+                                        </span>
+                                        <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>({members.length})</span>
+                                        {isCustom && <span className="badge badge-teal" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', whiteSpace: 'nowrap' }}>Custom</span>}
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+                                        <TeamBaseGradeInput
+                                          initialValue={teamMark}
+                                          onCommit={(val) => updateTeamBaseGrade(activeClass.id, team, val)}
+                                          compact
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
 
-                      {activeQuickFilter !== 'all' && (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem',
-                            backgroundColor: 'var(--bg-surface)',
-                            color: 'var(--text-primary)',
-                            border: '1px solid var(--border-color)',
-                            padding: '0.1rem 0.45rem',
-                            borderRadius: '5px',
-                            fontSize: '0.7rem',
-                            fontWeight: 700
-                          }}
-                        >
-                          Filter: {activeQuickFilter}
-                          <X
-                            size={10}
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => setActiveQuickFilter('all')}
-                          />
-                        </span>
-                      )}
-                    </div>
+                          {/* Fudge Weight Slider */}
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+                              <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem' }}>Peer Review Impact (0–100%)</label>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>{Math.round(fudgeWeight * 100)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              className="custom-slider"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={fudgeWeight}
+                              onChange={(e) => setFudgeWeight(Number(e.target.value))}
+                              style={{
+                                background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${fudgeWeight * 100}%, var(--border-color) ${fudgeWeight * 100}%, var(--border-color) 100%)`
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </EditableModuleSlot>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchTerm('');
-                        setGroupFilter('All Groups');
-                        setActiveQuickFilter('all');
-                        setShowOnlyDuplicates(false);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--primary)',
-                        cursor: 'pointer',
-                        fontSize: '0.72rem',
-                        fontWeight: 750,
-                        padding: '0.1rem 0.35rem'
-                      }}
+                    {/* Card 5: Anomaly Conflict Audit */}
+                    <EditableModuleSlot
+                      moduleKey="showAnomalyAudit"
+                      title="Suspicious Ratings Alert"
+                      isVisible={featureToggles.showAnomalyAudit}
+                      isEditMode={isEditMode}
+                      onToggle={handleToggleModule}
                     >
-                      Reset All Filters
-                    </button>
+                      <div className="card" data-tour="anomaly-audit-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
+                        <div>
+                          <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                            <ShieldCheck size={17} className="text-rose" /> Suspicious Ratings Alert
+                            <FeatureInfoButton featureId="anomaly-detection" size="sm" tooltipText="Suspicious Ratings Guide" />
+                          </h3>
+                          <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
+                            Detects students who trade high scores, grade randomly, or give uniform marks.
+                          </p>
+                        </div>
+
+                        <div style={{ maxHeight: '130px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          {detectClassAnomalies(activeClass).length === 0 ? (
+                            <div style={{ backgroundColor: 'var(--accent-teal-light)', border: '1px solid hsl(173, 80%, 90%)', color: 'var(--accent-teal)', fontSize: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', display: 'flex', gap: '0.35rem', alignItems: 'center', fontWeight: 600 }}>
+                              <CheckCircle size={13} /> No scoring conflicts detected.
+                            </div>
+                          ) : (
+                            detectClassAnomalies(activeClass).map((anomaly) => (
+                              <div
+                                key={anomaly.id}
+                                style={{
+                                  backgroundColor: anomaly.severity === 'high' ? 'var(--accent-rose-light)' : 'var(--accent-amber-light)',
+                                  border: `1px solid ${anomaly.severity === 'high' ? 'hsl(346, 84%, 90%)' : 'hsl(45, 90%, 90%)'}`,
+                                  padding: '0.4rem 0.6rem',
+                                  borderRadius: '6px',
+                                  fontSize: '0.72rem'
+                                }}
+                              >
+                                <span style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-primary)' }}>
+                                  <AlertTriangle size={12} style={{ color: anomaly.severity === 'high' ? 'var(--accent-rose)' : 'var(--accent-amber)', flexShrink: 0 }} />
+                                  {anomaly.studentName} ({anomaly.type.toUpperCase()})
+                                </span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.68rem' }}>{anomaly.description}</span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </EditableModuleSlot>
+
+                    {/* Card 6: Milestone Archive Card */}
+                    <EditableModuleSlot
+                      moduleKey="showMilestonesHistory"
+                      title="Milestones & Sprints History"
+                      isVisible={featureToggles.showMilestonesHistory}
+                      isEditMode={isEditMode}
+                      onToggle={handleToggleModule}
+                    >
+                      <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
+                        <div>
+                          <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
+                            <RefreshCw size={17} className="text-indigo" /> Past Review Rounds
+                            <FeatureInfoButton featureId="milestones-sprints" size="sm" tooltipText="Past Review Rounds Guide" />
+                          </h3>
+                          <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
+                            Archives past peer evaluations (e.g., Midterm Review, Final Review).
+                          </p>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ width: '100%', borderColor: 'var(--primary)', color: 'var(--primary)', height: '34px', fontSize: '0.78rem' }}
+                            onClick={() => setIsArchiveModalOpen(true)}
+                          >
+                            Archive Active Session
+                          </button>
+                          <div style={{ maxHeight: '80px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.4rem' }}>
+                            {(activeClass.milestones || []).length === 0 ? (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No archived sprint records.</span>
+                            ) : (
+                              (activeClass.milestones || []).map((m) => (
+                                <div
+                                  key={m.id}
+                                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.72rem' }}
+                                >
+                                  <span style={{ fontWeight: 600 }}>{m.name}</span>
+                                  <button
+                                    className="btn btn-sm text-rose"
+                                    style={{ padding: '2px', border: 'none', background: 'transparent' }}
+                                    onClick={() => {
+                                      triggerConfirm(
+                                        'Delete Historical Milestone',
+                                        `Are you sure you want to permanently delete the archived milestone "${m.name}"? This will delete all of its scoring history. This action cannot be undone.`,
+                                        () => deleteMilestone(activeClass.id, m.id),
+                                        'Delete Milestone',
+                                        'Cancel'
+                                      );
+                                    }}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </EditableModuleSlot>
+
                   </div>
                 )}
               </div>
             )}
 
-            {activeClass.students.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '60px', height: '60px', borderRadius: '18px', background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.25rem' }}>
-                  <Users size={28} style={{ color: 'var(--primary)' }} />
-                </div>
-                <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: 0 }}>No participants yet</p>
-                <p style={{ fontSize: '0.82rem', margin: 0, maxWidth: '380px', lineHeight: 1.5 }}>
-                  Use the <strong>Roster Onboarding Wizard</strong> to upload a spreadsheet, or load our diverse dataset of 100 students to explore all app features.
-                </p>
-                <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      setWizardStep(1);
-                      setIsWizardOpen(true);
-                    }}
-                  >
-                    <Upload size={14} /> Open Onboarding Wizard
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-teal btn-sm"
-                    onClick={() => {
-                      importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
-                      addToast('Loaded 100 diverse sample students across 35+ countries and balanced demographics!', 'success');
-                    }}
-                  >
-                    <Sparkles size={14} /> Load 100 Sample Students
-                  </button>
-                </div>
-              </div>
-            ) : filteredStudents.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary)' }}>
-                <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: '0 0 0.5rem 0' }}>No students found matching your filters</p>
-                <p style={{ fontSize: '0.82rem', margin: '0 0 1rem 0' }}>Try a different search keyword or reset the group filter.</p>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setGroupFilter('All Groups');
-                  }}
-                >
-                  Reset Filters
-                </button>
-              </div>
-            ) : !isRosterTableExpanded ? null : (
-              <>
-                <div className="table-container table-container-sticky">
-                  <table className="custom-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '38px', textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          checked={filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.has(s.id))}
-                          onChange={() => {
-                            if (filteredStudents.every(s => selectedStudentIds.has(s.id))) {
-                              setSelectedStudentIds(new Set());
-                            } else {
-                              setSelectedStudentIds(new Set(filteredStudents.map(s => s.id)));
-                            }
-                          }}
-                          aria-label="Select all students"
-                        />
-                      </th>
-                      <th style={{ minWidth: '180px' }}>Participant</th>
-                      <th style={{ minWidth: '150px' }}>Academic Info</th>
-                      <th style={{ minWidth: '130px' }}>Origin &amp; Type</th>
-                      <th style={{ minWidth: '140px' }}>Group &amp; English</th>
-                      <th style={{ minWidth: '110px' }}>Portal Status</th>
-                      <th style={{ width: '130px', textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredStudents.map((s) => {
-                      let gradingUrl = `${window.location.origin}${window.location.pathname}?classId=${activeClass.id}&studentId=${s.id}`;
-                      if (isCloudSynced && firebaseConfig && user) {
-                        const payload = {
-                          a: firebaseConfig.apiKey,
-                          p: firebaseConfig.projectId,
-                          d: firebaseConfig.authDomain,
-                          i: firebaseConfig.appId,
-                          o: user.uid
-                        };
-                        const encoded = btoa(JSON.stringify(payload));
-                        gradingUrl += `&fb=${encoded}`;
-                      }
-                      const isSelected = selectedStudentIds.has(s.id);
-
-                      return (
-                        <tr key={s.id} data-student-id={s.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : undefined }}>
-                          {/* Checkbox */}
-                          <td style={{ textAlign: 'center' }}>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => {
-                                setSelectedStudentIds(prev => {
-                                  const next = new Set(prev);
-                                  if (next.has(s.id)) next.delete(s.id);
-                                  else next.add(s.id);
-                                  return next;
-                                });
-                              }}
-                              aria-label={`Select ${s.name}`}
-                            />
-                          </td>
-
-                          {/* Participant Identity (Name + Email + ID + Duplicate Flag) */}
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.88rem' }}>{s.name}</span>
-                                <code style={{ fontSize: '0.68rem', padding: '0.05rem 0.25rem', borderRadius: '4px', backgroundColor: 'var(--bg-app)', color: 'var(--text-muted)' }}>
-                                  #{s.id}
-                                </code>
-
-                                {/* Tamper & Identity Provenance Alert for Professors */}
-                                {((s.originalName && s.originalName !== s.name) || s.flaggedForReview || (s.nameChangeCount && s.nameChangeCount > 0)) && (
-                                  <span
-                                    className="badge"
-                                    style={{
-                                      backgroundColor: '#fef2f2',
-                                      color: '#dc2626',
-                                      border: '1px solid #fecaca',
-                                      fontSize: '0.65rem',
-                                      padding: '0.05rem 0.35rem',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.2rem',
-                                      fontWeight: 700,
-                                      cursor: 'help'
-                                    }}
-                                    title={
-                                      `[Audit Alert] Identity Modification Detected:\n` +
-                                      `Enrolled Name: ${s.originalName || s.name}\n` +
-                                      `Enrolled Email: ${s.originalEmail || s.email}\n` +
-                                      (s.suspiciousReason ? `Audit note: ${s.suspiciousReason}\n` : '') +
-                                      (s.editHistory && s.editHistory.length > 0 
-                                        ? `\nChange Log (${s.editHistory.length}):\n` + s.editHistory.map(h => `• ${h.field}: "${h.from}" → "${h.to}"`).join('\n')
-                                        : '')
-                                    }
-                                  >
-                                    <ShieldAlert size={9} />
-                                    {s.originalName && s.originalName !== s.name ? `Formerly: ${s.originalName}` : 'Modified'}
-                                  </span>
-                                )}
-
-                                {/* Subtle Edit History Count if not flagged */}
-                                {s.editHistory && s.editHistory.length > 0 && !(s.originalName && s.originalName !== s.name) && !s.flaggedForReview && (
-                                  <span
-                                    style={{
-                                      fontSize: '0.65rem',
-                                      color: 'var(--text-muted)',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.2rem',
-                                      cursor: 'help'
-                                    }}
-                                    title={`Profile edit history (${s.editHistory.length} changes):\n` + s.editHistory.map(h => `• ${h.field}: "${h.from}" → "${h.to}"`).join('\n')}
-                                  >
-                                    <History size={10} /> {s.editHistory.length}
-                                  </span>
-                                )}
-
-                                {duplicateFlagsMap.has(s.id) && (
-                                  <span
-                                    className="badge"
-                                    style={{
-                                      backgroundColor: '#fef3c7',
-                                      color: '#b45309',
-                                      border: '1px solid #fde68a',
-                                      fontSize: '0.65rem',
-                                      padding: '0.05rem 0.35rem',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.2rem',
-                                      fontWeight: 700,
-                                      cursor: 'help'
-                                    }}
-                                    title={(duplicateFlagsMap.get(s.id) || []).map(f => f.reason).join('\n')}
-                                  >
-                                    <AlertTriangle size={9} /> Duplicate
-                                  </span>
-                                )}
-                              </div>
-                              <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                                {s.email}
-                                {s.originalEmail && s.originalEmail.toLowerCase() !== s.email.toLowerCase() && (
-                                  <span style={{ marginLeft: '0.35rem', color: '#dc2626', fontSize: '0.68rem', fontWeight: 600 }}>
-                                    (Originally: {s.originalEmail})
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                          </td>
-
-                          {/* Academic Info (University + Degree) */}
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-                              <span style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                                {s.university || '—'}
-                              </span>
-                              {s.degree && (
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                  {s.degree}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Origin & Demographics (Nationality + Gender + Student Type) */}
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                {s.nationality ? (
-                                  <span style={{ fontWeight: 600, fontSize: '0.78rem', color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                                    <Globe size={11} className="text-teal" /> {s.nationality}
-                                  </span>
-                                ) : (
-                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>
-                                )}
-                                {s.gender && s.gender !== 'Prefer not to say' && (
-                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>&bull; {s.gender}</span>
-                                )}
-                              </div>
-                              <div>
-                                {s.studentType === 'Erasmus' ? (
-                                  <span className="badge badge-secondary" style={{ background: 'linear-gradient(135deg, #FF007F, #7F00FF)', color: '#fff', border: 'none', fontWeight: 'bold', fontSize: '0.66rem', padding: '0.1rem 0.4rem' }}>Erasmus</span>
-                                ) : (
-                                  <span className="badge badge-secondary" style={{ opacity: 0.85, fontSize: '0.66rem', padding: '0.1rem 0.4rem' }}>{s.studentType || 'Normal'}</span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Group & Language (Team + English Level) */}
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                              <div>
-                                {s.groupName && s.groupName !== 'Unassigned' ? (
-                                  <span className="badge badge-teal" style={{ fontWeight: 700, fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}>
-                                    {s.groupName}
-                                  </span>
-                                ) : (
-                                  <span className="badge" style={{ backgroundColor: 'var(--accent-amber-light)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)', fontWeight: 600, fontSize: '0.68rem', padding: '0.15rem 0.4rem' }}>
-                                    Unassigned
-                                  </span>
-                                )}
-                              </div>
-                              {s.englishProficiency && (
-                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                  {s.englishProficiency}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Portal Status & Direct Link */}
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                              <a
-                                href={gradingUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}
-                                title="Open Student Portal"
-                              >
-                                <Eye size={12} /> Open Portal
-                              </a>
-                              <div>
-                                {s.submitted ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
-                                    <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', gap: '0.2rem' }}>
-                                      <CheckCircle size={9} /> Done
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        triggerConfirm(
-                                          'Reset Student Submission',
-                                          `Are you sure you want to reset the peer review submission for "${s.name}"? This will clear their submitted ratings and return their portal status to Pending so they can evaluate again.`,
-                                          () => resetStudentReviews(activeClass.id, s.id),
-                                          'Reset Submission',
-                                          'Cancel'
-                                        );
-                                      }}
-                                      style={{
-                                        fontSize: '0.64rem',
-                                        fontWeight: 700,
-                                        padding: '0.08rem 0.35rem',
-                                        borderRadius: '4px',
-                                        border: '1px solid var(--border-color)',
-                                        backgroundColor: 'var(--bg-surface)',
-                                        color: 'var(--accent-amber)',
-                                        cursor: 'pointer',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '0.2rem'
-                                      }}
-                                      title={`Reset reviews submitted by ${s.name} so they can re-evaluate`}
-                                    >
-                                      <RotateCcw size={9} /> Reset
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span className="badge badge-amber" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', gap: '0.2rem' }}>
-                                    <Clock size={9} /> Pending
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* 1-Click Minimal Segmented Action Dock */}
-                          <td style={{ textAlign: 'right' }}>
-                            <div className="table-action-dock">
-                              {s.submitted && (
-                                <button
-                                  type="button"
-                                  className="table-action-btn action-reset"
-                                  onClick={() => {
-                                    triggerConfirm(
-                                      'Reset Student Submission',
-                                      `Are you sure you want to reset the peer review submission for "${s.name}"? This will clear their submitted ratings and return their portal status to Pending so they can evaluate again.`,
-                                      () => resetStudentReviews(activeClass.id, s.id),
-                                      'Reset Submission',
-                                      'Cancel'
-                                    );
-                                  }}
-                                  title={`Reset ${s.name}'s review submission`}
-                                  style={{ color: 'var(--accent-amber)' }}
-                                >
-                                  <RotateCcw size={13} />
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                className="table-action-btn action-simulator"
-                                onClick={() => setPreviewingStudent(s)}
-                                title="Simulate smartphone student portal"
-                              >
-                                <Smartphone size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                className="table-action-btn action-copy"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(gradingUrl);
-                                  addToast(`Copied evaluation link for ${s.name}!`, 'success');
-                                }}
-                                title="Copy personal evaluation link"
-                              >
-                                <Copy size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                className="table-action-btn action-report"
-                                onClick={() => openReportModal(s.id)}
-                                title="View & Download PDF Report Card"
-                              >
-                                <FileText size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                className="table-action-btn action-edit"
-                                onClick={() => {
-                                  const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
-                                  setEditStudentData({
-                                    id: s.id,
-                                    name: s.name,
-                                    email: s.email,
-                                    groupName: s.groupName,
-                                    gender: s.gender || 'Prefer not to say',
-                                    isInternational: isIntl,
-                                    isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
-                                    nationality: s.nationality || '',
-                                    currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
-                                    englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
-                                    university: s.university || '',
-                                    degree: s.degree || '',
-                                    originalUniversity: s.originalUniversity || '',
-                                    originalCountry: s.originalCountry || '',
-                                    currentUniversity: s.currentUniversity || s.university || '',
-                                    studentType: s.studentType || 'Normal'
-                                  });
-                                  setIsEditStudentModalOpen(true);
-                                }}
-                                title="Edit student details"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              {duplicateFlagsMap.has(s.id) && (
-                                <button
-                                  type="button"
-                                  className="table-action-btn action-dismiss"
-                                  onClick={() => {
-                                    const flags = duplicateFlagsMap.get(s.id) || [];
-                                    setIgnoredDuplicatePairs(prev => {
-                                      const next = new Set(prev);
-                                      flags.forEach(f => next.add([s.id, f.matchedStudentId].sort().join(':::')));
-                                      return next;
-                                    });
-                                    addToast(`Dismissed duplicate flag for ${s.name}.`, 'info');
-                                  }}
-                                  title="Dismiss / Ignore duplicate flag"
-                                >
-                                  <EyeOff size={13} />
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                className="table-action-btn action-delete"
-                                onClick={() => {
-                                  triggerConfirm(
-                                    'Remove Student Record',
-                                    `Are you sure you want to remove "${s.name}"? This will permanently delete their student record and ALL peer reviews they have either submitted or received.`,
-                                    () => deleteStudent(activeClass.id, s.id),
-                                    'Remove Student',
-                                    'Cancel'
-                                  );
-                                }}
-                                title="Delete student record"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Floating Bulk Actions Bar */}
-              {featureToggles.showBulkActionBar && selectedStudentIds.size > 0 && (
-                <div className="bulk-actions-floating-bar">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                    <span className="badge badge-primary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', fontWeight: 800 }}>
-                      {selectedStudentIds.size} Selected
-                    </span>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      of {filteredStudents.length} students
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    {/* Assign to Group */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <CustomSelect
-                        value={bulkTargetTeam}
-                        onChange={(val) => setBulkTargetTeam(val)}
-                        options={[
-                          { value: '', label: '-- Assign to Team --' },
-                          ...groupOptions.filter(g => g.value !== 'All Groups').map(g => ({ value: g.value, label: g.label }))
-                        ]}
-                        style={{ width: 'auto', minWidth: '150px' }}
-                        triggerStyle={{ height: '34px', fontSize: '0.78rem', padding: '0 0.6rem' }}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        disabled={!bulkTargetTeam}
-                        onClick={() => {
-                          selectedStudentIds.forEach(id => updateStudent(activeClass.id, id, { groupName: bulkTargetTeam }));
-                          addToast(`Assigned ${selectedStudentIds.size} students to "${bulkTargetTeam}"!`, 'success');
-                          setSelectedStudentIds(new Set());
-                          setBulkTargetTeam('');
-                        }}
-                        style={{ height: '34px', fontSize: '0.78rem', padding: '0 0.75rem' }}
-                      >
-                        Apply
-                      </button>
-                    </div>
-
-                    {/* Bulk Export */}
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => {
-                        const selectedData: ClassData = {
-                          ...activeClass,
-                          students: activeClass.students.filter(s => selectedStudentIds.has(s.id))
-                        };
-                        exportRosterToExcel(selectedData);
-                        addToast(`Exported ${selectedStudentIds.size} selected students to Excel!`, 'success');
-                      }}
-                      style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
-                      title="Export selected students to Excel"
-                    >
-                      <Download size={13} className="text-teal" /> Excel
-                    </button>
-
-                    {/* Bulk Delete */}
-                    <button
-                      type="button"
-                      className="btn btn-rose btn-sm"
-                      onClick={() => {
-                        triggerConfirm(
-                          'Delete Selected Students',
-                          `Are you sure you want to delete ${selectedStudentIds.size} selected students and ALL associated peer evaluations? This action cannot be undone.`,
-                          () => {
-                            deleteStudents(activeClass.id, Array.from(selectedStudentIds));
-                            setSelectedStudentIds(new Set());
-                          },
-                          'Delete Selected',
-                          'Cancel'
-                        );
-                      }}
-                      style={{ height: '34px', fontSize: '0.78rem', gap: '0.3rem' }}
-                      title="Delete selected students from roster"
-                    >
-                      <Trash2 size={13} /> Delete
-                    </button>
-
-                    {/* Deselect All */}
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => setSelectedStudentIds(new Set())}
-                      style={{ height: '34px', fontSize: '0.78rem' }}
-                    >
-                      Deselect
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </EditableModuleSlot>
-    )}
-
-        {/* Team Overview Cards - Rendered when enabled in Settings */}
-        {(isEditMode || featureToggles.showTeamOverviewCards) && (
-          <EditableModuleSlot
-            moduleKey="showTeamOverviewCards"
-            isEditMode={isEditMode}
-            isVisible={featureToggles.showTeamOverviewCards}
-            onToggle={handleToggleModule}
-          >
-            {uniqueGroups.length > 0 && (
-              <TeamCohortsOverview
-                activeClass={activeClass}
-                selectedGroup={groupFilter}
-                onSelectGroup={(grp) => setGroupFilter(grp)}
-                baseGroupGrade={baseGroupGrade}
-                fudgeWeight={fudgeWeight}
-                onUpdateTeamBaseGrade={updateTeamBaseGrade}
-                onPreviewStudent={(s) => setPreviewingStudent(s)}
-                onEditStudent={(s) => {
-                  const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
-                  setEditStudentData({
-                    id: s.id,
-                    name: s.name,
-                    email: s.email,
-                    groupName: s.groupName,
-                    gender: s.gender || 'Prefer not to say',
-                    isInternational: isIntl,
-                    isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
-                    nationality: s.nationality || '',
-                    currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
-                    englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
-                    university: s.university || '',
-                    degree: s.degree || '',
-                    originalUniversity: s.originalUniversity || '',
-                    originalCountry: s.originalCountry || '',
-                    currentUniversity: s.currentUniversity || s.university || '',
-                    studentType: s.studentType || 'Normal'
-                  });
-                  setIsEditStudentModalOpen(true);
+            {/* LMS Gradebook Integration & Smart Export Formats */}
+            <EditableModuleSlot
+              moduleKey="showLmsExport"
+              title="Export to Canvas / Blackboard / Moodle"
+              isVisible={featureToggles.showLmsExport}
+              isEditMode={isEditMode}
+              onToggle={handleToggleModule}
+            >
+              <div
+                className="card"
+                data-tour="lms-export-card"
+                style={{
+                  padding: '1.25rem',
+                  backgroundColor: 'var(--bg-surface)',
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1.2rem'
                 }}
-                onOpenReport={(studentId) => openReportModal(studentId)}
-                onResetStudentReviews={(classId, studentId) => resetStudentReviews(classId, studentId)}
-                addToast={(msg, type) => addToast(msg, type)}
-                triggerConfirm={triggerConfirm}
-                firebaseConfig={firebaseConfig}
-                isCloudSynced={isCloudSynced}
-                user={user}
-              />
-            )}
-          </EditableModuleSlot>
-        )}
-      </div>
-    )}
-
-      {/* TAB CONTENT: GRADING SCALE CONFIG */}
-      {activeTab === 'grading' && (
-        <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div className="card" data-tour="rubric-builder-card" style={{ padding: '1.25rem' }}>
-            {/* Header & Presets Bar */}
-            {(isEditMode || featureToggles.showRubricHeader) && (
-              <EditableModuleSlot
-                moduleKey="showRubricHeader"
-                isEditMode={isEditMode}
-                isVisible={featureToggles.showRubricHeader}
-                onToggle={handleToggleModule}
               >
-                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                      <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
-                        <Sliders size={20} className="text-indigo" /> Evaluation Rubric &amp; Grading Scales
-                        <FeatureInfoButton featureId="grading-rubric" size="sm" tooltipText="Rubric & Grading Scales Guide" />
-                      </h3>
-                      <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
-                        {activeClass.fields.length} Criteria
-                      </span>
-                    </div>
-                    <p className="card-subtitle" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.4 }}>
-                      Configure multi-criteria rubrics with behavioral guidance. Define custom scales and load accredited academic presets.
-                    </p>
-                  </div>
-
-                  {(isEditMode || featureToggles.showCustomCriterionButton) && (
-                    <EditableModuleSlot
-                      moduleKey="showCustomCriterionButton"
-                      isEditMode={isEditMode}
-                      isVisible={featureToggles.showCustomCriterionButton}
-                      onToggle={handleToggleModule}
-                      slotType="button"
-                    >
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <button className="btn btn-primary btn-sm" onClick={handleAddField} style={{ height: '36px', gap: '0.35rem', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700, padding: '0 0.85rem' }}>
-                          <Plus size={15} /> Add Custom Criterion
-                        </button>
-                      </div>
-                    </EditableModuleSlot>
-                  )}
-                </div>
-              </EditableModuleSlot>
-            )}
-
-            {/* Rubric Presets Library Banner - Only rendered when enabled in Settings */}
-            {(isEditMode || featureToggles.showRubricPresets) && (
-              <EditableModuleSlot
-                moduleKey="showRubricPresets"
-                isEditMode={isEditMode}
-                isVisible={featureToggles.showRubricPresets}
-                onToggle={handleToggleModule}
-                slotType="banner"
-              >
+                {/* Header */}
                 <div
                   style={{
-                    backgroundColor: 'var(--bg-app)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-lg)',
-                    padding: '0.85rem 1.15rem',
-                    marginBottom: '1.25rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '0.85rem'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                    <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <BookOpen size={17} />
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                        <h4 style={{ margin: 0, fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                          Standardized Rubric Framework (IPAF)
-                        </h4>
-                        <FeatureInfoButton featureId="rubric-presets" size="sm" tooltipText="IPAF Rubric Guide" />
-                      </div>
-                      <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                        1-Click load research-synthesized peer evaluation criteria &amp; 100% balanced weights (CATME, Salas, AAC&amp;U, WebPA).
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Quick Preset Buttons in a Clean Flex Wrap Ribbon */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    {RUBRIC_PRESETS.map((preset) => (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => handleApplyPreset(preset.id)}
-                        style={{
-                          fontSize: '0.76rem',
-                          padding: '0.35rem 0.7rem',
-                          height: '32px',
-                          borderRadius: '6px',
-                          fontWeight: 600,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.35rem',
-                          backgroundColor: 'var(--bg-surface)',
-                          border: '1px solid var(--border-color)',
-                          whiteSpace: 'nowrap'
-                        }}
-                        title={`${preset.name}: ${preset.description}`}
-                      >
-                        <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
-                          {preset.id === 'ipaf_research_synthesized' ? 'IPAF Standard (Research-Synthesized)' : preset.name}
-                        </span>
-                        <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '1px 5px', height: '16px', lineHeight: '14px' }}>
-                          {preset.fields.length} criteria
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </EditableModuleSlot>
-            )}
-
-            {/* Target final scale setting */}
-            {(isEditMode || featureToggles.showTargetScaleCard) && (
-              <EditableModuleSlot
-                moduleKey="showTargetScaleCard"
-                isEditMode={isEditMode}
-                isVisible={featureToggles.showTargetScaleCard}
-                onToggle={handleToggleModule}
-              >
-                <div data-tour="target-scale-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'var(--primary-light)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid hsla(243, 75%, 59%, 0.15)', marginBottom: '1.5rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div style={{ maxWidth: '520px' }}>
-                      <h4 style={{ fontWeight: 700, color: 'var(--primary)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Sliders size={15} /> Grade Scale
-                      </h4>
-                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
-                        Sets whether final grades are out of 20, 100, or a custom maximum.
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '240px', flexWrap: 'wrap' }}>
-                      <CustomSelect
-                        value={activeClass.targetScale === 0 ? 'sum' : activeClass.targetScale ? 'custom' : 'default'}
-                        onChange={(val) => {
-                          if (val === 'default') {
-                            updateGradingConfig(activeClass.id, activeClass.fields, null, true);
-                          } else if (val === 'sum') {
-                            updateGradingConfig(activeClass.id, activeClass.fields, 0, true);
-                          } else {
-                            updateGradingConfig(activeClass.id, activeClass.fields, 20, true);
-                          }
-                        }}
-                        options={[
-                          { value: 'default', label: 'Default Benchmark (Out of 20)' },
-                          { value: 'sum', label: 'Sum of Rubrics Scale (Direct Sum)' },
-                          { value: 'custom', label: 'Custom Scaled Total Target' }
-                        ]}
-                        style={{ width: 'auto', minWidth: '230px' }}
-                        triggerStyle={{ height: '36px', fontSize: '0.82rem', fontWeight: 600, borderRadius: '8px' }}
-                      />
-
-                      {activeClass.targetScale !== 0 && activeClass.targetScale !== undefined && activeClass.targetScale !== null && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Out of</span>
-                          <input
-                            type="number"
-                            className="form-input"
-                            value={activeClass.targetScale}
-                            min={1}
-                            max={1000}
-                            onChange={(e) => updateGradingConfig(activeClass.id, activeClass.fields, Number(e.target.value) || 20, true)}
-                            style={{ width: '70px', height: '36px', fontSize: '0.85rem', textAlign: 'center', fontWeight: 700, borderRadius: '8px' }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </EditableModuleSlot>
-            )}
-
-            {/* Milestone Evaluation Deadline Setting Card - Only rendered when enabled in Settings */}
-            {(isEditMode || featureToggles.showDeadlineTimer) && (
-              <EditableModuleSlot
-                moduleKey="showDeadlineTimer"
-                isEditMode={isEditMode}
-                isVisible={featureToggles.showDeadlineTimer}
-                onToggle={handleToggleModule}
-              >
-                <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div style={{ maxWidth: '520px' }}>
-                      <h4 style={{ fontWeight: 700, color: 'var(--accent-amber)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Clock size={15} /> Submission Deadline
-                      </h4>
-                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
-                        Sets the date/time when peer evaluation closes.
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <input
-                        type="datetime-local"
-                        className="form-input"
-                        value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            const iso = new Date(e.target.value).toISOString();
-                            saveClassDeadline(activeClass.id, iso);
-                          } else {
-                            saveClassDeadline(activeClass.id, null);
-                          }
-                        }}
-                        style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', height: '36px' }}
-                      />
-                      {activeClass.deadline && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm text-rose"
-                          onClick={() => {
-                            saveClassDeadline(activeClass.id, null);
-                          }}
-                          style={{ height: '36px', padding: '0.4rem 0.6rem' }}
-                          title="Clear Deadline"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </EditableModuleSlot>
-            )}
-
-            {/* Weightage Validation & Auto-Balance Bar */}
-            {(isEditMode || featureToggles.showWeightBalanceBar) && (() => {
-              const totalWeight = activeClass.fields.reduce((sum, f) => sum + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0);
-              const isBalanced = totalWeight === 100;
-              return (
-                <EditableModuleSlot
-                  moduleKey="showWeightBalanceBar"
-                  isEditMode={isEditMode}
-                  isVisible={featureToggles.showWeightBalanceBar}
-                  onToggle={handleToggleModule}
-                  slotType="bar"
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '0.75rem',
-                      padding: '0.75rem 1.15rem',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: isBalanced ? 'rgba(20, 184, 166, 0.08)' : 'rgba(245, 158, 11, 0.1)',
-                      border: `1px solid ${isBalanced ? 'rgba(20, 184, 166, 0.25)' : 'rgba(245, 158, 11, 0.3)'}`,
-                      marginBottom: '1.25rem'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      {isBalanced ? (
-                        <CheckCircle size={16} className="text-teal" />
-                      ) : (
-                        <AlertTriangle size={16} className="text-amber" />
-                      )}
-                      <div>
-                        <div style={{ fontSize: '0.84rem', fontWeight: 800, color: isBalanced ? 'var(--accent-teal)' : 'var(--accent-amber)' }}>
-                          {isBalanced
-                            ? `Weight Total: 100% (Balanced)`
-                            : `Weight Total: ${totalWeight}% (${totalWeight > 100 ? `${totalWeight - 100}% over 100%` : `${100 - totalWeight}% remaining`})`}
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                          {isBalanced
-                            ? `Shows whether your criteria percentages add up to 100%. (Currently balanced)`
-                            : `Shows whether your criteria percentages add up to 100%. (Criteria must add up to 100%)`}
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={handleAutoBalanceWeights}
-                      style={{
-                        fontSize: '0.76rem',
-                        height: '32px',
-                        fontWeight: 700,
-                        gap: '0.35rem',
-                        backgroundColor: 'var(--bg-surface)'
-                      }}
-                      title="Distribute 100% weight evenly across all criteria"
-                    >
-                      <Sparkles size={13} className="text-primary" /> Auto-Distribute Evenly (100%)
-                    </button>
-                  </div>
-                </EditableModuleSlot>
-              );
-            })()}
-
-            {/* Criteria List Cards */}
-            {(isEditMode || featureToggles.showCriterionCards) && (
-              <EditableModuleSlot
-                moduleKey="showCriterionCards"
-                isEditMode={isEditMode}
-                isVisible={featureToggles.showCriterionCards}
-                onToggle={handleToggleModule}
-              >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {activeClass.fields.map((field, idx) => (
-                    <div
-                      key={field.id}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.75rem',
-                        backgroundColor: 'var(--bg-app)',
-                        padding: '1rem 1.25rem',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px solid var(--border-color)'
-                      }}
-                    >
-                      {/* Top Row: Name, Scale, Editable Weightage, and Delete */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(110px, 1fr) auto', gap: '0.85rem', alignItems: 'flex-end' }}>
-                        <div>
-                          <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                            <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '1px 5px' }}>#{idx + 1}</span> Criterion Name
-                          </label>
-                          <input
-                            type="text"
-                            className="form-input"
-                            value={field.name}
-                            placeholder="e.g. Quality of Contribution, Collaboration..."
-                            onChange={(e) => handleUpdateField(field.id, { name: e.target.value })}
-                            style={{ height: '36px', fontSize: '0.84rem', fontWeight: 600 }}
-                          />
-                        </div>
-                        <div>
-                          <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Min Scale</label>
-                          <input
-                            type="number"
-                            className="form-input"
-                            value={field.min}
-                            onChange={(e) => handleUpdateField(field.id, { min: Number(e.target.value) })}
-                            style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
-                          />
-                        </div>
-                        <div>
-                          <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Max Scale</label>
-                          <input
-                            type="number"
-                            className="form-input"
-                            value={field.max}
-                            onChange={(e) => handleUpdateField(field.id, { max: Number(e.target.value) })}
-                            style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
-                          />
-                        </div>
-                        <div>
-                          <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Weightage (%)</label>
-                          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: '85px', maxWidth: '105px', height: '36px' }}>
-                            <input
-                              type="number"
-                              className="form-input"
-                              value={field.weight !== undefined ? field.weight : Math.round(100 / activeClass.fields.length)}
-                              min={0}
-                              max={100}
-                              onChange={(e) => {
-                                const val = Math.max(0, Math.min(100, Number(e.target.value)));
-                                handleUpdateField(field.id, { weight: val });
-                              }}
-                              style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center', width: '100%', paddingRight: '26px', paddingLeft: '8px', fontWeight: 700 }}
-                            />
-                            <span style={{ position: 'absolute', right: '10px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', pointerEvents: 'none' }}>%</span>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
-                          <button
-                            className="btn btn-rose btn-sm"
-                            onClick={() => handleDeleteField(field.id)}
-                            title="Delete rubric scale"
-                            style={{ height: '34px', padding: '0 0.6rem' }}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Bottom Row: Behavioral Guidance / Criterion Description */}
-                      <div>
-                        <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', margin: 0, marginBottom: '0.25rem' }}>
-                          Guidance &amp; Behavioral Indicator (Shown to students while grading):
-                        </label>
-                        <input
-                          type="text"
-                          className="form-input"
-                          value={field.description || ''}
-                          placeholder="e.g. Produces thorough, accurate deliverables on schedule with high attention to detail..."
-                          onChange={(e) => handleUpdateField(field.id, { description: e.target.value })}
-                          style={{ fontSize: '0.78rem', height: '32px', color: 'var(--text-secondary)' }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </EditableModuleSlot>
-            )}
-
-            {/* Scale visual simulation - Only rendered when enabled in Settings */}
-            {(isEditMode || featureToggles.showEvaluationSimulator) && (
-              <EditableModuleSlot
-                moduleKey="showEvaluationSimulator"
-                isEditMode={isEditMode}
-                isVisible={featureToggles.showEvaluationSimulator}
-                onToggle={handleToggleModule}
-              >
-                <div data-tour="eval-simulator-card" style={{ marginTop: '2rem', backgroundColor: 'var(--primary-light)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--primary)' }}>
-                  <h4 style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <Sparkles size={18} /> Preview Student View
-                  </h4>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-                    Test-drives what students see when filling out peer reviews on their phones/laptops:
-                  </p>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                    {activeClass.fields.slice(0, 1).map(field => {
-                      const range = field.max - field.min;
-                      const isNarrowRange = range <= 15;
-                      const previewVal = Math.round(field.min + 0.63 * range); // Mimic "Solid Player" (63%)
-                      const scoreNodes = [];
-                      for (let val = field.min; val <= field.max; val++) {
-                        scoreNodes.push(val);
-                      }
-
-                      return (
-                        <div key={field.id} style={{ backgroundColor: 'var(--bg-surface)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-                            <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{field.name}</span>
-                            <span className="slider-value-bubble" style={{ backgroundColor: 'var(--primary)', color: 'var(--text-inverse)', fontSize: '0.8rem', padding: '0.25rem 0.6rem', borderRadius: '4px', fontWeight: 700 }}>
-                              {previewVal} / {field.max}
-                            </span>
-                          </div>
-
-                          {/* Unified Single Scale Simulator Preview */}
-                          <div className="score-fine-tuner" style={{ margin: 0, padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-app)' }}>
-                            {/* Dynamic Qualitative Tier Indicator Simulation */}
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.75rem',
-                                padding: '0.65rem 0.85rem',
-                                borderRadius: 'var(--radius-sm)',
-                                backgroundColor: 'var(--primary-light)',
-                                color: 'var(--primary)',
-                                border: '1px solid hsla(243, 75%, 59%, 0.12)',
-                                marginBottom: '0.75rem'
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--primary)', color: '#fff', width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0 }}>
-                                <ThumbsUp size={13} />
-                              </div>
-                              <div>
-                                <strong style={{ fontSize: '0.82rem', display: 'block', color: 'var(--text-primary)' }}>Solid Player / Meets Expectations</strong>
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25 }}>Met all standards, cooperative, communicative, reliable teamwork.</span>
-                              </div>
-                            </div>
-
-                            {isNarrowRange ? (
-                              <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', justifyContent: 'center' }}>
-                                {scoreNodes.map((nodeVal) => {
-                                  const isActive = previewVal === nodeVal;
-                                  return (
-                                    <div
-                                      key={nodeVal}
-                                      className={`score-node-btn ${isActive ? 'active' : ''}`}
-                                      style={isActive ? { backgroundColor: 'var(--primary)', borderColor: 'var(--primary)', color: '#fff', cursor: 'default' } : { cursor: 'default' }}
-                                    >
-                                      {nodeVal}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                  <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
-                                    <Minus size={14} />
-                                  </button>
-
-                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '45px' }}>
-                                    <span className="score-stepper-value" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{previewVal}</span>
-                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>
-                                      63%
-                                    </span>
-                                  </div>
-
-                                  <button type="button" className="score-stepper-btn" disabled style={{ cursor: 'default' }}>
-                                    <Plus size={14} />
-                                  </button>
-                                </div>
-
-                                <div style={{ flex: 1, minWidth: '150px' }}>
-                                  <input
-                                    type="range"
-                                    className="custom-slider"
-                                    min={field.min}
-                                    max={field.max}
-                                    value={previewVal}
-                                    disabled
-                                    style={{
-                                      background: `linear-gradient(to right, var(--primary) 0%, var(--primary) 63%, var(--border-color) 63%, var(--border-color) 100%)`,
-                                      cursor: 'default'
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {activeClass.fields.length > 1 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Additional Configured Metrics ({activeClass.fields.length - 1})
-                        </span>
-                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                          {activeClass.fields.slice(1).map(field => (
-                            <div key={field.id} style={{ backgroundColor: 'var(--bg-surface)', padding: '0.6rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                              <span style={{ fontWeight: 600 }}>{field.name}</span>
-                              <span style={{ color: 'var(--text-muted)' }}>Range: {field.min} - {field.max}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </EditableModuleSlot>
-            )}
-
-            {/* Evaluation Form Controls & Student Permissions (Collapsible & Minimal) */}
-            {(isEditMode || featureToggles.showEvaluationFormControls) && (
-              <EditableModuleSlot
-                moduleKey="showEvaluationFormControls"
-                isEditMode={isEditMode}
-                isVisible={featureToggles.showEvaluationFormControls}
-                onToggle={handleToggleModule}
-              >
-                <div data-tour="eval-controls-card" style={{ marginTop: '1.5rem' }}>
-                  <CollapsibleEvaluationControls
-                    activeClass={activeClass}
-                    onUpdateControls={(controls) => updateEvaluationControls(activeClass.id, controls)}
-                    defaultExpanded={false}
-                  />
-                </div>
-              </EditableModuleSlot>
-            )}
-
-            {/* Team Health "Micro-Pulse" Check-ins (On-Demand & Customizable Scales) */}
-            {(isEditMode || featureToggles.showTeamHealthPulse || (activeClass.pulseRounds && activeClass.pulseRounds.length > 0)) && (
-              <EditableModuleSlot
-                moduleKey="showTeamHealthPulse"
-                isEditMode={isEditMode}
-                isVisible={featureToggles.showTeamHealthPulse}
-                onToggle={handleToggleModule}
-              >
-                <div id="team-health-pulse-card" data-tour="team-health-pulse-card" style={{ marginTop: '1.5rem' }}>
-                  <TeamHealthPulseCard
-                    activeClass={activeClass}
-                    onCreateRound={(classId, roundData) => {
-                      if (!featureToggles.showTeamHealthPulse) {
-                        saveFeatureToggle('showTeamHealthPulse', true);
-                      }
-                      createPulseRound(classId, roundData);
-                    }}
-                    onUpdateRound={updatePulseRound}
-                    onSubmitResponse={submitPulseResponse}
-                    onDeleteRound={deletePulseRound}
-                    onSeedSampleData={(classId) => {
-                      if (!featureToggles.showTeamHealthPulse) {
-                        saveFeatureToggle('showTeamHealthPulse', true);
-                      }
-                      seedSamplePulseRounds(classId);
-                    }}
-                    addToast={addToast}
-                  />
-                </div>
-              </EditableModuleSlot>
-            )}
-
-            {/* Live Presentation Day Scoring Cockpit - Togglable in Settings */}
-            {(isEditMode || featureToggles.showLivePresentationScoring) && (
-              <EditableModuleSlot
-                moduleKey="showLivePresentationScoring"
-                isEditMode={isEditMode}
-                isVisible={featureToggles.showLivePresentationScoring}
-                onToggle={handleToggleModule}
-              >
-                <div
-                  id="live-presentation-scoring-card"
-                  style={{
-                    marginTop: '1.5rem',
-                    padding: '1.25rem 1.5rem',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     flexWrap: 'wrap',
                     gap: '1rem',
-                    background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(13, 148, 136, 0.05) 100%)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-lg)'
+                    borderBottom: '1px solid var(--border-color)',
+                    paddingBottom: '1rem'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-                    <div
-                      style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '12px',
-                        backgroundColor: 'rgba(13, 148, 136, 0.12)',
-                        color: 'var(--accent-teal, #0d9488)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <Presentation size={22} />
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                          Live Presentation Scoring
-                        </h3>
-                        <span className="badge badge-teal" style={{ fontSize: '0.68rem' }}>
-                          Real-Time Scoring
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
+                        <GraduationCap size={22} className="text-teal" /> Export to Canvas / Blackboard / Moodle
+                        <FeatureInfoButton featureId="lms-export" size="sm" tooltipText="LMS Gradebook Export Guide" />
+                      </h3>
+                      <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px' }}>
+                        Smart LMS Sync
+                      </span>
+                      {selectedLmsTab === 'custom' && (
+                        <span className="badge badge-secondary" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px', color: '#8B5CF6', borderColor: '#8B5CF6' }}>
+                          Custom Schema Builder
                         </span>
-                      </div>
-                      <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                        Lets audience and professors score live group presentations in real time.
-                      </p>
+                      )}
                     </div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.35rem 0 0 0', lineHeight: 1.4 }}>
+                      Export formatted gradebook files for Canvas, Blackboard, Moodle, Brightspace D2L, or build a custom schema tailored to your institution's LMS with team &amp; student filters.
+                    </p>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button
                       type="button"
-                      className="btn btn-teal btn-sm"
-                      onClick={() => setIsLivePresentationModalOpen(true)}
-                      style={{ gap: '0.4rem', fontWeight: 700, padding: '0.45rem 0.95rem' }}
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        setLmsGuideActiveTab(selectedLmsTab);
+                        setShowLmsGuideModal(true);
+                      }}
+                      style={{ fontSize: '0.78rem', height: '34px', padding: '0 0.85rem', gap: '0.4rem', fontWeight: 700 }}
                     >
-                      <Presentation size={14} /> Open Live Scoring Cockpit
+                      <BookOpen size={14} className="text-primary" /> LMS Import Step-by-Step Guide
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setIsLmsExportExpanded(!isLmsExportExpanded)}
+                      style={{ fontSize: '0.78rem', height: '34px', padding: '0 0.85rem', gap: '0.4rem', fontWeight: 700 }}
+                      title={isLmsExportExpanded ? 'Collapse LMS Gradebook Integration' : 'Expand LMS Gradebook Integration'}
+                    >
+                      {isLmsExportExpanded ? (
+                        <>
+                          <ChevronUp size={14} /> Collapse
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown size={14} /> Expand ({selectedLmsTab.toUpperCase()})
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
-              </EditableModuleSlot>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* TAB CONTENT: INSTANT CALCULATIONS & RESULTS */}
-      {activeTab === 'results' && (
-        <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          {/* Action Header Card */}
-          {(isEditMode || featureToggles.showResultsHeaderCard) && (
-            <EditableModuleSlot
-              moduleKey="showResultsHeaderCard"
-              isEditMode={isEditMode}
-              isVisible={featureToggles.showResultsHeaderCard}
-              onToggle={handleToggleModule}
-            >
-              <div className="card" data-tour="gradebook-matrix-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                <div>
-                  <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                    <Award size={18} className="text-teal" /> Real-time Calculation Matrix
-                    <FeatureInfoButton featureId="calculation-matrix" size="sm" tooltipText="Calculation Matrix Guide" />
-                  </h3>
-                  <p className="card-subtitle">Self-excluded student averages recalculate instantly as submissions arrive. Calculations do not count self-grading reviews.</p>
-                </div>
-
-                <div className="responsive-btn-group">
-                  {(isEditMode || featureToggles.showExportReportButtons) && (
-                    <EditableModuleSlot
-                      moduleKey="showExportReportButtons"
-                      isEditMode={isEditMode}
-                      isVisible={featureToggles.showExportReportButtons}
-                      onToggle={handleToggleModule}
-                      slotType="button"
+                {/* Collapsible Body */}
+                {isLmsExportExpanded && (
+                  <>
+                    {/* Tab Selector & Controls Row */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '1rem'
+                      }}
                     >
-                      <button
-                        type="button"
-                        className="btn btn-teal"
-                        onClick={() => openReportModal()}
-                        title="View & Download Individual Student PDF Report Cards with Live Preview"
-                        style={{ gap: '0.4rem' }}
-                      >
-                        <FileText size={16} /> Student PDF Reports
-                      </button>
-                    </EditableModuleSlot>
-                  )}
-
-                  {(isEditMode || featureToggles.showSubmissionReset) && (
-                    <EditableModuleSlot
-                      moduleKey="showSubmissionReset"
-                      isEditMode={isEditMode}
-                      isVisible={featureToggles.showSubmissionReset}
-                      onToggle={handleToggleModule}
-                      slotType="button"
-                    >
-                      <button
-                        className="btn btn-secondary text-amber"
-                        style={{ borderColor: 'var(--accent-amber)' }}
-                        onClick={() => {
-                          triggerConfirm(
-                            'Reset All Peer Evaluations',
-                            'Are you sure you want to wipe all submitted peer reviews for this classroom? This will reset all student review statuses to pending. This action cannot be undone.',
-                            () => resetClassReviews(activeClass.id),
-                            'Reset Submissions',
-                            'Cancel'
-                          );
+                      {/* LMS Platform Tabs */}
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          backgroundColor: 'var(--bg-primary)',
+                          padding: '0.25rem',
+                          borderRadius: '10px',
+                          border: '1px solid var(--border-color)',
+                          gap: '0.25rem',
+                          flexWrap: 'wrap'
                         }}
                       >
-                        <RefreshCw size={16} /> Reset Submissions
-                      </button>
-                    </EditableModuleSlot>
-                  )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLmsTab('canvas')}
+                          className={`btn btn-sm ${selectedLmsTab === 'canvas' ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{
+                            height: '32px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            borderRadius: '8px',
+                            padding: '0 0.85rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.45rem'
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: '#E13F2B',
+                              display: 'inline-block'
+                            }}
+                          />
+                          Canvas LMS
+                        </button>
 
-                  {featureToggles.showExportReportButtons && (
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleExportExcel}
-                      title="Download comprehensive multi-sheet Excel workbook with grades and written reviews"
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLmsTab('blackboard')}
+                          className={`btn btn-sm ${selectedLmsTab === 'blackboard' ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{
+                            height: '32px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            borderRadius: '8px',
+                            padding: '0 0.85rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.45rem'
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: '#D4AF37',
+                              display: 'inline-block'
+                            }}
+                          />
+                          Blackboard Learn
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLmsTab('moodle')}
+                          className={`btn btn-sm ${selectedLmsTab === 'moodle' ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{
+                            height: '32px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            borderRadius: '8px',
+                            padding: '0 0.85rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.45rem'
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: '#F98012',
+                              display: 'inline-block'
+                            }}
+                          />
+                          Moodle
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLmsTab('brightspace')}
+                          className={`btn btn-sm ${selectedLmsTab === 'brightspace' ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{
+                            height: '32px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            borderRadius: '8px',
+                            padding: '0 0.85rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.45rem'
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: '#006FBF',
+                              display: 'inline-block'
+                            }}
+                          />
+                          Brightspace D2L
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLmsTab('custom')}
+                          className={`btn btn-sm ${selectedLmsTab === 'custom' ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{
+                            height: '32px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            borderRadius: '8px',
+                            padding: '0 0.85rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.45rem',
+                            backgroundColor: selectedLmsTab === 'custom' ? '#8B5CF6' : undefined,
+                            color: selectedLmsTab === 'custom' ? '#fff' : undefined
+                          }}
+                        >
+                          <Sliders size={13} style={{ color: selectedLmsTab === 'custom' ? '#fff' : '#8B5CF6' }} />
+                          Custom LMS Format
+                        </button>
+                      </div>
+
+                      {/* Score Type Selector */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                          Grade Output:
+                        </span>
+                        <div
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            backgroundColor: 'var(--bg-primary)',
+                            padding: '0.2rem',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-color)',
+                            gap: '0.2rem'
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setLmsScoreType('calibrated')}
+                            className={`btn btn-sm ${lmsScoreType === 'calibrated' ? 'btn-secondary' : 'btn-ghost'}`}
+                            style={{
+                              height: '28px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              padding: '0 0.65rem',
+                              borderRadius: '6px'
+                            }}
+                            title="Calibrated grade using WebPA multipliers and team base mark"
+                          >
+                            WebPA Calibrated ({baseGroupGrade} max)
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setLmsScoreType('scale')}
+                            className={`btn btn-sm ${lmsScoreType === 'scale' ? 'btn-secondary' : 'btn-ghost'}`}
+                            style={{
+                              height: '28px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              padding: '0 0.65rem',
+                              borderRadius: '6px'
+                            }}
+                            title="Score scaled to rubric max scale"
+                          >
+                            Rubric Scale (/{getTargetScale(activeClass)})
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setLmsScoreType('percent')}
+                            className={`btn btn-sm ${lmsScoreType === 'percent' ? 'btn-secondary' : 'btn-ghost'}`}
+                            style={{
+                              height: '28px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              padding: '0 0.65rem',
+                              borderRadius: '6px'
+                            }}
+                            title="Standard 0 - 100% percentage grade"
+                          >
+                            Percentage (100%)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Filtering Bar (Team Filter & Status Filter) */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem',
+                        padding: '0.65rem 0.85rem',
+                        backgroundColor: 'var(--bg-primary)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-color)'
+                      }}
                     >
-                      <Download size={16} /> Download Excel Report (.xlsx)
-                    </button>
-                  )}
-                </div>
-              </div>
-            </EditableModuleSlot>
-          )}
-
-          {/* Advanced Analytics & Grading Engine Grid - Only rendered if at least one analytics component is enabled */}
-          {(isEditMode || featureToggles.showCompetencyRadar || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback || featureToggles.showWebPACalibration || featureToggles.showAnomalyAudit || featureToggles.showMilestonesHistory) && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-              {/* Tier 1: Competency Radar, Johari Matrix & Qualitative Themes - Only rendered if enabled */}
-              {(isEditMode || featureToggles.showCompetencyRadar || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback) && (
-                <div data-tour="perception-deck-card" style={{
-                  display: 'grid',
-                  gridTemplateColumns: (featureToggles.showCompetencyRadar && (featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback)) ? 'repeat(auto-fit, minmax(340px, 1fr))' : '1fr',
-                  gap: '1.25rem',
-                  alignItems: 'stretch'
-                }}>
-
-                  {/* Card 1: Multi-Axis Competency Spider Radar */}
-                  {(isEditMode || featureToggles.showCompetencyRadar) && (
-                    <EditableModuleSlot
-                      moduleKey="showCompetencyRadar"
-                      isEditMode={isEditMode}
-                      isVisible={featureToggles.showCompetencyRadar}
-                      onToggle={handleToggleModule}
-                    >
-                      <div className="card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                          <div>
-                            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.98rem', fontWeight: 800 }}>
-                              <Activity size={17} className="text-primary" /> Skills Radar Chart
-                              <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Skills Radar Chart Guide" />
-                            </h3>
-                            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
-                              Visual chart comparing team strengths across all rubric criteria.
-                            </p>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Overlay:</span>
-                            <CustomSelect
-                              value={radarTeamFilter}
-                              onChange={(val) => setRadarTeamFilter(val)}
-                              options={[
-                                { value: 'All', label: 'Class Average' },
-                                ...uniqueGroups.filter(g => g && g !== 'Unassigned').map(g => ({ value: g, label: g }))
-                              ]}
-                              style={{ width: 'auto', minWidth: '140px' }}
-                              triggerStyle={{ height: '30px', fontSize: '0.76rem', padding: '0 0.55rem' }}
-                            />
-                          </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+                        {/* Team Filter */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <Filter size={14} className="text-teal" />
+                          <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                            Team Filter:
+                          </span>
+                          <select
+                            className="form-input"
+                            value={lmsTeamFilter}
+                            onChange={(e) => setLmsTeamFilter(e.target.value)}
+                            style={{
+                              height: '30px',
+                              fontSize: '0.76rem',
+                              fontWeight: 700,
+                              padding: '0 0.5rem',
+                              minWidth: '150px',
+                              borderRadius: '6px'
+                            }}
+                          >
+                            <option value="all">All Teams (Entire Class - {activeClass.students.length})</option>
+                            {classTeams.map(t => {
+                              const count = activeClass.students.filter(s => s.groupName === t).length;
+                              return (
+                                <option key={t} value={t}>
+                                  {t} ({count} student{count === 1 ? '' : 's'})
+                                </option>
+                              );
+                            })}
+                          </select>
                         </div>
 
-                        {activeClass.fields.length >= 3 ? (
-                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, padding: '0.5rem 0' }}>
-                            <RadarChart
-                              metrics={activeClass.fields.map(f => ({ id: f.id, name: f.name, max: f.max }))}
-                              series={[
-                                {
-                                  id: 'class_avg',
-                                  name: 'Class Average',
-                                  color: 'var(--primary)',
-                                  values: (() => {
-                                    const res: Record<string, number | null> = {};
-                                    activeClass.fields.forEach(f => {
-                                      let sum = 0, count = 0;
-                                      activeClass.students.forEach(s => {
-                                        const m = calculateStudentMetrics(s, activeClass);
-                                        const val = m.fieldAverages[f.id];
-                                        if (val !== null) { sum += val; count++; }
-                                      });
-                                      res[f.id] = count > 0 ? sum / count : null;
-                                    });
-                                    return res;
-                                  })()
-                                },
-                                ...(radarTeamFilter !== 'All' ? [{
-                                  id: 'team_avg',
-                                  name: `${radarTeamFilter} Average`,
-                                  color: 'var(--accent-teal)',
-                                  values: (() => {
-                                    const res: Record<string, number | null> = {};
-                                    const teamStudents = activeClass.students.filter(s => s.groupName === radarTeamFilter);
-                                    activeClass.fields.forEach(f => {
-                                      let sum = 0, count = 0;
-                                      teamStudents.forEach(s => {
-                                        const m = calculateStudentMetrics(s, activeClass);
-                                        const val = m.fieldAverages[f.id];
-                                        if (val !== null) { sum += val; count++; }
-                                      });
-                                      res[f.id] = count > 0 ? sum / count : null;
-                                    });
-                                    return res;
-                                  })()
-                                }] : [])
-                              ]}
-                              size={270}
-                            />
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '2rem 1rem', textAlign: 'center', backgroundColor: 'var(--bg-app)', borderRadius: '10px', border: '1px dashed var(--border-color)', margin: '0.5rem 0' }}>
-                            <div style={{ width: '46px', height: '46px', borderRadius: '12px', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', marginBottom: '0.75rem' }}>
-                              <Activity size={22} />
-                            </div>
-                            <h4 style={{ margin: '0 0 0.35rem 0', fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                              Multi-Axis Radar Requires 3+ Criteria
-                            </h4>
-                            <p style={{ margin: '0 0 1rem 0', fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '340px', lineHeight: 1.45 }}>
-                              Your classroom currently has {activeClass.fields.length} {activeClass.fields.length === 1 ? 'criterion' : 'criteria'}. A multi-axis spider radar requires at least 3 evaluation axes to construct its geometric benchmark polygon.
-                            </p>
-                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                              <button
-                                type="button"
-                                className="btn btn-primary btn-sm"
-                                onClick={() => {
-                                  handleApplyPreset('ipaf_research_synthesized');
-                                  addToast('Loaded 6-criteria research rubric preset! Spider radar is now active.', 'success');
-                                }}
-                                style={{ fontSize: '0.78rem', gap: '0.35rem', height: '32px' }}
-                              >
-                                <Sparkles size={13} /> Load 6-Axis Rubric Preset
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => setActiveTab('grading')}
-                                style={{ fontSize: '0.78rem', gap: '0.35rem', height: '32px' }}
-                              >
-                                <Plus size={13} /> Add Criteria in Review System
-                              </button>
-                            </div>
-                          </div>
+                        {/* Submission Status Filter */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                            Student Status:
+                          </span>
+                          <select
+                            className="form-input"
+                            value={lmsStatusFilter}
+                            onChange={(e) => setLmsStatusFilter(e.target.value as any)}
+                            style={{
+                              height: '30px',
+                              fontSize: '0.76rem',
+                              fontWeight: 600,
+                              padding: '0 0.5rem',
+                              minWidth: '130px',
+                              borderRadius: '6px'
+                            }}
+                          >
+                            <option value="all">All Students ({activeClass.students.length})</option>
+                            <option value="submitted">Evaluated Only ({stats.submittedCount})</option>
+                            <option value="pending">Pending Reviews ({activeClass.students.filter(s => !s.submitted).length})</option>
+                          </select>
+                        </div>
+
+                        {/* Clear Filter Button */}
+                        {(lmsTeamFilter !== 'all' || lmsStatusFilter !== 'all') && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => {
+                              setLmsTeamFilter('all');
+                              setLmsStatusFilter('all');
+                            }}
+                            style={{ height: '28px', fontSize: '0.72rem', padding: '0 0.5rem', gap: '0.25rem', color: 'var(--accent-amber)' }}
+                            title="Reset filters back to all teams"
+                          >
+                            <X size={12} /> Reset Filter
+                          </button>
                         )}
                       </div>
-                    </EditableModuleSlot>
-                  )}
 
-                  {/* Column 2: Johari Alignment & Qualitative Feedback Insights - Only rendered if enabled */}
-                  {(isEditMode || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-                      {/* Card 2: Johari Alignment */}
-                      {(isEditMode || featureToggles.showJohariMatrix) && (() => {
-                        const johariList = activeClass.students.map(s => calculateJohariWindowMetric(s.id, activeClass));
-                        const calibrated = johariList.filter(j => j.category === 'calibrated').length;
-                        const overestimating = johariList.filter(j => j.category === 'overestimating').length;
-                        const underestimating = johariList.filter(j => j.category === 'underestimating').length;
-                        const totalActive = calibrated + overestimating + underestimating;
-
-                        return (
-                          <EditableModuleSlot
-                            moduleKey="showJohariMatrix"
-                            isEditMode={isEditMode}
-                            isVisible={featureToggles.showJohariMatrix}
-                            onToggle={handleToggleModule}
-                          >
-                            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
-                              <div>
-                                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                                  <UserCheck size={17} className="text-teal" /> Self vs. Peer Rating Comparison
-                                  <FeatureInfoButton featureId="johari-window" size="sm" tooltipText="Self vs. Peer Rating Comparison Guide" />
-                                  <ContextHelpPopover topicKey="johari" />
-                                </h3>
-                                <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
-                                  Shows if students rate themselves much higher or lower than teammates rated them.
-                                </p>
-                              </div>
-
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
-                                    <span style={{ color: 'var(--accent-teal)', fontWeight: 700 }}>Accurately Calibrated</span>
-                                    <b>{calibrated} ({totalActive > 0 ? Math.round((calibrated / totalActive) * 100) : 0}%)</b>
-                                  </div>
-                                  <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
-                                    <div style={{ width: `${totalActive > 0 ? (calibrated / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-teal)', height: '100%', borderRadius: '3px' }} />
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
-                                    <span style={{ color: 'var(--accent-amber)', fontWeight: 700 }}>Blind Spot (Overestimating)</span>
-                                    <b>{overestimating} ({totalActive > 0 ? Math.round((overestimating / totalActive) * 100) : 0}%)</b>
-                                  </div>
-                                  <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
-                                    <div style={{ width: `${totalActive > 0 ? (overestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--accent-amber)', height: '100%', borderRadius: '3px' }} />
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.2rem' }}>
-                                    <span style={{ color: 'var(--primary)', fontWeight: 700 }}>Imposter (Underestimating)</span>
-                                    <b>{underestimating} ({totalActive > 0 ? Math.round((underestimating / totalActive) * 100) : 0}%)</b>
-                                  </div>
-                                  <div style={{ height: '6px', backgroundColor: 'var(--bg-app)', borderRadius: '3px', overflow: 'hidden' }}>
-                                    <div style={{ width: `${totalActive > 0 ? (underestimating / totalActive) * 100 : 0}%`, backgroundColor: 'var(--primary)', height: '100%', borderRadius: '3px' }} />
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </EditableModuleSlot>
-                        );
-                      })()}
-
-                      {/* Card 3: Qualitative Feedback Themes */}
-                      {(isEditMode || featureToggles.showQualitativeFeedback) && (() => {
-                        const insights = extractClassFeedbackInsights(activeClass);
-                        return (
-                          <EditableModuleSlot
-                            moduleKey="showQualitativeFeedback"
-                            isEditMode={isEditMode}
-                            isVisible={featureToggles.showQualitativeFeedback}
-                            onToggle={handleToggleModule}
-                          >
-                            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
-                              <div>
-                                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                                  <MessageSquare size={17} className="text-primary" /> Written Feedback Summary
-                                  <FeatureInfoButton featureId="feedback-sentiment" size="sm" tooltipText="Written Feedback Summary Guide" />
-                                </h3>
-                                <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
-                                  Summarizes common themes and praise words written by teammates.
-                                </p>
-                              </div>
-
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                                <div>
-                                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                    Top Strengths:
-                                  </span>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
-                                    {insights.topStrengthsThemes.length === 0 ? (
-                                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No strengths feedback yet</span>
-                                    ) : (
-                                      insights.topStrengthsThemes.slice(0, 4).map(t => (
-                                        <span key={t.word} className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
-                                          {t.word} ({t.count})
-                                        </span>
-                                      ))
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-amber)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                    Growth Areas:
-                                  </span>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
-                                    {insights.topGrowthThemes.length === 0 ? (
-                                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No constructive feedback yet</span>
-                                    ) : (
-                                      insights.topGrowthThemes.slice(0, 4).map(t => (
-                                        <span key={t.word} className="badge badge-amber" style={{ fontSize: '0.68rem', padding: '0.2rem 0.45rem' }}>
-                                          {t.word} ({t.count})
-                                        </span>
-                                      ))
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </EditableModuleSlot>
-                        );
-                      })()}
-
-                    </div>
-                  )}
-                </div>
-              )}
-
-            {/* Tier 2: WebPA Calibration, Anomaly Audit & Milestones (3 Equal Columns) */}
-            {(isEditMode || featureToggles.showWebPACalibration || featureToggles.showAnomalyAudit || featureToggles.showMilestonesHistory) && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
-
-                {/* Card 4: Peer Score Adjustment */}
-                <EditableModuleSlot
-                  moduleKey="showWebPACalibration"
-                  title="Peer Score Adjustment"
-                  isVisible={featureToggles.showWebPACalibration}
-                  isEditMode={isEditMode}
-                  onToggle={handleToggleModule}
-                >
-                  <div className="card" data-tour="webpa-calibrator-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
-                    <div>
-                      <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                        <Sliders size={17} className="text-teal" /> Peer Score Adjustment
-                        <FeatureInfoButton featureId="webpa-calibration" size="sm" tooltipText="Peer Score Adjustment Guide" />
-                        <ContextHelpPopover topicKey="webpa" />
-                      </h3>
-                      <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
-                        Adjusts individual student grades up or down based on teammate reviews.
-                      </p>
+                      {/* Scope Badge */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        {lmsTeamFilter !== 'all' ? (
+                          <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                            Scope: Team "{lmsTeamFilter}"
+                          </span>
+                        ) : (
+                          <span className="badge badge-secondary" style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                            Scope: Entire Classroom
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      {/* Default Project Base Mark */}
-                      <div className="form-group" style={{ margin: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                          <label className="form-label" style={{ fontWeight: 700, fontSize: '0.78rem', margin: 0 }}>
-                            Default Project Base Mark
-                          </label>
-                          {classTeams.length > 0 && (
+                    {/* CUSTOM LMS SCHEMA BUILDER PANEL (Only shown when selectedLmsTab === 'custom') */}
+                    {selectedLmsTab === 'custom' && (
+                      <div
+                        style={{
+                          backgroundColor: 'var(--bg-primary)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '1rem',
+                          border: '1px solid #8B5CF6',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '1rem'
+                        }}
+                      >
+                        {/* Custom Schema Header & Quick Presets */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <Sliders size={16} style={{ color: '#8B5CF6' }} />
+                              <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                                Custom LMS Column Schema Builder
+                              </span>
+                              <span className="badge" style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6', fontWeight: 700, fontSize: '0.7rem' }}>
+                                {customLmsConfig.columns.length} Columns
+                              </span>
+                            </div>
+                            <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                              Define column headers, data mappings, order, and delimiter required by your institution's LMS or SIS portal.
+                            </p>
+                          </div>
+
+                          {/* Quick Presets */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>Presets:</span>
                             <button
                               type="button"
                               className="btn btn-secondary btn-sm"
                               onClick={() => {
-                                const newGrades: Record<string, number> = {};
-                                classTeams.forEach(t => { newGrades[t] = baseGroupGrade; });
-                                setAllTeamBaseGrades(activeClass.id, newGrades);
+                                setCustomLmsConfig({
+                                  ...customLmsConfig,
+                                  columns: [
+                                    { id: 'c1', field: 'student_id', header: 'Student ID' },
+                                    { id: 'c2', field: 'score', header: 'Final Grade' }
+                                  ]
+                                });
+                                addToast('Loaded "Simple ID + Grade" preset', 'info');
                               }}
-                              style={{ fontSize: '0.68rem', padding: '0.12rem 0.4rem', height: '22px', fontWeight: 700 }}
-                              title="Set all teams in the class to this default base mark"
+                              style={{ height: '26px', fontSize: '0.7rem', padding: '0 0.5rem' }}
                             >
-                              Apply to All Teams
+                              ID + Grade
                             </button>
-                          )}
-                        </div>
-                        <input
-                          type="number"
-                          className="form-input"
-                          min={0}
-                          max={1000}
-                          value={baseGroupGrade}
-                          onChange={(e) => setBaseGroupGrade(Number(e.target.value))}
-                          style={{ height: '34px', fontSize: '0.85rem', fontWeight: 700 }}
-                        />
-                      </div>
 
-                      {/* Team-Specific Project Base Marks Quick Inputs */}
-                      {classTeams.length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                              <Users size={12} className="text-teal" /> Team Base Marks ({classTeams.length})
-                            </span>
                             <button
                               type="button"
-                              className="btn btn-link btn-sm"
-                              onClick={() => setIsTeamBaseGradesModalOpen(true)}
-                              style={{ fontSize: '0.72rem', padding: 0, fontWeight: 700, color: 'var(--primary)', textDecoration: 'none' }}
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                setCustomLmsConfig({
+                                  ...customLmsConfig,
+                                  columns: [
+                                    { id: 'c1', field: 'email', header: 'Email' },
+                                    { id: 'c2', field: 'score', header: 'Grade' }
+                                  ]
+                                });
+                                addToast('Loaded "Email + Grade" preset', 'info');
+                              }}
+                              style={{ height: '26px', fontSize: '0.7rem', padding: '0 0.5rem' }}
                             >
-                              Manage All &rarr;
+                              Email + Grade
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                setCustomLmsConfig({
+                                  ...customLmsConfig,
+                                  columns: [
+                                    { id: 'c1', field: 'student_id', header: 'Student ID' },
+                                    { id: 'c2', field: 'full_name_last_first', header: 'Student Name' },
+                                    { id: 'c3', field: 'email', header: 'Email' },
+                                    { id: 'c4', field: 'group_name', header: 'Team' },
+                                    { id: 'c5', field: 'score', header: 'Peer Assessment Grade' }
+                                  ]
+                                });
+                                addToast('Loaded "Standard Roster + Grade" preset', 'info');
+                              }}
+                              style={{ height: '26px', fontSize: '0.7rem', padding: '0 0.5rem' }}
+                            >
+                              Default Roster
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                setCustomLmsConfig({
+                                  ...customLmsConfig,
+                                  columns: [
+                                    { id: 'c1', field: 'student_id', header: 'Student ID' },
+                                    { id: 'c2', field: 'full_name_first_last', header: 'Name' },
+                                    { id: 'c3', field: 'email', header: 'Email' },
+                                    { id: 'c4', field: 'group_name', header: 'Team' },
+                                    { id: 'c5', field: 'submission_status', header: 'Submission' },
+                                    { id: 'c6', field: 'multiplier', header: 'WebPA Ratio' },
+                                    { id: 'c7', field: 'score', header: 'Calibrated Score' }
+                                  ]
+                                });
+                                addToast('Loaded "Full Audit Dossier" preset', 'info');
+                              }}
+                              style={{ height: '26px', fontSize: '0.7rem', padding: '0 0.5rem' }}
+                            >
+                              Full Audit
                             </button>
                           </div>
-
-                          <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.35rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-                            {classTeams.map(team => {
-                              const teamMark = activeClass?.teamBaseGrades?.[team] ?? baseGroupGrade;
-                              const isCustom = activeClass?.teamBaseGrades && typeof activeClass.teamBaseGrades[team] === 'number';
-                              const members = activeClass.students.filter(s => s.groupName === team);
-                              return (
-                                <div key={team} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem', fontSize: '0.74rem' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 0, overflow: 'hidden' }}>
-                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={team}>
-                                      {team}
-                                    </span>
-                                    <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>({members.length})</span>
-                                    {isCustom && <span className="badge badge-teal" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', whiteSpace: 'nowrap' }}>Custom</span>}
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
-                                    <TeamBaseGradeInput
-                                      initialValue={teamMark}
-                                      onCommit={(val) => updateTeamBaseGrade(activeClass.id, team, val)}
-                                      compact
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
                         </div>
-                      )}
 
-                      {/* Fudge Weight Slider */}
-                      <div className="form-group" style={{ margin: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                          <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem' }}>Peer Review Impact (0–100%)</label>
-                          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>{Math.round(fudgeWeight * 100)}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          className="custom-slider"
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          value={fudgeWeight}
-                          onChange={(e) => setFudgeWeight(Number(e.target.value))}
+                        {/* Schema Settings Bar (Delimiter, Headers, Quotes, Points Row) */}
+                        <div
                           style={{
-                            background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${fudgeWeight * 100}%, var(--border-color) ${fudgeWeight * 100}%, var(--border-color) 100%)`
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '0.75rem',
+                            padding: '0.5rem 0.75rem',
+                            backgroundColor: 'var(--bg-surface)',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border-color)'
                           }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </EditableModuleSlot>
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                            {/* Delimiter */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Delimiter:</span>
+                              <select
+                                className="form-input"
+                                value={customLmsConfig.delimiter}
+                                onChange={(e) => setCustomLmsConfig({ ...customLmsConfig, delimiter: e.target.value as any })}
+                                style={{ height: '28px', fontSize: '0.74rem', padding: '0 0.4rem', borderRadius: '4px' }}
+                              >
+                                <option value=",">Comma (,)</option>
+                                <option value=";">Semicolon (;)</option>
+                                <option value="&#9;">Tab (\t - TSV)</option>
+                              </select>
+                            </div>
 
-                {/* Card 5: Anomaly Conflict Audit */}
-                <EditableModuleSlot
-                  moduleKey="showAnomalyAudit"
-                  title="Suspicious Ratings Alert"
-                  isVisible={featureToggles.showAnomalyAudit}
-                  isEditMode={isEditMode}
-                  onToggle={handleToggleModule}
-                >
-                  <div className="card" data-tour="anomaly-audit-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
-                    <div>
-                      <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                        <ShieldCheck size={17} className="text-rose" /> Suspicious Ratings Alert
-                        <FeatureInfoButton featureId="anomaly-detection" size="sm" tooltipText="Suspicious Ratings Guide" />
-                      </h3>
-                      <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
-                        Detects students who trade high scores, grade randomly, or give uniform marks.
-                      </p>
-                    </div>
+                            {/* Include Header */}
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 600 }}>
+                              <input
+                                type="checkbox"
+                                checked={customLmsConfig.includeHeader}
+                                onChange={(e) => setCustomLmsConfig({ ...customLmsConfig, includeHeader: e.target.checked })}
+                              />
+                              Include Header Row
+                            </label>
 
-                    <div style={{ maxHeight: '130px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                      {detectClassAnomalies(activeClass).length === 0 ? (
-                        <div style={{ backgroundColor: 'var(--accent-teal-light)', border: '1px solid hsl(173, 80%, 90%)', color: 'var(--accent-teal)', fontSize: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', display: 'flex', gap: '0.35rem', alignItems: 'center', fontWeight: 600 }}>
-                          <CheckCircle size={13} /> No scoring conflicts detected.
-                        </div>
-                      ) : (
-                        detectClassAnomalies(activeClass).map((anomaly) => (
-                          <div
-                            key={anomaly.id}
-                            style={{
-                              backgroundColor: anomaly.severity === 'high' ? 'var(--accent-rose-light)' : 'var(--accent-amber-light)',
-                              border: `1px solid ${anomaly.severity === 'high' ? 'hsl(346, 84%, 90%)' : 'hsl(45, 90%, 90%)'}`,
-                              padding: '0.4rem 0.6rem',
-                              borderRadius: '6px',
-                              fontSize: '0.72rem'
-                            }}
-                          >
-                            <span style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-primary)' }}>
-                              <AlertTriangle size={12} style={{ color: anomaly.severity === 'high' ? 'var(--accent-rose)' : 'var(--accent-amber)', flexShrink: 0 }} />
-                              {anomaly.studentName} ({anomaly.type.toUpperCase()})
-                            </span>
-                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.68rem' }}>{anomaly.description}</span>
+                            {/* Quote Values */}
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 600 }}>
+                              <input
+                                type="checkbox"
+                                checked={customLmsConfig.quoteValues}
+                                onChange={(e) => setCustomLmsConfig({ ...customLmsConfig, quoteValues: e.target.checked })}
+                              />
+                              Quote All Cells ("")
+                            </label>
+
+                            {/* Points Possible Row */}
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 600 }}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(customLmsConfig.includePointsPossibleRow)}
+                                onChange={(e) => setCustomLmsConfig({ ...customLmsConfig, includePointsPossibleRow: e.target.checked })}
+                              />
+                              Include Points Possible Row
+                            </label>
                           </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </EditableModuleSlot>
 
-                {/* Card 6: Milestone Archive Card */}
-                <EditableModuleSlot
-                  moduleKey="showMilestonesHistory"
-                  title="Milestones & Sprints History"
-                  isVisible={featureToggles.showMilestonesHistory}
-                  isEditMode={isEditMode}
-                  onToggle={handleToggleModule}
-                >
-                  <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
-                    <div>
-                      <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                        <RefreshCw size={17} className="text-indigo" /> Past Review Rounds
-                        <FeatureInfoButton featureId="milestones-sprints" size="sm" tooltipText="Past Review Rounds Guide" />
-                      </h3>
-                      <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
-                        Archives past peer evaluations (e.g., Midterm Review, Final Review).
-                      </p>
-                    </div>
+                          <button
+                            type="button"
+                            className="btn btn-teal btn-sm"
+                            onClick={() => {
+                              const newCol: CustomLmsColumn = {
+                                id: `col_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+                                field: 'score',
+                                header: 'New Column'
+                              };
+                              setCustomLmsConfig({
+                                ...customLmsConfig,
+                                columns: [...customLmsConfig.columns, newCol]
+                              });
+                            }}
+                            style={{ height: '28px', fontSize: '0.74rem', padding: '0 0.65rem', gap: '0.3rem', fontWeight: 700 }}
+                          >
+                            <Plus size={13} /> Add Column
+                          </button>
+                        </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        style={{ width: '100%', borderColor: 'var(--primary)', color: 'var(--primary)', height: '34px', fontSize: '0.78rem' }}
-                        onClick={() => setIsArchiveModalOpen(true)}
-                      >
-                        Archive Active Session
-                      </button>
-                      <div style={{ maxHeight: '80px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.4rem' }}>
-                        {(activeClass.milestones || []).length === 0 ? (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No archived sprint records.</span>
-                        ) : (
-                          (activeClass.milestones || []).map((m) => (
+                        {/* Columns List */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          {customLmsConfig.columns.map((col, idx) => (
                             <div
-                              key={m.id}
-                              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.72rem' }}
+                              key={col.id}
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '32px 180px 1fr auto auto',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.45rem 0.65rem',
+                                backgroundColor: 'var(--bg-surface)',
+                                borderRadius: 'var(--radius-sm)',
+                                border: '1px solid var(--border-color)'
+                              }}
                             >
-                              <span style={{ fontWeight: 600 }}>{m.name}</span>
-                              <button
-                                className="btn btn-sm text-rose"
-                                style={{ padding: '2px', border: 'none', background: 'transparent' }}
-                                onClick={() => {
-                                  triggerConfirm(
-                                    'Delete Historical Milestone',
-                                    `Are you sure you want to permanently delete the archived milestone "${m.name}"? This will delete all of its scoring history. This action cannot be undone.`,
-                                    () => deleteMilestone(activeClass.id, m.id),
-                                    'Delete Milestone',
-                                    'Cancel'
+                              {/* Index */}
+                              <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', textAlign: 'center' }}>
+                                #{idx + 1}
+                              </span>
+
+                              {/* Field Selector */}
+                              <select
+                                className="form-input"
+                                value={col.field}
+                                onChange={(e) => {
+                                  const newField = e.target.value as CustomLmsColumnField;
+                                  const defaultH = {
+                                    student_id: 'Student ID',
+                                    full_name_last_first: 'Student Name',
+                                    full_name_first_last: 'Student Name',
+                                    first_name: 'First Name',
+                                    last_name: 'Last Name',
+                                    email: 'Email',
+                                    username: 'Username',
+                                    group_name: 'Team',
+                                    score: 'Peer Assessment Grade',
+                                    multiplier: 'WebPA Factor',
+                                    submission_status: 'Status',
+                                    university: 'University',
+                                    static_text: 'Tag'
+                                  }[newField] || 'Column';
+
+                                  const updated = customLmsConfig.columns.map((c, i) =>
+                                    i === idx ? { ...c, field: newField, header: c.header || defaultH } : c
                                   );
+                                  setCustomLmsConfig({ ...customLmsConfig, columns: updated });
                                 }}
+                                style={{ height: '30px', fontSize: '0.76rem', fontWeight: 600, padding: '0 0.4rem', borderRadius: '4px' }}
+                              >
+                                <option value="student_id">Student ID / Roll No.</option>
+                                <option value="full_name_last_first">Full Name ("Last, First")</option>
+                                <option value="full_name_first_last">Full Name ("First Last")</option>
+                                <option value="first_name">First Name only</option>
+                                <option value="last_name">Last Name only</option>
+                                <option value="email">Email Address</option>
+                                <option value="username">Login Username</option>
+                                <option value="group_name">Team / Group / Section</option>
+                                <option value="score">Peer Assessment Grade</option>
+                                <option value="multiplier">WebPA Factor (Multiplier)</option>
+                                <option value="submission_status">Submission Status</option>
+                                <option value="university">University / Institution</option>
+                                <option value="static_text">Custom Constant Text</option>
+                              </select>
+
+                              {/* Editable Column Header */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  value={col.header}
+                                  onChange={(e) => {
+                                    const updated = customLmsConfig.columns.map((c, i) =>
+                                      i === idx ? { ...c, header: e.target.value } : c
+                                    );
+                                    setCustomLmsConfig({ ...customLmsConfig, columns: updated });
+                                  }}
+                                  placeholder="Enter column header name..."
+                                  style={{ height: '30px', fontSize: '0.78rem', padding: '0 0.5rem', fontWeight: 700, borderRadius: '4px' }}
+                                />
+
+                                {/* If static text, allow entering static text value */}
+                                {col.field === 'static_text' && (
+                                  <input
+                                    type="text"
+                                    className="form-input"
+                                    value={col.staticValue || ''}
+                                    onChange={(e) => {
+                                      const updated = customLmsConfig.columns.map((c, i) =>
+                                        i === idx ? { ...c, staticValue: e.target.value } : c
+                                      );
+                                      setCustomLmsConfig({ ...customLmsConfig, columns: updated });
+                                    }}
+                                    placeholder="Constant value (e.g. #)..."
+                                    style={{ height: '30px', fontSize: '0.74rem', width: '130px', padding: '0 0.4rem', borderRadius: '4px' }}
+                                  />
+                                )}
+                              </div>
+
+                              {/* Reorder Buttons */}
+                              <div style={{ display: 'inline-flex', gap: '0.15rem' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={idx === 0}
+                                  onClick={() => {
+                                    if (idx === 0) return;
+                                    const cols = [...customLmsConfig.columns];
+                                    const temp = cols[idx - 1];
+                                    cols[idx - 1] = cols[idx];
+                                    cols[idx] = temp;
+                                    setCustomLmsConfig({ ...customLmsConfig, columns: cols });
+                                  }}
+                                  style={{ width: '24px', height: '24px', padding: 0 }}
+                                  title="Move column up"
+                                >
+                                  <ArrowUp size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={idx === customLmsConfig.columns.length - 1}
+                                  onClick={() => {
+                                    if (idx === customLmsConfig.columns.length - 1) return;
+                                    const cols = [...customLmsConfig.columns];
+                                    const temp = cols[idx + 1];
+                                    cols[idx + 1] = cols[idx];
+                                    cols[idx] = temp;
+                                    setCustomLmsConfig({ ...customLmsConfig, columns: cols });
+                                  }}
+                                  style={{ width: '24px', height: '24px', padding: 0 }}
+                                  title="Move column down"
+                                >
+                                  <ArrowDown size={12} />
+                                </button>
+                              </div>
+
+                              {/* Delete Column Button */}
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                disabled={customLmsConfig.columns.length <= 1}
+                                onClick={() => {
+                                  if (customLmsConfig.columns.length <= 1) return;
+                                  const cols = customLmsConfig.columns.filter((_, i) => i !== idx);
+                                  setCustomLmsConfig({ ...customLmsConfig, columns: cols });
+                                }}
+                                style={{ width: '24px', height: '24px', padding: 0, color: 'var(--accent-red, #ef4444)' }}
+                                title="Remove column"
                               >
                                 <Trash2 size={12} />
                               </button>
                             </div>
-                          ))
-                        )}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </EditableModuleSlot>
-
-              </div>
-            )}
-            </div>
-          )}
-
-          {/* LMS Gradebook Integration & Smart Export Formats */}
-          <EditableModuleSlot
-            moduleKey="showLmsExport"
-            title="Export to Canvas / Blackboard / Moodle"
-            isVisible={featureToggles.showLmsExport}
-            isEditMode={isEditMode}
-            onToggle={handleToggleModule}
-          >
-            <div
-              className="card"
-              data-tour="lms-export-card"
-              style={{
-                padding: '1.25rem',
-                backgroundColor: 'var(--bg-surface)',
-                borderRadius: 'var(--radius-lg)',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '1.2rem'
-              }}
-            >
-              {/* Header */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '1rem',
-                  borderBottom: '1px solid var(--border-color)',
-                  paddingBottom: '1rem'
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                    <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
-                      <GraduationCap size={22} className="text-teal" /> Export to Canvas / Blackboard / Moodle
-                      <FeatureInfoButton featureId="lms-export" size="sm" tooltipText="LMS Gradebook Export Guide" />
-                    </h3>
-                    <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px' }}>
-                      Smart LMS Sync
-                    </span>
-                    {selectedLmsTab === 'custom' && (
-                      <span className="badge badge-secondary" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px', color: '#8B5CF6', borderColor: '#8B5CF6' }}>
-                        Custom Schema Builder
-                      </span>
                     )}
-                  </div>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.35rem 0 0 0', lineHeight: 1.4 }}>
-                    Export formatted gradebook files for Canvas, Blackboard, Moodle, Brightspace D2L, or build a custom schema tailored to your institution's LMS with team &amp; student filters.
-                  </p>
-                </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setLmsGuideActiveTab(selectedLmsTab);
-                      setShowLmsGuideModal(true);
-                    }}
-                    style={{ fontSize: '0.78rem', height: '34px', padding: '0 0.85rem', gap: '0.4rem', fontWeight: 700 }}
-                  >
-                    <BookOpen size={14} className="text-primary" /> LMS Import Step-by-Step Guide
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setIsLmsExportExpanded(!isLmsExportExpanded)}
-                    style={{ fontSize: '0.78rem', height: '34px', padding: '0 0.85rem', gap: '0.4rem', fontWeight: 700 }}
-                    title={isLmsExportExpanded ? 'Collapse LMS Gradebook Integration' : 'Expand LMS Gradebook Integration'}
-                  >
-                    {isLmsExportExpanded ? (
-                      <>
-                        <ChevronUp size={14} /> Collapse
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown size={14} /> Expand ({selectedLmsTab.toUpperCase()})
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Collapsible Body */}
-              {isLmsExportExpanded && (
-                <>
-                  {/* Tab Selector & Controls Row */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '1rem'
-                }}
-              >
-                {/* LMS Platform Tabs */}
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    backgroundColor: 'var(--bg-primary)',
-                    padding: '0.25rem',
-                    borderRadius: '10px',
-                    border: '1px solid var(--border-color)',
-                    gap: '0.25rem',
-                    flexWrap: 'wrap'
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLmsTab('canvas')}
-                    className={`btn btn-sm ${selectedLmsTab === 'canvas' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{
-                      height: '32px',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      borderRadius: '8px',
-                      padding: '0 0.85rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.45rem'
-                    }}
-                  >
-                    <span
+                    {/* Format Information Callout */}
+                    <div
                       style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: '#E13F2B',
-                        display: 'inline-block'
-                      }}
-                    />
-                    Canvas LMS
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLmsTab('blackboard')}
-                    className={`btn btn-sm ${selectedLmsTab === 'blackboard' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{
-                      height: '32px',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      borderRadius: '8px',
-                      padding: '0 0.85rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.45rem'
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: '#D4AF37',
-                        display: 'inline-block'
-                      }}
-                    />
-                    Blackboard Learn
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLmsTab('moodle')}
-                    className={`btn btn-sm ${selectedLmsTab === 'moodle' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{
-                      height: '32px',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      borderRadius: '8px',
-                      padding: '0 0.85rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.45rem'
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: '#F98012',
-                        display: 'inline-block'
-                      }}
-                    />
-                    Moodle
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLmsTab('brightspace')}
-                    className={`btn btn-sm ${selectedLmsTab === 'brightspace' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{
-                      height: '32px',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      borderRadius: '8px',
-                      padding: '0 0.85rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.45rem'
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: '#006FBF',
-                        display: 'inline-block'
-                      }}
-                    />
-                    Brightspace D2L
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLmsTab('custom')}
-                    className={`btn btn-sm ${selectedLmsTab === 'custom' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{
-                      height: '32px',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      borderRadius: '8px',
-                      padding: '0 0.85rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.45rem',
-                      backgroundColor: selectedLmsTab === 'custom' ? '#8B5CF6' : undefined,
-                      color: selectedLmsTab === 'custom' ? '#fff' : undefined
-                    }}
-                  >
-                    <Sliders size={13} style={{ color: selectedLmsTab === 'custom' ? '#fff' : '#8B5CF6' }} />
-                    Custom LMS Format
-                  </button>
-                </div>
-
-                {/* Score Type Selector */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                    Grade Output:
-                  </span>
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      backgroundColor: 'var(--bg-primary)',
-                      padding: '0.2rem',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
-                      gap: '0.2rem'
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setLmsScoreType('calibrated')}
-                      className={`btn btn-sm ${lmsScoreType === 'calibrated' ? 'btn-secondary' : 'btn-ghost'}`}
-                      style={{
-                        height: '28px',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        padding: '0 0.65rem',
-                        borderRadius: '6px'
-                      }}
-                      title="Calibrated grade using WebPA multipliers and team base mark"
-                    >
-                      WebPA Calibrated ({baseGroupGrade} max)
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setLmsScoreType('scale')}
-                      className={`btn btn-sm ${lmsScoreType === 'scale' ? 'btn-secondary' : 'btn-ghost'}`}
-                      style={{
-                        height: '28px',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        padding: '0 0.65rem',
-                        borderRadius: '6px'
-                      }}
-                      title="Score scaled to rubric max scale"
-                    >
-                      Rubric Scale (/{getTargetScale(activeClass)})
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setLmsScoreType('percent')}
-                      className={`btn btn-sm ${lmsScoreType === 'percent' ? 'btn-secondary' : 'btn-ghost'}`}
-                      style={{
-                        height: '28px',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        padding: '0 0.65rem',
-                        borderRadius: '6px'
-                      }}
-                      title="Standard 0 - 100% percentage grade"
-                    >
-                      Percentage (100%)
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Filtering Bar (Team Filter & Status Filter) */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '0.75rem',
-                  padding: '0.65rem 0.85rem',
-                  backgroundColor: 'var(--bg-primary)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-color)'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
-                  {/* Team Filter */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                    <Filter size={14} className="text-teal" />
-                    <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                      Team Filter:
-                    </span>
-                    <select
-                      className="form-input"
-                      value={lmsTeamFilter}
-                      onChange={(e) => setLmsTeamFilter(e.target.value)}
-                      style={{
-                        height: '30px',
-                        fontSize: '0.76rem',
-                        fontWeight: 700,
-                        padding: '0 0.5rem',
-                        minWidth: '150px',
-                        borderRadius: '6px'
+                        backgroundColor: 'var(--bg-primary)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '0.75rem 1rem',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem'
                       }}
                     >
-                      <option value="all">All Teams (Entire Class - {activeClass.students.length})</option>
-                      {classTeams.map(t => {
-                        const count = activeClass.students.filter(s => s.groupName === t).length;
-                        return (
-                          <option key={t} value={t}>
-                            {t} ({count} student{count === 1 ? '' : 's'})
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-
-                  {/* Submission Status Filter */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                    <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                      Student Status:
-                    </span>
-                    <select
-                      className="form-input"
-                      value={lmsStatusFilter}
-                      onChange={(e) => setLmsStatusFilter(e.target.value as any)}
-                      style={{
-                        height: '30px',
-                        fontSize: '0.76rem',
-                        fontWeight: 600,
-                        padding: '0 0.5rem',
-                        minWidth: '130px',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <option value="all">All Students ({activeClass.students.length})</option>
-                      <option value="submitted">Evaluated Only ({stats.submittedCount})</option>
-                      <option value="pending">Pending Reviews ({activeClass.students.filter(s => !s.submitted).length})</option>
-                    </select>
-                  </div>
-
-                  {/* Clear Filter Button */}
-                  {(lmsTeamFilter !== 'all' || lmsStatusFilter !== 'all') && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => {
-                        setLmsTeamFilter('all');
-                        setLmsStatusFilter('all');
-                      }}
-                      style={{ height: '28px', fontSize: '0.72rem', padding: '0 0.5rem', gap: '0.25rem', color: 'var(--accent-amber)' }}
-                      title="Reset filters back to all teams"
-                    >
-                      <X size={12} /> Reset Filter
-                    </button>
-                  )}
-                </div>
-
-                {/* Scope Badge */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  {lmsTeamFilter !== 'all' ? (
-                    <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                      Scope: Team "{lmsTeamFilter}"
-                    </span>
-                  ) : (
-                    <span className="badge badge-secondary" style={{ fontSize: '0.72rem', fontWeight: 600 }}>
-                      Scope: Entire Classroom
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* CUSTOM LMS SCHEMA BUILDER PANEL (Only shown when selectedLmsTab === 'custom') */}
-              {selectedLmsTab === 'custom' && (
-                <div
-                  style={{
-                    backgroundColor: 'var(--bg-primary)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '1rem',
-                    border: '1px solid #8B5CF6',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '1rem'
-                  }}
-                >
-                  {/* Custom Schema Header & Quick Presets */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Sliders size={16} style={{ color: '#8B5CF6' }} />
-                        <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
-                          Custom LMS Column Schema Builder
-                        </span>
-                        <span className="badge" style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6', fontWeight: 700, fontSize: '0.7rem' }}>
-                          {customLmsConfig.columns.length} Columns
-                        </span>
-                      </div>
-                      <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
-                        Define column headers, data mappings, order, and delimiter required by your institution's LMS or SIS portal.
-                      </p>
-                    </div>
-
-                    {/* Quick Presets */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>Presets:</span>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          setCustomLmsConfig({
-                            ...customLmsConfig,
-                            columns: [
-                              { id: 'c1', field: 'student_id', header: 'Student ID' },
-                              { id: 'c2', field: 'score', header: 'Final Grade' }
-                            ]
-                          });
-                          addToast('Loaded "Simple ID + Grade" preset', 'info');
-                        }}
-                        style={{ height: '26px', fontSize: '0.7rem', padding: '0 0.5rem' }}
-                      >
-                        ID + Grade
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          setCustomLmsConfig({
-                            ...customLmsConfig,
-                            columns: [
-                              { id: 'c1', field: 'email', header: 'Email' },
-                              { id: 'c2', field: 'score', header: 'Grade' }
-                            ]
-                          });
-                          addToast('Loaded "Email + Grade" preset', 'info');
-                        }}
-                        style={{ height: '26px', fontSize: '0.7rem', padding: '0 0.5rem' }}
-                      >
-                        Email + Grade
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          setCustomLmsConfig({
-                            ...customLmsConfig,
-                            columns: [
-                              { id: 'c1', field: 'student_id', header: 'Student ID' },
-                              { id: 'c2', field: 'full_name_last_first', header: 'Student Name' },
-                              { id: 'c3', field: 'email', header: 'Email' },
-                              { id: 'c4', field: 'group_name', header: 'Team' },
-                              { id: 'c5', field: 'score', header: 'Peer Assessment Grade' }
-                            ]
-                          });
-                          addToast('Loaded "Standard Roster + Grade" preset', 'info');
-                        }}
-                        style={{ height: '26px', fontSize: '0.7rem', padding: '0 0.5rem' }}
-                      >
-                        Default Roster
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          setCustomLmsConfig({
-                            ...customLmsConfig,
-                            columns: [
-                              { id: 'c1', field: 'student_id', header: 'Student ID' },
-                              { id: 'c2', field: 'full_name_first_last', header: 'Name' },
-                              { id: 'c3', field: 'email', header: 'Email' },
-                              { id: 'c4', field: 'group_name', header: 'Team' },
-                              { id: 'c5', field: 'submission_status', header: 'Submission' },
-                              { id: 'c6', field: 'multiplier', header: 'WebPA Ratio' },
-                              { id: 'c7', field: 'score', header: 'Calibrated Score' }
-                            ]
-                          });
-                          addToast('Loaded "Full Audit Dossier" preset', 'info');
-                        }}
-                        style={{ height: '26px', fontSize: '0.7rem', padding: '0 0.5rem' }}
-                      >
-                        Full Audit
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Schema Settings Bar (Delimiter, Headers, Quotes, Points Row) */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '0.75rem',
-                      padding: '0.5rem 0.75rem',
-                      backgroundColor: 'var(--bg-surface)',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border-color)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                      {/* Delimiter */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Delimiter:</span>
-                        <select
-                          className="form-input"
-                          value={customLmsConfig.delimiter}
-                          onChange={(e) => setCustomLmsConfig({ ...customLmsConfig, delimiter: e.target.value as any })}
-                          style={{ height: '28px', fontSize: '0.74rem', padding: '0 0.4rem', borderRadius: '4px' }}
-                        >
-                          <option value=",">Comma (,)</option>
-                          <option value=";">Semicolon (;)</option>
-                          <option value="&#9;">Tab (\t - TSV)</option>
-                        </select>
-                      </div>
-
-                      {/* Include Header */}
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 600 }}>
-                        <input
-                          type="checkbox"
-                          checked={customLmsConfig.includeHeader}
-                          onChange={(e) => setCustomLmsConfig({ ...customLmsConfig, includeHeader: e.target.checked })}
-                        />
-                        Include Header Row
-                      </label>
-
-                      {/* Quote Values */}
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 600 }}>
-                        <input
-                          type="checkbox"
-                          checked={customLmsConfig.quoteValues}
-                          onChange={(e) => setCustomLmsConfig({ ...customLmsConfig, quoteValues: e.target.checked })}
-                        />
-                        Quote All Cells ("")
-                      </label>
-
-                      {/* Points Possible Row */}
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 600 }}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(customLmsConfig.includePointsPossibleRow)}
-                          onChange={(e) => setCustomLmsConfig({ ...customLmsConfig, includePointsPossibleRow: e.target.checked })}
-                        />
-                        Include Points Possible Row
-                      </label>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="btn btn-teal btn-sm"
-                      onClick={() => {
-                        const newCol: CustomLmsColumn = {
-                          id: `col_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
-                          field: 'score',
-                          header: 'New Column'
-                        };
-                        setCustomLmsConfig({
-                          ...customLmsConfig,
-                          columns: [...customLmsConfig.columns, newCol]
-                        });
-                      }}
-                      style={{ height: '28px', fontSize: '0.74rem', padding: '0 0.65rem', gap: '0.3rem', fontWeight: 700 }}
-                    >
-                      <Plus size={13} /> Add Column
-                    </button>
-                  </div>
-
-                  {/* Columns List */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                    {customLmsConfig.columns.map((col, idx) => (
-                      <div
-                        key={col.id}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '32px 180px 1fr auto auto',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          padding: '0.45rem 0.65rem',
-                          backgroundColor: 'var(--bg-surface)',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border-color)'
-                        }}
-                      >
-                        {/* Index */}
-                        <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', textAlign: 'center' }}>
-                          #{idx + 1}
-                        </span>
-
-                        {/* Field Selector */}
-                        <select
-                          className="form-input"
-                          value={col.field}
-                          onChange={(e) => {
-                            const newField = e.target.value as CustomLmsColumnField;
-                            const defaultH = {
-                              student_id: 'Student ID',
-                              full_name_last_first: 'Student Name',
-                              full_name_first_last: 'Student Name',
-                              first_name: 'First Name',
-                              last_name: 'Last Name',
-                              email: 'Email',
-                              username: 'Username',
-                              group_name: 'Team',
-                              score: 'Peer Assessment Grade',
-                              multiplier: 'WebPA Factor',
-                              submission_status: 'Status',
-                              university: 'University',
-                              static_text: 'Tag'
-                            }[newField] || 'Column';
-
-                            const updated = customLmsConfig.columns.map((c, i) =>
-                              i === idx ? { ...c, field: newField, header: c.header || defaultH } : c
-                            );
-                            setCustomLmsConfig({ ...customLmsConfig, columns: updated });
-                          }}
-                          style={{ height: '30px', fontSize: '0.76rem', fontWeight: 600, padding: '0 0.4rem', borderRadius: '4px' }}
-                        >
-                          <option value="student_id">Student ID / Roll No.</option>
-                          <option value="full_name_last_first">Full Name ("Last, First")</option>
-                          <option value="full_name_first_last">Full Name ("First Last")</option>
-                          <option value="first_name">First Name only</option>
-                          <option value="last_name">Last Name only</option>
-                          <option value="email">Email Address</option>
-                          <option value="username">Login Username</option>
-                          <option value="group_name">Team / Group / Section</option>
-                          <option value="score">Peer Assessment Grade</option>
-                          <option value="multiplier">WebPA Factor (Multiplier)</option>
-                          <option value="submission_status">Submission Status</option>
-                          <option value="university">University / Institution</option>
-                          <option value="static_text">Custom Constant Text</option>
-                        </select>
-
-                        {/* Editable Column Header */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <input
-                            type="text"
-                            className="form-input"
-                            value={col.header}
-                            onChange={(e) => {
-                              const updated = customLmsConfig.columns.map((c, i) =>
-                                i === idx ? { ...c, header: e.target.value } : c
-                              );
-                              setCustomLmsConfig({ ...customLmsConfig, columns: updated });
-                            }}
-                            placeholder="Enter column header name..."
-                            style={{ height: '30px', fontSize: '0.78rem', padding: '0 0.5rem', fontWeight: 700, borderRadius: '4px' }}
-                          />
-
-                          {/* If static text, allow entering static text value */}
-                          {col.field === 'static_text' && (
-                            <input
-                              type="text"
-                              className="form-input"
-                              value={col.staticValue || ''}
-                              onChange={(e) => {
-                                const updated = customLmsConfig.columns.map((c, i) =>
-                                  i === idx ? { ...c, staticValue: e.target.value } : c
-                                );
-                                setCustomLmsConfig({ ...customLmsConfig, columns: updated });
-                              }}
-                              placeholder="Constant value (e.g. #)..."
-                              style={{ height: '30px', fontSize: '0.74rem', width: '130px', padding: '0 0.4rem', borderRadius: '4px' }}
-                            />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: 1, minWidth: '240px' }}>
+                        <Info size={16} className="text-teal" style={{ flexShrink: 0 }} />
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                          {selectedLmsTab === 'canvas' && (
+                            <span>
+                              <strong style={{ color: 'var(--text-primary)' }}>Canvas LMS Format:</strong> Standard import with <code style={{ fontSize: '0.74rem' }}>Student</code>, <code style={{ fontSize: '0.74rem' }}>ID</code>, <code style={{ fontSize: '0.74rem' }}>SIS User ID</code>, <code style={{ fontSize: '0.74rem' }}>SIS Login ID</code>, <code style={{ fontSize: '0.74rem' }}>Section</code>, and line 2 <code style={{ fontSize: '0.74rem' }}>Points Possible</code> row.
+                            </span>
+                          )}
+                          {selectedLmsTab === 'blackboard' && (
+                            <span>
+                              <strong style={{ color: 'var(--text-primary)' }}>Blackboard Learn Grade Center:</strong> Quoted CSV standard with <code style={{ fontSize: '0.74rem' }}>Last Name</code>, <code style={{ fontSize: '0.74rem' }}>First Name</code>, <code style={{ fontSize: '0.74rem' }}>Username</code>, <code style={{ fontSize: '0.74rem' }}>Student ID</code>, and <code style={{ fontSize: '0.74rem' }}>Peer Evaluation [Total Pts: ...]</code> column header.
+                            </span>
+                          )}
+                          {selectedLmsTab === 'moodle' && (
+                            <span>
+                              <strong style={{ color: 'var(--text-primary)' }}>Moodle Grader Report:</strong> Standard CSV with <code style={{ fontSize: '0.74rem' }}>First name</code>, <code style={{ fontSize: '0.74rem' }}>Last name</code>, <code style={{ fontSize: '0.74rem' }}>ID number</code>, <code style={{ fontSize: '0.74rem' }}>Email address</code>, and <code style={{ fontSize: '0.74rem' }}>Peer Assessment (Real)</code>.
+                            </span>
+                          )}
+                          {selectedLmsTab === 'brightspace' && (
+                            <span>
+                              <strong style={{ color: 'var(--text-primary)' }}>Brightspace D2L Gradebook:</strong> Formatted with hash-prefixed <code style={{ fontSize: '0.74rem' }}>OrgDefinedId</code>, <code style={{ fontSize: '0.74rem' }}>Username</code>, <code style={{ fontSize: '0.74rem' }}>Peer Assessment Points Grade</code>, and terminal <code style={{ fontSize: '0.74rem' }}>End-of-Line Indicator</code>.
+                            </span>
+                          )}
+                          {selectedLmsTab === 'custom' && (
+                            <span>
+                              <strong style={{ color: '#8B5CF6' }}>Custom LMS Schema:</strong> Outputting {customLmsConfig.columns.length} columns using '{customLmsConfig.delimiter === '\t' ? '\\t (Tab)' : customLmsConfig.delimiter}' delimiter with custom headers.
+                            </span>
                           )}
                         </div>
-
-                        {/* Reorder Buttons */}
-                        <div style={{ display: 'inline-flex', gap: '0.15rem' }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            disabled={idx === 0}
-                            onClick={() => {
-                              if (idx === 0) return;
-                              const cols = [...customLmsConfig.columns];
-                              const temp = cols[idx - 1];
-                              cols[idx - 1] = cols[idx];
-                              cols[idx] = temp;
-                              setCustomLmsConfig({ ...customLmsConfig, columns: cols });
-                            }}
-                            style={{ width: '24px', height: '24px', padding: 0 }}
-                            title="Move column up"
-                          >
-                            <ArrowUp size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            disabled={idx === customLmsConfig.columns.length - 1}
-                            onClick={() => {
-                              if (idx === customLmsConfig.columns.length - 1) return;
-                              const cols = [...customLmsConfig.columns];
-                              const temp = cols[idx + 1];
-                              cols[idx + 1] = cols[idx];
-                              cols[idx] = temp;
-                              setCustomLmsConfig({ ...customLmsConfig, columns: cols });
-                            }}
-                            style={{ width: '24px', height: '24px', padding: 0 }}
-                            title="Move column down"
-                          >
-                            <ArrowDown size={12} />
-                          </button>
-                        </div>
-
-                        {/* Delete Column Button */}
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          disabled={customLmsConfig.columns.length <= 1}
-                          onClick={() => {
-                            if (customLmsConfig.columns.length <= 1) return;
-                            const cols = customLmsConfig.columns.filter((_, i) => i !== idx);
-                            setCustomLmsConfig({ ...customLmsConfig, columns: cols });
-                          }}
-                          style={{ width: '24px', height: '24px', padding: 0, color: 'var(--accent-red, #ef4444)' }}
-                          title="Remove column"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Format Information Callout */}
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-primary)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '0.75rem 1rem',
-                  border: '1px solid var(--border-color)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '0.75rem'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: 1, minWidth: '240px' }}>
-                  <Info size={16} className="text-teal" style={{ flexShrink: 0 }} />
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
-                    {selectedLmsTab === 'canvas' && (
-                      <span>
-                        <strong style={{ color: 'var(--text-primary)' }}>Canvas LMS Format:</strong> Standard import with <code style={{ fontSize: '0.74rem' }}>Student</code>, <code style={{ fontSize: '0.74rem' }}>ID</code>, <code style={{ fontSize: '0.74rem' }}>SIS User ID</code>, <code style={{ fontSize: '0.74rem' }}>SIS Login ID</code>, <code style={{ fontSize: '0.74rem' }}>Section</code>, and line 2 <code style={{ fontSize: '0.74rem' }}>Points Possible</code> row.
-                      </span>
-                    )}
-                    {selectedLmsTab === 'blackboard' && (
-                      <span>
-                        <strong style={{ color: 'var(--text-primary)' }}>Blackboard Learn Grade Center:</strong> Quoted CSV standard with <code style={{ fontSize: '0.74rem' }}>Last Name</code>, <code style={{ fontSize: '0.74rem' }}>First Name</code>, <code style={{ fontSize: '0.74rem' }}>Username</code>, <code style={{ fontSize: '0.74rem' }}>Student ID</code>, and <code style={{ fontSize: '0.74rem' }}>Peer Evaluation [Total Pts: ...]</code> column header.
-                      </span>
-                    )}
-                    {selectedLmsTab === 'moodle' && (
-                      <span>
-                        <strong style={{ color: 'var(--text-primary)' }}>Moodle Grader Report:</strong> Standard CSV with <code style={{ fontSize: '0.74rem' }}>First name</code>, <code style={{ fontSize: '0.74rem' }}>Last name</code>, <code style={{ fontSize: '0.74rem' }}>ID number</code>, <code style={{ fontSize: '0.74rem' }}>Email address</code>, and <code style={{ fontSize: '0.74rem' }}>Peer Assessment (Real)</code>.
-                      </span>
-                    )}
-                    {selectedLmsTab === 'brightspace' && (
-                      <span>
-                        <strong style={{ color: 'var(--text-primary)' }}>Brightspace D2L Gradebook:</strong> Formatted with hash-prefixed <code style={{ fontSize: '0.74rem' }}>OrgDefinedId</code>, <code style={{ fontSize: '0.74rem' }}>Username</code>, <code style={{ fontSize: '0.74rem' }}>Peer Assessment Points Grade</code>, and terminal <code style={{ fontSize: '0.74rem' }}>End-of-Line Indicator</code>.
-                      </span>
-                    )}
-                    {selectedLmsTab === 'custom' && (
-                      <span>
-                        <strong style={{ color: '#8B5CF6' }}>Custom LMS Schema:</strong> Outputting {customLmsConfig.columns.length} columns using '{customLmsConfig.delimiter === '\t' ? '\\t (Tab)' : customLmsConfig.delimiter}' delimiter with custom headers.
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      const filters: LmsExportFilterOptions = {
-                        teamFilter: lmsTeamFilter,
-                        statusFilter: lmsStatusFilter
-                      };
-                      let csvStr = '';
-                      if (selectedLmsTab === 'canvas') csvStr = generateCanvasLMSCSV(activeClass, lmsScoreType, filters);
-                      else if (selectedLmsTab === 'blackboard') csvStr = generateBlackboardCSV(activeClass, lmsScoreType, filters);
-                      else if (selectedLmsTab === 'moodle') csvStr = generateMoodleCSV(activeClass, lmsScoreType, filters);
-                      else if (selectedLmsTab === 'brightspace') csvStr = generateBrightspaceCSV(activeClass, lmsScoreType, filters);
-                      else csvStr = generateCustomLMSCSV(activeClass, lmsScoreType, customLmsConfig, filters);
-
-                      navigator.clipboard.writeText(csvStr);
-                      setCopiedLms(true);
-                      setTimeout(() => setCopiedLms(false), 2000);
-                      addToast(`Copied ${selectedLmsTab.toUpperCase()} gradebook text to clipboard!`, 'info');
-                    }}
-                    style={{ fontSize: '0.75rem', height: '30px', padding: '0 0.65rem', gap: '0.35rem' }}
-                    title="Copy full CSV text to clipboard"
-                  >
-                    {copiedLms ? <Check size={13} className="text-teal" /> : <Copy size={13} />}
-                    <span>{copiedLms ? 'Copied!' : 'Copy to Clipboard'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      try {
-                        const filters: LmsExportFilterOptions = {
-                          teamFilter: lmsTeamFilter,
-                          statusFilter: lmsStatusFilter
-                        };
-                        exportLMSGradebook(selectedLmsTab, activeClass, lmsScoreType, filters, customLmsConfig);
-                        addToast(`Exported ${selectedLmsTab.toUpperCase()} gradebook successfully!`, 'success');
-                      } catch (e) {
-                        addToast('Failed to export LMS gradebook.', 'error');
-                      }
-                    }}
-                    style={{
-                      fontSize: '0.75rem',
-                      height: '30px',
-                      padding: '0 0.85rem',
-                      gap: '0.35rem',
-                      fontWeight: 700,
-                      backgroundColor: selectedLmsTab === 'custom' ? '#8B5CF6' : undefined
-                    }}
-                    title={`Download ${selectedLmsTab.toUpperCase()} Gradebook File`}
-                  >
-                    <Download size={13} />
-                    <span>
-                      Download {selectedLmsTab === 'canvas' ? 'Canvas' : selectedLmsTab === 'blackboard' ? 'Blackboard' : selectedLmsTab === 'moodle' ? 'Moodle' : selectedLmsTab === 'brightspace' ? 'Brightspace' : 'Custom'} {customLmsConfig.delimiter === '\t' ? 'TSV' : 'CSV'}
-                      {lmsTeamFilter !== 'all' ? ` (${lmsTeamFilter})` : ''}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Live Preview Table */}
-              {(() => {
-                const filters: LmsExportFilterOptions = {
-                  teamFilter: lmsTeamFilter,
-                  statusFilter: lmsStatusFilter
-                };
-                const preview = generateLMSPreview(selectedLmsTab, activeClass, lmsScoreType, filters, customLmsConfig, 6);
-
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                          Live LMS Export Preview
-                        </span>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                          ({preview.totalFilteredCount} matching student row{preview.totalFilteredCount !== 1 ? 's' : ''}, showing first {Math.min(6, preview.rows.length)})
-                        </span>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                        <span className="badge badge-secondary" style={{ fontSize: '0.68rem', fontFamily: 'monospace' }}>
-                          Format: {selectedLmsTab.toUpperCase()}
-                        </span>
-                        <span className="badge badge-teal" style={{ fontSize: '0.68rem' }}>
-                          {selectedLmsTab === 'custom' ? `Delimiter: "${customLmsConfig.delimiter === '\t' ? '\\t' : customLmsConfig.delimiter}"` : 'Standard LMS Schema'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div
-                      className="table-container"
-                      style={{
-                        border: '1px solid var(--border-color)',
-                        borderRadius: 'var(--radius-md)',
-                        maxHeight: '220px',
-                        overflowX: 'auto',
-                        overflowY: 'auto'
-                      }}
-                    >
-                      <table className="custom-table" style={{ width: '100%', fontSize: '0.76rem', margin: 0 }}>
-                        <thead>
-                          <tr>
-                            {preview.headers.map((h, i) => (
-                              <th
-                                key={i}
-                                style={{
-                                  padding: '0.45rem 0.65rem',
-                                  whiteSpace: 'nowrap',
-                                  backgroundColor: 'var(--bg-app)',
-                                  color: 'var(--text-primary)',
-                                  fontFamily: 'monospace',
-                                  fontSize: '0.74rem',
-                                  borderBottom: '1px solid var(--border-color)'
-                                }}
-                              >
-                                {h || `(col ${i + 1})`}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {preview.rows.map((row, rIdx) => {
-                            const isPointsRow = row[0]?.includes('Points Possible');
-                            return (
-                              <tr
-                                key={rIdx}
-                                style={{
-                                  backgroundColor: isPointsRow
-                                    ? 'var(--accent-teal-light, rgba(13, 148, 136, 0.08))'
-                                    : rIdx % 2 === 0
-                                    ? 'transparent'
-                                    : 'var(--bg-surface)'
-                                }}
-                              >
-                                {row.map((cell, cIdx) => (
-                                  <td
-                                    key={cIdx}
-                                    style={{
-                                      padding: '0.4rem 0.65rem',
-                                      whiteSpace: 'nowrap',
-                                      fontFamily: 'monospace',
-                                      fontSize: '0.74rem',
-                                      color: isPointsRow && cIdx === row.length - 1
-                                        ? 'var(--accent-teal)'
-                                        : 'var(--text-secondary)',
-                                      fontWeight: isPointsRow ? 700 : 500,
-                                      borderBottom: '1px solid var(--border-color)'
-                                    }}
-                                  >
-                                    {cell || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>empty</span>}
-                                  </td>
-                                ))}
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })()}
-                </>
-              )}
-            </div>
-          </EditableModuleSlot>
-
-          {/* Grades Matrix Sheet */}
-          <EditableModuleSlot
-            moduleKey="showResultsSummarySheet"
-            title="Results Summary Sheet & Gradebook"
-            isVisible={featureToggles.showResultsSummarySheet}
-            isEditMode={isEditMode}
-            onToggle={handleToggleModule}
-          >
-            <div className="card" data-tour="results-summary-card" style={{ padding: isResultsTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
-              <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isResultsTableExpanded ? '1.25rem' : 0 }}>
-                <div
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
-                  onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
-                  title={isResultsTableExpanded ? 'Click to collapse gradebook' : 'Click to expand gradebook'}
-                >
-                  <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
-                    <Award size={20} className="text-indigo" /> Results Summary Sheet &amp; Gradebook
-                    <FeatureInfoButton featureId="results-summary-sheet" size="sm" tooltipText="Gradebook & Results Matrix Guide" />
-                  </h3>
-                  <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
-                    {stats.submittedCount} of {stats.totalStudents} evaluated
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  {(isEditMode || featureToggles.showGradebookSearchFilter) && (
-                    <EditableModuleSlot
-                      moduleKey="showGradebookSearchFilter"
-                      isEditMode={isEditMode}
-                      isVisible={featureToggles.showGradebookSearchFilter}
-                      onToggle={handleToggleModule}
-                      inline
-                      slotType="bar"
-                    >
-                      <CustomSelect
-                        options={groupOptions}
-                        value={groupFilter}
-                        onChange={(val) => setGroupFilter(val)}
-                        style={{ width: 'auto', minWidth: '150px' }}
-                        triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
-                      />
-                    </EditableModuleSlot>
-                  )}
-
-                  {(isEditMode || featureToggles.showExportReportButtons) && (
-                    <EditableModuleSlot
-                      moduleKey="showExportReportButtons"
-                      isEditMode={isEditMode}
-                      isVisible={featureToggles.showExportReportButtons}
-                      onToggle={handleToggleModule}
-                      inline
-                      slotType="button"
-                    >
-                      <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          className="btn btn-teal btn-sm"
-                          onClick={handleExportExcel}
-                          style={{ fontSize: '0.8rem', padding: '0 0.85rem', gap: '0.35rem', fontWeight: 700, height: '36px', borderRadius: '8px' }}
-                          title="Export complete 2-sheet Excel report with WebPA metrics and written comments"
-                        >
-                          <Download size={14} /> Export Excel Report
-                        </button>
-
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm"
                           onClick={() => {
+                            const filters: LmsExportFilterOptions = {
+                              teamFilter: lmsTeamFilter,
+                              statusFilter: lmsStatusFilter
+                            };
+                            let csvStr = '';
+                            if (selectedLmsTab === 'canvas') csvStr = generateCanvasLMSCSV(activeClass, lmsScoreType, filters);
+                            else if (selectedLmsTab === 'blackboard') csvStr = generateBlackboardCSV(activeClass, lmsScoreType, filters);
+                            else if (selectedLmsTab === 'moodle') csvStr = generateMoodleCSV(activeClass, lmsScoreType, filters);
+                            else if (selectedLmsTab === 'brightspace') csvStr = generateBrightspaceCSV(activeClass, lmsScoreType, filters);
+                            else csvStr = generateCustomLMSCSV(activeClass, lmsScoreType, customLmsConfig, filters);
+
+                            navigator.clipboard.writeText(csvStr);
+                            setCopiedLms(true);
+                            setTimeout(() => setCopiedLms(false), 2000);
+                            addToast(`Copied ${selectedLmsTab.toUpperCase()} gradebook text to clipboard!`, 'info');
+                          }}
+                          style={{ fontSize: '0.75rem', height: '30px', padding: '0 0.65rem', gap: '0.35rem' }}
+                          title="Copy full CSV text to clipboard"
+                        >
+                          {copiedLms ? <Check size={13} className="text-teal" /> : <Copy size={13} />}
+                          <span>{copiedLms ? 'Copied!' : 'Copy to Clipboard'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => {
                             try {
-                              const csv = generateResultsCSV(activeClass);
-                              downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
-                              addToast('Results summary CSV downloaded successfully!', 'success');
+                              const filters: LmsExportFilterOptions = {
+                                teamFilter: lmsTeamFilter,
+                                statusFilter: lmsStatusFilter
+                              };
+                              exportLMSGradebook(selectedLmsTab, activeClass, lmsScoreType, filters, customLmsConfig);
+                              addToast(`Exported ${selectedLmsTab.toUpperCase()} gradebook successfully!`, 'success');
                             } catch (e) {
-                              addToast('Failed to export CSV results.', 'error');
+                              addToast('Failed to export LMS gradebook.', 'error');
                             }
                           }}
-                          style={{ fontSize: '0.8rem', padding: '0 0.75rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
-                          title="Export results summary to CSV"
+                          style={{
+                            fontSize: '0.75rem',
+                            height: '30px',
+                            padding: '0 0.85rem',
+                            gap: '0.35rem',
+                            fontWeight: 700,
+                            backgroundColor: selectedLmsTab === 'custom' ? '#8B5CF6' : undefined
+                          }}
+                          title={`Download ${selectedLmsTab.toUpperCase()} Gradebook File`}
                         >
-                          <Download size={14} /> CSV
+                          <Download size={13} />
+                          <span>
+                            Download {selectedLmsTab === 'canvas' ? 'Canvas' : selectedLmsTab === 'blackboard' ? 'Blackboard' : selectedLmsTab === 'moodle' ? 'Moodle' : selectedLmsTab === 'brightspace' ? 'Brightspace' : 'Custom'} {customLmsConfig.delimiter === '\t' ? 'TSV' : 'CSV'}
+                            {lmsTeamFilter !== 'all' ? ` (${lmsTeamFilter})` : ''}
+                          </span>
                         </button>
                       </div>
-                    </EditableModuleSlot>
-                  )}
+                    </div>
 
-                  {/* Expand / Collapse Gradebook Toggle */}
-                  <button
-                    type="button"
-                    className={isResultsTableExpanded ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
-                    onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
-                    style={{
-                      height: '36px',
-                      borderRadius: '8px',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      gap: '0.35rem',
-                      boxShadow: 'none'
-                    }}
-                    title={isResultsTableExpanded ? 'Collapse gradebook matrix table' : 'Expand gradebook matrix table'}
-                  >
-                    {isResultsTableExpanded ? (
-                      <>
-                        <ChevronUp size={14} /> Collapse Gradebook
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown size={14} /> Expand Gradebook ({stats.totalStudents})
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-            {activeClass.students.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '60px', height: '60px', borderRadius: '18px', background: 'hsla(45,93%,58%,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.25rem' }}>
-                  <Award size={28} style={{ color: 'var(--accent-amber)' }} />
-                </div>
-                <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: 0 }}>No results to compute</p>
-                <p style={{ fontSize: '0.82rem', margin: 0, maxWidth: '300px', lineHeight: 1.5 }}>Add participants to the roster and collect peer evaluations before viewing the performance matrix.</p>
-              </div>
-            ) : !isResultsTableExpanded ? null : (
-              <div className="table-container table-container-sticky">
-                <table className="custom-table" style={{ whiteSpace: 'nowrap' }}>
-                  <thead>
-                    <tr>
-                      <th className="freeze-col-1" style={{ minWidth: '180px' }}>Participant &amp; Team</th>
-                      <th style={{ minWidth: '110px' }}>Review Status</th>
-                      {activeClass.fields.map(f => (
-                        <th key={f.id} style={{ minWidth: '120px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '0.78rem', textTransform: 'none', fontWeight: 700 }}>{f.name}</span>
-                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'none', fontWeight: 500 }}>Mean &amp; StdDev</span>
-                          </div>
-                        </th>
-                      ))}
-                      <th style={{ minWidth: '160px' }}>Strengths &amp; Praise</th>
-                      <th style={{ minWidth: '120px' }}>WebPA Mark</th>
-                      <th style={{ minWidth: '110px' }}>Weighted Score</th>
-                      <th style={{ minWidth: '130px' }}>Johari Alignment</th>
-                      <th style={{ textAlign: 'right', minWidth: '180px' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredStudents.map((s) => {
-                      const metrics = calculateStudentMetrics(s, activeClass);
-
-                      // Calculate anonymized praise tags
-                      const teammates = activeClass.students
-                        .filter((stud) => stud.groupName === s.groupName && stud.id !== s.id)
-                        .map((stud) => stud.id);
-                      const receivedReviews = activeClass.reviews.filter(
-                        (r) => r.recipientId === s.id && teammates.includes(r.reviewerId)
-                      );
-                      const tagCounts: Record<string, number> = {};
-                      receivedReviews.forEach((r) => {
-                        if (Array.isArray(r.praiseTags)) {
-                          r.praiseTags.forEach((tag) => {
-                            tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-                          });
-                        }
-                      });
-                      const tagEntries = Object.entries(tagCounts);
-
-                      const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(
-                        s.id,
-                        s.groupName,
-                        activeClass,
-                        baseGroupGrade,
-                        fudgeWeight
-                      );
+                    {/* Live Preview Table */}
+                    {(() => {
+                      const filters: LmsExportFilterOptions = {
+                        teamFilter: lmsTeamFilter,
+                        statusFilter: lmsStatusFilter
+                      };
+                      const preview = generateLMSPreview(selectedLmsTab, activeClass, lmsScoreType, filters, customLmsConfig, 6);
 
                       return (
-                        <tr key={s.id}>
-                          {/* Participant & Team */}
-                          <td className="freeze-col-1">
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                              <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.88rem' }}>{s.name}</span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                <span className="badge badge-teal" style={{ fontSize: '0.66rem', padding: '0.1rem 0.35rem', fontWeight: 700 }}>
-                                  {s.groupName}
-                                </span>
-                                {s.university && (
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                                    &bull; {s.university}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Review Status & Submission */}
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                              <span style={{ fontWeight: 600, fontSize: '0.82rem' }}>
-                                {metrics.reviewsReceived} / {metrics.expectedReviewsCount}
-                                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '0.25rem' }}>
-                                  ({metrics.gradeProgress}%)
-                                </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                Live LMS Export Preview
                               </span>
-                              <div>
-                                {s.submitted ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
-                                    <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', gap: '0.2rem' }}>
-                                      <CheckCircle size={9} /> Completed
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                ({preview.totalFilteredCount} matching student row{preview.totalFilteredCount !== 1 ? 's' : ''}, showing first {Math.min(6, preview.rows.length)})
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                              <span className="badge badge-secondary" style={{ fontSize: '0.68rem', fontFamily: 'monospace' }}>
+                                Format: {selectedLmsTab.toUpperCase()}
+                              </span>
+                              <span className="badge badge-teal" style={{ fontSize: '0.68rem' }}>
+                                {selectedLmsTab === 'custom' ? `Delimiter: "${customLmsConfig.delimiter === '\t' ? '\\t' : customLmsConfig.delimiter}"` : 'Standard LMS Schema'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div
+                            className="table-container"
+                            style={{
+                              border: '1px solid var(--border-color)',
+                              borderRadius: 'var(--radius-md)',
+                              maxHeight: '220px',
+                              overflowX: 'auto',
+                              overflowY: 'auto'
+                            }}
+                          >
+                            <table className="custom-table" style={{ width: '100%', fontSize: '0.76rem', margin: 0 }}>
+                              <thead>
+                                <tr>
+                                  {preview.headers.map((h, i) => (
+                                    <th
+                                      key={i}
+                                      style={{
+                                        padding: '0.45rem 0.65rem',
+                                        whiteSpace: 'nowrap',
+                                        backgroundColor: 'var(--bg-app)',
+                                        color: 'var(--text-primary)',
+                                        fontFamily: 'monospace',
+                                        fontSize: '0.74rem',
+                                        borderBottom: '1px solid var(--border-color)'
+                                      }}
+                                    >
+                                      {h || `(col ${i + 1})`}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {preview.rows.map((row, rIdx) => {
+                                  const isPointsRow = row[0]?.includes('Points Possible');
+                                  return (
+                                    <tr
+                                      key={rIdx}
+                                      style={{
+                                        backgroundColor: isPointsRow
+                                          ? 'var(--accent-teal-light, rgba(13, 148, 136, 0.08))'
+                                          : rIdx % 2 === 0
+                                            ? 'transparent'
+                                            : 'var(--bg-surface)'
+                                      }}
+                                    >
+                                      {row.map((cell, cIdx) => (
+                                        <td
+                                          key={cIdx}
+                                          style={{
+                                            padding: '0.4rem 0.65rem',
+                                            whiteSpace: 'nowrap',
+                                            fontFamily: 'monospace',
+                                            fontSize: '0.74rem',
+                                            color: isPointsRow && cIdx === row.length - 1
+                                              ? 'var(--accent-teal)'
+                                              : 'var(--text-secondary)',
+                                            fontWeight: isPointsRow ? 700 : 500,
+                                            borderBottom: '1px solid var(--border-color)'
+                                          }}
+                                        >
+                                          {cell || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>empty</span>}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
+              </div>
+            </EditableModuleSlot>
+
+            {/* Grades Matrix Sheet */}
+            <EditableModuleSlot
+              moduleKey="showResultsSummarySheet"
+              title="Results Summary Sheet & Gradebook"
+              isVisible={featureToggles.showResultsSummarySheet}
+              isEditMode={isEditMode}
+              onToggle={handleToggleModule}
+            >
+              <div className="card" data-tour="results-summary-card" style={{ padding: isResultsTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
+                <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isResultsTableExpanded ? '1.25rem' : 0 }}>
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
+                    title={isResultsTableExpanded ? 'Click to collapse gradebook' : 'Click to expand gradebook'}
+                  >
+                    <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
+                      <Award size={20} className="text-indigo" /> Results Summary Sheet &amp; Gradebook
+                      <FeatureInfoButton featureId="results-summary-sheet" size="sm" tooltipText="Gradebook & Results Matrix Guide" />
+                    </h3>
+                    <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+                      {stats.submittedCount} of {stats.totalStudents} evaluated
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {(isEditMode || featureToggles.showGradebookSearchFilter) && (
+                      <EditableModuleSlot
+                        moduleKey="showGradebookSearchFilter"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showGradebookSearchFilter}
+                        onToggle={handleToggleModule}
+                        inline
+                        slotType="bar"
+                      >
+                        <CustomSelect
+                          options={groupOptions}
+                          value={groupFilter}
+                          onChange={(val) => setGroupFilter(val)}
+                          style={{ width: 'auto', minWidth: '150px' }}
+                          triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
+                        />
+                      </EditableModuleSlot>
+                    )}
+
+                    {(isEditMode || featureToggles.showExportReportButtons) && (
+                      <EditableModuleSlot
+                        moduleKey="showExportReportButtons"
+                        isEditMode={isEditMode}
+                        isVisible={featureToggles.showExportReportButtons}
+                        onToggle={handleToggleModule}
+                        inline
+                        slotType="button"
+                      >
+                        <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            className="btn btn-teal btn-sm"
+                            onClick={handleExportExcel}
+                            style={{ fontSize: '0.8rem', padding: '0 0.85rem', gap: '0.35rem', fontWeight: 700, height: '36px', borderRadius: '8px' }}
+                            title="Export complete 2-sheet Excel report with WebPA metrics and written comments"
+                          >
+                            <Download size={14} /> Export Excel Report
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => {
+                              try {
+                                const csv = generateResultsCSV(activeClass);
+                                downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
+                                addToast('Results summary CSV downloaded successfully!', 'success');
+                              } catch (e) {
+                                addToast('Failed to export CSV results.', 'error');
+                              }
+                            }}
+                            style={{ fontSize: '0.8rem', padding: '0 0.75rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
+                            title="Export results summary to CSV"
+                          >
+                            <Download size={14} /> CSV
+                          </button>
+                        </div>
+                      </EditableModuleSlot>
+                    )}
+
+                    {/* Expand / Collapse Gradebook Toggle */}
+                    <button
+                      type="button"
+                      className={isResultsTableExpanded ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
+                      onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
+                      style={{
+                        height: '36px',
+                        borderRadius: '8px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        gap: '0.35rem',
+                        boxShadow: 'none'
+                      }}
+                      title={isResultsTableExpanded ? 'Collapse gradebook matrix table' : 'Expand gradebook matrix table'}
+                    >
+                      {isResultsTableExpanded ? (
+                        <>
+                          <ChevronUp size={14} /> Collapse Gradebook
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown size={14} /> Expand Gradebook ({stats.totalStudents})
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {activeClass.students.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: '60px', height: '60px', borderRadius: '18px', background: 'hsla(45,93%,58%,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.25rem' }}>
+                      <Award size={28} style={{ color: 'var(--accent-amber)' }} />
+                    </div>
+                    <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: 0 }}>No results to compute</p>
+                    <p style={{ fontSize: '0.82rem', margin: 0, maxWidth: '300px', lineHeight: 1.5 }}>Add participants to the roster and collect peer evaluations before viewing the performance matrix.</p>
+                  </div>
+                ) : !isResultsTableExpanded ? null : (
+                  <div className="table-container table-container-sticky">
+                    <table className="custom-table" style={{ whiteSpace: 'nowrap' }}>
+                      <thead>
+                        <tr>
+                          <th className="freeze-col-1" style={{ minWidth: '180px' }}>Participant &amp; Team</th>
+                          <th style={{ minWidth: '110px' }}>Review Status</th>
+                          {activeClass.fields.map(f => (
+                            <th key={f.id} style={{ minWidth: '120px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '0.78rem', textTransform: 'none', fontWeight: 700 }}>{f.name}</span>
+                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'none', fontWeight: 500 }}>Mean &amp; StdDev</span>
+                              </div>
+                            </th>
+                          ))}
+                          <th style={{ minWidth: '160px' }}>Strengths &amp; Praise</th>
+                          <th style={{ minWidth: '120px' }}>WebPA Mark</th>
+                          <th style={{ minWidth: '110px' }}>Weighted Score</th>
+                          <th style={{ minWidth: '130px' }}>Johari Alignment</th>
+                          <th style={{ textAlign: 'right', minWidth: '180px' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredStudents.map((s) => {
+                          const metrics = calculateStudentMetrics(s, activeClass);
+
+                          // Calculate anonymized praise tags
+                          const teammates = activeClass.students
+                            .filter((stud) => stud.groupName === s.groupName && stud.id !== s.id)
+                            .map((stud) => stud.id);
+                          const receivedReviews = activeClass.reviews.filter(
+                            (r) => r.recipientId === s.id && teammates.includes(r.reviewerId)
+                          );
+                          const tagCounts: Record<string, number> = {};
+                          receivedReviews.forEach((r) => {
+                            if (Array.isArray(r.praiseTags)) {
+                              r.praiseTags.forEach((tag) => {
+                                tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                              });
+                            }
+                          });
+                          const tagEntries = Object.entries(tagCounts);
+
+                          const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(
+                            s.id,
+                            s.groupName,
+                            activeClass,
+                            baseGroupGrade,
+                            fudgeWeight
+                          );
+
+                          return (
+                            <tr key={s.id}>
+                              {/* Participant & Team */}
+                              <td className="freeze-col-1">
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                  <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.88rem' }}>{s.name}</span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                    <span className="badge badge-teal" style={{ fontSize: '0.66rem', padding: '0.1rem 0.35rem', fontWeight: 700 }}>
+                                      {s.groupName}
                                     </span>
+                                    {s.university && (
+                                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                        &bull; {s.university}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Review Status & Submission */}
+                              <td>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                  <span style={{ fontWeight: 600, fontSize: '0.82rem' }}>
+                                    {metrics.reviewsReceived} / {metrics.expectedReviewsCount}
+                                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '0.25rem' }}>
+                                      ({metrics.gradeProgress}%)
+                                    </span>
+                                  </span>
+                                  <div>
+                                    {s.submitted ? (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                                        <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', gap: '0.2rem' }}>
+                                          <CheckCircle size={9} /> Completed
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            triggerConfirm(
+                                              'Reset Student Review Submission',
+                                              `Are you sure you want to reset the evaluation submitted by "${s.name}"? Their submitted scores will be cleared, returning their portal status to Pending so they can evaluate again.`,
+                                              () => resetStudentReviews(activeClass.id, s.id),
+                                              'Reset Submission',
+                                              'Cancel'
+                                            );
+                                          }}
+                                          style={{
+                                            fontSize: '0.64rem',
+                                            fontWeight: 700,
+                                            padding: '0.08rem 0.35rem',
+                                            borderRadius: '4px',
+                                            border: '1px solid var(--border-color)',
+                                            backgroundColor: 'var(--bg-surface)',
+                                            color: 'var(--accent-amber)',
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.2rem'
+                                          }}
+                                          title={`Reset reviews submitted by ${s.name} so they can re-evaluate`}
+                                        >
+                                          <RotateCcw size={9} /> Reset
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="badge badge-amber" style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', gap: '0.2rem' }}>
+                                        <Clock size={9} /> Pending
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Rubric Criteria Columns (Unified Mean + StdDev) */}
+                              {activeClass.fields.map(f => {
+                                const val = metrics.fieldAverages[f.id];
+                                const std = metrics.fieldStdDevs[f.id];
+                                return (
+                                  <td key={f.id}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                                      <span style={{ fontWeight: 700, fontSize: '0.84rem', color: val !== null ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                        {val !== null ? `${val} / ${f.max}` : '—'}
+                                      </span>
+                                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                        {std !== null ? `±${std} dev` : '±0.0'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                );
+                              })}
+
+                              {/* Received Praise & Strengths */}
+                              <td>
+                                <div className="praise-badge-list">
+                                  {tagEntries.length === 0 ? (
+                                    <span className="praise-badge-pill empty">No feedback yet</span>
+                                  ) : (
+                                    tagEntries.map(([tagText, count]) => {
+                                      const tagInfo = getPraiseTagInfo(tagText);
+                                      const TagIcon = tagInfo.icon;
+                                      return (
+                                        <span
+                                          key={tagText}
+                                          className="praise-badge-pill"
+                                          style={{
+                                            backgroundColor: tagInfo.bg,
+                                            color: tagInfo.color,
+                                            borderColor: tagInfo.border,
+                                            fontSize: '0.7rem',
+                                            padding: '0.15rem 0.4rem'
+                                          }}
+                                        >
+                                          <TagIcon size={10} />
+                                          <span>{tagInfo.text}</span>
+                                          <span style={{ opacity: 0.8, marginLeft: '0.15rem' }}>x{count}</span>
+                                        </span>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* WebPA Calibrated Mark */}
+                              <td>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                                  <span style={{ fontWeight: 800, fontSize: '0.9rem', color: adjustedGrade < (teamBaseGrade * 0.7) ? 'var(--accent-rose)' : 'hsl(142, 70%, 35%)' }}>
+                                    {metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : '—'}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--primary)' }}>
+                                    {metrics.reviewsReceived > 0 ? `WebPA: ${ratio.toFixed(2)}x` : 'WebPA: 1.00x'}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Overall Weighted Score */}
+                              <td>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                                  <span style={{ fontWeight: 700, fontSize: '0.88rem', color: metrics.overallPercentage !== null ? 'var(--primary)' : 'var(--text-muted)' }}>
+                                    {metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A'}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 600 }}>
+                                    {metrics.overallPercentage !== null ? `${((metrics.overallPercentage / 100) * activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)).toFixed(1)} / ${activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)}` : '—'}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Self-Awareness (Johari) */}
+                              <td>
+                                {(() => {
+                                  const johari = calculateJohariWindowMetric(s.id, activeClass);
+                                  return (
+                                    <span
+                                      className={`badge ${johari.badgeClass}`}
+                                      style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', whiteSpace: 'nowrap', display: 'inline-flex' }}
+                                      title={johari.description}
+                                    >
+                                      {johari.label} {johari.gapPct !== null && `(${johari.gapPct > 0 ? '+' : ''}${johari.gapPct}%)`}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+
+                              {/* 1-Click Minimal Segmented Action Dock */}
+                              <td style={{ textAlign: 'right' }}>
+                                <div className="table-action-dock">
+                                  {s.submitted && (
                                     <button
                                       type="button"
+                                      className="table-action-btn btn-text-action action-reset"
                                       onClick={() => {
                                         triggerConfirm(
                                           'Reset Student Review Submission',
-                                          `Are you sure you want to reset the evaluation submitted by "${s.name}"? Their submitted scores will be cleared, returning their portal status to Pending so they can evaluate again.`,
+                                          `Are you sure you want to reset the peer review submission for "${s.name}"? Their submitted scores will be cleared, returning their portal status to Pending so they can evaluate again.`,
                                           () => resetStudentReviews(activeClass.id, s.id),
                                           'Reset Submission',
                                           'Cancel'
                                         );
                                       }}
-                                      style={{
-                                        fontSize: '0.64rem',
-                                        fontWeight: 700,
-                                        padding: '0.08rem 0.35rem',
-                                        borderRadius: '4px',
-                                        border: '1px solid var(--border-color)',
-                                        backgroundColor: 'var(--bg-surface)',
-                                        color: 'var(--accent-amber)',
-                                        cursor: 'pointer',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '0.2rem'
-                                      }}
-                                      title={`Reset reviews submitted by ${s.name} so they can re-evaluate`}
+                                      title={`Reset ${s.name}'s review submission`}
+                                      style={{ color: 'var(--accent-amber)' }}
                                     >
-                                      <RotateCcw size={9} /> Reset
+                                      <RotateCcw size={12} />
+                                      <span>Reset</span>
                                     </button>
-                                  </div>
-                                ) : (
-                                  <span className="badge badge-amber" style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', gap: '0.2rem' }}>
-                                    <Clock size={9} /> Pending
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Rubric Criteria Columns (Unified Mean + StdDev) */}
-                          {activeClass.fields.map(f => {
-                            const val = metrics.fieldAverages[f.id];
-                            const std = metrics.fieldStdDevs[f.id];
-                            return (
-                              <td key={f.id}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-                                  <span style={{ fontWeight: 700, fontSize: '0.84rem', color: val !== null ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                                    {val !== null ? `${val} / ${f.max}` : '—'}
-                                  </span>
-                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                    {std !== null ? `±${std} dev` : '±0.0'}
-                                  </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="table-action-btn btn-text-action action-report"
+                                    onClick={() => openReportModal(s.id)}
+                                    title="View & Download PDF Report Card"
+                                  >
+                                    <FileText size={12} />
+                                    <span>PDF</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="table-action-btn btn-text-action action-details"
+                                    onClick={() => setSelectedStudentReport(s)}
+                                    title="View individual evaluation details"
+                                  >
+                                    <Eye size={12} />
+                                    <span>Details</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="table-action-btn btn-text-action action-team"
+                                    onClick={() => {
+                                      setSelectedTeamAnalysis(s.groupName);
+                                      setActiveAuditMetric('overall');
+                                    }}
+                                    title="View team evaluation breakdown"
+                                  >
+                                    <Users size={12} />
+                                    <span>Team</span>
+                                  </button>
                                 </div>
                               </td>
-                            );
-                          })}
-
-                          {/* Received Praise & Strengths */}
-                          <td>
-                            <div className="praise-badge-list">
-                              {tagEntries.length === 0 ? (
-                                <span className="praise-badge-pill empty">No feedback yet</span>
-                              ) : (
-                                tagEntries.map(([tagText, count]) => {
-                                  const tagInfo = getPraiseTagInfo(tagText);
-                                  const TagIcon = tagInfo.icon;
-                                  return (
-                                    <span
-                                      key={tagText}
-                                      className="praise-badge-pill"
-                                      style={{
-                                        backgroundColor: tagInfo.bg,
-                                        color: tagInfo.color,
-                                        borderColor: tagInfo.border,
-                                        fontSize: '0.7rem',
-                                        padding: '0.15rem 0.4rem'
-                                      }}
-                                    >
-                                      <TagIcon size={10} />
-                                      <span>{tagInfo.text}</span>
-                                      <span style={{ opacity: 0.8, marginLeft: '0.15rem' }}>x{count}</span>
-                                    </span>
-                                  );
-                                })
-                              )}
-                            </div>
-                          </td>
-
-                          {/* WebPA Calibrated Mark */}
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-                              <span style={{ fontWeight: 800, fontSize: '0.9rem', color: adjustedGrade < (teamBaseGrade * 0.7) ? 'var(--accent-rose)' : 'hsl(142, 70%, 35%)' }}>
-                                {metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : '—'}
-                              </span>
-                              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--primary)' }}>
-                                {metrics.reviewsReceived > 0 ? `WebPA: ${ratio.toFixed(2)}x` : 'WebPA: 1.00x'}
-                              </span>
-                            </div>
-                          </td>
-
-                          {/* Overall Weighted Score */}
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-                              <span style={{ fontWeight: 700, fontSize: '0.88rem', color: metrics.overallPercentage !== null ? 'var(--primary)' : 'var(--text-muted)' }}>
-                                {metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A'}
-                              </span>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 600 }}>
-                                {metrics.overallPercentage !== null ? `${((metrics.overallPercentage / 100) * activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)).toFixed(1)} / ${activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)}` : '—'}
-                              </span>
-                            </div>
-                          </td>
-
-                          {/* Self-Awareness (Johari) */}
-                          <td>
-                            {(() => {
-                              const johari = calculateJohariWindowMetric(s.id, activeClass);
-                              return (
-                                <span
-                                  className={`badge ${johari.badgeClass}`}
-                                  style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', whiteSpace: 'nowrap', display: 'inline-flex' }}
-                                  title={johari.description}
-                                >
-                                  {johari.label} {johari.gapPct !== null && `(${johari.gapPct > 0 ? '+' : ''}${johari.gapPct}%)`}
-                                </span>
-                              );
-                            })()}
-                          </td>
-
-                          {/* 1-Click Minimal Segmented Action Dock */}
-                          <td style={{ textAlign: 'right' }}>
-                            <div className="table-action-dock">
-                              {s.submitted && (
-                                <button
-                                  type="button"
-                                  className="table-action-btn btn-text-action action-reset"
-                                  onClick={() => {
-                                    triggerConfirm(
-                                      'Reset Student Review Submission',
-                                      `Are you sure you want to reset the peer review submission for "${s.name}"? Their submitted scores will be cleared, returning their portal status to Pending so they can evaluate again.`,
-                                      () => resetStudentReviews(activeClass.id, s.id),
-                                      'Reset Submission',
-                                      'Cancel'
-                                    );
-                                  }}
-                                  title={`Reset ${s.name}'s review submission`}
-                                  style={{ color: 'var(--accent-amber)' }}
-                                >
-                                  <RotateCcw size={12} />
-                                  <span>Reset</span>
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                className="table-action-btn btn-text-action action-report"
-                                onClick={() => openReportModal(s.id)}
-                                title="View & Download PDF Report Card"
-                              >
-                                <FileText size={12} />
-                                <span>PDF</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="table-action-btn btn-text-action action-details"
-                                onClick={() => setSelectedStudentReport(s)}
-                                title="View individual evaluation details"
-                              >
-                                <Eye size={12} />
-                                <span>Details</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="table-action-btn btn-text-action action-team"
-                                onClick={() => {
-                                  setSelectedTeamAnalysis(s.groupName);
-                                  setActiveAuditMetric('overall');
-                                }}
-                                title="View team evaluation breakdown"
-                              >
-                                <Users size={12} />
-                                <span>Team</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            )}
+            </EditableModuleSlot>
           </div>
-          </EditableModuleSlot>
-        </div>
-      )}
+        )}
 
-      {/* TAB CONTENT: AUTOMATION & LINKS */}
-      {activeTab === 'automation' && (() => {
-        const submittedStudentsCount = activeClass.students.filter(s => s.submitted).length;
-        const totalStudentsCount = activeClass.students.length;
-        const submissionRate = totalStudentsCount > 0 ? Math.round((submittedStudentsCount / totalStudentsCount) * 100) : 0;
-        const isDeadlineOpen = activeClass.deadline ? new Date(activeClass.deadline) > new Date() : true;
+        {/* TAB CONTENT: AUTOMATION & LINKS */}
+        {activeTab === 'automation' && (() => {
+          const submittedStudentsCount = activeClass.students.filter(s => s.submitted).length;
+          const totalStudentsCount = activeClass.students.length;
+          const submissionRate = totalStudentsCount > 0 ? Math.round((submittedStudentsCount / totalStudentsCount) * 100) : 0;
+          const isDeadlineOpen = activeClass.deadline ? new Date(activeClass.deadline) > new Date() : true;
 
-        return (
-          <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          return (
+            <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
-            {/* Top Status & Overview Ribbon */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                gap: '1rem',
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-lg)',
-                padding: '1rem 1.25rem',
-                boxShadow: 'var(--shadow-sm)'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Users size={20} />
-                </div>
-                <div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>{totalStudentsCount}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Classroom Members</div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <CheckSquare size={20} />
-                </div>
-                <div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent-teal)' }}>
-                    {submittedStudentsCount} / {totalStudentsCount} ({submissionRate}%)
+              {/* Top Status & Overview Ribbon */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: '1rem',
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '1rem 1.25rem',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Users size={20} />
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Submissions Completed</div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: activeClass.deadline ? (isDeadlineOpen ? 'rgba(20, 184, 166, 0.12)' : 'rgba(244, 63, 94, 0.12)') : 'var(--bg-app)', color: activeClass.deadline ? (isDeadlineOpen ? 'var(--accent-teal)' : 'var(--accent-rose)') : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {activeClass.deadline ? (isDeadlineOpen ? <Clock size={20} /> : <Lock size={20} />) : <Unlock size={20} />}
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: activeClass.deadline ? (isDeadlineOpen ? 'var(--accent-teal)' : 'var(--accent-rose)') : 'var(--text-primary)' }}>
-                    {activeClass.deadline ? (isDeadlineOpen ? 'Window Open' : 'Submissions Locked') : 'Always Open'}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    {activeClass.deadline ? new Date(activeClass.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No Cutoff Date'}
+                  <div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>{totalStudentsCount}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Classroom Members</div>
                   </div>
                 </div>
-              </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Mail size={20} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(20, 184, 166, 0.12)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CheckSquare size={20} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent-teal)' }}>
+                      {submittedStudentsCount} / {totalStudentsCount} ({submissionRate}%)
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Submissions Completed</div>
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--primary)' }}>
-                    {emailService === 'simulator' ? 'Demo Sandbox' : emailService === 'emailjs' ? 'EmailJS Live' : 'Brevo SMTP'}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: activeClass.deadline ? (isDeadlineOpen ? 'rgba(20, 184, 166, 0.12)' : 'rgba(244, 63, 94, 0.12)') : 'var(--bg-app)', color: activeClass.deadline ? (isDeadlineOpen ? 'var(--accent-teal)' : 'var(--accent-rose)') : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {activeClass.deadline ? (isDeadlineOpen ? <Clock size={20} /> : <Lock size={20} />) : <Unlock size={20} />}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Active Mailing Adapter</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Main Command Center Deck */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-
-              {/* Card 1: Submission Window & Deadlines */}
-              <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div className="card-header" style={{ marginBottom: '0.5rem' }}>
-                    <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                      <Clock size={18} className="text-rose" /> Submission Window &amp; Cutoff
-                    </h3>
-                    <span className={`badge ${activeClass.deadline ? (isDeadlineOpen ? 'badge-teal' : 'badge-rose') : 'badge-secondary'}`} style={{ fontSize: '0.72rem' }}>
-                      {activeClass.deadline ? (isDeadlineOpen ? 'Active Countdown' : 'Locked') : 'Open (No Limit)'}
-                    </span>
-                  </div>
-
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
-                    Configure a strict closing date. Once passed, the student grading portal automatically displays a locked status and blocks new responses.
-                  </p>
-
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <Calendar size={14} className="text-indigo" /> Closing Date &amp; Time
-                    </label>
-                    <input
-                      type="datetime-local"
-                      className="form-input"
-                      value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val) {
-                          saveClassDeadline(activeClass.id, new Date(val).toISOString());
-                        } else {
-                          saveClassDeadline(activeClass.id, null);
-                        }
-                      }}
-                    />
-                  </div>
-
-                  {/* Quick Presets */}
-                  <div style={{ marginTop: '0.85rem' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>
-                      Quick Deadline Presets:
-                    </span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
-                        onClick={() => {
-                          const in24h = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-                          saveClassDeadline(activeClass.id, in24h);
-                        }}
-                      >
-                        +24 Hours
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
-                        onClick={() => {
-                          const in48h = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
-                          saveClassDeadline(activeClass.id, in48h);
-                        }}
-                      >
-                        +48 Hours
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
-                        onClick={() => {
-                          const in7d = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
-                          saveClassDeadline(activeClass.id, in7d);
-                        }}
-                      >
-                        +1 Week
-                      </button>
-                      {activeClass.deadline && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm text-rose"
-                          style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
-                          onClick={() => saveClassDeadline(activeClass.id, null)}
-                        >
-                          Clear
-                        </button>
-                      )}
+                  <div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 700, color: activeClass.deadline ? (isDeadlineOpen ? 'var(--accent-teal)' : 'var(--accent-rose)') : 'var(--text-primary)' }}>
+                      {activeClass.deadline ? (isDeadlineOpen ? 'Window Open' : 'Submissions Locked') : 'Always Open'}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {activeClass.deadline ? new Date(activeClass.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No Cutoff Date'}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
-                  {activeClass.deadline ? (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <span style={{ fontSize: '0.78rem', color: isDeadlineOpen ? 'var(--accent-teal)' : 'var(--accent-rose)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        {isDeadlineOpen ? <Clock size={14} /> : <Lock size={14} />}
-                        {isDeadlineOpen ? 'Submission Clock Running' : 'Window Closed (Locked)'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Mail size={20} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--primary)' }}>
+                      {emailService === 'simulator' ? 'Demo Sandbox' : emailService === 'emailjs' ? 'EmailJS Live' : 'Brevo SMTP'}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Active Mailing Adapter</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Command Center Deck */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
+
+                {/* Card 1: Submission Window & Deadlines */}
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div className="card-header" style={{ marginBottom: '0.5rem' }}>
+                      <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <Clock size={18} className="text-rose" /> Submission Window &amp; Cutoff
+                      </h3>
+                      <span className={`badge ${activeClass.deadline ? (isDeadlineOpen ? 'badge-teal' : 'badge-rose') : 'badge-secondary'}`} style={{ fontSize: '0.72rem' }}>
+                        {activeClass.deadline ? (isDeadlineOpen ? 'Active Countdown' : 'Locked') : 'Open (No Limit)'}
                       </span>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
-                        onClick={() => {
-                          if (isDeadlineOpen) {
-                            saveClassDeadline(activeClass.id, new Date(Date.now() - 1000).toISOString());
+                    </div>
+
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
+                      Configure a strict closing date. Once passed, the student grading portal automatically displays a locked status and blocks new responses.
+                    </p>
+
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <Calendar size={14} className="text-indigo" /> Closing Date &amp; Time
+                      </label>
+                      <input
+                        type="datetime-local"
+                        className="form-input"
+                        value={activeClass.deadline ? new Date(new Date(activeClass.deadline).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val) {
+                            saveClassDeadline(activeClass.id, new Date(val).toISOString());
                           } else {
                             saveClassDeadline(activeClass.id, null);
                           }
                         }}
-                      >
-                        {isDeadlineOpen ? 'Lock Submissions Now' : 'Re-open Submissions'}
-                      </button>
+                      />
                     </div>
-                  ) : (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <Unlock size={14} className="text-teal" /> Submissions always accepted
+
+                    {/* Quick Presets */}
+                    <div style={{ marginTop: '0.85rem' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>
+                        Quick Deadline Presets:
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
+                          onClick={() => {
+                            const in24h = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+                            saveClassDeadline(activeClass.id, in24h);
+                          }}
+                        >
+                          +24 Hours
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
+                          onClick={() => {
+                            const in48h = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+                            saveClassDeadline(activeClass.id, in48h);
+                          }}
+                        >
+                          +48 Hours
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
+                          onClick={() => {
+                            const in7d = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+                            saveClassDeadline(activeClass.id, in7d);
+                          }}
+                        >
+                          +1 Week
+                        </button>
+                        {activeClass.deadline && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm text-rose"
+                            style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}
+                            onClick={() => saveClassDeadline(activeClass.id, null)}
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+                    {activeClass.deadline ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.78rem', color: isDeadlineOpen ? 'var(--accent-teal)' : 'var(--accent-rose)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          {isDeadlineOpen ? <Clock size={14} /> : <Lock size={14} />}
+                          {isDeadlineOpen ? 'Submission Clock Running' : 'Window Closed (Locked)'}
+                        </span>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                          onClick={() => {
+                            if (isDeadlineOpen) {
+                              saveClassDeadline(activeClass.id, new Date(Date.now() - 1000).toISOString());
+                            } else {
+                              saveClassDeadline(activeClass.id, null);
+                            }
+                          }}
+                        >
+                          {isDeadlineOpen ? 'Lock Submissions Now' : 'Re-open Submissions'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <Unlock size={14} className="text-teal" /> Submissions always accepted
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card 2: Email Notification Engine */}
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div className="card-header" style={{ marginBottom: '0.5rem' }}>
+                      <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <Mail size={18} className="text-teal" /> Email Engine &amp; API
+                      </h3>
+                      <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
+                        Direct Links
                       </span>
                     </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Card 2: Email Notification Engine */}
-              <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div className="card-header" style={{ marginBottom: '0.5rem' }}>
-                    <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                      <Mail size={18} className="text-teal" /> Email Engine &amp; API
-                    </h3>
-                    <span className="badge badge-teal" style={{ fontSize: '0.72rem' }}>
-                      Direct Links
-                    </span>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
+                      Send individualized evaluation links to students with unique tokens for secure anonymous submissions.
+                    </p>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600 }}>Active Mailing Provider</label>
+                      <CustomSelect
+                        options={emailServiceOptions}
+                        value={emailService}
+                        onChange={(val) => setEmailService(val as any)}
+                      />
+                    </div>
+
+                    {emailService === 'emailjs' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <input
+                          type="text"
+                          placeholder="EmailJS Service ID (e.g. service_xyz)"
+                          className="form-input"
+                          value={emailjsServiceId}
+                          onChange={(e) => setEmailjsServiceId(e.target.value)}
+                        />
+                        <input
+                          type="text"
+                          placeholder="EmailJS Template ID (e.g. template_abc)"
+                          className="form-input"
+                          value={emailjsTemplateId}
+                          onChange={(e) => setEmailjsTemplateId(e.target.value)}
+                        />
+                        <input
+                          type="text"
+                          placeholder="EmailJS Public Key / User ID"
+                          className="form-input"
+                          value={emailjsUserId}
+                          onChange={(e) => setEmailjsUserId(e.target.value)}
+                        />
+                        <a
+                          href="https://www.emailjs.com"
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
+                        >
+                          How do I get these free keys?
+                        </a>
+                      </div>
+                    )}
+
+                    {emailService === 'brevo' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <input
+                          type="password"
+                          placeholder="Brevo SMTP API Key"
+                          className="form-input"
+                          value={brevoApiKey}
+                          onChange={(e) => setBrevoApiKey(e.target.value)}
+                        />
+                        <input
+                          type="email"
+                          placeholder="Verified Sender Email (e.g. prof@uni.edu)"
+                          className="form-input"
+                          value={brevoSenderEmail}
+                          onChange={(e) => setBrevoSenderEmail(e.target.value)}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Sender Name (Optional, e.g. Course Instructor)"
+                          className="form-input"
+                          value={brevoSenderName}
+                          onChange={(e) => setBrevoSenderName(e.target.value)}
+                        />
+                        <a
+                          href="https://www.brevo.com"
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
+                        >
+                          How do I get my free Brevo API Key?
+                        </a>
+                      </div>
+                    )}
                   </div>
 
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.45 }}>
-                    Send individualized evaluation links to students with unique tokens for secure anonymous submissions.
-                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+                    <button
+                      className={`btn btn-primary ${isSendingEmails ? 'btn-disabled' : ''}`}
+                      onClick={() => triggerEmailAutomation(false)}
+                      disabled={isSendingEmails}
+                      style={{ width: '100%', justifyContent: 'center', gap: '0.5rem' }}
+                    >
+                      <Mail size={16} /> Send Links to All ({totalStudentsCount})
+                    </button>
+                    <button
+                      className={`btn btn-secondary ${isSendingEmails ? 'btn-disabled' : ''}`}
+                      style={{ borderColor: 'var(--accent-amber)', color: 'var(--accent-amber)', width: '100%', justifyContent: 'center', gap: '0.5rem' }}
+                      onClick={() => triggerEmailAutomation(true)}
+                      disabled={isSendingEmails}
+                    >
+                      <Bell size={15} /> Send Reminders to Incomplete ({totalStudentsCount - submittedStudentsCount})
+                    </button>
+                  </div>
+                </div>
 
-                  <div className="form-group">
-                    <label className="form-label" style={{ fontWeight: 600 }}>Active Mailing Provider</label>
-                    <CustomSelect
-                      options={emailServiceOptions}
-                      value={emailService}
-                      onChange={(val) => setEmailService(val as any)}
-                    />
+                {/* Card 3: Email Invitation Mockup */}
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <FileText size={18} className="text-indigo" /> Email Invitation Mockup
+                      </h3>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                        onClick={() => setIsEditTemplateModalOpen(true)}
+                      >
+                        <Edit2 size={12} /> Edit Template
+                      </button>
+                    </div>
+
+                    {/* Email Client Mockup Frame */}
+                    <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem', fontFamily: 'inherit', fontSize: '0.85rem' }}>
+                      <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                        <div style={{ fontSize: '0.78rem' }}><b>To:</b> <span style={{ color: 'var(--text-secondary)' }}>student.name@university.edu</span></div>
+                        <div style={{ fontSize: '0.78rem' }}><b>Subject:</b> <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{substitutePlaceholders(customEmailSubject, 'Student Name', activeClass.name)}</span></div>
+                      </div>
+
+                      <div style={{ color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.5, wordBreak: 'break-word', fontSize: '0.82rem', maxHeight: '160px', overflowY: 'auto' }}>
+                        {substitutePlaceholders(customEmailBody, 'Student Name', activeClass.name)}
+                      </div>
+
+                      <div style={{ textAlign: 'center', margin: '1rem 0' }}>
+                        <span
+                          style={{ backgroundColor: 'var(--primary)', color: 'var(--text-inverse)', padding: '0.45rem 1rem', borderRadius: '6px', fontWeight: 600, cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', boxShadow: 'var(--shadow-sm)' }}
+                        >
+                          <Zap size={14} /> Open Grading Portal
+                        </span>
+                      </div>
+
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', margin: '0.75rem 0 0', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem', lineHeight: 1.4 }}>
+                        <Lock size={10} style={{ display: 'inline', marginRight: '3px' }} /> Anonymous feedback guaranteed. Team members only view aggregated scores.
+                      </p>
+                    </div>
                   </div>
 
-                  {emailService === 'emailjs' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                      <input
-                        type="text"
-                        placeholder="EmailJS Service ID (e.g. service_xyz)"
-                        className="form-input"
-                        value={emailjsServiceId}
-                        onChange={(e) => setEmailjsServiceId(e.target.value)}
-                      />
-                      <input
-                        type="text"
-                        placeholder="EmailJS Template ID (e.g. template_abc)"
-                        className="form-input"
-                        value={emailjsTemplateId}
-                        onChange={(e) => setEmailjsTemplateId(e.target.value)}
-                      />
-                      <input
-                        type="text"
-                        placeholder="EmailJS Public Key / User ID"
-                        className="form-input"
-                        value={emailjsUserId}
-                        onChange={(e) => setEmailjsUserId(e.target.value)}
-                      />
-                      <a
-                        href="https://www.emailjs.com"
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
-                      >
-                        How do I get these free keys?
-                      </a>
-                    </div>
-                  )}
-
-                  {emailService === 'brevo' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                      <input
-                        type="password"
-                        placeholder="Brevo SMTP API Key"
-                        className="form-input"
-                        value={brevoApiKey}
-                        onChange={(e) => setBrevoApiKey(e.target.value)}
-                      />
-                      <input
-                        type="email"
-                        placeholder="Verified Sender Email (e.g. prof@uni.edu)"
-                        className="form-input"
-                        value={brevoSenderEmail}
-                        onChange={(e) => setBrevoSenderEmail(e.target.value)}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Sender Name (Optional, e.g. Course Instructor)"
-                        className="form-input"
-                        value={brevoSenderName}
-                        onChange={(e) => setBrevoSenderName(e.target.value)}
-                      />
-                      <a
-                        href="https://www.brevo.com"
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: '0.75rem', color: 'var(--primary)', textAlign: 'right', display: 'block' }}
-                      >
-                        How do I get my free Brevo API Key?
-                      </a>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
-                  <button
-                    className={`btn btn-primary ${isSendingEmails ? 'btn-disabled' : ''}`}
-                    onClick={() => triggerEmailAutomation(false)}
-                    disabled={isSendingEmails}
-                    style={{ width: '100%', justifyContent: 'center', gap: '0.5rem' }}
-                  >
-                    <Mail size={16} /> Send Links to All ({totalStudentsCount})
-                  </button>
-                  <button
-                    className={`btn btn-secondary ${isSendingEmails ? 'btn-disabled' : ''}`}
-                    style={{ borderColor: 'var(--accent-amber)', color: 'var(--accent-amber)', width: '100%', justifyContent: 'center', gap: '0.5rem' }}
-                    onClick={() => triggerEmailAutomation(true)}
-                    disabled={isSendingEmails}
-                  >
-                    <Bell size={15} /> Send Reminders to Incomplete ({totalStudentsCount - submittedStudentsCount})
-                  </button>
-                </div>
-              </div>
-
-              {/* Card 3: Email Invitation Mockup */}
-              <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                    <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                      <FileText size={18} className="text-indigo" /> Email Invitation Mockup
-                    </h3>
+                  <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                      onClick={() => setIsEditTemplateModalOpen(true)}
+                      style={{ width: '100%', justifyContent: 'center', gap: '0.4rem' }}
+                      onClick={() => {
+                        const text = `Subject: ${substitutePlaceholders(customEmailSubject, '[Student Name]', activeClass.name)}\n\n${substitutePlaceholders(customEmailBody, '[Student Name]', activeClass.name)}`;
+                        navigator.clipboard.writeText(text);
+                        addToast('Email template text copied to clipboard! (Ready to paste in LMS/Canvas)', 'success');
+                      }}
                     >
-                      <Edit2 size={12} /> Edit Template
+                      <Copy size={13} /> Copy Template Text for Canvas / LMS
                     </button>
                   </div>
+                </div>
+              </div>
 
-                  {/* Email Client Mockup Frame */}
-                  <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem', fontFamily: 'inherit', fontSize: '0.85rem' }}>
-                    <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                      <div style={{ fontSize: '0.78rem' }}><b>To:</b> <span style={{ color: 'var(--text-secondary)' }}>student.name@university.edu</span></div>
-                      <div style={{ fontSize: '0.78rem' }}><b>Subject:</b> <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{substitutePlaceholders(customEmailSubject, 'Student Name', activeClass.name)}</span></div>
-                    </div>
+              {/* Progress Logs */}
+              {(isSendingEmails || emailLogs.length > 0) && (
+                <div className="card" style={{ animation: 'fadeIn 200ms ease' }}>
+                  <h4 style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                    <RefreshCw size={16} className={isSendingEmails ? 'spin' : ''} /> Email Transmission Status
+                  </h4>
 
-                    <div style={{ color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.5, wordBreak: 'break-word', fontSize: '0.82rem', maxHeight: '160px', overflowY: 'auto' }}>
-                      {substitutePlaceholders(customEmailBody, 'Student Name', activeClass.name)}
-                    </div>
+                  <div style={{ height: '8px', width: '100%', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden', marginBottom: '1rem' }}>
+                    <div style={{ height: '100%', width: `${emailProgress}%`, backgroundColor: 'var(--accent-teal)', transition: 'width 200ms ease' }} />
+                  </div>
 
-                    <div style={{ textAlign: 'center', margin: '1rem 0' }}>
-                      <span
-                        style={{ backgroundColor: 'var(--primary)', color: 'var(--text-inverse)', padding: '0.45rem 1rem', borderRadius: '6px', fontWeight: 600, cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', boxShadow: 'var(--shadow-sm)' }}
-                      >
-                        <Zap size={14} /> Open Grading Portal
-                      </span>
-                    </div>
+                  <div
+                    style={{ backgroundColor: '#0f172a', color: '#38bdf8', padding: '1rem', borderRadius: 'var(--radius-sm)', fontFamily: 'monospace', fontSize: '0.8rem', height: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column-reverse', gap: '0.25rem' }}
+                  >
+                    {[...emailLogs].reverse().map((log, i) => (
+                      <div key={i}>{log}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', margin: '0.75rem 0 0', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem', lineHeight: 1.4 }}>
-                      <Lock size={10} style={{ display: 'inline', marginRight: '3px' }} /> Anonymous feedback guaranteed. Team members only view aggregated scores.
-                    </p>
+        {/* TAB CONTENT: CLOUD CONFIG */}
+        {activeTab === 'cloud' && (
+          <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div className="card">
+              <div className="card-header">
+                <h3 className="card-title">
+                  <Database size={18} className={isCloudSynced ? 'text-teal' : 'text-indigo'} />
+                  Cloud Database Configurations
+                </h3>
+                <div>
+                  {isCloudSynced ? (
+                    <span className="badge badge-teal" style={{ gap: '0.25rem' }}><CheckCircle size={12} /> Sync Enabled (Spark Free)</span>
+                  ) : (
+                    <span className="badge badge-primary">Local-First Sandbox Mode</span>
+                  )}
+                </div>
+              </div>
+
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+                By default, this web application stores everything in your local browser sandbox (LocalStorage).
+                If you want to host it online and have your students submit evaluations, simply setup a <b>Free Firebase Project</b> and paste your web application keys below.
+              </p>
+
+              <form onSubmit={handleFirebaseSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label">Firebase API Key</label>
+                    <input
+                      type="password"
+                      placeholder="AIzaSyA1..."
+                      className="form-input"
+                      value={fbApiKey}
+                      onChange={(e) => setFbApiKey(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Project ID</label>
+                    <input
+                      type="text"
+                      placeholder="peer-grading-f9c32"
+                      className="form-input"
+                      value={fbProjectId}
+                      onChange={(e) => setFbProjectId(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Auth Domain (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="peer-grading.firebaseapp.com"
+                      className="form-input"
+                      value={fbAuthDomain}
+                      onChange={(e) => setFbAuthDomain(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">App ID</label>
+                    <input
+                      type="text"
+                      placeholder="1:84712:web:a91f..."
+                      className="form-input"
+                      value={fbAppId}
+                      onChange={(e) => setFbAppId(e.target.value)}
+                    />
                   </div>
                 </div>
 
-                <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ width: '100%', justifyContent: 'center', gap: '0.4rem' }}
-                    onClick={() => {
-                      const text = `Subject: ${substitutePlaceholders(customEmailSubject, '[Student Name]', activeClass.name)}\n\n${substitutePlaceholders(customEmailBody, '[Student Name]', activeClass.name)}`;
-                      navigator.clipboard.writeText(text);
-                      addToast('Email template text copied to clipboard! (Ready to paste in LMS/Canvas)', 'success');
-                    }}
-                  >
-                    <Copy size={13} /> Copy Template Text for Canvas / LMS
+                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                  <button type="submit" className="btn btn-primary">
+                    <Database size={16} /> Link Firebase & Sync
                   </button>
+                  {isCloudSynced && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary text-rose"
+                      style={{ borderColor: 'var(--accent-rose)' }}
+                      onClick={() => {
+                        saveFirebaseConfig(null);
+                        setFbApiKey('');
+                        setFbProjectId('');
+                        setFbAuthDomain('');
+                        setFbAppId('');
+                      }}
+                    >
+                      Disable Cloud Sync
+                    </button>
+                  )}
                 </div>
-              </div>
-            </div>
+              </form>
 
-            {/* Progress Logs */}
-            {(isSendingEmails || emailLogs.length > 0) && (
-              <div className="card" style={{ animation: 'fadeIn 200ms ease' }}>
-                <h4 style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                  <RefreshCw size={16} className={isSendingEmails ? 'spin' : ''} /> Email Transmission Status
-                </h4>
-
-                <div style={{ height: '8px', width: '100%', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden', marginBottom: '1rem' }}>
-                  <div style={{ height: '100%', width: `${emailProgress}%`, backgroundColor: 'var(--accent-teal)', transition: 'width 200ms ease' }} />
+              <div style={{ marginTop: '2rem', backgroundColor: 'var(--accent-amber-light)', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-amber)', display: 'flex', gap: '0.75rem' }}>
+                <AlertCircle size={24} className="text-amber" style={{ flexShrink: 0 }} />
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                  <b>Safety Notice:</b> Your credentials are saved securely inside your local browser. No third-party servers see these keys. They are utilized directly by the Firestore SDK client within this window to push records to your project instance.
                 </div>
-
-                <div
-                  style={{ backgroundColor: '#0f172a', color: '#38bdf8', padding: '1rem', borderRadius: 'var(--radius-sm)', fontFamily: 'monospace', fontSize: '0.8rem', height: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column-reverse', gap: '0.25rem' }}
-                >
-                  {[...emailLogs].reverse().map((log, i) => (
-                    <div key={i}>{log}</div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* TAB CONTENT: CLOUD CONFIG */}
-      {activeTab === 'cloud' && (
-        <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">
-                <Database size={18} className={isCloudSynced ? 'text-teal' : 'text-indigo'} />
-                Cloud Database Configurations
-              </h3>
-              <div>
-                {isCloudSynced ? (
-                  <span className="badge badge-teal" style={{ gap: '0.25rem' }}><CheckCircle size={12} /> Sync Enabled (Spark Free)</span>
-                ) : (
-                  <span className="badge badge-primary">Local-First Sandbox Mode</span>
-                )}
-              </div>
-            </div>
-
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
-              By default, this web application stores everything in your local browser sandbox (LocalStorage).
-              If you want to host it online and have your students submit evaluations, simply setup a <b>Free Firebase Project</b> and paste your web application keys below.
-            </p>
-
-            <form onSubmit={handleFirebaseSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Firebase API Key</label>
-                  <input
-                    type="password"
-                    placeholder="AIzaSyA1..."
-                    className="form-input"
-                    value={fbApiKey}
-                    onChange={(e) => setFbApiKey(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Project ID</label>
-                  <input
-                    type="text"
-                    placeholder="peer-grading-f9c32"
-                    className="form-input"
-                    value={fbProjectId}
-                    onChange={(e) => setFbProjectId(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Auth Domain (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="peer-grading.firebaseapp.com"
-                    className="form-input"
-                    value={fbAuthDomain}
-                    onChange={(e) => setFbAuthDomain(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">App ID</label>
-                  <input
-                    type="text"
-                    placeholder="1:84712:web:a91f..."
-                    className="form-input"
-                    value={fbAppId}
-                    onChange={(e) => setFbAppId(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
-                <button type="submit" className="btn btn-primary">
-                  <Database size={16} /> Link Firebase & Sync
-                </button>
-                {isCloudSynced && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary text-rose"
-                    style={{ borderColor: 'var(--accent-rose)' }}
-                    onClick={() => {
-                      saveFirebaseConfig(null);
-                      setFbApiKey('');
-                      setFbProjectId('');
-                      setFbAuthDomain('');
-                      setFbAppId('');
-                    }}
-                  >
-                    Disable Cloud Sync
-                  </button>
-                )}
-              </div>
-            </form>
-
-            <div style={{ marginTop: '2rem', backgroundColor: 'var(--accent-amber-light)', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-amber)', display: 'flex', gap: '0.75rem' }}>
-              <AlertCircle size={24} className="text-amber" style={{ flexShrink: 0 }} />
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                <b>Safety Notice:</b> Your credentials are saved securely inside your local browser. No third-party servers see these keys. They are utilized directly by the Firestore SDK client within this window to push records to your project instance.
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
 
       {/* MODAL: CREATE CLASSROOM */}
@@ -9995,7 +10186,7 @@ export const AdminDashboard: React.FC = () => {
         title="Add Class Participant Manually"
         maxWidth="720px"
         footer={
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
+          <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'flex-end', width: '100%' }}>
             <button className="btn btn-secondary" onClick={() => setIsAddStudentModalOpen(false)}>Cancel</button>
             <button className="btn btn-primary" onClick={handleAddStudentSubmit} style={{ gap: '0.35rem', fontWeight: 700 }}>
               <Plus size={15} /> Enroll Participant
@@ -10367,6 +10558,152 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
 
+            {/* SECTION 4: ADDITIONAL COURSE QUESTIONS (CUSTOM FIELDS) */}
+            <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#8b5cf6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800 }}>4</div>
+                  <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Additional Course Questions
+                  </span>
+                  {activeCustomQuestions.length > 0 && (
+                    <span className="badge badge-purple" style={{ fontSize: '0.68rem', padding: '0.1rem 0.45rem' }}>
+                      {activeCustomQuestions.length} Custom {activeCustomQuestions.length === 1 ? 'Field' : 'Fields'}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setIsEnrollmentFormBuilderOpen(true)}
+                  style={{ fontSize: '0.74rem', height: '28px', padding: '0 0.65rem', gap: '0.35rem', color: '#8b5cf6', borderColor: 'rgba(139, 92, 246, 0.4)' }}
+                  title="Add or edit custom questions in this enrollment form"
+                >
+                  <Plus size={13} /> Customize / Add Fields
+                </button>
+              </div>
+
+              {activeCustomQuestions.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '0.85rem', color: 'var(--text-muted)', fontSize: '0.76rem', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
+                  No custom questions configured for this course yet.
+                  <button
+                    type="button"
+                    onClick={() => setIsEnrollmentFormBuilderOpen(true)}
+                    style={{ background: 'none', border: 'none', color: '#8b5cf6', fontWeight: 700, cursor: 'pointer', marginLeft: '0.35rem', textDecoration: 'underline' }}
+                  >
+                    Click here to add custom fields &rarr;
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                  {activeCustomQuestions.map((field) => {
+                    const val = newStudent.customFields?.[field.id] ?? '';
+                    return (
+                      <div key={field.id} className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          {field.label} {field.required && <span style={{ color: 'var(--accent-rose)' }}>*</span>}
+                          {field.includeInGrouping && (
+                            <span style={{ fontSize: '0.65rem', color: 'var(--teal)', fontWeight: 600 }}>
+                              (Balanced)
+                            </span>
+                          )}
+                        </label>
+                        {field.type === 'dropdown' ? (
+                          <select
+                            className="form-input"
+                            value={val}
+                            onChange={(e) => setNewStudent(prev => ({
+                              ...prev,
+                              customFields: { ...(prev.customFields || {}), [field.id]: e.target.value }
+                            }))}
+                            style={{ height: '36px', fontSize: '0.82rem', width: '100%' }}
+                          >
+                            <option value="">{field.placeholder || `-- Select ${field.label} --`}</option>
+                            {field.options?.map((opt, i) => (
+                              <option key={i} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : field.type === 'boolean' ? (
+                          <div
+                            onClick={() => setNewStudent(prev => ({
+                              ...prev,
+                              customFields: { ...(prev.customFields || {}), [field.id]: !val }
+                            }))}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.65rem',
+                              padding: '0.5rem 0.75rem',
+                              borderRadius: '8px',
+                              border: `1.5px solid ${val ? '#8b5cf6' : 'var(--border-color)'}`,
+                              backgroundColor: val ? 'rgba(139, 92, 246, 0.06)' : '#ffffff',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              minHeight: '36px'
+                            }}
+                          >
+                            <div style={{
+                              width: '18px',
+                              height: '18px',
+                              borderRadius: '4px',
+                              border: `2px solid ${val ? '#8b5cf6' : 'var(--text-muted)'}`,
+                              backgroundColor: val ? '#8b5cf6' : '#ffffff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#ffffff',
+                              flexShrink: 0
+                            }}>
+                              {val && <Check size={12} strokeWidth={3} />}
+                            </div>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {field.checkboxLabel || field.label}
+                            </span>
+                          </div>
+                        ) : field.type === 'number' ? (
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder={field.placeholder || 'Strictly numeric digits (e.g. 0, 1.5, 3)...'}
+                            className="form-input"
+                            value={val !== undefined ? val : ''}
+                            onKeyDown={(e) => {
+                              if (['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) return;
+                              if (e.key === '.' && !String(val || '').includes('.')) return;
+                              if (e.key === '-' && !String(val || '').includes('-')) return;
+                              if (!/^[0-9]$/.test(e.key)) {
+                                e.preventDefault();
+                              }
+                            }}
+                            onChange={(e) => {
+                              const cleaned = e.target.value.replace(/[^0-9.-]/g, '');
+                              setNewStudent(prev => ({
+                                ...prev,
+                                customFields: { ...(prev.customFields || {}), [field.id]: cleaned }
+                              }));
+                            }}
+                            style={{ height: '36px', fontSize: '0.82rem', width: '100%' }}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder={field.placeholder || 'Enter text answer (accepts numbers too)...'}
+                            className="form-input"
+                            value={val !== undefined ? val : ''}
+                            onChange={(e) => setNewStudent(prev => ({
+                              ...prev,
+                              customFields: { ...(prev.customFields || {}), [field.id]: e.target.value }
+                            }))}
+                            style={{ height: '36px', fontSize: '0.82rem', width: '100%' }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
           </div>
         </form>
       </Modal>
@@ -10378,7 +10715,7 @@ export const AdminDashboard: React.FC = () => {
         title="Edit Student Profile Details"
         maxWidth="720px"
         footer={
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
+          <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'flex-end', width: '100%' }}>
             <button className="btn btn-secondary" onClick={() => setIsEditStudentModalOpen(false)}>Cancel</button>
             <button className="btn btn-primary" onClick={handleEditStudentSubmit} style={{ gap: '0.35rem', fontWeight: 700 }}>
               <Check size={15} /> Save Changes
@@ -10789,6 +11126,152 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {/* SECTION 4: ADDITIONAL COURSE QUESTIONS (CUSTOM FIELDS) */}
+            <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#8b5cf6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800 }}>4</div>
+                  <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Additional Course Questions
+                  </span>
+                  {activeCustomQuestions.length > 0 && (
+                    <span className="badge badge-purple" style={{ fontSize: '0.68rem', padding: '0.1rem 0.45rem' }}>
+                      {activeCustomQuestions.length} Custom {activeCustomQuestions.length === 1 ? 'Field' : 'Fields'}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setIsEnrollmentFormBuilderOpen(true)}
+                  style={{ fontSize: '0.74rem', height: '28px', padding: '0 0.65rem', gap: '0.35rem', color: '#8b5cf6', borderColor: 'rgba(139, 92, 246, 0.4)' }}
+                  title="Add or edit custom questions in this enrollment form"
+                >
+                  <Plus size={13} /> Customize / Add Fields
+                </button>
+              </div>
+
+              {activeCustomQuestions.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '0.85rem', color: 'var(--text-muted)', fontSize: '0.76rem', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
+                  No custom questions configured for this course yet.
+                  <button
+                    type="button"
+                    onClick={() => setIsEnrollmentFormBuilderOpen(true)}
+                    style={{ background: 'none', border: 'none', color: '#8b5cf6', fontWeight: 700, cursor: 'pointer', marginLeft: '0.35rem', textDecoration: 'underline' }}
+                  >
+                    Click here to add custom fields &rarr;
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                  {activeCustomQuestions.map((field) => {
+                    const val = editStudentData.customFields?.[field.id] ?? '';
+                    return (
+                      <div key={field.id} className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          {field.label} {field.required && <span style={{ color: 'var(--accent-rose)' }}>*</span>}
+                          {field.includeInGrouping && (
+                            <span style={{ fontSize: '0.65rem', color: 'var(--teal)', fontWeight: 600 }}>
+                              (Balanced)
+                            </span>
+                          )}
+                        </label>
+                        {field.type === 'dropdown' ? (
+                          <select
+                            className="form-input"
+                            value={val}
+                            onChange={(e) => setEditStudentData(prev => ({
+                              ...prev,
+                              customFields: { ...(prev.customFields || {}), [field.id]: e.target.value }
+                            }))}
+                            style={{ height: '36px', fontSize: '0.82rem', width: '100%' }}
+                          >
+                            <option value="">{field.placeholder || `-- Select ${field.label} --`}</option>
+                            {field.options?.map((opt, i) => (
+                              <option key={i} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : field.type === 'boolean' ? (
+                          <div
+                            onClick={() => setEditStudentData(prev => ({
+                              ...prev,
+                              customFields: { ...(prev.customFields || {}), [field.id]: !val }
+                            }))}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.65rem',
+                              padding: '0.5rem 0.75rem',
+                              borderRadius: '8px',
+                              border: `1.5px solid ${val ? '#8b5cf6' : 'var(--border-color)'}`,
+                              backgroundColor: val ? 'rgba(139, 92, 246, 0.06)' : '#ffffff',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              minHeight: '36px'
+                            }}
+                          >
+                            <div style={{
+                              width: '18px',
+                              height: '18px',
+                              borderRadius: '4px',
+                              border: `2px solid ${val ? '#8b5cf6' : 'var(--text-muted)'}`,
+                              backgroundColor: val ? '#8b5cf6' : '#ffffff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#ffffff',
+                              flexShrink: 0
+                            }}>
+                              {val && <Check size={12} strokeWidth={3} />}
+                            </div>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {field.checkboxLabel || field.label}
+                            </span>
+                          </div>
+                        ) : field.type === 'number' ? (
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder={field.placeholder || 'Strictly numeric digits (e.g. 0, 1.5, 3)...'}
+                            className="form-input"
+                            value={val !== undefined ? val : ''}
+                            onKeyDown={(e) => {
+                              if (['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) return;
+                              if (e.key === '.' && !String(val || '').includes('.')) return;
+                              if (e.key === '-' && !String(val || '').includes('-')) return;
+                              if (!/^[0-9]$/.test(e.key)) {
+                                e.preventDefault();
+                              }
+                            }}
+                            onChange={(e) => {
+                              const cleaned = e.target.value.replace(/[^0-9.-]/g, '');
+                              setEditStudentData(prev => ({
+                                ...prev,
+                                customFields: { ...(prev.customFields || {}), [field.id]: cleaned }
+                              }));
+                            }}
+                            style={{ height: '36px', fontSize: '0.82rem', width: '100%' }}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder={field.placeholder || 'Enter text answer (accepts numbers too)...'}
+                            className="form-input"
+                            value={val !== undefined ? val : ''}
+                            onChange={(e) => setEditStudentData(prev => ({
+                              ...prev,
+                              customFields: { ...(prev.customFields || {}), [field.id]: e.target.value }
+                            }))}
+                            style={{ height: '36px', fontSize: '0.82rem', width: '100%' }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
           </div>
         </form>
@@ -12159,70 +12642,70 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     ) : (
                       <div className="table-container">
-                      <table className="custom-table" style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse', textAlign: 'center' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ textAlign: 'left', backgroundColor: 'var(--bg-app)' }}>Reviewer \ Recipient</th>
-                            {teamStudents.map(ts => (
-                              <th key={ts.id} style={{ backgroundColor: 'var(--bg-app)' }}>{ts.name}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {teamStudents.map(reviewer => {
-                            return (
-                              <tr key={reviewer.id}>
-                                <td style={{ fontWeight: 700, textAlign: 'left', backgroundColor: 'var(--bg-app)' }}>{reviewer.name}</td>
-                                {teamStudents.map(recipient => {
-                                  // Find evaluation
-                                  const review = activeClass.reviews.find(r => r.reviewerId === reviewer.id && r.recipientId === recipient.id);
-                                  const isSelf = reviewer.id === recipient.id;
+                        <table className="custom-table" style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse', textAlign: 'center' }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: 'left', backgroundColor: 'var(--bg-app)' }}>Reviewer \ Recipient</th>
+                              {teamStudents.map(ts => (
+                                <th key={ts.id} style={{ backgroundColor: 'var(--bg-app)' }}>{ts.name}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {teamStudents.map(reviewer => {
+                              return (
+                                <tr key={reviewer.id}>
+                                  <td style={{ fontWeight: 700, textAlign: 'left', backgroundColor: 'var(--bg-app)' }}>{reviewer.name}</td>
+                                  {teamStudents.map(recipient => {
+                                    // Find evaluation
+                                    const review = activeClass.reviews.find(r => r.reviewerId === reviewer.id && r.recipientId === recipient.id);
+                                    const isSelf = reviewer.id === recipient.id;
 
-                                  let cellText = '—';
-                                  if (review) {
-                                    if (activeAuditMetric === 'overall') {
-                                      // Compute overall percentage of this review
-                                      let sum = 0, max = 0;
-                                      activeClass.fields.forEach(f => {
-                                        sum += review.scores[f.id] ?? 0;
-                                        max += f.max;
-                                      });
-                                      cellText = max > 0 ? `${((sum / max) * 100).toFixed(0)}%` : '—';
-                                    } else {
-                                      // Single field score
-                                      const score = review.scores[activeAuditMetric];
-                                      const fieldObj = activeClass.fields.find(f => f.id === activeAuditMetric);
-                                      cellText = score !== undefined && fieldObj ? `${score} / ${fieldObj.max}` : '—';
+                                    let cellText = '—';
+                                    if (review) {
+                                      if (activeAuditMetric === 'overall') {
+                                        // Compute overall percentage of this review
+                                        let sum = 0, max = 0;
+                                        activeClass.fields.forEach(f => {
+                                          sum += review.scores[f.id] ?? 0;
+                                          max += f.max;
+                                        });
+                                        cellText = max > 0 ? `${((sum / max) * 100).toFixed(0)}%` : '—';
+                                      } else {
+                                        // Single field score
+                                        const score = review.scores[activeAuditMetric];
+                                        const fieldObj = activeClass.fields.find(f => f.id === activeAuditMetric);
+                                        cellText = score !== undefined && fieldObj ? `${score} / ${fieldObj.max}` : '—';
+                                      }
                                     }
-                                  }
 
-                                  return (
-                                    <td
-                                      key={recipient.id}
-                                      style={{
-                                        fontWeight: 600,
-                                        backgroundColor: isSelf ? 'hsla(173, 80%, 50%, 0.05)' : 'transparent',
-                                        border: isSelf ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
-                                        color: isSelf ? 'var(--accent-teal)' : 'var(--text-primary)',
-                                        position: 'relative',
-                                        padding: '0.75rem 1rem'
-                                      }}
-                                    >
-                                      <div className="tooltip-container" style={{ display: 'inline-block', width: '100%', height: '100%' }}>
-                                        <span>{cellText}</span>
-                                        <span className="tooltip-text">
-                                          {isSelf ? 'Self Evaluation Rating' : `${reviewer.name} rated ${recipient.name}`}
-                                        </span>
-                                      </div>
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                    return (
+                                      <td
+                                        key={recipient.id}
+                                        style={{
+                                          fontWeight: 600,
+                                          backgroundColor: isSelf ? 'hsla(173, 80%, 50%, 0.05)' : 'transparent',
+                                          border: isSelf ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
+                                          color: isSelf ? 'var(--accent-teal)' : 'var(--text-primary)',
+                                          position: 'relative',
+                                          padding: '0.75rem 1rem'
+                                        }}
+                                      >
+                                        <div className="tooltip-container" style={{ display: 'inline-block', width: '100%', height: '100%' }}>
+                                          <span>{cellText}</span>
+                                          <span className="tooltip-text">
+                                            {isSelf ? 'Self Evaluation Rating' : `${reviewer.name} rated ${recipient.name}`}
+                                          </span>
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
                 </EditableModuleSlot>
@@ -12242,164 +12725,164 @@ export const AdminDashboard: React.FC = () => {
                       <MessageSquare size={20} className="text-indigo" /> Student Comments Log
                     </h3>
 
-                  {teamStudents.map(reviewer => {
-                    // Get all reviews written by this reviewer
-                    const written = activeClass.reviews.filter(r => r.reviewerId === reviewer.id);
+                    {teamStudents.map(reviewer => {
+                      // Get all reviews written by this reviewer
+                      const written = activeClass.reviews.filter(r => r.reviewerId === reviewer.id);
 
-                    return (
-                      <div
-                        key={reviewer.id}
-                        className="card"
-                        style={{
-                          padding: '1.5rem',
-                          borderLeft: '4px solid var(--primary)',
-                          backgroundColor: 'var(--bg-surface)',
-                          pageBreakInside: 'avoid'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
-                          <div>
-                            <h4 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                              Evaluations Written by: {reviewer.name}
-                            </h4>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                              Email: {reviewer.email} • Status: {reviewer.submitted ? 'Submitted' : 'Pending'}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                            {reviewer.submitted && (
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => {
-                                  triggerConfirm(
-                                    `Reset ${reviewer.name}'s Submission`,
-                                    `Are you sure you want to reset the peer review submission for "${reviewer.name}"? This will clear all reviews they submitted and allow them to re-evaluate from their student portal.`,
-                                    () => {
-                                      resetStudentReviews(activeClass.id, reviewer.id);
-                                      setSelectedStudentReport(null);
-                                    },
-                                    'Reset Submission',
-                                    'Cancel'
-                                  );
-                                }}
-                                style={{
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  padding: '0.22rem 0.55rem',
-                                  color: 'var(--accent-amber)',
-                                  borderColor: 'var(--accent-amber)',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.3rem'
-                                }}
-                                title="Reset reviews submitted by this student"
-                              >
-                                <RotateCcw size={11} /> Reset Submission
-                              </button>
-                            )}
-                            <span className="badge badge-primary">
-                              {written.length} review(s) logged
-                            </span>
-                          </div>
-                        </div>
-
-                        {written.length === 0 ? (
-                          <div style={{ textAlign: 'center', padding: '1.5rem', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                            This student has not submitted any evaluations yet.
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                            {written.map(rev => {
-                              const recipient = activeClass.students.find(s => s.id === rev.recipientId);
-                              if (!recipient) return null;
-                              const isSelfEval = reviewer.id === recipient.id;
-
-                              // Calculate peer review percentage
-                              let rSum = 0, rMax = 0;
-                              activeClass.fields.forEach(f => {
-                                rSum += rev.scores[f.id] ?? 0;
-                                rMax += f.max;
-                              });
-                              const scorePct = rMax > 0 ? ((rSum / rMax) * 100).toFixed(0) : 0;
-
-                              return (
-                                <div
-                                  key={rev.recipientId}
-                                  style={{
-                                    backgroundColor: 'var(--bg-app)',
-                                    border: '1px solid var(--border-color)',
-                                    borderRadius: 'var(--radius-sm)',
-                                    padding: '1rem'
+                      return (
+                        <div
+                          key={reviewer.id}
+                          className="card"
+                          style={{
+                            padding: '1.5rem',
+                            borderLeft: '4px solid var(--primary)',
+                            backgroundColor: 'var(--bg-surface)',
+                            pageBreakInside: 'avoid'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+                            <div>
+                              <h4 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                                Evaluations Written by: {reviewer.name}
+                              </h4>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                Email: {reviewer.email} • Status: {reviewer.submitted ? 'Submitted' : 'Pending'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                              {reviewer.submitted && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => {
+                                    triggerConfirm(
+                                      `Reset ${reviewer.name}'s Submission`,
+                                      `Are you sure you want to reset the peer review submission for "${reviewer.name}"? This will clear all reviews they submitted and allow them to re-evaluate from their student portal.`,
+                                      () => {
+                                        resetStudentReviews(activeClass.id, reviewer.id);
+                                        setSelectedStudentReport(null);
+                                      },
+                                      'Reset Submission',
+                                      'Cancel'
+                                    );
                                   }}
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    padding: '0.22rem 0.55rem',
+                                    color: 'var(--accent-amber)',
+                                    borderColor: 'var(--accent-amber)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.3rem'
+                                  }}
+                                  title="Reset reviews submitted by this student"
                                 >
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: isSelfEval ? 'var(--accent-teal)' : 'var(--text-primary)' }}>
-                                      {isSelfEval ? 'Self Assessment Evaluation' : `Target: ${recipient.name}`}
-                                    </span>
-                                    <span className="badge" style={{ backgroundColor: isSelfEval ? 'var(--accent-teal-light)' : 'var(--primary-light)', color: isSelfEval ? 'var(--accent-teal)' : 'var(--primary)', fontWeight: 700, fontSize: '0.75rem' }}>
-                                      Review Score: {scorePct}% ({rSum} / {rMax})
-                                    </span>
-                                  </div>
-
-                                  {/* Metric list */}
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', marginBottom: '0.75rem', padding: '0.5rem', backgroundColor: 'var(--bg-card)', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
-                                    {activeClass.fields.map(f => (
-                                      <span key={f.id} style={{ color: 'var(--text-secondary)' }}>
-                                        {f.name}: <b style={{ color: 'var(--text-primary)' }}>{rev.scores[f.id] ?? 'N/A'} / {f.max}</b>
-                                      </span>
-                                    ))}
-                                  </div>
-
-                                  {/* Praise tags if any */}
-                                  {Array.isArray(rev.praiseTags) && rev.praiseTags.length > 0 && (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.75rem' }}>
-                                      {rev.praiseTags.map(tagText => {
-                                        const tagInfo = getPraiseTagInfo(tagText);
-                                        const TagIcon = tagInfo.icon;
-                                        return (
-                                          <span
-                                            key={tagText}
-                                            className="praise-badge-pill"
-                                            style={{
-                                              backgroundColor: tagInfo.bg,
-                                              color: tagInfo.color,
-                                              borderColor: tagInfo.border,
-                                              padding: '0.15rem 0.4rem',
-                                              fontSize: '0.68rem'
-                                            }}
-                                          >
-                                            <TagIcon size={9} />
-                                            <span>{tagInfo.text}</span>
-                                          </span>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-
-                                  {/* Written Text Feed */}
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.78rem', lineHeight: 1.4 }}>
-                                    {rev.strengthsText && (
-                                      <div>
-                                        <b className="text-teal">Strengths Comment:</b>
-                                        <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.strengthsText}"</p>
-                                      </div>
-                                    )}
-                                    {rev.growthText && (
-                                      <div style={{ marginTop: '0.2rem' }}>
-                                        <b className="text-rose">Growth Comment:</b>
-                                        <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.growthText}"</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                                  <RotateCcw size={11} /> Reset Submission
+                                </button>
+                              )}
+                              <span className="badge badge-primary">
+                                {written.length} review(s) logged
+                              </span>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+
+                          {written.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '1.5rem', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                              This student has not submitted any evaluations yet.
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                              {written.map(rev => {
+                                const recipient = activeClass.students.find(s => s.id === rev.recipientId);
+                                if (!recipient) return null;
+                                const isSelfEval = reviewer.id === recipient.id;
+
+                                // Calculate peer review percentage
+                                let rSum = 0, rMax = 0;
+                                activeClass.fields.forEach(f => {
+                                  rSum += rev.scores[f.id] ?? 0;
+                                  rMax += f.max;
+                                });
+                                const scorePct = rMax > 0 ? ((rSum / rMax) * 100).toFixed(0) : 0;
+
+                                return (
+                                  <div
+                                    key={rev.recipientId}
+                                    style={{
+                                      backgroundColor: 'var(--bg-app)',
+                                      border: '1px solid var(--border-color)',
+                                      borderRadius: 'var(--radius-sm)',
+                                      padding: '1rem'
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: isSelfEval ? 'var(--accent-teal)' : 'var(--text-primary)' }}>
+                                        {isSelfEval ? 'Self Assessment Evaluation' : `Target: ${recipient.name}`}
+                                      </span>
+                                      <span className="badge" style={{ backgroundColor: isSelfEval ? 'var(--accent-teal-light)' : 'var(--primary-light)', color: isSelfEval ? 'var(--accent-teal)' : 'var(--primary)', fontWeight: 700, fontSize: '0.75rem' }}>
+                                        Review Score: {scorePct}% ({rSum} / {rMax})
+                                      </span>
+                                    </div>
+
+                                    {/* Metric list */}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', marginBottom: '0.75rem', padding: '0.5rem', backgroundColor: 'var(--bg-card)', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
+                                      {activeClass.fields.map(f => (
+                                        <span key={f.id} style={{ color: 'var(--text-secondary)' }}>
+                                          {f.name}: <b style={{ color: 'var(--text-primary)' }}>{rev.scores[f.id] ?? 'N/A'} / {f.max}</b>
+                                        </span>
+                                      ))}
+                                    </div>
+
+                                    {/* Praise tags if any */}
+                                    {Array.isArray(rev.praiseTags) && rev.praiseTags.length > 0 && (
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.75rem' }}>
+                                        {rev.praiseTags.map(tagText => {
+                                          const tagInfo = getPraiseTagInfo(tagText);
+                                          const TagIcon = tagInfo.icon;
+                                          return (
+                                            <span
+                                              key={tagText}
+                                              className="praise-badge-pill"
+                                              style={{
+                                                backgroundColor: tagInfo.bg,
+                                                color: tagInfo.color,
+                                                borderColor: tagInfo.border,
+                                                padding: '0.15rem 0.4rem',
+                                                fontSize: '0.68rem'
+                                              }}
+                                            >
+                                              <TagIcon size={9} />
+                                              <span>{tagInfo.text}</span>
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+
+                                    {/* Written Text Feed */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.78rem', lineHeight: 1.4 }}>
+                                      {rev.strengthsText && (
+                                        <div>
+                                          <b className="text-teal">Strengths Comment:</b>
+                                          <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.strengthsText}"</p>
+                                        </div>
+                                      )}
+                                      {rev.growthText && (
+                                        <div style={{ marginTop: '0.2rem' }}>
+                                          <b className="text-rose">Growth Comment:</b>
+                                          <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.growthText}"</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </EditableModuleSlot>
               )}
@@ -12409,35 +12892,59 @@ export const AdminDashboard: React.FC = () => {
       </Modal>
 
       {/* MODAL: CLASS QR CODE & SELF-ENROLLMENT */}
-      <ClassQRCodeModal
-        isOpen={isQRCodeModalOpen}
-        onClose={() => setIsQRCodeModalOpen(false)}
-        classNameTitle={activeClass.name}
-        enrollUrl={getClassEnrollmentUrl(activeClass.id)}
-        enrolledCount={activeClass.students.length}
-      />
+      {isQRCodeModalOpen && (
+        <ClassQRCodeModal
+          isOpen={isQRCodeModalOpen}
+          onClose={() => setIsQRCodeModalOpen(false)}
+          classNameTitle={activeClass.name}
+          enrollUrl={getClassEnrollmentUrl(activeClass.id)}
+          enrolledCount={activeClass.students.length}
+          onOpenEnrollmentBuilder={() => setIsEnrollmentFormBuilderOpen(true)}
+        />
+      )}
 
       {/* MODAL: INTELLIGENT AUTO-GROUP DIVERSITY STUDIO */}
-      <AutoGroupModal
-        isOpen={isAutoGroupModalOpen}
-        onClose={() => setIsAutoGroupModalOpen(false)}
-        students={activeClass.students}
-        onApplyGroups={(updatedStudents) => {
-          importRoster(activeClass.id, updatedStudents, true);
-          const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
-          addToast(`Successfully organized ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
-        }}
-        onOpenTeamCharter={(staged) => handleOpenTeamKickoff('charters', false, staged)}
-      />
+      {isAutoGroupModalOpen && (
+        <AutoGroupModal
+          isOpen={isAutoGroupModalOpen}
+          onClose={() => setIsAutoGroupModalOpen(false)}
+          students={activeClass.students}
+          classId={activeClass.id}
+          onOpenEnrollmentBuilder={() => setIsEnrollmentFormBuilderOpen(true)}
+          onApplyGroups={(updatedStudents) => {
+            importRoster(activeClass.id, updatedStudents, true);
+            const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
+            addToast(`Successfully organized ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
+          }}
+          onOpenTeamCharter={(staged) => handleOpenTeamKickoff('charters', false, staged)}
+        />
+      )}
+
+      {/* MODAL: CUSTOMIZE ENROLLMENT FORM QUESTIONS */}
+      {isEnrollmentFormBuilderOpen && (
+        <EnrollmentFormBuilderModal
+          isOpen={isEnrollmentFormBuilderOpen}
+          onClose={() => setIsEnrollmentFormBuilderOpen(false)}
+          classId={activeClass.id}
+          classNameTitle={activeClass.name}
+          fields={activeClass.enrollmentFormFields && activeClass.enrollmentFormFields.length > 0 ? activeClass.enrollmentFormFields : DEFAULT_ENROLLMENT_FIELDS}
+          onSaveFields={(fields) => {
+            updateEnrollmentFields(activeClass.id, fields);
+            addToast('Enrollment form customized successfully! Student registration page updated.', 'success');
+          }}
+        />
+      )}
 
       {/* MODAL: INDIVIDUAL STUDENT PDF REPORT CARDS & PREVIEWS */}
-      <StudentReportModal
-        isOpen={isReportModalOpen}
-        onClose={() => setIsReportModalOpen(false)}
-        initialStudentId={selectedReportStudentId}
-        classData={activeClass}
-        onToast={addToast}
-      />
+      {isReportModalOpen && (
+        <StudentReportModal
+          isOpen={isReportModalOpen}
+          onClose={() => setIsReportModalOpen(false)}
+          initialStudentId={selectedReportStudentId}
+          classData={activeClass}
+          onToast={addToast}
+        />
+      )}
 
       {/* MODAL: LIVE CLASSROOM PROJECTOR / PRESENTATION MODE */}
       {isProjectorModalOpen && createPortal(
@@ -12452,48 +12959,55 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* MODAL: FAST LINK DISPATCHER & BULK ROSTER LINKS */}
-      <LinkDispatcherModal
-        isOpen={isLinkDispatcherOpen}
-        onClose={() => setIsLinkDispatcherOpen(false)}
-        classData={activeClass}
-        onToast={addToast}
-      />
+      {isLinkDispatcherOpen && (
+        <LinkDispatcherModal
+          isOpen={isLinkDispatcherOpen}
+          onClose={() => setIsLinkDispatcherOpen(false)}
+          classData={activeClass}
+          onToast={addToast}
+        />
+      )}
 
       {/* MODAL: UNIFIED SETTINGS HUB (EMAIL, CLOUD, SHORTCUTS & PREFERENCES) */}
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        initialTab={settingsInitialTab}
-        shortcuts={shortcuts}
-        onUpdateShortcuts={handleUpdateShortcuts}
-        onResetShortcuts={handleResetShortcuts}
-        showChecklist={showOnboardingChecklist}
-        onToggleChecklist={(show) => {
-          setShowOnboardingChecklist(show);
-          localStorage.setItem('peer_onboarding_dismissed', show ? 'false' : 'true');
-        }}
-        onOpenEditMode={() => setIsEditMode(true)}
-        shortcutsEnabled={shortcutsEnabled}
-        onToggleShortcutsEnabled={(val) => {
-          setShortcutsEnabled(val);
-          saveShortcutsEnabled(val);
-        }}
-      />
+      {isSettingsModalOpen && (
+        <SettingsModal
+          isOpen={isSettingsModalOpen}
+          onClose={() => setIsSettingsModalOpen(false)}
+          initialTab={settingsInitialTab}
+          shortcuts={shortcuts}
+          onUpdateShortcuts={handleUpdateShortcuts}
+          onResetShortcuts={handleResetShortcuts}
+          showChecklist={showOnboardingChecklist}
+          onToggleChecklist={(show) => {
+            setShowOnboardingChecklist(show);
+            localStorage.setItem('peer_onboarding_dismissed', show ? 'false' : 'true');
+          }}
+          onOpenEditMode={() => setIsEditMode(true)}
+          shortcutsEnabled={shortcutsEnabled}
+          onToggleShortcutsEnabled={(val) => {
+            setShortcutsEnabled(val);
+            saveShortcutsEnabled(val);
+          }}
+        />
+      )}
 
       {/* MODAL: EVALUATION FORM CONTROLS & STUDENT PERMISSIONS */}
-      <EvaluationControlsModal
-        isOpen={isEvaluationControlsModalOpen}
-        onClose={() => setIsEvaluationControlsModalOpen(false)}
-        activeClass={activeClass}
-        onUpdateControls={(controls) => {
-          if (activeClass) {
-            updateEvaluationControls(activeClass.id, controls);
-          }
-        }}
-      />
+      {isEvaluationControlsModalOpen && (
+        <EvaluationControlsModal
+          isOpen={isEvaluationControlsModalOpen}
+          onClose={() => setIsEvaluationControlsModalOpen(false)}
+          activeClass={activeClass}
+          onUpdateControls={(controls) => {
+            if (activeClass) {
+              updateEvaluationControls(activeClass.id, controls);
+            }
+          }}
+        />
+      )}
 
       {/* MODAL: QUICK COMMAND PALETTE & FINDER (CTRL/CMD + K) */}
-      <CommandPaletteModal
+      {isCommandPaletteOpen && (
+        <CommandPaletteModal
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         onOpenEvaluationControls={() => setIsEvaluationControlsModalOpen(true)}
@@ -12505,7 +13019,13 @@ export const AdminDashboard: React.FC = () => {
           syncWorkspaceSettingsToCloud({ featureToggles: updated });
         }}
         onApplyMode={(mode) => {
-          const updated = mode === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (mode === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
+          const updated = mode === 'minimal' 
+            ? MINIMAL_FEATURE_TOGGLES 
+            : (mode === 'full' 
+              ? FULL_FEATURE_TOGGLES 
+              : (mode === 'none' 
+                ? NONE_FEATURE_TOGGLES 
+                : DEFAULT_FEATURE_TOGGLES));
           saveFeatureToggles(updated);
           syncWorkspaceSettingsToCloud({ featureToggles: updated });
         }}
@@ -12521,6 +13041,7 @@ export const AdminDashboard: React.FC = () => {
           setIsSettingsModalOpen(true);
         }}
         onOpenAddStudent={() => setIsAddStudentModalOpen(true)}
+        onOpenEnrollmentBuilder={() => setIsEnrollmentFormBuilderOpen(true)}
         onOpenTeamCharter={() => handleOpenTeamKickoff('charters')}
         onOpenLivePresentation={() => setIsLivePresentationModalOpen(true)}
         onOpenReportModal={(studentId) => openReportModal(studentId)}
@@ -12644,39 +13165,46 @@ export const AdminDashboard: React.FC = () => {
           saveShortcutsEnabled(val);
         }}
       />
+      )}
 
       {/* ACADEMIC GUIDANCE & INTERACTIVE TUTORIAL CENTER */}
-      <GuideCenterModal
-        isOpen={isGuideCenterOpen}
-        onClose={() => setIsGuideCenterOpen(false)}
-        onStartTour={handleStartTour}
-        initialTab={guideCenterInitialTab}
-      />
+      {isGuideCenterOpen && (
+        <GuideCenterModal
+          isOpen={isGuideCenterOpen}
+          onClose={() => setIsGuideCenterOpen(false)}
+          onStartTour={handleStartTour}
+          initialTab={guideCenterInitialTab}
+        />
+      )}
 
       {/* INTERACTIVE STEP-BY-STEP PRODUCT WALKTHROUGH & SPOTLIGHT TOUR */}
-      <InteractiveTour
-        isOpen={isTourOpen}
-        onClose={() => {
-          setIsTourOpen(false);
-          setCustomTourStepIds(null);
-          handleRestoreTourSnapshot();
-        }}
-        onNavigateTab={(tab) => setActiveTab(tab as any)}
-        activeTab={activeTab}
-        customStepIds={customTourStepIds}
-        onRestoreSnapshot={handleRestoreTourSnapshot}
-        hasSnapshot={!!tourSnapshot}
-        onExecuteDemoStep={handleExecuteTourDemoStep}
-        featureToggles={featureToggles}
-      />
+      {isTourOpen && (
+        <InteractiveTour
+          isOpen={isTourOpen}
+          onClose={() => {
+            setIsTourOpen(false);
+            setCustomTourStepIds(null);
+            handleRestoreTourSnapshot();
+          }}
+          onNavigateTab={(tab) => setActiveTab(tab as any)}
+          activeTab={activeTab}
+          customStepIds={customTourStepIds}
+          onRestoreSnapshot={handleRestoreTourSnapshot}
+          hasSnapshot={!!tourSnapshot}
+          onExecuteDemoStep={handleExecuteTourDemoStep}
+          featureToggles={featureToggles}
+        />
+      )}
 
       {/* INTERACTIVE STUDENT SMARTPHONE PORTAL SIMULATOR */}
-      <StudentPortalPreviewModal
-        isOpen={!!previewingStudent}
-        onClose={() => setPreviewingStudent(null)}
-        student={previewingStudent}
-        classroom={activeClass}
-      />
+      {!!previewingStudent && (
+        <StudentPortalPreviewModal
+          isOpen={!!previewingStudent}
+          onClose={() => setPreviewingStudent(null)}
+          student={previewingStudent}
+          classroom={activeClass}
+        />
+      )}
 
       {/* TEAM-SPECIFIC PROJECT BASE MARKS MODAL */}
       {isTeamBaseGradesModalOpen && activeClass && createPortal(
@@ -13234,21 +13762,25 @@ export const AdminDashboard: React.FC = () => {
       </Modal>
 
       {/* GLOBAL KEYBOARD SHORTCUTS CHEAT SHEET MODAL (? or / key) */}
-      <KeyboardShortcutsModal
-        isOpen={isShortcutsModalOpen}
-        onClose={() => setIsShortcutsModalOpen(false)}
-        shortcuts={shortcuts}
-        onOpenCustomize={() => {
-          setIsShortcutsModalOpen(false);
-          setSettingsInitialTab('shortcuts');
-          setIsSettingsModalOpen(true);
-        }}
-      />
-
-
+      {isShortcutsModalOpen && (
+        <KeyboardShortcutsModal
+          isOpen={isShortcutsModalOpen}
+          onClose={() => setIsShortcutsModalOpen(false)}
+          shortcuts={shortcuts}
+          onOpenCustomize={() => {
+            setIsShortcutsModalOpen(false);
+            setSettingsInitialTab('shortcuts');
+            setIsSettingsModalOpen(true);
+          }}
+          onExecuteAction={(actionId) => {
+            setIsShortcutsModalOpen(false);
+            executeShortcutActionRef.current(actionId);
+          }}
+        />
+      )}
 
       {/* MODAL: LIVE PRESENTATION DAY SCORING COCKPIT */}
-      {activeClass && (
+      {activeClass && isLivePresentationModalOpen && (
         <LivePresentationScoringModal
           isOpen={isLivePresentationModalOpen}
           onClose={() => setIsLivePresentationModalOpen(false)}
@@ -13263,7 +13795,7 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* MODAL: TEAM CHARTER, ROLES & ICEBREAKER STUDIO */}
-      {activeClass && (
+      {activeClass && isTeamKickoffModalOpen && (
         <TeamKickoffModal
           isOpen={isTeamKickoffModalOpen}
           onClose={() => setIsTeamKickoffModalOpen(false)}
@@ -13329,7 +13861,13 @@ export const AdminDashboard: React.FC = () => {
             syncWorkspaceSettingsToCloud({ featureToggles: updated });
           },
           onApplyPreset: (preset) => {
-            const updated = preset === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (preset === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
+            const updated = preset === 'minimal' 
+              ? MINIMAL_FEATURE_TOGGLES 
+              : (preset === 'full' 
+                ? FULL_FEATURE_TOGGLES 
+                : (preset === 'none' 
+                  ? NONE_FEATURE_TOGGLES 
+                  : DEFAULT_FEATURE_TOGGLES));
             saveFeatureToggles(updated);
             syncWorkspaceSettingsToCloud({ featureToggles: updated });
           },
@@ -13443,6 +13981,64 @@ export const AdminDashboard: React.FC = () => {
           onOpenEditMode: () => setIsEditMode(true),
           onOpenLivePresentation: () => setIsLivePresentationModalOpen(true),
           onOpenTeamKickoff: (tab?: 'roles_config' | 'icebreakers' | 'charters') => handleOpenTeamKickoff(tab || 'roles_config'),
+          onClearRoster: () => {
+            if (!activeClass) return;
+            triggerConfirm(
+              'Clear Classroom Roster',
+              `Are you sure you want to permanently delete all ${activeClass.students.length} students and their evaluation records from "${activeClass.name}"? Active student sessions will be immediately terminated.`,
+              () => clearClassRoster(activeClass.id),
+              'Clear Entire Roster',
+              'Cancel'
+            );
+          },
+          onExportLMS: (platform) => {
+            if (activeClass) {
+              try {
+                exportLMSGradebook(platform, activeClass, 'calibrated');
+                addToast(`Exported ${platform.toUpperCase()} gradebook successfully!`, 'success');
+              } catch (e) {
+                addToast('Failed to export LMS gradebook', 'error');
+              }
+            }
+          },
+          onExportPulseCSV: () => {
+            if (!activeClass) return;
+            const rounds = activeClass.pulseRounds || [];
+            if (rounds.length === 0) {
+              addToast('No pulse check-in rounds found. Launch a round in Section 2 first.', 'warning');
+              return;
+            }
+            const targetRound = rounds.find(r => r.status === 'active') || rounds[0];
+            const headers = ['Round Title', 'Status', 'Student Name', 'Team Name', 'Morale Rating', 'Scale Type', 'Milestone Status', 'Blocker Note', 'Submitted At', 'Custom Answers'];
+            const rows: string[][] = [];
+            targetRound.responses.forEach(resp => {
+              const customFormatted = resp.customAnswers ? Object.entries(resp.customAnswers).map(([k, v]) => `${k}: ${v}`).join('; ') : '';
+              rows.push([
+                `"${targetRound.title.replace(/"/g, '""')}"`,
+                targetRound.status,
+                `"${resp.studentName.replace(/"/g, '""')}"`,
+                `"${resp.groupName.replace(/"/g, '""')}"`,
+                String(resp.moraleScore),
+                resp.scaleType,
+                resp.status,
+                `"${(resp.blockerNote || '').replace(/"/g, '""')}"`,
+                new Date(resp.submittedAt).toLocaleString(),
+                `"${customFormatted.replace(/"/g, '""')}"`
+              ]);
+            });
+            const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const safeTitle = targetRound.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+            link.setAttribute('download', `${activeClass.name.replace(/\s+/g, '_')}_${safeTitle}_Pulse_Export.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            addToast('Downloaded pulse responses CSV successfully!', 'success');
+          },
           shortcutsEnabled,
           onToggleShortcutsEnabled: (val) => {
             setShortcutsEnabled(val);
@@ -13459,17 +14055,23 @@ export const AdminDashboard: React.FC = () => {
           missions: sandboxMissions,
           onNavigateTab: (tab) => setActiveTab(tab)
         }}
-        isEditMode={isEditMode}
+        isEditMode={isEditMode && !isQuickAddActive}
         layoutEditProps={{
           onClose: () => setIsEditMode(false),
           activeTab,
           onNavigateTab: (tab) => setActiveTab(tab),
           featureToggles,
           onApplyPreset: (preset) => {
-            const updated = preset === 'minimal' ? MINIMAL_FEATURE_TOGGLES : (preset === 'full' ? FULL_FEATURE_TOGGLES : DEFAULT_FEATURE_TOGGLES);
+            const updated = preset === 'minimal' 
+              ? MINIMAL_FEATURE_TOGGLES 
+              : (preset === 'full' 
+                ? FULL_FEATURE_TOGGLES 
+                : (preset === 'none' 
+                  ? NONE_FEATURE_TOGGLES 
+                  : DEFAULT_FEATURE_TOGGLES));
             saveFeatureToggles(updated);
             syncWorkspaceSettingsToCloud({ featureToggles: updated });
-            addToast(`Applied ${preset.toUpperCase()} density preset!`, 'info');
+            addToast(preset === 'none' ? 'Hidden all modules: Clean canvas mode' : `Applied ${preset.toUpperCase()} density preset!`, 'info');
           },
           shortcutsEnabled,
           onToggleShortcutsEnabled: (val) => {
@@ -13500,7 +14102,50 @@ export const AdminDashboard: React.FC = () => {
       />
       {/* SPACEBAR HOVER QUICK LOOK HUD */}
       <QuickLookHUD payload={quickLookPayload} cursorPos={quickLookPos} />
+
+      {/* QUICKADD HOLD-KEY ACTIVE FLOATING HUD */}
+      {isQuickAddActive && (
+        <div
+          className="quickadd-hud-pill"
+          style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99999,
+            backgroundColor: 'var(--bg-surface, #ffffff)',
+            border: '1.5px solid var(--accent-teal, #10b981)',
+            borderRadius: '999px',
+            padding: '0.45rem 1.15rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            boxShadow: '0 12px 36px rgba(16, 185, 129, 0.28), 0 4px 12px rgba(0,0,0,0.12)',
+            pointerEvents: 'none',
+            userSelect: 'none',
+            animation: 'quickLookPop 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+            color: 'var(--text-primary)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)'
+          }}
+        >
+          <div style={{
+            width: '9px',
+            height: '9px',
+            borderRadius: '50%',
+            backgroundColor: 'var(--accent-teal, #10b981)',
+            boxShadow: '0 0 10px var(--accent-teal, #10b981)'
+          }} />
+          <span style={{ fontSize: '0.82rem', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>
+            QuickAdd Mode Active
+          </span>
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+            • Tap any module to show/hide • Scroll freely • Release <strong>A</strong> to exit
+          </span>
+        </div>
+      )}
     </div>
+    </EditModeContext.Provider>
   );
 };
 export default AdminDashboard;

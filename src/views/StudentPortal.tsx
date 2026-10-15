@@ -13,7 +13,7 @@ import { useClass } from '../context/ClassContext';
 import { 
   calculateStudentMetrics, getTargetScale, normalizeNationality, getEvaluationControls, 
   type Student, PULSE_SCALE_PRESETS, DEFAULT_TEAM_ROLES, type TeamCharterRole,
-  DEFAULT_CUSTOM_ICEBREAKERS, type CustomIcebreakerTask 
+  DEFAULT_CUSTOM_ICEBREAKERS, type CustomIcebreakerTask, isStandardEnrollmentField 
 } from '../utils/math';
 import FeatureInfoButton from '../components/FeatureInfoButton';
 
@@ -797,7 +797,18 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   // Profile Edit modal states
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [profileForm, setProfileForm] = useState({
+  const [profileForm, setProfileForm] = useState<{
+    name: string;
+    email: string;
+    gender: string;
+    englishProficiency: string;
+    degree: string;
+    university: string;
+    nationality: string;
+    isInternational: boolean;
+    isExchange: boolean;
+    customFields: Record<string, any>;
+  }>({
     name: student?.name || '',
     email: student?.email || '',
     gender: student?.gender || 'Prefer not to say',
@@ -806,7 +817,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     university: student?.university || '',
     nationality: student?.nationality || '',
     isInternational: !!student?.isInternational,
-    isExchange: !!student?.isExchange
+    isExchange: !!student?.isExchange,
+    customFields: student?.customFields || {}
   });
 
   // Keep profile form synced with student record
@@ -821,7 +833,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         university: student.university || '',
         nationality: student.nationality || '',
         isInternational: !!student.isInternational,
-        isExchange: !!student.isExchange
+        isExchange: !!student.isExchange,
+        customFields: student.customFields || {}
       });
     }
   }, [student]);
@@ -2154,7 +2167,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         isExchange: profileForm.isExchange,
         studentType: profileForm.isExchange ? 'Erasmus' : (profileForm.isInternational ? 'International' : 'Normal'),
         groupName: student.groupName,
-        submitted: student.submitted
+        submitted: student.submitted,
+        customFields: {
+          ...(student.customFields || {}),
+          ...(profileForm.customFields || {})
+        }
       };
       const res = await enrollStudent(activeClass.id, updatedData);
       if (res.success) {
@@ -2351,6 +2368,128 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <span>Exchange / Erasmus Student</span>
             </label>
           </div>
+
+          {/* Custom Additional Questions (Extensions) */}
+          {(() => {
+            const customQuestions = (activeClass?.enrollmentFormFields || []).filter(
+              f => !isStandardEnrollmentField(f.id)
+            );
+            if (customQuestions.length === 0) return null;
+
+            return (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem',
+                marginTop: '0.75rem',
+                borderTop: '1px solid var(--border-color)',
+                paddingTop: '0.75rem'
+              }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Sparkles size={13} /> Additional Course Questions
+                </span>
+                {customQuestions.map((field) => {
+                const val = profileForm.customFields?.[field.id] ?? '';
+                return (
+                  <div key={field.id}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 700, display: 'block', marginBottom: '0.25rem', color: 'var(--text-secondary)' }}>
+                      {field.label} {field.required && <span style={{ color: 'var(--accent-rose)' }}>*</span>}
+                    </label>
+                    {field.type === 'dropdown' ? (
+                      <select
+                        className="form-input"
+                        value={val}
+                        onChange={(e) => setProfileForm(prev => ({
+                          ...prev,
+                          customFields: { ...prev.customFields, [field.id]: e.target.value }
+                        }))}
+                        style={{ width: '100%', boxSizing: 'border-box', height: '36px', fontSize: '0.82rem' }}
+                      >
+                        <option value="">{field.placeholder || `-- Select ${field.label} --`}</option>
+                        {field.options?.map((opt, i) => (
+                          <option key={i} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : field.type === 'boolean' ? (
+                      <div
+                        onClick={() => setProfileForm(prev => ({
+                          ...prev,
+                          customFields: { ...prev.customFields, [field.id]: !val }
+                        }))}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.65rem',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          border: `1.5px solid ${val ? '#8b5cf6' : 'var(--border-color)'}`,
+                          backgroundColor: val ? 'rgba(139, 92, 246, 0.06)' : 'var(--bg-app)',
+                          cursor: 'pointer',
+                          userSelect: 'none',
+                          minHeight: '36px'
+                        }}
+                      >
+                        <div style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '4px',
+                          border: `2px solid ${val ? '#8b5cf6' : 'var(--text-muted)'}`,
+                          backgroundColor: val ? '#8b5cf6' : '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#ffffff',
+                          flexShrink: 0
+                        }}>
+                          {val && <Check size={12} strokeWidth={3} />}
+                        </div>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {field.checkboxLabel || field.label}
+                        </span>
+                      </div>
+                    ) : field.type === 'number' ? (
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="form-input"
+                        value={val !== undefined ? val : ''}
+                        onKeyDown={(e) => {
+                          if (['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) return;
+                          if (e.key === '.' && !String(val || '').includes('.')) return;
+                          if (e.key === '-' && !String(val || '').includes('-')) return;
+                          if (!/^[0-9]$/.test(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
+                        onChange={(e) => {
+                          const cleaned = e.target.value.replace(/[^0-9.-]/g, '');
+                          setProfileForm(prev => ({
+                            ...prev,
+                            customFields: { ...prev.customFields, [field.id]: cleaned }
+                          }));
+                        }}
+                        placeholder={field.placeholder || 'Strictly numeric digits (e.g. 0, 1.5, 3)...'}
+                        style={{ width: '100%', boxSizing: 'border-box', height: '36px', fontSize: '0.82rem' }}
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={val !== undefined ? val : ''}
+                        onChange={(e) => setProfileForm(prev => ({
+                          ...prev,
+                          customFields: { ...prev.customFields, [field.id]: e.target.value }
+                        }))}
+                        placeholder={field.placeholder || 'Enter text answer (accepts numbers too)...'}
+                        style={{ width: '100%', boxSizing: 'border-box', height: '36px', fontSize: '0.82rem' }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
             <button

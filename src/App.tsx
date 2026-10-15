@@ -75,7 +75,8 @@ const AppContent: React.FC = () => {
       }
 
       // 2. If opened via enrollment link or QR code, check if student already enrolled on this device
-      if (enrollClassId && !classId && !studentId) {
+      const isPreviewOrEdit = params.get('preview') === 'true' || params.get('edit') === 'true' || params.get('view') === 'form';
+      if (enrollClassId && !classId && !studentId && !isPreviewOrEdit) {
         try {
           const stored = localStorage.getItem(`peer_enrolled_student_${enrollClassId}`);
           if (stored) {

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { QrCode, Copy, Check, Download, ExternalLink, Sparkles, Smartphone, Users } from 'lucide-react';
+import {
+  Copy, Check, Download, ExternalLink,
+  Smartphone, Sliders, Maximize2, Minimize2
+} from 'lucide-react';
 import Modal from './Modal';
-import FeatureInfoButton from './FeatureInfoButton';
 
 interface ClassQRCodeModalProps {
   isOpen: boolean;
@@ -10,6 +12,7 @@ interface ClassQRCodeModalProps {
   classNameTitle: string;
   enrollUrl: string;
   enrolledCount?: number;
+  onOpenEnrollmentBuilder?: () => void;
 }
 
 export const ClassQRCodeModal: React.FC<ClassQRCodeModalProps> = ({
@@ -17,7 +20,8 @@ export const ClassQRCodeModal: React.FC<ClassQRCodeModalProps> = ({
   onClose,
   classNameTitle,
   enrollUrl,
-  enrolledCount = 0
+  enrolledCount = 0,
+  onOpenEnrollmentBuilder
 }) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
@@ -26,10 +30,10 @@ export const ClassQRCodeModal: React.FC<ClassQRCodeModalProps> = ({
   useEffect(() => {
     if (enrollUrl) {
       QRCode.toDataURL(enrollUrl, {
-        width: 600,
+        width: 800,
         margin: 2,
         color: {
-          dark: '#1e1b4b',
+          dark: '#000000',
           light: '#ffffff'
         },
         errorCorrectionLevel: 'H'
@@ -46,7 +50,7 @@ export const ClassQRCodeModal: React.FC<ClassQRCodeModalProps> = ({
   const handleCopyLink = () => {
     navigator.clipboard.writeText(enrollUrl);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownloadQR = () => {
@@ -61,130 +65,274 @@ export const ClassQRCodeModal: React.FC<ClassQRCodeModalProps> = ({
 
   if (!isOpen) return null;
 
+  const qrSize = presentationMode ? 380 : 260;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Student Self-Enrollment: ${classNameTitle}`} maxWidth={presentationMode ? '820px' : '580px'}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '1.25rem' }}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Join Classroom: ${classNameTitle}`}
+      maxWidth={presentationMode ? '780px' : '520px'}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '1.15rem' }}>
         
-        {/* Header Info */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0.75rem', borderRadius: '999px', background: 'var(--primary-light)', color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 600 }}>
-            <Sparkles size={14} /> Instant Classroom Onboarding
-            <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Classroom QR & Projector Guide" />
-          </div>
-          <h3 style={{ margin: 0, fontSize: presentationMode ? '1.5rem' : '1.2rem', fontWeight: 700, color: 'var(--text-main)' }}>
+        {/* Subtle Class Title & Enrolled Info */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+          <h3 style={{
+            margin: 0,
+            fontSize: presentationMode ? '1.5rem' : '1.2rem',
+            fontWeight: 800,
+            color: 'var(--text-primary)',
+            letterSpacing: '-0.02em'
+          }}>
             Scan to Join <span style={{ color: 'var(--primary)' }}>{classNameTitle}</span>
           </h3>
-          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '440px' }}>
-            Have students scan this QR code on their mobile devices or click the link below to enter their details and join the class roster.
+          <p style={{
+            margin: 0,
+            fontSize: '0.8rem',
+            color: 'var(--text-muted)'
+          }}>
+            {enrolledCount > 0 ? `${enrolledCount} students already enrolled • ` : ''}Scan with phone camera to join
           </p>
         </div>
 
-        {/* QR Display Card */}
-        <div 
+        {/* High-Visibility QR Code Frame */}
+        <div
           style={{
             position: 'relative',
-            padding: presentationMode ? '2rem' : '1.25rem',
-            background: '#ffffff',
-            borderRadius: 'var(--radius-lg)',
-            boxShadow: '0 12px 36px -8px rgba(79, 70, 229, 0.18), 0 4px 12px rgba(0,0,0,0.06)',
-            border: '2px solid var(--border-color)',
+            padding: presentationMode ? '1.5rem' : '1.1rem',
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.06)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            transition: 'all 0.3s ease'
+            transition: 'all 200ms ease'
           }}
         >
           {qrDataUrl ? (
-            <img 
-              src={qrDataUrl} 
-              alt="Class Enrollment QR Code" 
+            <img
+              src={qrDataUrl}
+              alt="Class Enrollment QR Code"
               style={{
-                width: presentationMode ? '340px' : '230px',
-                height: presentationMode ? '340px' : '230px',
-                borderRadius: '12px',
+                width: `${qrSize}px`,
+                height: `${qrSize}px`,
+                borderRadius: '8px',
                 objectFit: 'contain',
                 display: 'block'
               }}
             />
           ) : (
-            <div style={{ width: '230px', height: '230px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+            <div style={{
+              width: `${qrSize}px`,
+              height: `${qrSize}px`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-muted)',
+              fontSize: '0.82rem'
+            }}>
               Generating QR Code...
             </div>
           )}
 
-          <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-            <Smartphone size={14} className="text-teal" /> Point camera to open student registration portal
+          <div style={{
+            marginTop: '0.65rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            fontSize: '0.74rem',
+            color: 'var(--text-muted)',
+            fontWeight: 500
+          }}>
+            <Smartphone size={13} style={{ color: 'var(--text-secondary)' }} />
+            <span>Point camera to open registration form</span>
           </div>
         </div>
 
-        {/* Direct Sharable Link Input */}
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.35rem', textAlign: 'left' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Direct Shareable Link</span>
-            {enrolledCount > 0 && (
-              <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem' }}>
-                <Users size={11} style={{ marginRight: '3px' }} /> {enrolledCount} Enrolled
-              </span>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: '0.45rem' }}>
-            <input 
-              type="text" 
-              readOnly 
-              value={enrollUrl} 
-              className="form-input" 
-              style={{ fontSize: '0.8rem', fontFamily: 'monospace', height: '36px', background: 'var(--bg-app)', color: 'var(--text-main)' }}
-              onClick={(e) => (e.target as HTMLInputElement).select()}
-            />
-            <button 
-              type="button"
-              className={`btn ${copied ? 'btn-teal' : 'btn-primary'}`} 
-              onClick={handleCopyLink}
-              style={{ flexShrink: 0, height: '36px', padding: '0 0.85rem', fontSize: '0.8rem', fontWeight: 600, gap: '0.35rem' }}
-            >
-              {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
-            </button>
-          </div>
-        </div>
-
-        {/* Minimalized Action Toolbar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <button 
-              type="button" 
-              className="btn btn-secondary btn-sm"
-              onClick={handleDownloadQR}
-              title="Download QR code image"
-              style={{ height: '32px', fontSize: '0.78rem', padding: '0 0.65rem', gap: '0.35rem' }}
-            >
-              <Download size={13} /> Download
-            </button>
-            <a 
-              href={enrollUrl} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="btn btn-secondary btn-sm"
-              style={{ height: '32px', fontSize: '0.78rem', padding: '0 0.65rem', gap: '0.35rem', textDecoration: 'none' }}
-            >
-              <ExternalLink size={13} /> Preview
-            </a>
-            <button 
-              type="button" 
-              className={`btn btn-sm ${presentationMode ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setPresentationMode(!presentationMode)}
-              style={{ height: '32px', fontSize: '0.78rem', padding: '0 0.65rem', gap: '0.35rem' }}
-            >
-              <QrCode size={13} /> {presentationMode ? 'Standard' : 'Enlarge'}
-            </button>
-          </div>
-
-          <button 
-            type="button" 
-            className="btn btn-primary btn-sm" 
-            onClick={onClose}
-            style={{ height: '32px', fontSize: '0.78rem', padding: '0 1rem', fontWeight: 700 }}
+        {/* Minimal Direct Shareable Link */}
+        <div style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.4rem',
+          backgroundColor: 'var(--bg-app)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '10px',
+          padding: '0.35rem 0.5rem 0.35rem 0.85rem'
+        }}>
+          <input
+            type="text"
+            readOnly
+            value={enrollUrl}
+            style={{
+              flex: 1,
+              border: 'none',
+              background: 'transparent',
+              fontSize: '0.78rem',
+              fontFamily: 'monospace',
+              color: 'var(--text-secondary)',
+              outline: 'none'
+            }}
+            onClick={(e) => (e.target as HTMLInputElement).select()}
+          />
+          <button
+            type="button"
+            onClick={handleCopyLink}
+            title={copied ? 'Link Copied!' : 'Copy Shareable Link'}
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '7px',
+              border: 'none',
+              backgroundColor: copied ? '#10b981' : 'var(--primary)',
+              color: '#ffffff',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 120ms ease',
+              flexShrink: 0
+            }}
           >
-            Done
+            {copied ? <Check size={14} strokeWidth={2.5} /> : <Copy size={14} />}
+          </button>
+        </div>
+
+        {/* Minimal Icon-Only Bottom Toolbar */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          borderTop: '1px solid var(--border-color)',
+          paddingTop: '0.85rem',
+          marginTop: '0.2rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {/* Download QR Image */}
+            <button
+              type="button"
+              onClick={handleDownloadQR}
+              title="Download QR Code (PNG)"
+              aria-label="Download QR Code (PNG)"
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-app)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 120ms ease'
+              }}
+            >
+              <Download size={16} />
+            </button>
+
+            {/* Preview Student Registration Form */}
+            <a
+              href={`${enrollUrl}${enrollUrl.includes('?') ? '&' : '?'}preview=true`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Preview Student Registration Form"
+              aria-label="Preview Student Registration Form"
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-app)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textDecoration: 'none',
+                transition: 'all 120ms ease'
+              }}
+            >
+              <ExternalLink size={16} />
+            </a>
+
+            {/* Edit Questions Builder */}
+            {onOpenEnrollmentBuilder && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenEnrollmentBuilder();
+                }}
+                title="Edit Questions & Form Fields"
+                aria-label="Edit Questions & Form Fields"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-app)',
+                  color: 'var(--primary)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 120ms ease'
+                }}
+              >
+                <Sliders size={16} />
+              </button>
+            )}
+
+            {/* Enlarge / Projector Toggle */}
+            <button
+              type="button"
+              onClick={() => setPresentationMode(!presentationMode)}
+              title={presentationMode ? 'Switch to Compact View' : 'Enlarge for Projector'}
+              aria-label={presentationMode ? 'Switch to Compact View' : 'Enlarge for Projector'}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: presentationMode ? 'rgba(99, 102, 241, 0.1)' : 'var(--bg-app)',
+                color: presentationMode ? 'var(--primary)' : 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 120ms ease'
+              }}
+            >
+              {presentationMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+          </div>
+
+          {/* Done / Close Icon Button */}
+          <button
+            type="button"
+            onClick={onClose}
+            title="Done / Close"
+            aria-label="Done / Close"
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: 'var(--primary)',
+              color: '#ffffff',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 120ms ease',
+              boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)'
+            }}
+          >
+            <Check size={18} strokeWidth={2.5} />
           </button>
         </div>
 

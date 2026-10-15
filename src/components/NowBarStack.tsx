@@ -14,7 +14,8 @@ import {
   Check,
   X,
   Minimize2,
-  Maximize2
+  Maximize2,
+  EyeOff
 } from 'lucide-react';
 import { QuickActionPill, type QuickActionPillProps } from './QuickActionPill';
 import { GuidedSandboxHUD, type SandboxMission } from './GuidedSandboxHUD';
@@ -55,7 +56,7 @@ export interface NowBarStackProps {
   layoutEditProps?: {
     onClose: () => void;
     featureToggles: FeatureToggles;
-    onApplyPreset: (preset: 'minimal' | 'standard' | 'full') => void;
+    onApplyPreset: (preset: 'minimal' | 'standard' | 'full' | 'none') => void;
     activeTab: string;
     onNavigateTab: (tab: 'hub' | 'roster' | 'grading' | 'results') => void;
     shortcutsEnabled: boolean;
@@ -100,14 +101,17 @@ export const NowBarStack: React.FC<NowBarStackProps> = ({
       const activeClass = quickActionProps.activeClass;
       const submitted = activeClass?.students.filter((s) => s.submitted).length || 0;
       const total = activeClass?.students.length || 0;
+      const isCleanCanvas = Object.values(quickActionProps.featureToggles).every((v) => !v);
       list.push({
         id: 'quickAction',
-        label: 'Quick Action Center',
-        shortLabel: 'Tools',
-        icon: <Compass size={13} />,
-        accentColor: 'var(--primary)',
-        badge: total > 0 ? `${submitted}/${total} (${Math.round((submitted / total) * 100)}%)` : undefined,
-        subtext: activeClass?.name || 'Class Tools'
+        label: isCleanCanvas ? 'Clean Canvas' : 'Quick Action Center',
+        shortLabel: isCleanCanvas ? 'Canvas' : 'Tools',
+        icon: isCleanCanvas ? <EyeOff size={13} /> : <Compass size={13} />,
+        accentColor: isCleanCanvas ? 'var(--accent-rose, #ef4444)' : 'var(--primary)',
+        badge: isCleanCanvas
+          ? 'Hide All'
+          : (total > 0 ? `${submitted}/${total} (${Math.round((submitted / total) * 100)}%)` : undefined),
+        subtext: isCleanCanvas ? 'All modules hidden' : (activeClass?.name || 'Class Tools')
       });
     }
 

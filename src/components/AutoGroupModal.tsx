@@ -10,7 +10,7 @@ import {
   Table, Columns3, ArrowRightLeft,
   Pin, PinOff, Undo2, Redo2,
   Target, Zap, ArrowRight,
-  Lock, Unlock, UserX, UserCheck, Send
+  Lock, Unlock, UserX, UserCheck, Send, Percent, MoreHorizontal
 } from 'lucide-react';
 import type { Student } from '../utils/math';
 import { 
@@ -19,15 +19,19 @@ import {
   discoverRosterFields,
   DEFAULT_GROUPING_RULES,
   normalizeRule,
+  PRIORITY_LEVELS,
+  getPriorityTier,
+  getShortRuleName,
+  calculateDynamicRuleWeights,
   type GroupingRule,
-  type GroupingRuleMode,
   type DiversityGroupingResult,
   type GroupDiversityReport
 } from '../utils/grouping';
 import { exportSingleTeamToCSV, exportSingleTeamToExcel } from '../utils/csv';
 import CustomSelect from './CustomSelect';
-import { loadFeatureToggles, type FeatureToggles } from '../utils/featurePreferences';
+import { loadFeatureToggles, saveFeatureToggle, type FeatureToggles } from '../utils/featurePreferences';
 import { getShortcutTooltip } from '../utils/keyboardShortcuts';
+import { useClass } from '../context/ClassContext';
 
 interface AutoGroupModalProps {
   isOpen: boolean;
@@ -35,6 +39,8 @@ interface AutoGroupModalProps {
   students: Student[];
   onApplyGroups: (updatedStudents: Student[]) => void;
   onOpenTeamCharter?: (stagedStudents?: Student[]) => void;
+  classId?: string;
+  onOpenEnrollmentBuilder?: () => void;
 }
 
 const PREFIX_OPTIONS = [
@@ -65,8 +71,12 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
   onClose,
   students,
   onApplyGroups,
-  onOpenTeamCharter
+  onOpenTeamCharter,
+  classId,
+  onOpenEnrollmentBuilder
 }) => {
+  const { classes, activeClass } = useClass();
+  const currentClass = classes.find(c => c.id === classId) || activeClass;
   const [targetSize, setTargetSize] = useState<number>(4);
   const [targetSizeInput, setTargetSizeInput] = useState<string>('4');
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -78,9 +88,25 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
   const [customPrefix, setCustomPrefix] = useState<string>('Pod');
   const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'table' | 'compact'>('grid');
   const [kanbanLayout, setKanbanLayout] = useState<'wrap' | 'scroll' | 'compact'>('wrap');
-  const [featureToggles] = useState<FeatureToggles>(loadFeatureToggles);
+  const [featureToggles, setFeatureToggles] = useState<FeatureToggles>(loadFeatureToggles);
   const [showWeightDistribution, setShowWeightDistribution] = useState<boolean>(false);
   const [isRulesExpanded, setIsRulesExpanded] = useState<boolean>(true);
+  const [isRulesMenuOpen, setIsRulesMenuOpen] = useState<boolean>(false);
+  const rulesMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (rulesMenuRef.current && !rulesMenuRef.current.contains(e.target as Node)) {
+        setIsRulesMenuOpen(false);
+      }
+    };
+    if (isRulesMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isRulesMenuOpen]);
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [draggedStudentId, setDraggedStudentId] = useState<string | null>(null);
@@ -142,11 +168,12 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     scope: 'diversity_card'
   });
 
-  const discoveredFields = useMemo(() => discoverRosterFields(students), [students]);
+  const discoveredFields = useMemo(() => discoverRosterFields(students, currentClass?.enrollmentFormFields), [students, currentClass?.enrollmentFormFields]);
   const effectivePrefix = prefix === 'custom' ? (customPrefix.trim() || 'Team') : prefix;
 
   const activeRules = useMemo(() => rules.filter(r => r.enabled && r.weight > 0), [rules]);
   const totalActiveWeight = useMemo(() => activeRules.reduce((sum, r) => sum + r.weight, 0), [activeRules]);
+  const dynamicRuleWeights = useMemo(() => calculateDynamicRuleWeights(activeRules), [activeRules]);
 
   useEffect(() => {
     try {
@@ -155,6 +182,93 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
       console.error('Failed to save grouping rules', e);
     }
   }, [rules]);
+
+  // Synchronize custom enrollment fields configured for team distribution into rules, and auto-purge deleted questions
+  useEffect(() => {
+    if (!currentClass?.enrollmentFormFields) return;
+    const groupingFields = currentClass.enrollmentFormFields.filter(f => f.includeInGrouping);
+    const validGroupingIds = new Set(groupingFields.map(f => f.id));
+    const validGroupingLabels = new Set(groupingFields.map(f => f.label.trim().toLowerCase()));
+
+    setRules(prev => {
+      let updated = false;
+
+      // 1. Remove rules for questions that were deleted from the form or disabled from grouping
+      const next = prev.filter(r => {
+        const isCustomFieldRule = r.id.startsWith('field_') || (r.fieldKey && !['gender', 'nationality', 'university', 'englishProficiency', 'degree', 'studentType'].includes(r.fieldKey));
+        if (isCustomFieldRule) {
+          const fieldId = r.fieldKey || r.id.replace('field_', '');
+          const isStillValid = validGroupingIds.has(fieldId) || validGroupingLabels.has(r.name.trim().toLowerCase());
+          if (!isStillValid) {
+            updated = true;
+            return false;
+          }
+        }
+        return true;
+      });
+
+      // 2. Add or update active grouping field rules
+      groupingFields.forEach(field => {
+        const ruleId = `field_${field.id}`;
+        const existingIdx = next.findIndex(r => 
+          r.id === ruleId || 
+          r.fieldKey === field.id || 
+          r.fieldKey === field.label ||
+          r.name.trim().toLowerCase() === field.label.trim().toLowerCase()
+        );
+        if (existingIdx === -1) {
+          updated = true;
+          next.push({
+            id: ruleId,
+            name: field.label,
+            fieldKey: field.id,
+            mode: 'distribute',
+            weight: 25,
+            enabled: true,
+            description: field.description || `Balance ${field.label} (${field.type}) evenly across teams`,
+            type: field.type
+          });
+        } else {
+          const r = next[existingIdx];
+          if (r.name !== field.label || r.type !== field.type) {
+            updated = true;
+            next[existingIdx] = {
+              ...r,
+              name: field.label,
+              type: field.type,
+              description: field.description || r.description
+            };
+          }
+        }
+      });
+
+      return updated ? next : prev;
+    });
+  }, [currentClass?.enrollmentFormFields]);
+
+  // Listen for instant rule purge broadcasts from enrollment form builder
+  useEffect(() => {
+    const handlePurge = (e: Event) => {
+      const customEvent = e as CustomEvent<{ removedFieldIds?: string[]; removedFieldLabels?: string[] }>;
+      const { removedFieldIds = [], removedFieldLabels = [] } = customEvent.detail || {};
+      if (removedFieldIds.length === 0 && removedFieldLabels.length === 0) return;
+
+      setRules(prev => prev.filter(r => {
+        const ruleId = String(r.id || '');
+        const fieldKey = String(r.fieldKey || '');
+        const ruleName = String(r.name || '').trim().toLowerCase();
+        const isPurged = removedFieldIds.some(id => 
+          ruleId === `field_${id}` || 
+          ruleId === id || 
+          fieldKey === id
+        ) || removedFieldLabels.includes(ruleName);
+        return !isPurged;
+      }));
+    };
+
+    window.addEventListener('peerlens_grouping_rules_purged', handlePurge);
+    return () => window.removeEventListener('peerlens_grouping_rules_purged', handlePurge);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -596,10 +710,6 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     setRules(prev => prev.map(r => r.id === id ? { ...r, weight } : r));
   };
 
-  const handleModeChange = (id: string, mode: GroupingRuleMode) => {
-    setRules(prev => prev.map(r => r.id === id ? { ...r, mode } : r));
-  };
-
   const handleDeleteRule = (id: string) => {
     setRules(prev => prev.filter(r => r.id !== id));
   };
@@ -613,16 +723,27 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
   };
 
   const handleQuickAddDiscoveredField = (df: { key: string; name: string }) => {
-    if (rules.some(r => r.fieldKey === df.key)) return;
+    if (rules.some(r => 
+      r.fieldKey === df.key || 
+      r.name.trim().toLowerCase() === df.name.trim().toLowerCase() ||
+      r.id === `field_${df.key}` ||
+      r.id === df.key
+    )) return;
+
+    const matchedField = currentClass?.enrollmentFormFields?.find(
+      f => f.id === df.key || f.label.trim().toLowerCase() === df.name.trim().toLowerCase()
+    );
+
     const cleanName = df.name.replace(/Diversity|Status|Dispersal|Parity/gi, '').trim() || df.name;
     const newRule: GroupingRule = {
       id: `discovered_rule_${Date.now()}_${df.key}`,
       name: cleanName,
       fieldKey: df.key,
       mode: 'distribute',
-      weight: 20,
+      weight: 25,
       enabled: true,
-      description: `Distribute students with different ${cleanName.toLowerCase()} across teams`
+      description: matchedField?.description || `Balance ${cleanName.toLowerCase()} evenly across teams`,
+      type: matchedField?.type
     };
     setRules(prev => [...prev, newRule]);
   };
@@ -1074,33 +1195,209 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                   <span className="badge badge-teal" style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem' }}>
                     {activeRules.length} Active / {rules.length} Total
                   </span>
+                  {activeRules.length > 0 && featureToggles.showAutoGroupRulePercentages && (
+                    <span className="badge" style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', fontWeight: 700 }}>
+                      100% Allocated
+                    </span>
+                  )}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                {isRulesExpanded && (
-                  <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', position: 'relative' }}>
+                {isRulesExpanded && featureToggles.showAutoGroupResetRulesBtn && (
+                  <div ref={rulesMenuRef} style={{ position: 'relative' }}>
+                    {/* More Rules Options Button */}
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      onClick={handleResetToDefaults}
-                      title="Reset to recommended balanced rules"
-                      style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsRulesMenuOpen(!isRulesMenuOpen);
+                      }}
+                      title="Rules configuration & options"
+                      aria-label="Rules configuration & options"
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        padding: 0,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: isRulesMenuOpen ? 'var(--bg-hover)' : 'transparent',
+                        color: featureToggles.showAutoGroupRulePercentages ? 'var(--primary)' : 'var(--text-secondary)',
+                        borderColor: isRulesMenuOpen ? 'var(--primary)' : 'var(--border-color)',
+                        position: 'relative'
+                      }}
                     >
-                      <RotateCcw size={12} /> Reset Defaults
+                      <MoreHorizontal size={15} />
+                      {featureToggles.showAutoGroupRulePercentages && (
+                        <span style={{
+                          position: 'absolute',
+                          top: '5px',
+                          right: '5px',
+                          width: '5px',
+                          height: '5px',
+                          borderRadius: '50%',
+                          backgroundColor: 'var(--primary)'
+                        }} />
+                      )}
                     </button>
-                    {rules.length > 0 && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={handleClearAllRules}
-                        title="Clear all rules"
-                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem', color: 'var(--text-muted)' }}
+
+                    {/* Dropdown Menu */}
+                    {isRulesMenuOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 4px)',
+                          right: 0,
+                          zIndex: 60,
+                          minWidth: '225px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '8px',
+                          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+                          padding: '0.35rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.15rem'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        Clear All
-                      </button>
+                        {/* Toggle Weight % Focus */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFeatureToggles(prev => {
+                              const nextVal = !prev.showAutoGroupRulePercentages;
+                              saveFeatureToggle('showAutoGroupRulePercentages', nextVal);
+                              return { ...prev, showAutoGroupRulePercentages: nextVal };
+                            });
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            width: '100%',
+                            padding: '0.45rem 0.6rem',
+                            border: 'none',
+                            borderRadius: '6px',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            textAlign: 'left'
+                          }}
+                          className="autogroup-menu-item"
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Percent size={14} style={{ color: featureToggles.showAutoGroupRulePercentages ? 'var(--primary)' : 'var(--text-muted)' }} />
+                            <span>Show Weight Focus %</span>
+                          </span>
+                          <span style={{
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            padding: '0.1rem 0.35rem',
+                            borderRadius: '4px',
+                            backgroundColor: featureToggles.showAutoGroupRulePercentages ? 'var(--primary-light)' : 'var(--bg-app)',
+                            color: featureToggles.showAutoGroupRulePercentages ? 'var(--primary)' : 'var(--text-muted)'
+                          }}>
+                            {featureToggles.showAutoGroupRulePercentages ? 'ON' : 'OFF'}
+                          </span>
+                        </button>
+
+                        {/* Customize Enrollment Form */}
+                        {onOpenEnrollmentBuilder && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsRulesMenuOpen(false);
+                              onOpenEnrollmentBuilder();
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              width: '100%',
+                              padding: '0.45rem 0.6rem',
+                              border: 'none',
+                              borderRadius: '6px',
+                              backgroundColor: 'transparent',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.78rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textAlign: 'left'
+                            }}
+                            className="autogroup-menu-item"
+                          >
+                            <Sliders size={14} style={{ color: 'var(--primary)' }} />
+                            <span>Customize Enrollment Form</span>
+                          </button>
+                        )}
+
+                        <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '0.25rem 0.3rem' }} />
+
+                        {/* Reset Defaults */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsRulesMenuOpen(false);
+                            handleResetToDefaults();
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            width: '100%',
+                            padding: '0.45rem 0.6rem',
+                            border: 'none',
+                            borderRadius: '6px',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            textAlign: 'left'
+                          }}
+                          className="autogroup-menu-item"
+                        >
+                          <RotateCcw size={14} />
+                          <span>Reset to Balanced Defaults</span>
+                        </button>
+
+                        {/* Clear All Rules */}
+                        {rules.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsRulesMenuOpen(false);
+                              handleClearAllRules();
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              width: '100%',
+                              padding: '0.45rem 0.6rem',
+                              border: 'none',
+                              borderRadius: '6px',
+                              backgroundColor: 'transparent',
+                              color: 'var(--accent-rose, #ef4444)',
+                              fontSize: '0.78rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textAlign: 'left'
+                            }}
+                            className="autogroup-menu-item"
+                          >
+                            <Trash2 size={14} />
+                            <span>Clear All Rules</span>
+                          </button>
+                        )}
+                      </div>
                     )}
-                  </>
+                  </div>
                 )}
 
                 {/* Contract / Expand Button */}
@@ -1109,82 +1406,130 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                   onClick={() => setIsRulesExpanded(!isRulesExpanded)}
                   className="btn btn-secondary btn-sm"
                   style={{
-                    fontSize: '0.75rem',
-                    padding: '0.35rem 0.75rem',
-                    fontWeight: 700,
-                    display: 'flex',
+                    width: '32px',
+                    height: '32px',
+                    padding: 0,
+                    display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.35rem',
+                    justifyContent: 'center',
                     backgroundColor: isRulesExpanded ? 'transparent' : 'var(--primary-light)',
                     color: isRulesExpanded ? 'var(--text-secondary)' : 'var(--primary)',
                     borderColor: isRulesExpanded ? 'var(--border-color)' : 'var(--primary)'
                   }}
-                  title={isRulesExpanded ? 'Hide rules section to optimize screen space' : 'Show and configure grouping rules'}
+                  title={isRulesExpanded ? 'Hide rules section to optimize screen space' : `Show rules (${activeRules.length} active)`}
+                  aria-label={isRulesExpanded ? 'Hide rules' : `Show rules (${activeRules.length} active)`}
                 >
-                  {isRulesExpanded ? (
-                    <>
-                      <ChevronUp size={14} /> Hide Rules
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown size={14} /> Show Rules ({activeRules.length})
-                    </>
-                  )}
+                  {isRulesExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                 </button>
               </div>
             </div>
 
             {/* Collapsed Compact Summary Preview Strip */}
+            {/* Collapsed Compact Summary Preview Strip (Minimalized with 100% Dynamic Split) */}
             {!isRulesExpanded && (
               <div 
                 onClick={() => setIsRulesExpanded(true)}
                 style={{ 
                   display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'space-between', 
-                  gap: '0.75rem', 
+                  flexDirection: 'column',
+                  gap: '0.45rem', 
                   cursor: 'pointer',
-                  padding: '0.45rem 0.75rem',
+                  padding: '0.5rem 0.75rem',
                   backgroundColor: 'var(--bg-app)',
-                  borderRadius: '6px',
-                  border: '1px dashed var(--border-color)',
-                  flexWrap: 'wrap'
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  transition: 'all 0.15s ease'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                {/* Header row: Status summary + Edit prompt */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.72rem' }}>
+                    {featureToggles.showAutoGroupRulePercentages && (
+                      <>
+                        <span style={{ fontWeight: 750, color: 'var(--text-primary)' }}>
+                          100% Weight Split
+                        </span>
+                        <span style={{ color: 'var(--text-muted)' }}>•</span>
+                      </>
+                    )}
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      {activeRules.length} {activeRules.length === 1 ? 'Rule' : 'Rules'} Active
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                    Configure Levels (Low / Med / High) <ChevronDown size={13} />
+                  </span>
+                </div>
+
+                {/* Minimalist 3px 100% weight progress bar - only shown when rule percentages are enabled */}
+                {activeRules.length > 0 && featureToggles.showAutoGroupRulePercentages && (
+                  <div style={{ width: '100%', height: '3px', borderRadius: '2px', overflow: 'hidden', display: 'flex', backgroundColor: 'var(--border-color)' }}>
+                    {activeRules.map((rule, idx) => {
+                      const color = RULE_PALETTE[idx % RULE_PALETTE.length];
+                      const pct = dynamicRuleWeights.get(rule.id) || 0;
+                      const tier = getPriorityTier(rule.weight);
+                      return (
+                        <div 
+                          key={rule.id} 
+                          style={{ width: `${pct}%`, backgroundColor: color }} 
+                          title={`${rule.name}: ${pct}% focus (${PRIORITY_LEVELS[tier].label})`}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Compact rule pills */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                   {activeRules.map((rule, idx) => {
                     const color = RULE_PALETTE[idx % RULE_PALETTE.length];
-                    const pct = totalActiveWeight > 0 ? Math.round((rule.weight / totalActiveWeight) * 100) : 0;
+                    const pct = dynamicRuleWeights.get(rule.id) || 0;
+                    const tier = getPriorityTier(rule.weight);
+                    const tierInfo = PRIORITY_LEVELS[tier];
+                    const shortName = getShortRuleName(rule.name);
                     return (
                       <span 
                         key={rule.id} 
+                        title={`${rule.name}: ${pct}% of total grouping focus (${tierInfo.label} priority)`}
                         style={{ 
-                          fontSize: '0.71rem', 
+                          fontSize: '0.7rem', 
                           fontWeight: 600, 
-                          color: 'var(--text-primary)', 
+                          color: 'var(--text-secondary)', 
                           display: 'inline-flex', 
                           alignItems: 'center', 
                           gap: '0.3rem',
                           backgroundColor: 'var(--bg-surface)',
-                          padding: '0.15rem 0.45rem',
-                          borderRadius: '4px',
-                          border: '1px solid var(--border-color)'
+                          padding: '0.18rem 0.45rem',
+                          borderRadius: '5px',
+                          border: '1px solid var(--border-color)',
+                          lineHeight: 1.2
                         }}
                       >
-                        <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: color }} />
-                        {rule.name} ({pct}%)
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} />
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{shortName}</span>
+                        {featureToggles.showAutoGroupRulePercentages && (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.67rem', fontWeight: 600 }}>{pct}%</span>
+                        )}
+                        <span style={{ 
+                          fontSize: '0.6rem', 
+                          fontWeight: 700, 
+                          padding: '0.05rem 0.25rem', 
+                          borderRadius: '3px', 
+                          backgroundColor: tierInfo.bg, 
+                          color: tierInfo.color,
+                          textTransform: 'uppercase'
+                        }}>
+                          {tierInfo.shortLabel}
+                        </span>
                       </span>
                     );
                   })}
                   {activeRules.length === 0 && (
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      No active rules configured (random distribution)
+                    <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      No active rules configured (students distributed randomly)
                     </span>
                   )}
                 </div>
-                <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 700 }}>
-                  Click to expand & edit &rarr;
-                </span>
               </div>
             )}
 
@@ -1192,7 +1537,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
             {isRulesExpanded && (
               <>
                 <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '-0.35rem 0 0 0' }}>
-                  Adjust weights and modes for each rule. The engine dynamically balances all active rules simultaneously.
+                  Each enabled rule contributes proportionally to multi-objective team balancing. Choose between 3 priority levels (Low, Medium, High) to balance focus across an exact 100% weight allocation.
                 </p>
 
                 {/* Proportional Weight Bar - Collapsible & Hidden by default */}
@@ -1221,7 +1566,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                         <span>Overall Optimization Weight Distribution</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                        <span>{activeRules.length} active criteria ({totalActiveWeight} pts total)</span>
+                        <span>100% weight dynamically split across {activeRules.length} criteria (Low / Med / High)</span>
                         {showWeightDistribution ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                       </div>
                     </button>
@@ -1230,27 +1575,29 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       <div style={{ padding: '0.75rem 0.95rem 0.85rem 0.95rem', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.55rem', backgroundColor: 'var(--bg-surface)' }}>
                         <div className="autogroup-weight-bar-container">
                           {activeRules.map((rule, idx) => {
-                            const pct = Math.round((rule.weight / totalActiveWeight) * 100);
+                            const pct = dynamicRuleWeights.get(rule.id) || 0;
                             const color = RULE_PALETTE[idx % RULE_PALETTE.length];
+                            const tier = getPriorityTier(rule.weight);
                             return (
                               <div
                                 key={rule.id}
                                 className="autogroup-weight-bar-segment"
                                 style={{ width: `${pct}%`, backgroundColor: color }}
-                                title={`${rule.name}: ${pct}% of total grouping focus`}
+                                title={`${rule.name}: ${pct}% of total grouping focus (${PRIORITY_LEVELS[tier].label} priority)`}
                               />
                             );
                           })}
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: '0.1rem' }}>
                           {activeRules.map((rule, idx) => {
-                            const pct = Math.round((rule.weight / totalActiveWeight) * 100);
+                            const pct = dynamicRuleWeights.get(rule.id) || 0;
                             const color = RULE_PALETTE[idx % RULE_PALETTE.length];
+                            const tier = getPriorityTier(rule.weight);
                             return (
                               <div key={rule.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: color, display: 'inline-block' }} />
                                 <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{rule.name}</span>
-                                <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600 }}>({pct}%)</span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600 }}>({pct}% • {PRIORITY_LEVELS[tier].shortLabel})</span>
                               </div>
                             );
                           })}
@@ -1269,7 +1616,12 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                   <Compass size={12} style={{ color: 'var(--primary)' }} /> Discovered in Roster:
                 </span>
                 {discoveredFields.map(df => {
-                  const alreadyConfigured = rules.some(r => r.fieldKey === df.key);
+                  const alreadyConfigured = rules.some(r => 
+                    r.fieldKey === df.key || 
+                    r.name.trim().toLowerCase() === df.name.trim().toLowerCase() ||
+                    r.id === `field_${df.key}` ||
+                    r.id === df.key
+                  );
                   if (alreadyConfigured) return null;
                   return (
                     <button
@@ -1277,11 +1629,13 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       type="button"
                       className="autogroup-discovered-chip"
                       onClick={() => handleQuickAddDiscoveredField(df)}
-                      title={`Add rule for ${df.name} (${df.distinctCount} unique values across ${df.count} students)`}
+                      title={`Add rule for ${df.name} (${df.distinctCount > 0 ? `${df.distinctCount} unique values across ${df.count} students` : 'Configured enrollment question'})`}
                     >
                       <Plus size={11} style={{ color: 'var(--primary)' }} />
                       <span>{df.name}</span>
-                      <span style={{ opacity: 0.6, fontSize: '0.65rem' }}>({df.distinctCount} vals)</span>
+                      <span style={{ opacity: 0.6, fontSize: '0.65rem' }}>
+                        ({df.distinctCount > 0 ? `${df.distinctCount} vals` : 'new'})
+                      </span>
                     </button>
                   );
                 })}
@@ -1309,7 +1663,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                     >
                       <div className="autogroup-rule-row-grid">
                         
-                        {/* Col 1: Toggle + Icon + Title + Attribute Pill + Description */}
+                        {/* Col 1: Toggle + Icon + Title + Description */}
                         <div className="autogroup-rule-title-group">
                           <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', margin: 0 }}>
                             <input
@@ -1329,9 +1683,15 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                               <span style={{ fontSize: '0.86rem', fontWeight: 800, color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                                 {rule.name}
                               </span>
-                              <span className="badge badge-secondary" style={{ fontSize: '0.64rem', padding: '0.08rem 0.35rem', opacity: 0.75 }}>
-                                {rule.fieldKey}
-                              </span>
+                              {rule.enabled && featureToggles.showAutoGroupRulePercentages && (
+                                <span 
+                                  className="badge badge-teal" 
+                                  style={{ fontSize: '0.68rem', padding: '0.1rem 0.45rem', fontWeight: 700 }}
+                                  title={`${dynamicRuleWeights.get(rule.id) || 0}% focus allocated to this rule`}
+                                >
+                                  {dynamicRuleWeights.get(rule.id) || 0}% Focus
+                                </span>
+                              )}
                             </div>
                             {rule.description && (
                               <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', lineHeight: 1.35, marginTop: '0.15rem' }}>
@@ -1341,66 +1701,35 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Col 2: Mode Pill Selector (Distribute / Keep Together) */}
-                        <div className="autogroup-mode-pill-group">
-                          <button
-                            type="button"
-                            onClick={() => handleModeChange(rule.id, 'distribute')}
-                            className={`autogroup-mode-pill ${rule.mode !== 'together' && rule.mode !== 'group' && rule.mode !== 'cluster' ? 'active' : ''}`}
-                            title="Distribute: Spread students with this trait across different teams"
-                            disabled={!rule.enabled}
-                          >
-                            <Shuffle size={11} /> Distribute
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleModeChange(rule.id, 'together')}
-                            className={`autogroup-mode-pill ${rule.mode === 'together' || rule.mode === 'group' || rule.mode === 'cluster' ? 'active' : ''}`}
-                            title="Keep Together: Place matching students together in the same team"
-                            disabled={!rule.enabled}
-                          >
-                            <Users size={11} /> Keep Together
-                          </button>
-                        </div>
-
-                        {/* Col 3: Priority Tiers (Low / Medium / High / Max) */}
+                        {/* Priority Tiers: Low / Medium / High */}
                         <div className="autogroup-priority-control-group">
                           <div className="autogroup-priority-tier-buttons">
                             <button
                               type="button"
                               onClick={() => handleWeightChange(rule.id, 10)}
-                              className={`autogroup-priority-btn ${rule.weight <= 12 ? 'active' : ''}`}
+                              className={`autogroup-priority-btn ${getPriorityTier(rule.weight) === 'low' ? 'active' : ''}`}
                               disabled={!rule.enabled}
-                              title="Low priority (10 pts) - gentle influence"
+                              title="Low priority (10 pts) - gentle balancing influence"
                             >
                               Low
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleWeightChange(rule.id, 20)}
-                              className={`autogroup-priority-btn ${rule.weight > 12 && rule.weight <= 25 ? 'active' : ''}`}
+                              onClick={() => handleWeightChange(rule.id, 25)}
+                              className={`autogroup-priority-btn ${getPriorityTier(rule.weight) === 'medium' ? 'active' : ''}`}
                               disabled={!rule.enabled}
-                              title="Medium priority (20 pts) - standard balanced influence"
+                              title="Medium priority (25 pts) - standard balanced focus"
                             >
                               Medium
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleWeightChange(rule.id, 35)}
-                              className={`autogroup-priority-btn ${rule.weight > 25 && rule.weight < 45 ? 'active' : ''}`}
+                              onClick={() => handleWeightChange(rule.id, 50)}
+                              className={`autogroup-priority-btn ${getPriorityTier(rule.weight) === 'high' ? 'active high-tier' : ''}`}
                               disabled={!rule.enabled}
-                              title="High priority (35 pts) - strong grouping preference"
+                              title="High priority (50 pts) - strong constraint"
                             >
                               High
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleWeightChange(rule.id, 50)}
-                              className={`autogroup-priority-btn ${rule.weight >= 45 ? 'active max-tier' : ''}`}
-                              disabled={!rule.enabled}
-                              title="Max priority (50 pts) - top constraint with maximum penalty"
-                            >
-                              Max
                             </button>
                           </div>
                         </div>

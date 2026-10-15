@@ -81,6 +81,13 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     description: 'Quickly scroll the view smoothly back to the top of the dashboard.',
     suggestedKey: 'Home'
   },
+  {
+    id: 'scroll_bottom',
+    label: 'Scroll to Bottom of Page',
+    category: 'Navigation',
+    description: 'Quickly scroll smoothly to the bottom of the dashboard.',
+    suggestedKey: 'End'
+  },
 
   // --- Tools & Modals ---
   {
@@ -175,8 +182,40 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     description: 'Toggle the floating all-in-one Quick Action Pill at the bottom of the window.',
     suggestedKey: 'q'
   },
+  {
+    id: 'open_live_presentation',
+    label: 'Live Presentation Scoring Cockpit',
+    category: 'Tools & Modals',
+    description: 'Launch live oral presentation scoring, group timer, and rubrics cockpit.',
+    suggestedKey: 'p',
+    suggestedModifiers: { alt: true }
+  },
+  {
+    id: 'open_team_kickoff',
+    label: 'Team Kickoff & Charters Studio',
+    category: 'Tools & Modals',
+    description: 'Launch team kickoff hub with contract charters, icebreakers, and role agreements.',
+    suggestedKey: 't',
+    suggestedModifiers: { alt: true }
+  },
+  {
+    id: 'open_evaluation_controls',
+    label: 'Evaluation Feedback & Form Controls',
+    category: 'Tools & Modals',
+    description: 'Configure student feedback features (self-review, praise chips, formative comments, profile freeze).',
+    suggestedKey: 'o',
+    suggestedModifiers: { alt: true }
+  },
 
   // --- Roster & Teams ---
+  {
+    id: 'open_enrollment_builder',
+    label: 'Enrollment Form Questions (Custom Fields)',
+    category: 'Roster & Teams',
+    description: 'Open visual form question builder to customize student self-enrollment fields and survey prompts (Alt+Q).',
+    suggestedKey: 'q',
+    suggestedModifiers: { alt: true }
+  },
   {
     id: 'new_class',
     label: 'Create New Classroom',
@@ -308,14 +347,31 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     suggestedKey: 'Delete',
     suggestedModifiers: { alt: true }
   },
+  {
+    id: 'populate_minimal_demo',
+    label: 'Populate 10 Quick Demo Students',
+    category: 'Roster & Teams',
+    description: 'Quickly load 10 sample students to test roster and team features.',
+    suggestedKey: 'd',
+    suggestedModifiers: { ctrl: true }
+  },
+  {
+    id: 'lock_all_teams',
+    label: 'Lock All Team Assignments',
+    category: 'Roster & Teams',
+    description: 'Freeze all current team formations to prevent automatic reshuffling.',
+    suggestedKey: 'l',
+    suggestedModifiers: { alt: true }
+  },
 
   // --- Rubric & Scales ---
   {
     id: 'add_criterion',
     label: 'Add Rubric Criterion',
     category: 'Rubric & Scales',
-    description: 'Add a new custom evaluation criterion to the active rubric.',
-    suggestedKey: 'a'
+    description: 'Add a new custom evaluation criterion to the active rubric (Alt+C).',
+    suggestedKey: 'c',
+    suggestedModifiers: { alt: true }
   },
   {
     id: 'auto_balance_weights',
@@ -330,6 +386,14 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     category: 'Rubric & Scales',
     description: 'Apply unified Integrated Peer Assessment Framework (IPAF) with 6 validated dimensions (100% balanced).',
     suggestedKey: '1',
+    suggestedModifiers: { alt: true }
+  },
+  {
+    id: 'open_rubric_presets',
+    label: 'Open Rubric Preset Library',
+    category: 'Rubric & Scales',
+    description: 'Browse and apply pre-calibrated academic rubric presets (IPAF, CATME, AAC&U, Scrum).',
+    suggestedKey: 'p',
     suggestedModifiers: { alt: true }
   },
   {
@@ -394,6 +458,62 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     category: 'Grading & Analytics',
     description: 'Open individual student PDF report card generator with formative comments.',
     suggestedKey: 'r'
+  },
+  {
+    id: 'export_pulse_csv',
+    label: 'Export Team Pulse Check-ins (CSV)',
+    category: 'Grading & Analytics',
+    description: 'Download 30-second student morale ratings, blockers, and check-in notes as CSV.',
+    suggestedKey: 'p',
+    suggestedModifiers: { ctrl: true, alt: true }
+  },
+  {
+    id: 'export_lms_canvas',
+    label: 'Export Gradebook for Canvas LMS (CSV)',
+    category: 'Grading & Analytics',
+    description: 'Download calibrated WebPA grades formatted for direct Canvas Gradebook upload.',
+    suggestedKey: '1',
+    suggestedModifiers: { ctrl: true }
+  },
+  {
+    id: 'export_lms_moodle',
+    label: 'Export Gradebook for Moodle LMS (CSV)',
+    category: 'Grading & Analytics',
+    description: 'Download calibrated WebPA grades formatted for Moodle Gradebook upload.',
+    suggestedKey: '2',
+    suggestedModifiers: { ctrl: true }
+  },
+  {
+    id: 'export_lms_blackboard',
+    label: 'Export Gradebook for Blackboard LMS (CSV)',
+    category: 'Grading & Analytics',
+    description: 'Download calibrated WebPA grades formatted for Blackboard Grade Center.',
+    suggestedKey: '3',
+    suggestedModifiers: { ctrl: true }
+  },
+  {
+    id: 'export_lms_brightspace',
+    label: 'Export Gradebook for D2L Brightspace (CSV)',
+    category: 'Grading & Analytics',
+    description: 'Download calibrated WebPA grades formatted for D2L Brightspace Gradebook.',
+    suggestedKey: '4',
+    suggestedModifiers: { ctrl: true }
+  },
+  {
+    id: 'open_audit_matrix',
+    label: 'Open Discrepancy & Dispute Audit Matrix',
+    category: 'Grading & Analytics',
+    description: 'Jump to Section 3 audit radar to inspect outliers, retaliation flags, and dispute evidence.',
+    suggestedKey: 'a',
+    suggestedModifiers: { alt: true }
+  },
+  {
+    id: 'open_johari_window',
+    label: 'Open Johari Perception Window',
+    category: 'Grading & Analytics',
+    description: 'Visualize student blind spots, hidden strengths, and self vs peer agreement.',
+    suggestedKey: 'j',
+    suggestedModifiers: { ctrl: true }
   },
   {
     id: 'calibrate_webpa_0',
@@ -485,6 +605,14 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     suggestedModifiers: { alt: true }
   },
   {
+    id: 'preset_none',
+    label: 'Apply Clean Canvas (Hide All Modules)',
+    category: 'Layout & Presets',
+    description: 'Hide all dashboard modules simultaneously for a completely distraction-free blank canvas.',
+    suggestedKey: '0',
+    suggestedModifiers: { alt: true }
+  },
+  {
     id: 'expand_all_sections',
     label: 'Master Action: Expand All Foldable Sections',
     category: 'Layout & Presets',
@@ -531,10 +659,29 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     category: 'General',
     description: 'Dismiss any open dialog, modal, or dropdown and return to Hub.',
     suggestedKey: 'Escape'
+  },
+  {
+    id: 'sync_cloud_now',
+    label: 'Force Cloud Sync Now',
+    category: 'General',
+    description: 'Immediately synchronize all local changes, students, and rubrics with Firebase cloud storage.',
+    suggestedKey: 's',
+    suggestedModifiers: { ctrl: true }
   }
 ];
 
 export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
+  // Enrollment & Custom Fields
+  {
+    id: 'open_enrollment_builder',
+    actionId: 'open_enrollment_builder',
+    label: 'Enrollment Form Questions',
+    category: 'Roster & Teams',
+    key: 'q',
+    modifiers: { alt: true },
+    description: 'Open form builder to customize student self-registration questions and fields (Alt+Q).'
+  },
+
   // Navigation
   {
     id: 'tab_hub',
@@ -722,8 +869,9 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     actionId: 'add_criterion',
     label: 'Add Rubric Criterion',
     category: 'Rubric & Scales',
-    key: 'a',
-    description: 'Add a new custom evaluation criterion to active rubric.'
+    key: 'c',
+    modifiers: { alt: true },
+    description: 'Add a new custom evaluation criterion to active rubric (Alt+C).'
   },
   {
     id: 'export_excel',
@@ -804,6 +952,16 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
           saveStoredShortcuts(list);
         }
 
+        // Ensure open_enrollment_builder is present
+        const enrollIdx = list.findIndex(s => s.actionId === 'open_enrollment_builder' || s.id === 'open_enrollment_builder');
+        if (enrollIdx === -1) {
+          const def = DEFAULT_KEYBOARD_SHORTCUTS.find(d => d.actionId === 'open_enrollment_builder');
+          if (def) {
+            list.push({ ...def });
+            saveStoredShortcuts(list);
+          }
+        }
+
         // Free up Alt+L if previously used by copy_portal_url
         const portalUrlIdx = list.findIndex(s => s.actionId === 'copy_portal_url' || s.id === 'copy_portal_url');
         if (portalUrlIdx !== -1 && list[portalUrlIdx].key?.toLowerCase() === 'l' && list[portalUrlIdx].modifiers?.alt) {
@@ -812,7 +970,15 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
           saveStoredShortcuts(list);
         }
 
-        const removedActionIds = new Set(['hover_toggle_section', 'hover_focus_module', 'toggle_lock_all_teams']);
+        // Free up 'a' for hold_quickadd if previously mapped to add_criterion
+        const addCritIdx = list.findIndex(s => s.actionId === 'add_criterion' || s.id === 'add_criterion');
+        if (addCritIdx !== -1 && list[addCritIdx].key?.toLowerCase() === 'a' && !list[addCritIdx].modifiers?.alt) {
+          list[addCritIdx].key = 'c';
+          list[addCritIdx].modifiers = { alt: true };
+          saveStoredShortcuts(list);
+        }
+
+        const removedActionIds = new Set(['hover_toggle_section', 'hover_focus_module', 'toggle_lock_all_teams', 'hold_quickadd']);
         const hadRemoved = list.some(s => removedActionIds.has(s.actionId) || removedActionIds.has(s.id));
         if (hadRemoved) {
           list = list.filter(s => !removedActionIds.has(s.actionId) && !removedActionIds.has(s.id));

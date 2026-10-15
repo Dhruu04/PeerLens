@@ -1,4 +1,4 @@
-import { normalizeNationality, type Student } from './math';
+import { normalizeNationality, type Student, type CustomEnrollmentField } from './math';
 
 export type GroupingRuleMode = 
   | 'distribute'       // Distribute values across different teams (diversify, balance, disperse)
@@ -19,6 +19,7 @@ export interface GroupingRule {
   weight: number;           // 1 to 50 (or 0 if disabled)
   enabled: boolean;         // Active toggle
   description?: string;     // Contextual guide for users
+  type?: 'text' | 'dropdown' | 'boolean' | 'number';
 }
 
 export type DiversityStrategy = 
@@ -118,57 +119,63 @@ export interface DiscoveredRosterField {
 export const DEFAULT_GROUPING_RULES: GroupingRule[] = [
   {
     id: 'rule_gender',
-    name: 'Gender',
+    name: 'Gender Representation',
     fieldKey: 'gender',
-    mode: 'distribute',
-    weight: 20,
-    enabled: true,
-    description: 'Distribute gender representation evenly across teams'
-  },
-  {
-    id: 'rule_university',
-    name: 'University',
-    fieldKey: 'university',
     mode: 'distribute',
     weight: 25,
     enabled: true,
-    description: 'Distribute students from the same university into different teams'
+    description: 'Balance gender representation evenly across teams',
+    type: 'dropdown'
+  },
+  {
+    id: 'rule_university',
+    name: 'University Institution',
+    fieldKey: 'university',
+    mode: 'distribute',
+    weight: 50,
+    enabled: true,
+    description: 'Balance students from different home and host universities across teams',
+    type: 'dropdown'
   },
   {
     id: 'rule_nationality',
-    name: 'Nationality',
+    name: 'Nationality & Origin',
     fieldKey: 'nationality',
     mode: 'distribute',
-    weight: 20,
+    weight: 25,
     enabled: true,
-    description: 'Distribute students with different nationalities across teams'
+    description: 'Balance diverse cultural and international backgrounds across teams',
+    type: 'dropdown'
   },
   {
     id: 'rule_english',
     name: 'Language Proficiency',
     fieldKey: 'englishProficiency',
     mode: 'distribute',
-    weight: 15,
+    weight: 25,
     enabled: true,
-    description: 'Distribute language proficiency levels evenly across teams'
+    description: 'Balance CEFR language proficiency levels evenly across teams',
+    type: 'dropdown'
   },
   {
     id: 'rule_degree',
-    name: 'Degree / Major',
+    name: 'Academic Major / Degree',
     fieldKey: 'degree',
     mode: 'distribute',
-    weight: 15,
+    weight: 25,
     enabled: true,
-    description: 'Distribute students from different academic majors across teams'
+    description: 'Balance multidisciplinary skills and major backgrounds across teams',
+    type: 'dropdown'
   },
   {
     id: 'rule_student_type',
-    name: 'Student Mobility',
+    name: 'Student Mobility Status',
     fieldKey: 'studentType',
     mode: 'distribute',
     weight: 10,
     enabled: false,
-    description: 'Distribute exchange, international, and domestic students across teams'
+    description: 'Balance exchange, international, and domestic students across teams',
+    type: 'dropdown'
   }
 ];
 
@@ -176,41 +183,51 @@ export const DEFAULT_GROUPING_RULES: GroupingRule[] = [
  * Normalizes legacy or persisted rule definitions to current concise naming and standard modes.
  */
 export function normalizeRule(rule: GroupingRule): GroupingRule {
-  let mode: GroupingRuleMode = 'distribute';
-  if (rule.mode === 'together' || rule.mode === 'group' || rule.mode === 'cluster') {
-    mode = 'together';
-  } else {
-    mode = 'distribute';
-  }
+  const mode: GroupingRuleMode = 'distribute';
 
   let weight = rule.weight;
   if ((rule as any).mode === 'strict_disperse') {
-    weight = Math.max(weight, 50);
+    weight = 50;
+  } else if (weight <= 15) {
+    weight = 10;
+  } else if (weight <= 35) {
+    weight = 25;
+  } else {
+    weight = 50;
   }
 
   let name = rule.name;
   let description = rule.description;
+  let type = rule.type;
+
   if (rule.fieldKey === 'gender') {
-    name = 'Gender';
-    description = 'Distribute gender representation evenly across teams';
+    name = 'Gender Representation';
+    description = 'Balance gender representation evenly across teams';
+    type = 'dropdown';
   } else if (rule.fieldKey === 'university') {
-    name = 'University';
-    description = 'Distribute students from the same university into different teams';
+    name = 'University Institution';
+    description = 'Balance students from different home and host universities across teams';
+    type = 'dropdown';
   } else if (rule.fieldKey === 'nationality') {
-    name = 'Nationality';
-    description = 'Distribute students with different nationalities across teams';
+    name = 'Nationality & Origin';
+    description = 'Balance diverse cultural and international backgrounds across teams';
+    type = 'dropdown';
   } else if (rule.fieldKey === 'englishProficiency') {
     name = 'Language Proficiency';
-    description = 'Distribute language proficiency levels evenly across teams';
+    description = 'Balance CEFR language proficiency levels evenly across teams';
+    type = 'dropdown';
   } else if (rule.fieldKey === 'degree') {
-    name = 'Degree / Major';
-    description = 'Distribute students from different academic majors across teams';
+    name = 'Academic Major / Degree';
+    description = 'Balance multidisciplinary skills and major backgrounds across teams';
+    type = 'dropdown';
   } else if (rule.fieldKey === 'studentType') {
-    name = 'Student Mobility';
-    description = 'Distribute exchange, international, and domestic students across teams';
+    name = 'Student Mobility Status';
+    description = 'Balance exchange, international, and domestic students across teams';
+    type = 'dropdown';
   } else if (rule.fieldKey === 'currentCountry') {
     name = 'Current Country';
-    description = 'Distribute students from different host or current countries across teams';
+    description = 'Balance students from different host or current countries across teams';
+    type = 'dropdown';
   }
 
   return {
@@ -218,8 +235,100 @@ export function normalizeRule(rule: GroupingRule): GroupingRule {
     name,
     mode,
     weight,
-    description
+    description,
+    type
   };
+}
+
+/**
+ * Priority Level definitions and standard weights:
+ * Low: 10 pts (gentle influence)
+ * Medium: 25 pts (balanced focus)
+ * High: 50 pts (strong constraint)
+ */
+export type PriorityLevel = 'low' | 'medium' | 'high';
+
+export const PRIORITY_LEVELS: Record<PriorityLevel, { label: string; shortLabel: string; weight: number; desc: string; color: string; bg: string }> = {
+  low: { label: 'Low', shortLabel: 'Low', weight: 10, desc: 'Gentle influence', color: '#64748b', bg: 'rgba(100, 116, 139, 0.1)' },
+  medium: { label: 'Medium', shortLabel: 'Med', weight: 25, desc: 'Balanced focus', color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.1)' },
+  high: { label: 'High', shortLabel: 'High', weight: 50, desc: 'High priority constraint', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' }
+};
+
+export function getPriorityTier(weight: number): PriorityLevel {
+  if (weight <= 15) return 'low';
+  if (weight <= 35) return 'medium';
+  return 'high';
+}
+
+/**
+ * Provides a clean, concise short name for rules in compact summary strips
+ */
+export function getShortRuleName(fullName: string): string {
+  const map: Record<string, string> = {
+    'Gender Representation': 'Gender',
+    'Gender Identity': 'Gender',
+    'University Institution': 'University',
+    'Nationality & Origin': 'Nationality',
+    'Country of Origin / Nationality': 'Nationality',
+    'Language Proficiency': 'Language',
+    'CEFR English Proficiency': 'English',
+    'Academic Major / Degree': 'Major',
+    'Student Mobility Status': 'Mobility',
+    'International Student Status': 'International',
+    'Exchange / Erasmus Student': 'Exchange',
+    'Prior Coding Experience': 'Coding'
+  };
+  if (map[fullName]) return map[fullName];
+  return fullName.replace(/Status|Representation|Institution|Proficiency/gi, '').trim() || fullName;
+}
+
+/**
+ * Calculates dynamic percentage weights using the Largest Remainder Method (Hare-Niemeyer).
+ * Guarantees that the sum of integer percentages across all active rules ALWAYS equals EXACTLY 100%.
+ */
+export function calculateDynamicRuleWeights<T extends { id: string; weight: number; enabled?: boolean }>(
+  rules: T[]
+): Map<string, number> {
+  const result = new Map<string, number>();
+  const activeRules = rules.filter(r => r.enabled !== false && r.weight > 0);
+  if (activeRules.length === 0) return result;
+
+  const totalWeight = activeRules.reduce((sum, r) => sum + r.weight, 0);
+  if (totalWeight <= 0) {
+    const equalShare = Math.floor(100 / activeRules.length);
+    const remainder = 100 - equalShare * activeRules.length;
+    activeRules.forEach((r, idx) => {
+      result.set(r.id, equalShare + (idx < remainder ? 1 : 0));
+    });
+    return result;
+  }
+
+  // Calculate raw percentage, floor, and remainder for each rule
+  const items = activeRules.map((rule, idx) => {
+    const rawPct = (rule.weight / totalWeight) * 100;
+    const floorPct = Math.floor(rawPct);
+    const remainder = rawPct - floorPct;
+    return { id: rule.id, floorPct, remainder, originalIndex: idx };
+  });
+
+  const sumFloors = items.reduce((sum, item) => sum + item.floorPct, 0);
+  const leftover = 100 - sumFloors;
+
+  // Sort descending by remainder, tie-breaking by original array order
+  const sorted = [...items].sort((a, b) => {
+    if (Math.abs(b.remainder - a.remainder) > 0.000001) {
+      return b.remainder - a.remainder;
+    }
+    return a.originalIndex - b.originalIndex;
+  });
+
+  const bonusIds = new Set(sorted.slice(0, leftover).map(item => item.id));
+
+  items.forEach(item => {
+    result.set(item.id, item.floorPct + (bonusIds.has(item.id) ? 1 : 0));
+  });
+
+  return result;
 }
 
 const ENGLISH_SCORE_MAP: Record<string, number> = {
@@ -354,63 +463,202 @@ export function getStudentFieldValue(student: Student, key: string, name?: strin
 }
 
 /**
- * Scans an active student cohort and discovers all populated attributes and custom tags.
+ * Helper to determine data type of a rule: numeric, boolean, or categorical.
  */
-export function discoverRosterFields(students: Student[]): DiscoveredRosterField[] {
-  if (!students || students.length === 0) return [];
+export function inferRuleType(
+  rule: GroupingRule,
+  students: Student[]
+): 'numeric' | 'boolean' | 'categorical' {
+  if (rule.type === 'number') return 'numeric';
+  if (rule.type === 'boolean') return 'boolean';
+  if (rule.type === 'text' || rule.type === 'dropdown') return 'categorical';
+
+  // Inspect student cohort values if type not specified
+  let nonZeroCount = 0;
+  let numCount = 0;
+  let boolCount = 0;
+
+  for (const s of students) {
+    const raw = getStudentFieldValue(s, rule.fieldKey, rule.name);
+    if (!raw || raw === 'Unspecified' || raw === 'N/A') continue;
+    nonZeroCount++;
+    const lower = raw.toLowerCase().trim();
+    if (lower === 'true' || lower === 'false' || lower === 'yes' || lower === 'no') {
+      boolCount++;
+    }
+    const num = Number(raw);
+    if (!isNaN(num) && typeof num === 'number') {
+      numCount++;
+    }
+  }
+
+  if (nonZeroCount >= 2) {
+    if (boolCount === nonZeroCount) return 'boolean';
+    if (numCount === nonZeroCount) return 'numeric';
+  }
+
+  return 'categorical';
+}
+
+export function extractNumericValue(student: Student, key: string, name?: string): number | null {
+  const val = getStudentFieldValue(student, key, name);
+  if (!val || val === 'Unspecified' || val === 'N/A') return null;
+
+  // 1. Direct standard number parsing
+  const directNum = Number(val);
+  if (!isNaN(directNum) && isFinite(directNum)) return directNum;
+
+  // 2. Check for ranges, e.g. "2-3", "2 - 3", "2.5-3.5" (calculate midpoint average)
+  const rangeMatch = String(val).trim().match(/^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)$/);
+  if (rangeMatch) {
+    const low = parseFloat(rangeMatch[1]);
+    const high = parseFloat(rangeMatch[2]);
+    if (!isNaN(low) && !isNaN(high) && isFinite(low) && isFinite(high)) {
+      return (low + high) / 2;
+    }
+  }
+
+  // 3. Extract first valid numeric floating point from strings like "3 years", "4.5 hrs", ">5", etc.
+  const floatMatch = String(val).match(/[-+]?[0-9]*\.?[0-9]+/);
+  if (floatMatch && floatMatch[0] && floatMatch[0] !== '-' && floatMatch[0] !== '.') {
+    const parsed = parseFloat(floatMatch[0]);
+    if (!isNaN(parsed) && isFinite(parsed)) return parsed;
+  }
+
+  return null;
+}
+
+export function extractBooleanValue(student: Student, key: string, name?: string): boolean | null {
+  const val = getStudentFieldValue(student, key, name);
+  if (!val || val === 'Unspecified' || val === 'N/A') return null;
+  const lower = val.toLowerCase().trim();
+  if (lower === 'true' || lower === 'yes' || lower === '1') return true;
+  if (lower === 'false' || lower === 'no' || lower === '0') return false;
+  return null;
+}
+
+/**
+ * Scans an active student cohort and discovers all populated attributes and custom tags.
+ * Also discovers newly configured custom enrollment fields from the class form.
+ */
+export function discoverRosterFields(
+  students: Student[],
+  configuredFields?: CustomEnrollmentField[]
+): DiscoveredRosterField[] {
+  const CORE_KEYS = new Set([
+    'name', 'email', 'gender', 'university', 'nationality',
+    'degree', 'englishproficiency', 'studenttype', 'currentcountry',
+    'isinternational', 'isexchange'
+  ]);
 
   const fieldKeyMap: Record<string, {
+    key: string;
     name: string;
     isStandard: boolean;
+    type?: 'text' | 'dropdown' | 'boolean' | 'number';
     values: Record<string, number>;
   }> = {
-    gender: { name: 'Gender', isStandard: true, values: {} },
-    university: { name: 'University', isStandard: true, values: {} },
-    nationality: { name: 'Nationality', isStandard: true, values: {} },
-    englishProficiency: { name: 'Language Proficiency', isStandard: true, values: {} },
-    degree: { name: 'Degree / Major', isStandard: true, values: {} },
-    studentType: { name: 'Student Mobility', isStandard: true, values: {} },
-    currentCountry: { name: 'Current Country', isStandard: true, values: {} }
+    gender: { key: 'gender', name: 'Gender', isStandard: true, values: {} },
+    university: { key: 'university', name: 'University', isStandard: true, values: {} },
+    nationality: { key: 'nationality', name: 'Nationality', isStandard: true, values: {} },
+    englishProficiency: { key: 'englishProficiency', name: 'Language Proficiency', isStandard: true, values: {} },
+    degree: { key: 'degree', name: 'Degree / Major', isStandard: true, values: {} },
+    studentType: { key: 'studentType', name: 'Student Mobility', isStandard: true, values: {} },
+    currentCountry: { key: 'currentCountry', name: 'Current Country', isStandard: true, values: {} }
   };
 
-  students.forEach(s => {
-    // Standard keys
-    for (const key of Object.keys(fieldKeyMap)) {
-      const val = getStudentFieldValue(s, key);
-      if (val && val !== 'Unspecified' && val !== 'Normal' && val !== 'N/A') {
-        fieldKeyMap[key].values[val] = (fieldKeyMap[key].values[val] || 0) + 1;
-      }
-    }
+  // 1. Map configured custom enrollment fields (e.g. newly added questions like "course duration", "laptop", etc.)
+  const aliasToCanonical: Record<string, string> = {};
 
-    // Custom fields dictionary
-    if (s.customFields) {
-      for (const [cKey, cVal] of Object.entries(s.customFields)) {
-        if (cVal && String(cVal).trim() !== '') {
-          if (!fieldKeyMap[cKey]) {
-            const formattedName = cKey.charAt(0).toUpperCase() + cKey.slice(1).replace(/([A-Z])/g, ' $1');
-            fieldKeyMap[cKey] = { name: formattedName, isStandard: false, values: {} };
-          }
-          const strVal = String(cVal).trim();
-          fieldKeyMap[cKey].values[strVal] = (fieldKeyMap[cKey].values[strVal] || 0) + 1;
+  if (Array.isArray(configuredFields)) {
+    configuredFields.forEach(f => {
+      const normId = f.id.toLowerCase().trim();
+      const normLabel = f.label.toLowerCase().trim();
+
+      // Skip core identity baseline fields
+      if (CORE_KEYS.has(normId)) return;
+
+      const canonicalKey = f.id;
+      aliasToCanonical[normId] = canonicalKey;
+      aliasToCanonical[normLabel] = canonicalKey;
+
+      if (!fieldKeyMap[canonicalKey]) {
+        fieldKeyMap[canonicalKey] = {
+          key: canonicalKey,
+          name: f.label.trim(),
+          isStandard: false,
+          type: f.type,
+          values: {}
+        };
+      }
+    });
+  }
+
+  // 2. Scan student cohort for values
+  if (Array.isArray(students)) {
+    students.forEach(s => {
+      // Standard core keys
+      for (const standardKey of ['gender', 'university', 'nationality', 'englishProficiency', 'degree', 'studentType', 'currentCountry']) {
+        const val = getStudentFieldValue(s, standardKey);
+        if (val && val !== 'Unspecified' && val !== 'Normal' && val !== 'N/A') {
+          fieldKeyMap[standardKey].values[val] = (fieldKeyMap[standardKey].values[val] || 0) + 1;
         }
       }
-    }
-  });
 
+      // Custom fields dictionary on student
+      if (s.customFields && typeof s.customFields === 'object') {
+        const seenForStudent = new Set<string>();
+
+        for (const [cKey, cVal] of Object.entries(s.customFields)) {
+          if (cVal === undefined || cVal === null || String(cVal).trim() === '') continue;
+
+          const normKey = cKey.toLowerCase().trim();
+          if (CORE_KEYS.has(normKey)) continue;
+
+          const canonicalKey = aliasToCanonical[normKey] || cKey;
+
+          if (seenForStudent.has(canonicalKey)) continue;
+          seenForStudent.add(canonicalKey);
+
+          if (!fieldKeyMap[canonicalKey]) {
+            const formattedName = cKey.charAt(0).toUpperCase() + cKey.slice(1).replace(/([A-Z])/g, ' $1');
+            fieldKeyMap[canonicalKey] = {
+              key: canonicalKey,
+              name: formattedName,
+              isStandard: false,
+              values: {}
+            };
+          }
+
+          const strVal = String(cVal).trim();
+          fieldKeyMap[canonicalKey].values[strVal] = (fieldKeyMap[canonicalKey].values[strVal] || 0) + 1;
+        }
+      }
+    });
+  }
+
+  // 3. Compile deduplicated results
   const results: DiscoveredRosterField[] = [];
+  const seenResultNames = new Set<string>();
 
-  for (const [key, meta] of Object.entries(fieldKeyMap)) {
+  for (const meta of Object.values(fieldKeyMap)) {
     const totalCount = Object.values(meta.values).reduce((a, b) => a + b, 0);
     const distinctCount = Object.keys(meta.values).length;
 
-    if (totalCount > 0) {
+    // Deduplicate by normalized name
+    const normName = meta.name.toLowerCase().trim();
+    if (seenResultNames.has(normName)) continue;
+
+    // Include if it has student values, OR if it is a configured custom field in the class form
+    if (totalCount > 0 || !meta.isStandard) {
+      seenResultNames.add(normName);
       const sortedVals = Object.entries(meta.values)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
         .map(([value, count]) => ({ value, count }));
 
       results.push({
-        key,
+        key: meta.key,
         name: meta.name,
         count: totalCount,
         distinctCount,
@@ -511,15 +759,53 @@ export function generateDiverseGroups(
   const groupBuckets: Student[][] = Array.from({ length: numGroups }, () => []);
   const classAvgEnglish = pool.reduce((acc, s) => acc + getEnglishScore(s.englishProficiency), 0) / totalStudents;
 
-  // Compute cohort-wide distributions for optimal chi-squared balancing
-  const cohortDistributions: Record<string, Record<string, number>> = {};
+  // Precompute cohort-level statistics for every active rule
+  const ruleStatsMap: Record<string, {
+    type: 'numeric' | 'boolean' | 'categorical';
+    classMean: number;
+    classStdDev: number;
+    classTrueRatio: number;
+  }> = {};
+
   for (const rule of effectiveRules) {
-    if (rule.mode === 'balance') {
-      cohortDistributions[rule.fieldKey] = {};
-      for (const s of pool) {
-        const val = getStudentFieldValue(s, rule.fieldKey, rule.name).toLowerCase().trim() || 'unspecified';
-        cohortDistributions[rule.fieldKey][val] = (cohortDistributions[rule.fieldKey][val] || 0) + 1;
-      }
+    const rType = inferRuleType(rule, pool);
+    if (rType === 'numeric') {
+      const nums: number[] = [];
+      pool.forEach(s => {
+        const n = extractNumericValue(s, rule.fieldKey, rule.name);
+        if (n !== null) nums.push(n);
+      });
+      const mean = nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+      const variance = nums.length > 0 ? nums.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / nums.length : 1;
+      ruleStatsMap[rule.id] = {
+        type: 'numeric',
+        classMean: mean,
+        classStdDev: Math.sqrt(variance) || 1,
+        classTrueRatio: 0
+      };
+    } else if (rType === 'boolean') {
+      let trues = 0;
+      let total = 0;
+      pool.forEach(s => {
+        const b = extractBooleanValue(s, rule.fieldKey, rule.name);
+        if (b !== null) {
+          total++;
+          if (b) trues++;
+        }
+      });
+      ruleStatsMap[rule.id] = {
+        type: 'boolean',
+        classMean: 0,
+        classStdDev: 1,
+        classTrueRatio: total > 0 ? trues / total : 0.5
+      };
+    } else {
+      ruleStatsMap[rule.id] = {
+        type: 'categorical',
+        classMean: 0,
+        classStdDev: 1,
+        classTrueRatio: 0
+      };
     }
   }
 
@@ -548,7 +834,16 @@ export function generateDiverseGroups(
 
   const stratifiedPool = [...unpinnedPool].sort((a, b) => {
     for (const rule of sortedActiveRules) {
-      if (rule.fieldKey === 'englishProficiency') {
+      const stat = ruleStatsMap[rule.id];
+      if (stat && stat.type === 'numeric') {
+        const na = extractNumericValue(a, rule.fieldKey, rule.name) ?? stat.classMean;
+        const nb = extractNumericValue(b, rule.fieldKey, rule.name) ?? stat.classMean;
+        if (na !== nb) return nb - na; // Sort descending numerically so snake draft balances sums & averages
+      } else if (stat && stat.type === 'boolean') {
+        const ba = extractBooleanValue(a, rule.fieldKey, rule.name) ? 1 : 0;
+        const bb = extractBooleanValue(b, rule.fieldKey, rule.name) ? 1 : 0;
+        if (ba !== bb) return bb - ba;
+      } else if (rule.fieldKey === 'englishProficiency') {
         const diff = getEnglishScore(b.englishProficiency) - getEnglishScore(a.englishProficiency);
         if (diff !== 0) return diff;
       } else {
@@ -601,7 +896,66 @@ export function generateDiverseGroups(
       if (w <= 0) continue;
       const isMax = w >= 45 || (rule as any).mode === 'strict_disperse';
 
-      if (rule.mode === 'together' || rule.mode === 'group' || rule.mode === 'cluster') {
+      // Multi-Type Balanced Distribution Cost Evaluation
+      const stat = ruleStatsMap[rule.id];
+      if (stat && stat.type === 'numeric') {
+        const teamNums: number[] = [];
+        group.forEach(s => {
+          const n = extractNumericValue(s, rule.fieldKey, rule.name);
+          if (n !== null) teamNums.push(n);
+        });
+        if (teamNums.length > 0) {
+          const teamAvg = teamNums.reduce((a, b) => a + b, 0) / teamNums.length;
+          const normDiff = Math.abs(teamAvg - stat.classMean) / Math.max(0.5, stat.classStdDev);
+          cost += Math.pow(normDiff, 2) * w * (isMax ? 25.0 : 5.0);
+        }
+      } else if (stat && stat.type === 'boolean') {
+        let trueCount = 0;
+        group.forEach(s => {
+          if (extractBooleanValue(s, rule.fieldKey, rule.name) === true) trueCount++;
+        });
+        const expectedTrue = gSize * stat.classTrueRatio;
+        const diff = Math.abs(trueCount - expectedTrue);
+        cost += Math.pow(diff, 2) * w * (isMax ? 25.0 : 4.0);
+      } else if (rule.fieldKey === 'gender') {
+        const genderCounts: Record<string, number> = {};
+        for (const s of group) {
+          const g = (s.gender || 'Unspecified').toLowerCase();
+          genderCounts[g] = (genderCounts[g] || 0) + 1;
+        }
+        const females = genderCounts['female'] || 0;
+        const males = genderCounts['male'] || 0;
+        const diff = Math.abs(females - males);
+        if (diff > 1) {
+          cost += Math.pow(diff - 1, 2) * w * (isMax ? 16.0 : 2.0);
+        }
+      } else if (rule.fieldKey === 'englishProficiency') {
+        const avgScore = group.reduce((acc, s) => acc + getEnglishScore(s.englishProficiency), 0) / gSize;
+        cost += Math.pow(avgScore - classAvgEnglish, 2) * w * (isMax ? 25.0 : 5.0);
+        const hasAdvanced = group.some(s => getEnglishScore(s.englishProficiency) >= 4);
+        if (!hasAdvanced && gSize >= 3) {
+          cost += (isMax ? 80.0 : 25.0) * w;
+        }
+      } else if (rule.fieldKey === 'nationality') {
+        for (let i = 0; i < group.length; i++) {
+          for (let j = i + 1; j < group.length; j++) {
+            const s1 = group[i];
+            const s2 = group[j];
+            const nat1 = (s1.nationality || '').toLowerCase().trim();
+            const nat2 = (s2.nationality || '').toLowerCase().trim();
+            if (nat1 && nat2 && nat1 !== 'unspecified' && nat1 === nat2) {
+              const uni1 = (s1.university || '').toLowerCase().trim();
+              const uni2 = (s2.university || '').toLowerCase().trim();
+              if (uni1 && uni2 && uni1 !== uni2) {
+                cost += w * (isMax ? 8.0 : 1.0);
+              } else {
+                cost += w * (isMax ? 25.0 : 4.0);
+              }
+            }
+          }
+        }
+      } else {
+        // Categorical uniqueness dispersion across teams (University, Degree, Mobility, Custom Dropdown/Text)
         const valCounts: Record<string, number> = {};
         for (const s of group) {
           const val = getStudentFieldValue(s, rule.fieldKey, rule.name).toLowerCase().trim();
@@ -609,62 +963,9 @@ export function generateDiverseGroups(
             valCounts[val] = (valCounts[val] || 0) + 1;
           }
         }
-        const uniqueCount = Object.keys(valCounts).length;
-        if (uniqueCount > 1) {
-          cost += Math.pow(uniqueCount - 1, 2) * w * (isMax ? 25.0 : 5.0);
-        }
-      } else {
-        // 'distribute' mode (intelligent diversification across teams)
-        if (rule.fieldKey === 'gender') {
-          const genderCounts: Record<string, number> = {};
-          for (const s of group) {
-            const g = (s.gender || 'Unspecified').toLowerCase();
-            genderCounts[g] = (genderCounts[g] || 0) + 1;
-          }
-          const females = genderCounts['female'] || 0;
-          const males = genderCounts['male'] || 0;
-          const diff = Math.abs(females - males);
-          if (diff > 1) {
-            cost += Math.pow(diff - 1, 2) * w * (isMax ? 16.0 : 2.0);
-          }
-        } else if (rule.fieldKey === 'englishProficiency') {
-          const avgScore = group.reduce((acc, s) => acc + getEnglishScore(s.englishProficiency), 0) / gSize;
-          cost += Math.pow(avgScore - classAvgEnglish, 2) * w * (isMax ? 25.0 : 5.0);
-          const hasAdvanced = group.some(s => getEnglishScore(s.englishProficiency) >= 4);
-          if (!hasAdvanced && gSize >= 3) {
-            cost += (isMax ? 80.0 : 25.0) * w;
-          }
-        } else if (rule.fieldKey === 'nationality') {
-          for (let i = 0; i < group.length; i++) {
-            for (let j = i + 1; j < group.length; j++) {
-              const s1 = group[i];
-              const s2 = group[j];
-              const nat1 = (s1.nationality || '').toLowerCase().trim();
-              const nat2 = (s2.nationality || '').toLowerCase().trim();
-              if (nat1 && nat2 && nat1 !== 'unspecified' && nat1 === nat2) {
-                const uni1 = (s1.university || '').toLowerCase().trim();
-                const uni2 = (s2.university || '').toLowerCase().trim();
-                if (uni1 && uni2 && uni1 !== uni2) {
-                  cost += w * (isMax ? 8.0 : 1.0);
-                } else {
-                  cost += w * (isMax ? 25.0 : 4.0);
-                }
-              }
-            }
-          }
-        } else {
-          // Categorical uniqueness dispersion across teams (University, Degree, Mobility, Custom)
-          const valCounts: Record<string, number> = {};
-          for (const s of group) {
-            const val = getStudentFieldValue(s, rule.fieldKey, rule.name).toLowerCase().trim();
-            if (val && val !== 'unspecified' && val !== 'n/a' && val !== 'none') {
-              valCounts[val] = (valCounts[val] || 0) + 1;
-            }
-          }
-          for (const count of Object.values(valCounts)) {
-            if (count > 1) {
-              cost += Math.pow(count - 1, 2) * w * (isMax ? 25.0 : 3.8);
-            }
+        for (const count of Object.values(valCounts)) {
+          if (count > 1) {
+            cost += Math.pow(count - 1, 2) * w * (isMax ? 25.0 : 3.8);
           }
         }
       }
@@ -732,7 +1033,7 @@ export function generateDiverseGroups(
     }));
 
     updatedStudents.push(...assignedMembers);
-    groupReports.push(calculateGroupReport(groupName, assignedMembers, classAvgEnglish, effectiveRules));
+    groupReports.push(calculateGroupReport(groupName, assignedMembers, classAvgEnglish, effectiveRules, ruleStatsMap));
   });
 
   // Calculate overall metrics
@@ -796,7 +1097,8 @@ export function calculateGroupReport(
   groupName: string, 
   members: Student[], 
   classAvgEnglish: number = 3.5,
-  rulesOrCustomFields?: GroupingRule[] | CustomDiversityField[]
+  rulesOrCustomFields?: GroupingRule[] | CustomDiversityField[],
+  cohortStats?: Record<string, { type: 'numeric' | 'boolean' | 'categorical'; classMean: number; classStdDev: number; classTrueRatio: number }>
 ): GroupDiversityReport {
   const genderCounts: Record<string, number> = {};
   const natSet = new Set<string>();
@@ -868,32 +1170,46 @@ export function calculateGroupReport(
 
     const isMax = rule.weight >= 45 || (rule as any).mode === 'strict_disperse';
 
-    if (rule.mode === 'together' || rule.mode === 'group' || rule.mode === 'cluster') {
-      if (uniqueVals.size > 1) {
-        ruleScore = Math.max(30, Math.round(100 - ((uniqueVals.size - 1) * (isMax ? 32 : 22))));
-        summary = `${uniqueVals.size} groups mixed`;
-      } else {
-        ruleScore = 100;
-        summary = `Aligned (${Array.from(uniqueVals)[0] || 'Unassigned'})`;
-      }
+    const stat = cohortStats ? cohortStats[rule.id] : null;
+    const rType = stat ? stat.type : inferRuleType(rule, members);
+
+    if (rType === 'numeric') {
+      const teamNums: number[] = [];
+      members.forEach(s => {
+        const n = extractNumericValue(s, rule.fieldKey, rule.name);
+        if (n !== null) teamNums.push(n);
+      });
+      const teamAvg = teamNums.length > 0 ? (teamNums.reduce((a, b) => a + b, 0) / teamNums.length) : 0;
+      const targetMean = stat ? stat.classMean : teamAvg;
+      const targetStd = stat ? stat.classStdDev : 1;
+      const dev = Math.abs(teamAvg - targetMean) / Math.max(0.5, targetStd);
+      ruleScore = Math.max(35, Math.round(100 - (dev * (isMax ? 32 : 20))));
+      summary = `Team Avg: ${teamAvg.toFixed(1)} (Class: ${targetMean.toFixed(1)})`;
+    } else if (rType === 'boolean') {
+      let trueCount = 0;
+      members.forEach(s => {
+        if (extractBooleanValue(s, rule.fieldKey, rule.name) === true) trueCount++;
+      });
+      const targetRatio = stat ? stat.classTrueRatio : 0.5;
+      const expected = studentCount * targetRatio;
+      const diff = Math.abs(trueCount - expected);
+      ruleScore = Math.max(35, Math.round(100 - (diff * (isMax ? 28 : 18))));
+      summary = `${trueCount} Yes / ${studentCount - trueCount} No`;
+    } else if (rule.fieldKey === 'gender') {
+      const females = genderCounts['Female'] || genderCounts['female'] || 0;
+      const males = genderCounts['Male'] || genderCounts['male'] || 0;
+      const diff = Math.abs(females - males);
+      ruleScore = Math.max(35, 100 - (diff > 1 ? (diff - 1) * (isMax ? 26 : 18) : 0));
+      summary = `${females}F / ${males}M ratio`;
+    } else if (rule.fieldKey === 'englishProficiency') {
+      const dev = Math.abs(avgEnglishScore - classAvgEnglish);
+      ruleScore = Math.max(35, Math.round(100 - (dev * (isMax ? 30 : 20))));
+      summary = `Avg CEFR ${getCEFRLevelFromScore(avgEnglishScore).code} (${avgEnglishScore.toFixed(1)})`;
     } else {
-      // 'distribute' mode: intelligent per-attribute diversity evaluation
-      if (rule.fieldKey === 'gender') {
-        const females = genderCounts['Female'] || genderCounts['female'] || 0;
-        const males = genderCounts['Male'] || genderCounts['male'] || 0;
-        const diff = Math.abs(females - males);
-        ruleScore = Math.max(35, 100 - (diff > 1 ? (diff - 1) * (isMax ? 26 : 18) : 0));
-        summary = `${females}F / ${males}M ratio`;
-      } else if (rule.fieldKey === 'englishProficiency') {
-        const dev = Math.abs(avgEnglishScore - classAvgEnglish);
-        ruleScore = Math.max(35, Math.round(100 - (dev * (isMax ? 30 : 20))));
-        summary = `Avg CEFR ${getCEFRLevelFromScore(avgEnglishScore).code} (${avgEnglishScore.toFixed(1)})`;
-      } else {
-        const duplicates = Math.max(0, studentCount - uniqueVals.size);
-        const penaltyFactor = isMax ? 28 : 16;
-        ruleScore = Math.max(35, Math.round(100 - (duplicates * penaltyFactor)));
-        summary = `${uniqueVals.size} unique / ${studentCount} members`;
-      }
+      const duplicates = Math.max(0, studentCount - uniqueVals.size);
+      const penaltyFactor = isMax ? 28 : 16;
+      ruleScore = Math.max(35, Math.round(100 - (duplicates * penaltyFactor)));
+      summary = `${uniqueVals.size} unique / ${studentCount} members`;
     }
 
     ruleSatisfactions.push({

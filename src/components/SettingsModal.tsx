@@ -186,6 +186,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newModifiers, setNewModifiers] = useState<{ ctrl?: boolean; alt?: boolean; shift?: boolean }>({});
   const [isRecordingNewKey, setIsRecordingNewKey] = useState<boolean>(false);
   const [actionSearchQuery, setActionSearchQuery] = useState('');
+  const [actionCategoryFilter, setActionCategoryFilter] = useState<string>('all');
+  const [shortcutsListQuery, setShortcutsListQuery] = useState<string>('');
 
   // Explicit shortcut editor modal/panel state (for editing any premade or custom shortcut)
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
@@ -1772,19 +1774,74 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <input
                         type="text"
                         className="form-input"
-                        placeholder="Search actions (e.g. excel, projector, ipaf, rubrics, students)..."
+                        placeholder="Search actions (e.g. enrollment, questions, excel, projector, ipaf, rubrics)..."
                         value={actionSearchQuery}
                         onChange={(e) => setActionSearchQuery(e.target.value)}
                         style={{ paddingLeft: '30px', height: '32px', fontSize: '0.76rem', borderRadius: '6px' }}
                       />
                     </div>
 
+                    {/* Category Filter Pills */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', overflowX: 'auto', paddingBottom: '2px', scrollbarWidth: 'none' }}>
+                      {['all', 'Navigation', 'Tools & Modals', 'Roster & Teams', 'Rubric & Scales', 'Grading & Analytics', 'Layout & Presets', 'General'].map(cat => {
+                        const isSel = actionCategoryFilter === cat;
+                        const count = cat === 'all' 
+                          ? AVAILABLE_SHORTCUT_ACTIONS.length 
+                          : AVAILABLE_SHORTCUT_ACTIONS.filter(a => a.category === cat).length;
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => setActionCategoryFilter(cat)}
+                            style={{
+                              height: '24px',
+                              padding: '0 0.5rem',
+                              borderRadius: '12px',
+                              fontSize: '0.68rem',
+                              fontWeight: isSel ? 800 : 600,
+                              border: isSel ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                              backgroundColor: isSel ? 'var(--primary)' : 'var(--bg-surface)',
+                              color: isSel ? '#ffffff' : 'var(--text-secondary)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0
+                            }}
+                          >
+                            <span>{cat === 'all' ? 'All' : cat}</span>
+                            <span style={{ fontSize: '0.6rem', opacity: isSel ? 0.9 : 0.65 }}>({count})</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Selected Action Indicator */}
+                    {newActionId && (() => {
+                      const def = AVAILABLE_SHORTCUT_ACTIONS.find(a => a.id === newActionId);
+                      if (!def) return null;
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.6rem', backgroundColor: 'var(--primary-light)', borderRadius: '6px', border: '1px solid var(--primary)', fontSize: '0.72rem' }}>
+                          <span style={{ color: 'var(--primary)', fontWeight: 800 }}>
+                            Selected: <strong style={{ color: 'var(--text-primary)' }}>{def.label}</strong> ({def.category})
+                          </span>
+                          {def.suggestedKey && (
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                              Suggested: <kbd style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--primary)', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface)' }}>{formatShortcutDisplay(def.suggestedKey, def.suggestedModifiers)}</kbd>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {/* Action Selector Grid */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.4rem', maxHeight: '160px', overflowY: 'auto', padding: '2px' }}>
                       {AVAILABLE_SHORTCUT_ACTIONS.filter(a => {
+                        if (actionCategoryFilter !== 'all' && a.category !== actionCategoryFilter) return false;
                         if (!actionSearchQuery.trim()) return true;
                         const q = actionSearchQuery.toLowerCase().trim();
-                        return a.label.toLowerCase().includes(q) || a.description.toLowerCase().includes(q) || a.category.toLowerCase().includes(q);
+                        return a.label.toLowerCase().includes(q) || a.description.toLowerCase().includes(q) || a.category.toLowerCase().includes(q) || a.id.toLowerCase().includes(q);
                       }).map((action) => {
                         const isSelected = newActionId === action.id;
                         return (
@@ -2006,11 +2063,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               )}
 
+              {/* Shortcut List Search Filter */}
+              <div style={{ position: 'relative' }}>
+                <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Filter active shortcuts list by name, key, or action (e.g. 'alt+q', 'roster', 'rubric')..."
+                  value={shortcutsListQuery}
+                  onChange={(e) => setShortcutsListQuery(e.target.value)}
+                  style={{ paddingLeft: '30px', height: '32px', fontSize: '0.76rem', borderRadius: '6px' }}
+                />
+              </div>
+
               {/* Grouped Shortcuts */}
               {(['Custom', 'Navigation', 'Tools & Modals', 'Roster & Teams', 'Rubric & Scales', 'Grading & Analytics', 'Layout & Presets', 'General'] as const).map((category) => {
+                const q = shortcutsListQuery.toLowerCase().trim();
                 const groupShortcuts = displayShortcuts.filter(s => {
-                  if (category === 'Custom') return s.isCustom || s.category === 'Custom';
-                  return !s.isCustom && s.category === category;
+                  const matchesCat = category === 'Custom' ? (s.isCustom || s.category === 'Custom') : (!s.isCustom && s.category === category);
+                  if (!matchesCat) return false;
+                  if (!q) return true;
+                  const keyStr = formatShortcutDisplay(s.key, s.modifiers).toLowerCase();
+                  return s.label.toLowerCase().includes(q) || s.description.toLowerCase().includes(q) || s.key.toLowerCase().includes(q) || keyStr.includes(q) || (s.actionId && s.actionId.toLowerCase().includes(q));
                 });
                 if (groupShortcuts.length === 0) return null;
 
@@ -2157,6 +2231,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   </button>
                                 </div>
 
+                                {/* Action selector dropdown */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
+                                  <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', flexShrink: 0 }}>
+                                    Action:
+                                  </label>
+                                  <select
+                                    className="form-input"
+                                    value={editActionId}
+                                    onChange={(e) => setEditActionId(e.target.value)}
+                                    style={{ height: '30px', fontSize: '0.74rem', padding: '0 0.5rem', flex: 1, borderRadius: '6px' }}
+                                  >
+                                    {AVAILABLE_SHORTCUT_ACTIONS.map(a => (
+                                      <option key={a.id} value={a.id}>
+                                        [{a.category}] {a.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
                                 <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                                   {/* Record Keystroke Button */}
                                   <button
@@ -2251,6 +2344,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             modifiers: hasMods ? editModifiers : undefined,
                                             actionId: editActionId || s.actionId,
                                             label: actionDef ? actionDef.label : s.label,
+                                            category: s.isCustom ? 'Custom' : ((actionDef?.category as any) || s.category),
                                             description: actionDef ? actionDef.description : s.description
                                           };
                                         }

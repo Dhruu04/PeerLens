@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig, TeamCharterConfig } from '../utils/math';
-import { normalizeNationality, getEvaluationControls, DEFAULT_PULSE_CONFIG, generateSamplePulseRounds } from '../utils/math';
+import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig, TeamCharterConfig, CustomEnrollmentField } from '../utils/math';
+import { normalizeNationality, getEvaluationControls, DEFAULT_PULSE_CONFIG, generateSamplePulseRounds, DEFAULT_ENROLLMENT_FIELDS } from '../utils/math';
 import { loadFeatureToggles, DEFAULT_FEATURE_TOGGLES, type FeatureToggles } from '../utils/featurePreferences';
 import { DEFAULT_KEYBOARD_SHORTCUTS } from '../utils/keyboardShortcuts';
 import { hashCode } from '../utils/csv';
@@ -86,6 +86,7 @@ import {
     updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify?: boolean) => void;
     updateEvaluationControls: (classId: string, controls: Partial<EvaluationFormControls>) => void;
     updateTeamCharterConfig: (classId: string, config: Partial<TeamCharterConfig>) => void;
+    updateEnrollmentFields: (classId: string, fields: CustomEnrollmentField[]) => void;
     updateTeamBaseGrade: (classId: string, teamName: string, grade: number) => void;
     setAllTeamBaseGrades: (classId: string, grades: Record<string, number>) => void;
     importRoster: (classId: string, students: Student[], clearExisting?: boolean) => void;
@@ -259,9 +260,23 @@ import {
 
       try {
         const storedConfig = localStorage.getItem(`peer_grading_firebase_config_${activeAdminProfile}`);
+        const envApiKey = typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_FIREBASE_API_KEY : undefined;
+        const envProjectId = typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID : undefined;
+
         if (storedConfig) {
           const parsedConfig = JSON.parse(storedConfig);
           setFirebaseConfig(parsedConfig);
+          setIsCloudSynced(true);
+        } else if (envApiKey && envProjectId) {
+          const envConfig: FirebaseConfig = {
+            apiKey: envApiKey,
+            projectId: envProjectId,
+            authDomain: (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || `${envProjectId}.firebaseapp.com`,
+            storageBucket: (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || `${envProjectId}.appspot.com`,
+            messagingSenderId: (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+            appId: (import.meta as any).env?.VITE_FIREBASE_APP_ID || ''
+          };
+          setFirebaseConfig(envConfig);
           setIsCloudSynced(true);
         } else {
           setFirebaseConfig(null);
@@ -358,7 +373,9 @@ import {
                 showStrengthsFeedback: data.evaluationControls.showStrengthsFeedback !== false,
                 showRoleBaseline: data.evaluationControls.showRoleBaseline !== false,
                 allowProfileEditing: data.evaluationControls.allowProfileEditing !== false
-              } : undefined
+              } : undefined,
+              enrollmentFormFields: Array.isArray(data.enrollmentFormFields) && data.enrollmentFormFields.length > 0 ? data.enrollmentFormFields : [...DEFAULT_ENROLLMENT_FIELDS],
+              teamCharterConfig: data.teamCharterConfig || undefined
             });
           });
 
@@ -666,7 +683,9 @@ import {
                   showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback !== false,
                   showRoleBaseline: c.evaluationControls.showRoleBaseline !== false,
                   allowProfileEditing: c.evaluationControls.allowProfileEditing !== false
-                } : undefined
+                } : undefined,
+                enrollmentFormFields: Array.isArray(c.enrollmentFormFields) && c.enrollmentFormFields.length > 0 ? c.enrollmentFormFields : [...DEFAULT_ENROLLMENT_FIELDS],
+                teamCharterConfig: c.teamCharterConfig || undefined
               }));
               
               setClasses(validated);
@@ -751,7 +770,9 @@ import {
                   showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback !== false,
                   showRoleBaseline: c.evaluationControls.showRoleBaseline !== false,
                   allowProfileEditing: c.evaluationControls.allowProfileEditing !== false
-                } : undefined
+                } : undefined,
+                enrollmentFormFields: Array.isArray(c.enrollmentFormFields) ? c.enrollmentFormFields : [],
+                teamCharterConfig: c.teamCharterConfig || undefined
               }));
               setClasses(validated);
             }
@@ -871,7 +892,33 @@ import {
           showStrengthsFeedback: c.evaluationControls?.showStrengthsFeedback !== false,
           showRoleBaseline: c.evaluationControls?.showRoleBaseline !== false,
           allowProfileEditing: c.evaluationControls?.allowProfileEditing !== false
-        }
+        },
+        enrollmentFormFields: Array.isArray(c.enrollmentFormFields) && c.enrollmentFormFields.length > 0 ? c.enrollmentFormFields.map(ef => ({
+          id: ef.id,
+          label: ef.label || '',
+          type: ef.type || 'text',
+          checkboxLabel: ef.checkboxLabel || null,
+          placeholder: ef.placeholder || null,
+          options: Array.isArray(ef.options) ? ef.options : [],
+          required: !!ef.required,
+          includeInGrouping: !!ef.includeInGrouping,
+          description: ef.description || null
+        })) : DEFAULT_ENROLLMENT_FIELDS.map(ef => ({
+          id: ef.id,
+          label: ef.label || '',
+          type: ef.type || 'text',
+          checkboxLabel: ef.checkboxLabel || null,
+          placeholder: ef.placeholder || null,
+          options: Array.isArray(ef.options) ? ef.options : [],
+          required: !!ef.required,
+          includeInGrouping: !!ef.includeInGrouping,
+          description: ef.description || null
+        })),
+        teamCharterConfig: c.teamCharterConfig ? {
+          selectedRoleIds: Array.isArray(c.teamCharterConfig.selectedRoleIds) ? c.teamCharterConfig.selectedRoleIds : [],
+          icebreakerTopic: c.teamCharterConfig.icebreakerTopic || 'multicultural',
+          teamNorms: Array.isArray(c.teamCharterConfig.teamNorms) ? c.teamCharterConfig.teamNorms : []
+        } : null
       };
     };
 
@@ -1067,7 +1114,8 @@ import {
         name,
         fields: [{ id: 'f_overall', name: 'Performance Contribution', min: 1, max: 10, weight: 1 }],
         students: [],
-        reviews: []
+        reviews: [],
+        enrollmentFormFields: [...DEFAULT_ENROLLMENT_FIELDS]
       };
       persistClasses([...getCurrentClasses(), newClass]);
       setActiveClassId(id);
@@ -1182,6 +1230,90 @@ import {
         }
         return c;
       });
+      persistClasses(updatedClasses);
+    };
+
+    const updateEnrollmentFields = (classId: string, fields: CustomEnrollmentField[]) => {
+      let removedFieldIds: string[] = [];
+      let removedFieldLabels: string[] = [];
+
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const prevFields = c.enrollmentFormFields || [];
+          removedFieldIds = prevFields
+            .map(f => f.id)
+            .filter(id => !fields.some(nf => nf.id === id));
+          removedFieldLabels = prevFields
+            .filter(f => removedFieldIds.includes(f.id))
+            .map(f => f.label.trim().toLowerCase());
+
+          // Clean up student customFields if any questions were deleted
+          let updatedStudents = c.students;
+          if (removedFieldIds.length > 0 && Array.isArray(c.students)) {
+            updatedStudents = c.students.map(s => {
+              if (!s.customFields) return s;
+              const nextCustom = { ...s.customFields };
+              let modified = false;
+              removedFieldIds.forEach(id => {
+                if (id in nextCustom) {
+                  delete nextCustom[id];
+                  modified = true;
+                }
+              });
+              removedFieldLabels.forEach(lbl => {
+                if (lbl in nextCustom) {
+                  delete nextCustom[lbl];
+                  modified = true;
+                }
+              });
+              return modified ? { ...s, customFields: nextCustom } : s;
+            });
+          }
+
+          return {
+            ...c,
+            enrollmentFormFields: fields,
+            students: updatedStudents
+          };
+        }
+        return c;
+      });
+
+      // Automatically prune deleted questions from stored grouping rules & weightages
+      if (removedFieldIds.length > 0) {
+        ['peerlens_custom_grouping_rules_v3', 'peerlens_custom_grouping_rules_v2'].forEach(key => {
+          try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                const cleaned = parsed.filter((r: any) => {
+                  const ruleId = String(r.id || '');
+                  const fieldKey = String(r.fieldKey || '');
+                  const ruleName = String(r.name || '').trim().toLowerCase();
+                  const isDeleted = removedFieldIds.some(id => 
+                    ruleId === `field_${id}` || 
+                    ruleId === id || 
+                    fieldKey === id
+                  ) || removedFieldLabels.includes(ruleName);
+                  return !isDeleted;
+                });
+                localStorage.setItem(key, JSON.stringify(cleaned));
+              }
+            }
+          } catch (e) {
+            console.error('Failed to prune grouping rules from localStorage', e);
+          }
+        });
+
+        // Broadcast event so open AutoGroup components update immediately
+        try {
+          window.dispatchEvent(new CustomEvent('peerlens_grouping_rules_purged', {
+            detail: { removedFieldIds, removedFieldLabels }
+          }));
+        } catch (e) {}
+      }
+
       persistClasses(updatedClasses);
     };
 
@@ -1396,7 +1528,11 @@ import {
           nameChangeCount: updatedNameChangeCount,
           lastProfileEditAt: nowMs,
           flaggedForReview: isFlagged,
-          suspiciousReason: reason
+          suspiciousReason: reason,
+          customFields: {
+            ...(existing.customFields || {}),
+            ...(studentData.customFields || {})
+          }
         };
       };
 
@@ -1992,6 +2128,7 @@ import {
           updateGradingConfig,
           updateEvaluationControls,
           updateTeamCharterConfig,
+          updateEnrollmentFields,
           updateTeamBaseGrade,
           setAllTeamBaseGrades,
           importRoster,

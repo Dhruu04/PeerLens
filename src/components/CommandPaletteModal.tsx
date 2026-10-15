@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Search, Users, Sliders, Award, Tv, Send, Download, Settings, Keyboard,
-  UserPlus, FileText, Globe, CornerDownLeft, X, Compass, Sparkles, QrCode,
+  Search, Users, Sliders, Award, Tv, Send, Download, Settings, Settings2, Keyboard,
+  UserPlus, FileText, Globe, CornerDownLeft, X, Compass, Sparkles, QrCode, Percent,
   RefreshCw, Clock, Moon, Sun, HelpCircle, BookOpen, ArrowLeft, Layers, Zap,
   Tag, Palette, Eye, EyeOff, LayoutDashboard, Gauge, Cpu, ToggleLeft,
   Lightbulb, BarChart2, Grid,
@@ -16,14 +16,13 @@ import type { ClassData } from '../utils/math';
 import { generateStudentDisputeAudit } from '../utils/math';
 import { FEATURE_INFO_REGISTRY, type FeatureInfoItem } from '../data/featureDescriptions';
 import { useTheme } from '../context/ThemeContext';
-import type { FeatureToggles } from '../utils/featurePreferences';
-import { DEFAULT_FEATURE_TOGGLES, MINIMAL_FEATURE_TOGGLES, FULL_FEATURE_TOGGLES } from '../utils/featurePreferences';
+import { DEFAULT_FEATURE_TOGGLES, MINIMAL_FEATURE_TOGGLES, FULL_FEATURE_TOGGLES, type FeatureToggles } from '../utils/featurePreferences';
 
 // ── NLP SYNONYMS & INTENT DETECTION ─────────────────────────────────────────
 const SYNONYMS_SHOW   = ['show','enable','turn on','activate','visible','display','unhide','reveal','make visible'];
 const SYNONYMS_HIDE   = ['hide','disable','turn off','deactivate','remove','conceal','make invisible'];
 const SYNONYMS_HELP   = ['how to','what is','explain','help','what does','how does','why','formula','guide'];
-const SYNONYMS_MODE   = ['mode','preset','minimal','standard','full','power','simple','basic','advanced'];
+const SYNONYMS_MODE   = ['mode','preset','minimal','standard','full','none','clean canvas','hide all','blank canvas','clear modules','power','simple','basic','advanced'];
 const SYNONYMS_NAV    = ['go to','switch to','navigate','take me to','jump to'];
 const SYNONYMS_THEME  = ['theme','dark','light','appearance','color'];
 const SYNONYMS_EXPORT = ['export','download','save as','csv','xlsx','excel','lms','pdf','canvas','moodle','blackboard','brightspace','pulse','pulse csv','micro-pulse'];
@@ -47,8 +46,51 @@ function detectIntent(rawQ: string): NLPIntent {
   return { type: 'general', confidence: 0.5 };
 }
 
+const TYPO_MAP: Record<string, string> = {
+  rubrik: 'rubric',
+  rubrix: 'rubric',
+  rostor: 'roster',
+  rostr: 'roster',
+  studnet: 'student',
+  studnets: 'student',
+  stduent: 'student',
+  projctor: 'projector',
+  projecktor: 'projector',
+  excle: 'excel',
+  exel: 'excel',
+  dispacher: 'dispatcher',
+  dispach: 'dispatcher',
+  anonymus: 'anonymous',
+  anonymos: 'anonymous',
+  autogrpu: 'autogroup',
+  autogrup: 'autogroup',
+  submited: 'submitted',
+  submitt: 'submitted',
+  calibaration: 'calibration',
+  calbrate: 'calibration',
+  presetts: 'presets',
+  peset: 'preset',
+  guid: 'guide',
+  guidence: 'guidance',
+  precent: 'percent',
+  precentage: 'percentage',
+  anomoly: 'anomaly',
+  anomolies: 'anomalies',
+  colusion: 'collusion',
+  deadlin: 'deadline',
+  dedline: 'deadline',
+};
+
 function tokenize(s: string): string[] {
-  return s.toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(Boolean);
+  const rawTokens = s.toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(Boolean);
+  const result: string[] = [];
+  rawTokens.forEach(t => {
+    result.push(t);
+    if (TYPO_MAP[t]) {
+      result.push(TYPO_MAP[t]);
+    }
+  });
+  return result;
 }
 
 export function parsePrefix(raw: string): { prefix: '@' | '#' | '>' | '?' | null; cleanQuery: string } {
@@ -58,6 +100,28 @@ export function parsePrefix(raw: string): { prefix: '@' | '#' | '>' | '?' | null
   if (trimmed.startsWith('>')) return { prefix: '>', cleanQuery: trimmed.slice(1).trim() };
   if (trimmed.startsWith('?')) return { prefix: '?', cleanQuery: trimmed.slice(1).trim() };
   return { prefix: null, cleanQuery: trimmed };
+}
+
+function isFuzzyMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 2) return false;
+  if (a.length < 4 || b.length < 4) return false;
+  let edits = 0;
+  let i = 0, j = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] !== b[j]) {
+      edits++;
+      if (edits > 1) return false;
+      if (a.length > b.length) i++;
+      else if (b.length > a.length) j++;
+      else { i++; j++; }
+    } else {
+      i++;
+      j++;
+    }
+  }
+  if (i < a.length || j < b.length) edits++;
+  return edits <= 1;
 }
 
 function scoreItem(item: CPAction, queryTokens: string[], rawQ: string, intent: NLPIntent): number {
@@ -77,11 +141,18 @@ function scoreItem(item: CPAction, queryTokens: string[], rawQ: string, intent: 
     if (tok.length < 2) return;
     if (titleL.includes(tok)) sc += 55;
     if (subL.includes(tok)) sc += 22;
+
+    const titleTokens = tokenize(titleL);
+    if (titleTokens.some(w => isFuzzyMatch(tok, w))) {
+      sc += 40;
+    }
+
     kws.forEach(kw => {
       if (kw === tok) sc += 60;
       else if (kw.startsWith(tok)) sc += 40;
       else if (kw.includes(tok)) sc += 25;
       else if (tok.includes(kw) && kw.length > 3) sc += 15;
+      else if (isFuzzyMatch(tok, kw)) sc += 35;
     });
   });
 
@@ -174,10 +245,11 @@ const FL: Record<keyof FeatureToggles, { label: string; desc: string; section: s
   showExportRosterBtn:      { label: 'Export Roster Button',      desc: 'Download roster as CSV or Excel file',         section: 'Section 1',  icon: Download },
   showDownloadTemplateBtn:  { label: 'Download Template Button',  desc: 'Download blank spreadsheet template',          section: 'Section 1',  icon: Download },
   showAutoGroupStudio:      { label: 'Auto-Group Teams',          desc: 'Automatically forms balanced student groups using rules (diversity, skills, size)', section: 'Section 1', icon: Users },
-  showAutoGroupTargetSize:  { label: 'Team Size Slider',          desc: 'Set the target number of students per team',   section: 'Section 1',  icon: Users },
+  showAutoGroupTargetSize:  { label: 'Team Size Selector',        desc: 'Set the target number of students per team',   section: 'Section 1',  icon: Users },
   showAutoGroupNamingFormat:{ label: 'Team Name Style',           desc: 'Chooses naming format (e.g., "Team 1", "Group A", "Squad")', section: 'Section 1', icon: Tag },
-  showAutoGroupRulesCard:   { label: 'Group Balancing Rules',     desc: 'Rules to balance diversity and skills',        section: 'Section 1',  icon: Sliders },
-  showAutoGroupResetRulesBtn:{ label: 'Reset Rules Button',       desc: 'Reset group formation rules to default',       section: 'Section 1',  icon: RefreshCw },
+  showAutoGroupRulesCard:   { label: 'Group Balancing Rules (3 Levels)', desc: '3 priority levels (Low, Med, High) to balance diversity and skills', section: 'Section 1', icon: Settings2 },
+  showAutoGroupResetRulesBtn:{ label: 'Rules Header Action Icons',    desc: 'Minimal action icon buttons in rules header',  section: 'Section 1',  icon: RefreshCw },
+  showAutoGroupRulePercentages:{ label: 'Rule % Focus Badges',        desc: 'Show or hide percentage weight badges on grouping rules', section: 'Section 1', icon: Percent },
   showAutoGroupDiscoveredFields:{ label: 'Balance by (Gender, Major, etc.)', desc: 'Auto-detected spreadsheet columns to balance across teams', section: 'Section 1', icon: Layers },
   showAutoGroupQuickTargets:{ label: 'Quick Team Targets',        desc: 'Clickable team targets to review balance',     section: 'Section 1',  icon: LayoutDashboard },
   showAutoGroupToolbar:     { label: 'Team Preview Toolbar',      desc: 'Switch views and undo/redo changes',           section: 'Section 1',  icon: Sliders },
@@ -300,8 +372,9 @@ const CATEGORY_TABS: { id: CategoryId; label: string; icon: React.ElementType; c
   { id: 'appearance', label: 'Theme',      icon: Palette,     cats: ['Appearance'] },
 ];
 
-function detectActiveMode(ft: FeatureToggles): 'minimal' | 'standard' | 'full' | 'custom' {
+function detectActiveMode(ft: FeatureToggles): 'minimal' | 'standard' | 'full' | 'none' | 'custom' {
   const keys = Object.keys(FULL_FEATURE_TOGGLES) as (keyof FeatureToggles)[];
+  if (keys.every(k => !ft[k])) return 'none';
   if (keys.every(k => ft[k] === FULL_FEATURE_TOGGLES[k])) return 'full';
   if (keys.every(k => ft[k] === MINIMAL_FEATURE_TOGGLES[k])) return 'minimal';
   if (keys.every(k => ft[k] === DEFAULT_FEATURE_TOGGLES[k])) return 'standard';
@@ -330,7 +403,7 @@ export interface CommandPaletteModalProps {
   classData: ClassData | null;
   featureToggles: FeatureToggles;
   onToggleFeature: (key: keyof FeatureToggles, value: boolean) => void;
-  onApplyMode: (mode: 'minimal' | 'standard' | 'full') => void;
+  onApplyMode: (mode: 'minimal' | 'standard' | 'full' | 'none') => void;
   onNavigateTab: (tab: 'roster' | 'grading' | 'results' | 'hub') => void;
   onOpenProjector: () => void;
   onOpenDispatcher: () => void;
@@ -366,6 +439,7 @@ export interface CommandPaletteModalProps {
   onToggleShortcutsEnabled?: (enabled: boolean) => void;
   onOpenTeamCharter?: () => void;
   onOpenLivePresentation?: () => void;
+  onOpenEnrollmentBuilder?: () => void;
 }
 
 // ── RESULT ROW COMPONENT (MINIMAL & POLISHED) ─────────────────────────────────
@@ -525,7 +599,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenQRCode, onOpenDeadline, onResetSubmissions, onClearRoster, onDeleteStudent, onDeleteClass, onToast,
   onOpenEvaluationControls, onToggleExcused,
   onOpenEditMode, shortcutsEnabled, onToggleShortcutsEnabled,
-  onOpenTeamCharter, onOpenLivePresentation
+  onOpenTeamCharter, onOpenLivePresentation, onOpenEnrollmentBuilder
 }) => {
   const { setThemeMode, themeMode } = useTheme();
   const [query,            setQuery]            = useState('');
@@ -533,6 +607,26 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   const [selectedIndex,    setSelectedIndex]    = useState(0);
   const [activeHelpArticle,setActiveHelpArticle]= useState<FeatureInfoItem|null>(null);
   const [recentIds,        setRecentIds]        = useState<string[]>([]);
+  const [recentSearches,   setRecentSearches]   = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('peer_recent_searches_v2');
+      return saved ? JSON.parse(saved) : ['AutoGroup', 'WebPA', 'Export Excel', 'Essentials', 'Projector'];
+    } catch (e) {
+      return ['AutoGroup', 'WebPA', 'Export Excel', 'Essentials', 'Projector'];
+    }
+  });
+
+  const saveRecentSearch = useCallback((term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed || trimmed.length < 2) return;
+    setRecentSearches(prev => {
+      const next = [trimmed, ...prev.filter(x => x.toLowerCase() !== trimmed.toLowerCase())].slice(0, 6);
+      try {
+        localStorage.setItem('peer_recent_searches_v2', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  }, []);
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'csv' | 'excel' | 'canvas' | 'moodle' | 'blackboard' | 'brightspace' | 'pulse' | 'pdf'>('csv');
@@ -569,10 +663,15 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   }, [isOpen]);
 
   const executeAndTrack = useCallback((item: CPAction) => {
+    if (query.trim()) {
+      saveRecentSearch(query.trim());
+    } else {
+      saveRecentSearch(item.title);
+    }
     pushRecent(item.id);
     setRecentIds(loadRecent());
     item.onExecute();
-  }, []);
+  }, [query, saveRecentSearch]);
 
   // ── PULSE CSV EXPORT HELPER ──────────────────────────────────────────────
   const handleExportPulseCSV = useCallback(() => {
@@ -784,12 +883,203 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       { id: 'nav_results', title: 'Section 3: Grading & Analytics',         category: 'Navigation', subtitle: 'Calculation matrix, radar charts, and gradebook', icon: Award,          badge: 'Step 3', keywords: ['grades','scores','matrix','radar','webpa','export','analytics'],    onExecute: () => { onNavigateTab('results'); onClose(); } },
     );
 
+    // SMART NLP TELEMETRY & LIVE QUERIES
+    if (classData) {
+      const totalStudents = classData.students.length;
+      const submittedCount = classData.students.filter(s => s.submitted).length;
+      const pendingCount = totalStudents - submittedCount;
+      const pct = totalStudents > 0 ? Math.round((submittedCount / totalStudents) * 100) : 0;
+      const teams = Array.from(new Set(classData.students.map(s => s.groupName).filter(Boolean)));
+
+      list.push(
+        {
+          id: 'smart_submission_pulse',
+          title: `Submission Progress: ${submittedCount} / ${totalStudents} Completed (${pct}%)`,
+          category: 'Actions',
+          subtitle: `${pendingCount} student${pendingCount !== 1 ? 's' : ''} pending. Press Enter to open Link Dispatcher and email reminders`,
+          icon: CheckCircle2,
+          badge: `${pendingCount} Pending`,
+          badgeColor: pct >= 80 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#6366f1',
+          keywords: ['pending', 'unsubmitted', 'submitted', 'who has not submitted', 'submission progress', 'missing reviews', 'turnout', 'nudge', 'reminder', 'remind pending', 'submission status', 'how many submitted', 'how many pending', 'status'],
+          onExecute: () => {
+            onClose();
+            onOpenDispatcher();
+          }
+        },
+        {
+          id: 'smart_roster_count',
+          title: `Classroom Roster: ${totalStudents} Students Across ${teams.length} Teams`,
+          category: 'Actions',
+          subtitle: `Click or press Enter to navigate directly to Section 1 (Enrollment & Teams)`,
+          icon: Users,
+          badge: `${totalStudents} Students`,
+          badgeColor: '#6366f1',
+          keywords: ['how many students', 'student count', 'class count', 'total students', 'class size', 'students enrolled', 'roster count', 'how many members', 'roster'],
+          onExecute: () => {
+            onClose();
+            onNavigateTab('roster');
+          }
+        },
+        {
+          id: 'smart_deadline_status',
+          title: classData.deadline ? `Active Milestone Deadline: ${new Date(classData.deadline).toLocaleString()}` : 'No Milestone Deadline Configured',
+          category: 'Actions',
+          subtitle: classData.deadline ? 'Active countdown underway. Press Enter to configure, extend, or lock' : 'Press Enter to set submission cutoff countdown timer',
+          icon: Clock,
+          badge: 'Deadline',
+          badgeColor: '#f59e0b',
+          keywords: ['deadline', 'timer', 'countdown', 'cutoff', 'how much time', 'due date', 'time left', 'remaining time', 'lock date'],
+          onExecute: () => {
+            onClose();
+            if (onOpenDeadline) onOpenDeadline();
+          }
+        }
+      );
+
+      // Pending Students Direct Nudge Action
+      const pendingStudents = classData.students.filter(s => !s.submitted);
+      if (pendingStudents.length > 0) {
+        const sampleNames = pendingStudents.slice(0, 4).map(s => s.name).join(', ') + (pendingStudents.length > 4 ? ` +${pendingStudents.length - 4} more` : '');
+        list.push({
+          id: 'smart_pending_list',
+          title: `Pending Students (${pendingStudents.length}): ${sampleNames}`,
+          category: 'Actions',
+          subtitle: `Awaiting peer evaluations. Press Enter to open Link Dispatcher and email nudges`,
+          icon: Mail,
+          badge: `${pendingStudents.length} Missing`,
+          badgeColor: '#f59e0b',
+          keywords: ['who has not submitted', 'who didn\'t submit', 'who hasnt submitted', 'who did not submit', 'missing', 'unsubmitted students', 'pending students', 'who to email', 'send reminder', 'nudge pending'],
+          onExecute: () => {
+            onClose();
+            onOpenDispatcher();
+          }
+        });
+      }
+
+      // Outliers & Grade Anomaly Intelligence
+      let outlierCount = 0;
+      const outlierSample: string[] = [];
+      if (classData.reviews.length > 0) {
+        classData.students.forEach(st => {
+          try {
+            const audit = generateStudentDisputeAudit(st, classData);
+            if (audit.retaliationRisk || audit.webpaRatio < 0.85 || audit.webpaRatio > 1.25 || Math.abs(audit.overallGapDelta || 0) > 20) {
+              outlierCount++;
+              if (outlierSample.length < 3) outlierSample.push(st.name);
+            }
+          } catch (e) {}
+        });
+      }
+      if (outlierCount > 0) {
+        list.push({
+          id: 'smart_outliers_detected',
+          title: `Anomaly Audit: ${outlierCount} Grade Outlier${outlierCount !== 1 ? 's' : ''} Flagged (${outlierSample.join(', ')})`,
+          category: 'Actions',
+          subtitle: `Extreme WebPA multipliers (<0.85 or >1.25) or high self-peer gap. Press Enter to inspect Section 3 Audit`,
+          icon: AlertTriangle,
+          badge: `${outlierCount} Outliers`,
+          badgeColor: '#ef4444',
+          keywords: ['outliers', 'anomaly', 'collusion', 'disputes', 'anomalies', 'flagged', 'suspicious', 'grade disputes', 'retaliation', 'unusual scores'],
+          onExecute: () => {
+            onClose();
+            onNavigateTab('results');
+            if (!featureToggles.showAnomalyAudit && onToggleFeature) {
+              onToggleFeature('showAnomalyAudit', true);
+            }
+            setTimeout(() => {
+              const el = document.getElementById('collusion-anomaly-audit') || document.getElementById('anomaly-audit-card');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 120);
+          }
+        });
+      }
+
+      // Class Average Performance Pulse
+      if (classData.reviews.length > 0) {
+        let sumScore = 0;
+        let countScore = 0;
+        classData.reviews.forEach(r => {
+          Object.values(r.scores).forEach(val => {
+            sumScore += val;
+            countScore++;
+          });
+        });
+        const avgRubricScore = countScore > 0 ? (sumScore / countScore) : 0;
+        const avgPct = Math.min(100, Math.round((avgRubricScore / 20) * 100));
+        list.push({
+          id: 'smart_class_avg',
+          title: `Classroom Performance: ~${avgPct}% Average Rating Across Rubric`,
+          category: 'Actions',
+          subtitle: `Based on ${classData.reviews.length} completed peer reviews. Press Enter to view Gradebook & Radar Analytics in Section 3`,
+          icon: BarChart2,
+          badge: 'Performance',
+          badgeColor: '#10b981',
+          keywords: ['average grade', 'class average', 'performance', 'how is class doing', 'average score', 'grades stats', 'overall score'],
+          onExecute: () => {
+            onClose();
+            onNavigateTab('results');
+          }
+        });
+      }
+
+      // Team Health Pulse Status Check
+      const pulseRounds = classData.pulseRounds || [];
+      const activePulse = pulseRounds.find(r => r.status === 'active');
+      if (activePulse) {
+        const respCount = activePulse.responses.length;
+        const blockerCount = activePulse.responses.filter(r => (r.blockerNote || '').trim().length > 0).length;
+        list.push({
+          id: 'smart_active_pulse_round',
+          title: `Active Pulse Survey: "${activePulse.title}" (${respCount} Responses)`,
+          category: 'Actions',
+          subtitle: `${blockerCount} blocker note${blockerCount !== 1 ? 's' : ''} reported. Press Enter to inspect responses and sparklines in Section 2`,
+          icon: Activity,
+          badge: `${respCount} Responses`,
+          badgeColor: '#0d9488',
+          keywords: ['pulse', 'active pulse', 'team health', 'sprint health', 'morale', 'blockers', 'roadblocks', 'check-in status'],
+          onExecute: () => {
+            onClose();
+            onNavigateTab('grading');
+            if (!featureToggles.showTeamHealthPulse && onToggleFeature) {
+              onToggleFeature('showTeamHealthPulse', true);
+            }
+            setTimeout(() => {
+              const el = document.getElementById('team-health-pulse-card');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 120);
+          }
+        });
+      }
+
+      // Instant WebPA Methodology Explainer
+      list.push({
+        id: 'smart_explain_webpa',
+        title: 'WebPA Formula & Grade Adjustment Explained',
+        category: 'Help',
+        subtitle: 'Individual Grade = (Individual Peer Rating / Average Peer Rating) × Baseline Team Grade',
+        icon: HelpCircle,
+        badge: 'Formula',
+        badgeColor: '#6366f1',
+        keywords: ['what is webpa', 'how does webpa work', 'webpa formula', 'explain webpa', 'webpa calculation', 'formula', 'math formula', 'how are grades calculated', 'multiplier formula'],
+        onExecute: () => {
+          const article = FEATURE_INFO_REGISTRY['webpa-scoring'] || Object.values(FEATURE_INFO_REGISTRY)[0];
+          if (article) {
+            setActiveHelpArticle(article);
+          } else {
+            window.open('/guide.html', '_blank');
+            onClose();
+          }
+        }
+      });
+    }
+
     // ACTIONS
     if (onOpenNewClass) {
       list.push({ id: 'act_new_class', title: 'Create New Classroom Group', category: 'Actions', subtitle: 'Initialize a fresh classroom cohort', icon: BookOpen, badge: 'Cmd C', keywords: ['new class','create','cohort','course'], onExecute: () => { onClose(); onOpenNewClass(); } });
     }
     list.push(
       { id: 'act_add_student',  title: 'Enroll New Student',                category: 'Actions', subtitle: 'Add a student manually with email, team, degree', icon: UserPlus,   badge: 'Cmd N',  keywords: ['add student','enroll','participant','member','register'],       onExecute: () => { onClose(); onOpenAddStudent(); } },
+      { id: 'act_enrollment_builder', title: 'Enrollment Form Questions (Custom Fields)', category: 'Actions', subtitle: 'Customize self-registration questions, degree, nationality, and survey prompts', icon: FileText, badge: 'Alt Q', keywords: ['enrollment questions','form builder','custom questions','fields','registration','questions','survey','self-enrollment'], onExecute: () => { onClose(); if (onOpenEnrollmentBuilder) onOpenEnrollmentBuilder(); } },
       { id: 'act_dispatcher',   title: 'Email Center & Link Dispatcher',    category: 'Actions', subtitle: 'Dispatch double-blind evaluation links to students', icon: Send,      badge: 'Cmd E',  keywords: ['email','mail','send','links','dispatcher','brevo','invite'],    onExecute: () => { onClose(); onOpenDispatcher(); } },
       { id: 'act_projector',    title: 'Launch Live Classroom Projector',   category: 'Actions', subtitle: 'Full-screen monitor with QR and submission ticker',  icon: Tv,        badge: 'Cmd P',  keywords: ['projector','fullscreen','display','screen','lecture','live'],   onExecute: () => { onClose(); onOpenProjector(); } },
       { id: 'act_settings',     title: 'Workspace Settings & Cloud Sync',   category: 'Actions', subtitle: 'Firebase, email API keys, and workspace profile',    icon: Settings,  badge: 'Cmd S',  keywords: ['settings','cloud','firebase','api','sync','config'],            onExecute: () => { onClose(); onOpenSettings('email'); } },
@@ -1449,21 +1739,23 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       { id: 'mode_minimal',  title: 'Apply Essentials Only',        category: 'Modes', subtitle: 'Hides advanced analytics to keep the interface clean and simple', icon: LayoutDashboard, badge: activeMode === 'minimal'  ? 'Active' : 'Essentials', badgeColor: activeMode === 'minimal'  ? '#10b981' : undefined, keywords: ['minimal','simple','basic','clean','essentials','essentials only','hide extras'],   onExecute: () => { onApplyMode('minimal');  if (onToast) onToast('Essentials Only mode activated', 'success'); onClose(); } },
       { id: 'mode_standard', title: 'Apply Recommended Mode',       category: 'Modes', subtitle: 'The balanced classroom layout with essential tools',              icon: Gauge,           badge: activeMode === 'standard' ? 'Active' : 'Recommended',badgeColor: activeMode === 'standard' ? '#10b981' : undefined, keywords: ['standard','default','normal','balanced','moderate','recommended'],     onExecute: () => { onApplyMode('standard'); if (onToast) onToast('Recommended mode activated', 'success'); onClose(); } },
       { id: 'mode_full',     title: 'Show All Modules',             category: 'Modes', subtitle: 'Turns on every available feature and tool',                       icon: Cpu,             badge: activeMode === 'full'     ? 'Active' : 'All Modules', badgeColor: activeMode === 'full'     ? '#10b981' : undefined, keywords: ['full','power user','advanced','all features','show all modules','everything'], onExecute: () => { onApplyMode('full');     if (onToast) onToast('Show All Modules activated', 'success'); onClose(); } },
+      { id: 'mode_none',     title: 'Hide All Modules (Clean Canvas)', category: 'Modes', subtitle: 'Hides all optional modules for an uncluttered blank canvas',  icon: EyeOff,          badge: activeMode === 'none'     ? 'Active' : 'Hide All',    badgeColor: activeMode === 'none'     ? '#ef4444' : undefined, keywords: ['none','clean canvas','hide all','blank canvas','clear modules','empty workspace','clear all'], onExecute: () => { onApplyMode('none'); if (onToast) onToast('All modules hidden (Clean canvas)', 'info'); onClose(); } },
     );
 
     // FEATURE TOGGLES
     (Object.keys(FL) as (keyof FeatureToggles)[]).forEach(key => {
       const m = FL[key];
       const isOn = featureToggles[key];
+      const keyStr = String(key);
       list.push({
-        id: `feat_show_${key}`,
+        id: `feat_show_${keyStr}`,
         title: `Show ${m.label}`,
         category: 'Features',
         subtitle: `${m.desc} · ${m.section} · Currently ${isOn ? 'visible' : 'hidden'}`,
         icon: isOn ? Eye : EyeOff,
         badge: isOn ? 'Visible' : 'Hidden',
         badgeColor: isOn ? '#10b981' : '#94a3b8',
-        keywords: ['show','enable','turn on','activate','visible',m.label.toLowerCase(),key.toLowerCase(),m.section.toLowerCase()],
+        keywords: ['show','enable','turn on','activate','visible',m.label.toLowerCase(),keyStr.toLowerCase(),m.section.toLowerCase()],
         intentTag: 'show',
         featureKey: key,
         onExecute: () => {
@@ -1472,14 +1764,14 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       });
       list.push({
-        id: `feat_hide_${key}`,
+        id: `feat_hide_${keyStr}`,
         title: `Hide ${m.label}`,
         category: 'Features',
         subtitle: `${m.desc} · ${m.section} · Currently ${isOn ? 'visible' : 'hidden'}`,
         icon: EyeOff,
         badge: isOn ? 'Visible' : 'Hidden',
         badgeColor: isOn ? '#10b981' : '#94a3b8',
-        keywords: ['hide','disable','turn off','deactivate','hidden',m.label.toLowerCase(),key.toLowerCase(),m.section.toLowerCase()],
+        keywords: ['hide','disable','turn off','deactivate','hidden',m.label.toLowerCase(),keyStr.toLowerCase(),m.section.toLowerCase()],
         intentTag: 'hide',
         featureKey: key,
         onExecute: () => {
@@ -2071,16 +2363,20 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                     ? 'rgba(99,102,241,0.12)'
                     : activeMode === 'minimal'
                     ? 'rgba(20,184,166,0.12)'
+                    : activeMode === 'none'
+                    ? 'rgba(239,68,68,0.12)'
                     : 'rgba(245,158,11,0.12)',
                 color:
                   activeMode === 'full'
                     ? '#6366f1'
                     : activeMode === 'minimal'
                     ? '#14b8a6'
+                    : activeMode === 'none'
+                    ? '#ef4444'
                     : '#f59e0b',
               }}
             >
-              {activeMode === 'custom' ? 'Custom' : activeMode === 'full' ? 'Full Mode' : activeMode === 'minimal' ? 'Minimal' : 'Standard'}
+              {activeMode === 'custom' ? 'Custom' : activeMode === 'full' ? 'Full Mode' : activeMode === 'minimal' ? 'Minimal' : activeMode === 'none' ? 'Clean Canvas' : 'Standard'}
             </span>
           </div>
         )}
@@ -2171,6 +2467,88 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           >
             <Lightbulb size={12} style={{ flexShrink: 0 }} />
             <span>{intentFeedback}</span>
+          </div>
+        )}
+
+        {/* Recent Searches Pill Strip (Shown when query is empty) */}
+        {!isExportDialogOpen && !activeHelpArticle && !cleanQuery && recentSearches.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              padding: '0.35rem 1.15rem',
+              backgroundColor: 'var(--bg-app)',
+              borderBottom: '1px solid var(--border-color)',
+              overflowX: 'auto',
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                fontSize: '0.62rem',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                color: 'var(--text-muted)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                flexShrink: 0
+              }}
+            >
+              <Clock size={10} /> Recent:
+            </span>
+            {recentSearches.map((term, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  setQuery(term);
+                  inputRef.current?.focus();
+                }}
+                style={{
+                  padding: '0.14rem 0.5rem',
+                  borderRadius: '9999px',
+                  fontSize: '0.66rem',
+                  fontWeight: 650,
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  transition: 'all 0.12s ease'
+                }}
+                title={`Search "${term}"`}
+              >
+                <span>{term}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setRecentSearches([]);
+                try {
+                  localStorage.removeItem('peer_recent_searches_v2');
+                } catch (e) {}
+              }}
+              style={{
+                border: 'none',
+                background: 'none',
+                color: 'var(--text-muted)',
+                fontSize: '0.6rem',
+                cursor: 'pointer',
+                padding: '0 0.2rem',
+                marginLeft: 'auto',
+                flexShrink: 0
+              }}
+              title="Clear recent searches"
+            >
+              Clear
+            </button>
           </div>
         )}
 
