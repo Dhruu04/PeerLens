@@ -7019,14 +7019,13 @@ body.spotlight-slots-active .edit-mode-slot-hidden {
 
   /* Rating Scale Grid spacing on narrow screens */
   .peer-rating-scale-grid {
-    gap: 0.35rem !important;
+    gap: 0.25rem !important;
   }
 
   .rating-node-button {
-    height: 48px !important;
-    min-height: 44px !important;
-    font-size: 1.1rem !important;
-    border-radius: 10px !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
   }
 
   /* Mobile Modals (Role Selector, Profile, Icebreaker, Peer Profile) */
@@ -7064,12 +7063,13 @@ body.spotlight-slots-active .edit-mode-slot-hidden {
   }
 
   .peer-rating-scale-grid {
-    gap: 0.25rem !important;
+    gap: 0.2rem !important;
   }
 
   .rating-node-button {
-    height: 44px !important;
-    font-size: 1.05rem !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
   }
 
   .slider-header {

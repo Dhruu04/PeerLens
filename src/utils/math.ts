@@ -561,13 +561,22 @@ export function getGradeScaleConfig(classData?: ClassData | null): {
   
   const stepCount = Math.max(1, scaleMax - scaleMin);
   const scoreRange = scoreMax - scoreMin;
-  const stepScore = Number((scoreRange / stepCount).toFixed(2));
+  const rawStep = scoreRange / stepCount;
+  const stepScore = Number.isInteger(rawStep) ? rawStep : Number(rawStep.toFixed(2));
   const steps: Array<{ scaleValue: number; scoreValue: number }> = [];
   const distribution: Array<{ scale: number; rating: number; score: number }> = [];
 
   for (let s = scaleMin; s <= scaleMax; s++) {
-    const fraction = (s - scaleMin) / stepCount;
-    const score = Number((scoreMin + fraction * scoreRange).toFixed(1));
+    let score: number;
+    if (s === scaleMin) {
+      score = scoreMin;
+    } else if (s === scaleMax) {
+      score = scoreMax;
+    } else {
+      const fraction = (s - scaleMin) / stepCount;
+      const rawVal = scoreMin + fraction * scoreRange;
+      score = Number.isInteger(rawVal) ? rawVal : Number(rawVal.toFixed(2));
+    }
     steps.push({ scaleValue: s, scoreValue: score });
     distribution.push({ scale: s, rating: s, score });
   }
@@ -589,8 +598,10 @@ export function getGradeScaleConfig(classData?: ClassData | null): {
 export function scaleRatingToScore(rating: number, classData: ClassData): number {
   const { scaleMin, scaleMax, scoreMin, scoreMax } = getGradeScaleConfig(classData);
   if (scaleMax === scaleMin) return scoreMax;
-  const fraction = (rating - scaleMin) / (scaleMax - scaleMin);
-  return Number((scoreMin + fraction * (scoreMax - scoreMin)).toFixed(1));
+  const clamped = Math.max(scaleMin, Math.min(scaleMax, rating));
+  const fraction = (clamped - scaleMin) / (scaleMax - scaleMin);
+  const raw = scoreMin + fraction * (scoreMax - scoreMin);
+  return Number.isInteger(raw) ? raw : Number(raw.toFixed(2));
 }
 
 export function scoreToScaleRating(score: number, classData: ClassData): number {

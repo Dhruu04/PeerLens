@@ -142,7 +142,8 @@ export function parseCSV(csvContent: string): {
 /**
  * Generates a clean CSV file string containing all peer-grading final scores.
  */
-export function generateResultsCSV(classData: ClassData): string {
+export function generateResultsCSV(classData: ClassData, customStudents?: Student[]): string {
+  const studentsToExport = customStudents && customStudents.length > 0 ? customStudents : classData.students;
   const headers = [
     'Student ID',
     'Name',
@@ -165,7 +166,7 @@ export function generateResultsCSV(classData: ClassData): string {
     'Praise Tags Summary'
   ];
 
-  const rows = classData.students.map((student) => {
+  const rows = studentsToExport.map((student) => {
     const metrics = calculateStudentMetrics(student, classData);
 
     const fieldAveragesList = classData.fields.map((field) => {
@@ -467,9 +468,11 @@ export function parseRawPastedText(text: string): string[][] {
 /**
  * Exports all peer assessment scores, WebPA metrics, and written teammate feedback into a dual-sheet .xlsx Excel workbook file using SheetJS (xlsx).
  */
-export function exportClassroomToExcel(classData: ClassData): void {
+export function exportClassroomToExcel(classData: ClassData, customStudents?: Student[]): void {
   // Create a new workbook
   const wb = XLSX.utils.book_new();
+
+  const studentsToExport = customStudents && customStudents.length > 0 ? customStudents : classData.students;
 
   // Calculate rubric range
   const maxScale = getTargetScale(classData);
@@ -504,7 +507,7 @@ export function exportClassroomToExcel(classData: ClassData): void {
     'Praise Tags Summary'
   ];
 
-  const summaryRows = classData.students.map((student) => {
+  const summaryRows = studentsToExport.map((student) => {
     const metrics = calculateStudentMetrics(student, classData);
 
     const fieldAveragesList = classData.fields.map((field) => {

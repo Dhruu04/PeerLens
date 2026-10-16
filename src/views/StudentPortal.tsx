@@ -101,6 +101,62 @@ const AVAILABLE_TAGS = [
   'Detail Oriented'
 ];
 
+/**
+ * Computes dynamic, perfectly balanced button layout for any rating scale length (e.g. 1-5, 1-7, 1-10, 0-10)
+ * Optimized to fit cleanly on mobile phones without awkward button wrapping.
+ */
+export const getScaleButtonStyles = (count: number) => {
+  if (count <= 7) {
+    // 1 to 7 fits seamlessly on a single row across all mobile phone screens
+    return {
+      gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))`,
+      gap: count > 5 ? '4px' : '0.35rem',
+      height: count > 5 ? '44px' : '48px',
+      fontSize: count <= 5 ? '1.15rem' : '0.96rem'
+    };
+  } else if (count === 8) {
+    // 2 balanced rows of 4
+    return {
+      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+      gap: '4px',
+      height: '42px',
+      fontSize: '0.92rem'
+    };
+  } else if (count === 9) {
+    // 3 balanced rows of 3
+    return {
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+      gap: '4px',
+      height: '42px',
+      fontSize: '0.92rem'
+    };
+  } else if (count === 10) {
+    // 2 balanced rows of 5
+    return {
+      gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+      gap: '4px',
+      height: '40px',
+      fontSize: '0.88rem'
+    };
+  } else if (count === 11) {
+    // e.g. 0 to 10: 2 rows of 6 and 5
+    return {
+      gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
+      gap: '4px',
+      height: '38px',
+      fontSize: '0.85rem'
+    };
+  } else {
+    // Any large length: auto-balanced
+    return {
+      gridTemplateColumns: 'repeat(auto-fit, minmax(36px, 1fr))',
+      gap: '4px',
+      height: '38px',
+      fontSize: '0.82rem'
+    };
+  }
+};
+
 export interface RoleArchetype {
   id: string;
   name: string;
@@ -5119,58 +5175,65 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             </span>
                           </div>
 
-                          {/* Rating Scale Buttons (1–5 by default) */}
+                          {/* Rating Scale Buttons (Dynamic & Responsive for any scale length) */}
                           <div style={{ marginTop: '0.45rem' }}>
-                            <div
-                              className="peer-rating-scale-grid"
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: scoreNodes.length <= 5 
-                                  ? `repeat(${scoreNodes.length}, 1fr)` 
-                                  : 'repeat(auto-fit, minmax(44px, 1fr))',
-                                gap: '0.45rem',
-                                width: '100%'
-                              }}
-                            >
-                              {scoreNodes.map((nodeVal) => {
-                                const isSelected = currentVal === nodeVal;
-                                return (
-                                  <button
-                                    key={nodeVal}
-                                    type="button"
-                                    onClick={() => {
-                                      triggerHaptic(10);
-                                      handleSliderChange(peer.id, field.id, nodeVal);
-                                    }}
-                                    className={`rating-node-button ${isSelected ? 'active' : ''}`}
-                                    style={{
-                                      height: '48px',
-                                      fontSize: scoreNodes.length <= 5 ? '1.15rem' : '0.95rem',
-                                      fontWeight: 800,
-                                      borderRadius: '10px',
-                                      border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                                      backgroundColor: isSelected ? 'var(--primary)' : 'var(--bg-surface)',
-                                      color: isSelected ? '#ffffff' : 'var(--text-primary)',
-                                      boxShadow: isSelected ? '0 4px 14px rgba(99, 102, 241, 0.35)' : 'none',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      cursor: 'pointer',
-                                      transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
-                                      touchAction: 'manipulation',
-                                      transform: isSelected ? 'scale(1.02)' : 'scale(1)'
-                                    }}
-                                    title={`Select rating ${nodeVal} out of ${fieldMax}`}
-                                  >
-                                    {nodeVal}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
-                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
-                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
-                            </div>
+                            {(() => {
+                              const scaleStyles = getScaleButtonStyles(scoreNodes.length);
+                              return (
+                                <div
+                                  className="peer-rating-scale-grid"
+                                  data-scale-count={scoreNodes.length}
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: scaleStyles.gridTemplateColumns,
+                                    gap: scaleStyles.gap,
+                                    width: '100%'
+                                  }}
+                                >
+                                  {scoreNodes.map((nodeVal) => {
+                                    const isSelected = currentVal === nodeVal;
+                                    return (
+                                      <button
+                                        key={nodeVal}
+                                        type="button"
+                                        onClick={() => {
+                                          triggerHaptic(10);
+                                          handleSliderChange(peer.id, field.id, nodeVal);
+                                        }}
+                                        className={`rating-node-button ${isSelected ? 'active' : ''}`}
+                                        style={{
+                                          height: scaleStyles.height,
+                                          fontSize: scaleStyles.fontSize,
+                                          fontWeight: 800,
+                                          borderRadius: '9px',
+                                          border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                                          backgroundColor: isSelected ? 'var(--primary)' : 'var(--bg-surface)',
+                                          color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                                          boxShadow: isSelected ? '0 4px 14px rgba(99, 102, 241, 0.35)' : 'none',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          cursor: 'pointer',
+                                          padding: 0,
+                                          minWidth: 0,
+                                          boxSizing: 'border-box',
+                                          transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+                                          touchAction: 'manipulation',
+                                          transform: isSelected ? 'scale(1.02)' : 'scale(1)'
+                                        }}
+                                        title={`Select rating ${nodeVal} out of ${fieldMax}`}
+                                      >
+                                        {nodeVal}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
                           </div>
                         </div>
                       );
@@ -5438,58 +5501,65 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                           </span>
                         </div>
 
-                        {/* Rating Scale Buttons (1–5 by default) */}
+                        {/* Rating Scale Buttons (Dynamic & Responsive for any scale length) */}
                         <div style={{ marginTop: '0.45rem' }}>
-                          <div
-                            className="peer-rating-scale-grid"
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: scoreNodes.length <= 5 
-                                ? `repeat(${scoreNodes.length}, 1fr)` 
-                                : 'repeat(auto-fit, minmax(44px, 1fr))',
-                              gap: '0.45rem',
-                              width: '100%'
-                            }}
-                          >
-                            {scoreNodes.map((nodeVal) => {
-                              const isSelected = currentVal === nodeVal;
-                              return (
-                                <button
-                                  key={nodeVal}
-                                  type="button"
-                                  onClick={() => {
-                                    triggerHaptic(10);
-                                    handleSliderChange(student.id, field.id, nodeVal);
-                                  }}
-                                  className={`rating-node-button ${isSelected ? 'active' : ''}`}
-                                  style={{
-                                    height: '48px',
-                                    fontSize: scoreNodes.length <= 5 ? '1.15rem' : '0.95rem',
-                                    fontWeight: 800,
-                                    borderRadius: '10px',
-                                    border: isSelected ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                                    backgroundColor: isSelected ? 'var(--accent-teal)' : 'var(--bg-surface)',
-                                    color: isSelected ? '#ffffff' : 'var(--text-primary)',
-                                    boxShadow: isSelected ? '0 4px 14px rgba(20, 184, 166, 0.35)' : 'none',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
-                                    touchAction: 'manipulation',
-                                    transform: isSelected ? 'scale(1.02)' : 'scale(1)'
-                                  }}
-                                  title={`Select self-rating ${nodeVal} out of ${fieldMax}`}
-                                >
-                                  {nodeVal}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
-                          </div>
+                          {(() => {
+                            const scaleStyles = getScaleButtonStyles(scoreNodes.length);
+                            return (
+                              <div
+                                className="peer-rating-scale-grid"
+                                data-scale-count={scoreNodes.length}
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: scaleStyles.gridTemplateColumns,
+                                  gap: scaleStyles.gap,
+                                  width: '100%'
+                                }}
+                              >
+                                {scoreNodes.map((nodeVal) => {
+                                  const isSelected = currentVal === nodeVal;
+                                  return (
+                                    <button
+                                      key={nodeVal}
+                                      type="button"
+                                      onClick={() => {
+                                        triggerHaptic(10);
+                                        handleSliderChange(student.id, field.id, nodeVal);
+                                      }}
+                                      className={`rating-node-button ${isSelected ? 'active' : ''}`}
+                                      style={{
+                                        height: scaleStyles.height,
+                                        fontSize: scaleStyles.fontSize,
+                                        fontWeight: 800,
+                                        borderRadius: '9px',
+                                        border: isSelected ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                                        backgroundColor: isSelected ? 'var(--accent-teal)' : 'var(--bg-surface)',
+                                        color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                                        boxShadow: isSelected ? '0 4px 14px rgba(20, 184, 166, 0.35)' : 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        minWidth: 0,
+                                        boxSizing: 'border-box',
+                                        transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+                                        touchAction: 'manipulation',
+                                        transform: isSelected ? 'scale(1.02)' : 'scale(1)'
+                                      }}
+                                      title={`Select self-rating ${nodeVal} out of ${fieldMax}`}
+                                    >
+                                      {nodeVal}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
                         </div>
                       </div>
                     );

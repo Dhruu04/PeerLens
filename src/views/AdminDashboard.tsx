@@ -12,7 +12,8 @@ import {
   Calendar, Bell, CheckSquare, Zap, Maximize2, Activity, UserCheck, X, UserPlus,
   Settings, Plane, EyeOff, LogOut, Compass, ArrowLeft, ArrowRight, RotateCcw,
   GraduationCap, Filter, ArrowUp, ArrowDown, Printer,
-  ShieldAlert, History, ChevronDown, ChevronRight, ChevronUp
+  ShieldAlert, History, ChevronDown, ChevronRight, ChevronUp,
+  ArrowUpDown, SlidersHorizontal, HelpCircle
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { useClass } from '../context/ClassContext';
@@ -745,6 +746,26 @@ export const AdminDashboard: React.FC = () => {
   const [isRosterTableExpanded, setIsRosterTableExpanded] = useState<boolean>(false);
   const [isResultsTableExpanded, setIsResultsTableExpanded] = useState<boolean>(false);
   const [isAuditMatrixExpanded, setIsAuditMatrixExpanded] = useState<boolean>(false);
+
+  // Gradebook sorting and column visibility customization state
+  const [gradebookSortBy, setGradebookSortBy] = useState<string>('team');
+  const [gradebookColumns, setGradebookColumns] = useState<{
+    criteriaScores: boolean;
+    praiseTags: boolean;
+    webpaMark: boolean;
+    weightedScore: boolean;
+    johari: boolean;
+  }>({
+    criteriaScores: false, // Hidden by default for minimal preview (Mean & StdDev fields)
+    praiseTags: false,
+    webpaMark: true,       // Main field
+    weightedScore: true,   // Main field
+    johari: false
+  });
+  const [isGradebookColumnsOpen, setIsGradebookColumnsOpen] = useState<boolean>(false);
+  const [isGradebookExportOpen, setIsGradebookExportOpen] = useState<boolean>(false);
+  const [showScaleExplainer, setShowScaleExplainer] = useState<boolean>(false);
+  const [showScaleDistribution, setShowScaleDistribution] = useState<boolean>(false);
 
   // Compute potential duplicate student enrollments in real-time (Declared before any early returns)
   const duplicateFlagsMap = useMemo(() => {
@@ -1708,6 +1729,73 @@ export const AdminDashboard: React.FC = () => {
     ...uniqueGroups.map(g => ({ value: g, label: g }))
   ], [uniqueGroups]);
 
+  const gradebookSortOptions = useMemo(() => [
+    { value: 'team', label: 'Team & Name (Default)' },
+    { value: 'name-asc', label: 'Name (A → Z)' },
+    { value: 'name-desc', label: 'Name (Z → A)' },
+    { value: 'status', label: 'Status (Completed)' },
+    { value: 'status-pending', label: 'Status (Pending)' },
+    { value: 'webpa-desc', label: 'WebPA (High → Low)' },
+    { value: 'webpa-asc', label: 'WebPA (Low → High)' },
+    { value: 'score-desc', label: 'Score (High → Low)' },
+    { value: 'score-asc', label: 'Score (Low → High)' },
+  ], []);
+
+  // Sorted student list for Gradebook table and exports
+  const sortedGradebookStudents = useMemo(() => {
+    if (!filteredStudents || filteredStudents.length === 0 || !activeClass) return filteredStudents || [];
+    const currentClass = activeClass;
+    const list = [...filteredStudents];
+
+    switch (gradebookSortBy) {
+      case 'name-asc':
+        return list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
+      case 'name-desc':
+        return list.sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: 'base', numeric: true }));
+      case 'status':
+        return list.sort((a, b) => {
+          const comp = (b.submitted ? 1 : 0) - (a.submitted ? 1 : 0);
+          return comp !== 0 ? comp : a.name.localeCompare(b.name);
+        });
+      case 'status-pending':
+        return list.sort((a, b) => {
+          const comp = (a.submitted ? 1 : 0) - (b.submitted ? 1 : 0);
+          return comp !== 0 ? comp : a.name.localeCompare(b.name);
+        });
+      case 'webpa-desc':
+        return list.sort((a, b) => {
+          const rA = calculateStudentWebPAScore(a.id, a.groupName, currentClass, baseGroupGrade, fudgeWeight).ratio;
+          const rB = calculateStudentWebPAScore(b.id, b.groupName, currentClass, baseGroupGrade, fudgeWeight).ratio;
+          const comp = rB - rA;
+          return comp !== 0 ? comp : a.name.localeCompare(b.name);
+        });
+      case 'webpa-asc':
+        return list.sort((a, b) => {
+          const rA = calculateStudentWebPAScore(a.id, a.groupName, currentClass, baseGroupGrade, fudgeWeight).ratio;
+          const rB = calculateStudentWebPAScore(b.id, b.groupName, currentClass, baseGroupGrade, fudgeWeight).ratio;
+          const comp = rA - rB;
+          return comp !== 0 ? comp : a.name.localeCompare(b.name);
+        });
+      case 'score-desc':
+        return list.sort((a, b) => {
+          const mA = calculateStudentMetrics(a, currentClass).overallPercentage ?? -1;
+          const mB = calculateStudentMetrics(b, currentClass).overallPercentage ?? -1;
+          const comp = mB - mA;
+          return comp !== 0 ? comp : a.name.localeCompare(b.name);
+        });
+      case 'score-asc':
+        return list.sort((a, b) => {
+          const mA = calculateStudentMetrics(a, currentClass).overallPercentage ?? -1;
+          const mB = calculateStudentMetrics(b, currentClass).overallPercentage ?? -1;
+          const comp = mA - mB;
+          return comp !== 0 ? comp : a.name.localeCompare(b.name);
+        });
+      case 'team':
+      default:
+        return list;
+    }
+  }, [filteredStudents, gradebookSortBy, activeClass, baseGroupGrade, fudgeWeight]);
+
   const emailServiceOptions = useMemo(() => [
     { value: 'simulator', label: 'Demo Mode — No emails sent' },
     { value: 'emailjs', label: 'EmailJS Adapter (Send live emails)' },
@@ -2663,10 +2751,13 @@ export const AdminDashboard: React.FC = () => {
   };
 
   // Export Results to XLSX Excel Workbook
-  const handleExportExcel = () => {
+  const handleExportExcel = (customStudents?: any) => {
     try {
       if (!activeClass) return;
-      exportClassroomToExcel(activeClass);
+      const targetStudents = (Array.isArray(customStudents) && customStudents.length > 0)
+        ? (customStudents as Student[])
+        : (sortedGradebookStudents && sortedGradebookStudents.length > 0 ? sortedGradebookStudents : activeClass.students);
+      exportClassroomToExcel(activeClass, targetStudents);
       addToast('Excel workbook (.xlsx) downloaded successfully!', 'success');
     } catch (err) {
       console.error(err);
@@ -3331,9 +3422,9 @@ export const AdminDashboard: React.FC = () => {
         break;
       case 'export_results_csv':
         if (activeClass) {
-          const csv = generateResultsCSV(activeClass);
+          const csv = generateResultsCSV(activeClass, sortedGradebookStudents);
           downloadFileContent(csv, `${activeClass.name}_Final_Grades.csv`, 'text/csv;charset=utf-8;');
-          addToast('Exported calculated grades to CSV!', 'success');
+          addToast('Exported calculated grades to CSV in active sort order!', 'success');
         }
         break;
       case 'export_student_pdfs':
@@ -7114,7 +7205,7 @@ export const AdminDashboard: React.FC = () => {
                       marginBottom: '1rem'
                     }}
                   >
-                    {/* Header Row: Title, Scale Status, and Clean Opt-In Toggle */}
+                    {/* Header Row: Title, Scale Status, How It Works, and Opt-In Toggle */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <h4 style={{ fontWeight: 800, color: 'var(--text-primary)', margin: 0, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -7132,6 +7223,30 @@ export const AdminDashboard: React.FC = () => {
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                           {activeClass.customScaleEnabled ? 'Custom rating bounds' : 'Students evaluate peers on a clean 1 to 5 scale'}
                         </span>
+
+                        {/* Informative Explainer Toggle Button */}
+                        <button
+                          type="button"
+                          onClick={() => setShowScaleExplainer(!showScaleExplainer)}
+                          style={{
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: showScaleExplainer ? 'var(--bg-app)' : 'transparent',
+                            color: 'var(--text-secondary)',
+                            borderRadius: '6px',
+                            padding: '2px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                          title="Click to learn how scales, benchmarks, and points interact"
+                        >
+                          <HelpCircle size={12} className="text-primary" />
+                          <span>{showScaleExplainer ? 'Hide Guide' : 'How Scales Work'}</span>
+                        </button>
                       </div>
 
                       {/* Icon-Only Action Button */}
@@ -7166,6 +7281,52 @@ export const AdminDashboard: React.FC = () => {
                         </button>
                       )}
                     </div>
+
+                    {/* Explainer Guide: Minimal 3-card overview */}
+                    {showScaleExplainer && (
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                        gap: '0.75rem',
+                        padding: '0.75rem 0.9rem',
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--bg-app)',
+                        border: '1px solid var(--border-color)',
+                        fontSize: '0.78rem',
+                        lineHeight: 1.45,
+                        animation: 'fadeIn 0.2s ease-out'
+                      }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          <div style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'var(--primary)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 800 }}>1</span>
+                            Rating Scale ({gradeScaleConfig.scaleMin}–{gradeScaleConfig.scaleMax})
+                          </div>
+                          <span style={{ color: 'var(--text-secondary)' }}>
+                            Buttons students see in the evaluation portal. By default 1 to 5 (1 = Poor, 5 = Excellent). Click the sliders icon on the right to customize bounds (e.g. 1–7, 0–10).
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          <div style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'var(--primary)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 800 }}>2</span>
+                            Benchmark ({gradeScaleConfig.minTarget} &rarr; {gradeScaleConfig.maxTarget} pts)
+                          </div>
+                          <span style={{ color: 'var(--text-secondary)' }}>
+                            Maps ratings to your rubric marks. Rating {gradeScaleConfig.scaleMin} awards {gradeScaleConfig.minTarget} pts; Rating {gradeScaleConfig.scaleMax} awards {gradeScaleConfig.maxTarget} pts max, evenly stepped by +{gradeScaleConfig.stepScore} pts/step.
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          <div style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'var(--primary)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 800 }}>3</span>
+                            Criteria Weights &amp; WebPA
+                          </div>
+                          <span style={{ color: 'var(--text-secondary)' }}>
+                            Weights below determine criterion importance. The Loughborough WebPA algorithm uses peer ratings to compute individual multipliers (e.g. 1.05x) adjusting team marks.
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Controls Row: Scale Inputs & Benchmark Inputs */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border-color)' }}>
@@ -7241,7 +7402,77 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                         </div>
                       </div>
+
+                      {/* Optional Live Scale Step Distribution Toggle Button */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowScaleDistribution(!showScaleDistribution)}
+                          style={{
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: showScaleDistribution ? 'var(--bg-app)' : 'transparent',
+                            color: 'var(--text-secondary)',
+                            borderRadius: '6px',
+                            padding: '4px 9px',
+                            fontSize: '0.74rem',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                          title="Toggle live benchmark distribution score mapping preview"
+                        >
+                          {showScaleDistribution ? <EyeOff size={12} className="text-primary" /> : <Eye size={12} className="text-primary" />}
+                          <span>{showScaleDistribution ? 'Hide Distribution' : 'Distribution Preview'}</span>
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Live Scale Step Distribution Preview (Optional & Hidden by default) */}
+                    {showScaleDistribution && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          flexWrap: 'wrap',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          backgroundColor: 'var(--bg-app)',
+                          border: '1px solid var(--border-color)',
+                          marginTop: '0.25rem',
+                          animation: 'fadeIn 0.2s ease-out'
+                        }}
+                      >
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                          Distribution:
+                        </span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                          {gradeScaleConfig.steps.map((st) => (
+                            <span
+                              key={st.scaleValue}
+                              style={{
+                                fontSize: '0.74rem',
+                                padding: '0.15rem 0.45rem',
+                                borderRadius: '5px',
+                                backgroundColor: 'var(--bg-surface)',
+                                border: '1px solid var(--border-color)',
+                                fontWeight: 700,
+                                color: 'var(--text-primary)'
+                              }}
+                              title={`Rating ${st.scaleValue} translates to ${st.scoreValue} benchmark points`}
+                            >
+                              {st.scaleValue}: <b style={{ color: 'var(--primary)' }}>{st.scoreValue}pt</b>
+                            </span>
+                          ))}
+                          <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 700, marginLeft: '0.3rem' }}>
+                            (+{gradeScaleConfig.stepScore}/step)
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </EditableModuleSlot>
               )}
@@ -9325,7 +9556,16 @@ export const AdminDashboard: React.FC = () => {
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                    {/* Gradebook Custom Sort Dropdown */}
+                    <CustomSelect
+                      options={gradebookSortOptions}
+                      value={gradebookSortBy}
+                      onChange={(val) => setGradebookSortBy(val)}
+                      style={{ width: 'auto', minWidth: '135px' }}
+                      triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600 }}
+                    />
+
                     {(isEditMode || featureToggles.showGradebookSearchFilter) && (
                       <EditableModuleSlot
                         moduleKey="showGradebookSearchFilter"
@@ -9339,12 +9579,129 @@ export const AdminDashboard: React.FC = () => {
                           options={groupOptions}
                           value={groupFilter}
                           onChange={(val) => setGroupFilter(val)}
-                          style={{ width: 'auto', minWidth: '150px' }}
-                          triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
+                          style={{ width: 'auto', minWidth: '115px' }}
+                          triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.8rem' }}
                         />
                       </EditableModuleSlot>
                     )}
 
+                    {/* Columns Popover Menu */}
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setIsGradebookColumnsOpen(!isGradebookColumnsOpen)}
+                        style={{ height: '36px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, gap: '0.35rem' }}
+                        title="Customize table columns & visibility"
+                      >
+                        <SlidersHorizontal size={13} />
+                        <span>Columns</span>
+                        <ChevronDown size={12} />
+                      </button>
+
+                      {isGradebookColumnsOpen && (
+                        <>
+                          <div
+                            style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                            onClick={() => setIsGradebookColumnsOpen(false)}
+                          />
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '100%',
+                              right: 0,
+                              marginTop: '0.35rem',
+                              backgroundColor: 'var(--bg-surface)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '10px',
+                              padding: '0.65rem',
+                              boxShadow: '0 12px 28px -4px rgba(0,0,0,0.25)',
+                              zIndex: 100,
+                              minWidth: '240px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.4rem',
+                              animation: 'fadeIn 0.15s ease-out'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.35rem', borderBottom: '1px solid var(--border-color)' }}>
+                              <span style={{ fontSize: '0.74rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                                Column Visibility
+                              </span>
+                              <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setGradebookColumns({ criteriaScores: false, praiseTags: false, webpaMark: true, weightedScore: true, johari: false })}
+                                  style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-app)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                                  title="Reset to minimal main fields view"
+                                >
+                                  Main Only
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setGradebookColumns({ criteriaScores: true, praiseTags: true, webpaMark: true, weightedScore: true, johari: true })}
+                                  style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px', border: 'none', background: 'var(--primary)', color: '#fff', cursor: 'pointer' }}
+                                  title="Show all columns"
+                                >
+                                  Show All
+                                </button>
+                              </div>
+                            </div>
+
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={gradebookColumns.criteriaScores}
+                                onChange={(e) => setGradebookColumns(c => ({ ...c, criteriaScores: e.target.checked }))}
+                              />
+                              <span>Rubric Criteria Mean &amp; StdDev</span>
+                            </label>
+
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={gradebookColumns.webpaMark}
+                                onChange={(e) => setGradebookColumns(c => ({ ...c, webpaMark: e.target.checked }))}
+                              />
+                              <span>WebPA Calibrated Mark</span>
+                            </label>
+
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={gradebookColumns.weightedScore}
+                                onChange={(e) => setGradebookColumns(c => ({ ...c, weightedScore: e.target.checked }))}
+                              />
+                              <span>Overall Weighted Score</span>
+                            </label>
+
+                            {evalControls.showPraiseTags && (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={gradebookColumns.praiseTags}
+                                  onChange={(e) => setGradebookColumns(c => ({ ...c, praiseTags: e.target.checked }))}
+                                />
+                                <span>Strengths &amp; Praise Tags</span>
+                              </label>
+                            )}
+
+                            {evalControls.allowSelfReview && (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={gradebookColumns.johari}
+                                  onChange={(e) => setGradebookColumns(c => ({ ...c, johari: e.target.checked }))}
+                                />
+                                <span>Johari Alignment Badge</span>
+                              </label>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Unified Export Dropdown (Excel & CSV) */}
                     {(isEditMode || featureToggles.showExportReportButtons) && (
                       <EditableModuleSlot
                         moduleKey="showExportReportButtons"
@@ -9354,34 +9711,79 @@ export const AdminDashboard: React.FC = () => {
                         inline
                         slotType="button"
                       >
-                        <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
+                        <div style={{ position: 'relative' }}>
                           <button
                             type="button"
                             className="btn btn-teal btn-sm"
-                            onClick={handleExportExcel}
-                            style={{ fontSize: '0.8rem', padding: '0 0.85rem', gap: '0.35rem', fontWeight: 700, height: '36px', borderRadius: '8px' }}
-                            title="Export complete 2-sheet Excel report with WebPA metrics and written comments"
+                            onClick={() => setIsGradebookExportOpen(!isGradebookExportOpen)}
+                            style={{ fontSize: '0.8rem', padding: '0 0.8rem', gap: '0.35rem', fontWeight: 700, height: '36px', borderRadius: '8px' }}
+                            title="Export gradebook to Excel or CSV"
                           >
-                            <Download size={14} /> Export Excel Report
+                            <Download size={13} />
+                            <span>Export</span>
+                            <ChevronDown size={12} />
                           </button>
 
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => {
-                              try {
-                                const csv = generateResultsCSV(activeClass);
-                                downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
-                                addToast('Results summary CSV downloaded successfully!', 'success');
-                              } catch (e) {
-                                addToast('Failed to export CSV results.', 'error');
-                              }
-                            }}
-                            style={{ fontSize: '0.8rem', padding: '0 0.75rem', gap: '0.35rem', height: '36px', borderRadius: '8px', fontWeight: 600 }}
-                            title="Export results summary to CSV"
-                          >
-                            <Download size={14} /> CSV
-                          </button>
+                          {isGradebookExportOpen && (
+                            <>
+                              <div
+                                style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                                onClick={() => setIsGradebookExportOpen(false)}
+                              />
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  top: '100%',
+                                  right: 0,
+                                  marginTop: '0.35rem',
+                                  backgroundColor: 'var(--bg-surface)',
+                                  border: '1px solid var(--border-color)',
+                                  borderRadius: '10px',
+                                  padding: '0.4rem',
+                                  boxShadow: '0 12px 28px -4px rgba(0,0,0,0.25)',
+                                  zIndex: 100,
+                                  minWidth: '190px',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.25rem',
+                                  animation: 'fadeIn 0.15s ease-out'
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => {
+                                    setIsGradebookExportOpen(false);
+                                    handleExportExcel(sortedGradebookStudents);
+                                  }}
+                                  style={{ justifyContent: 'flex-start', padding: '0.45rem 0.65rem', fontSize: '0.8rem', fontWeight: 600, gap: '0.45rem', borderRadius: '6px' }}
+                                  title={`Export complete 2-sheet Excel report in active sort order (${gradebookSortBy})`}
+                                >
+                                  <FileText size={14} className="text-teal" />
+                                  <span>Excel Report (.xlsx)</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => {
+                                    setIsGradebookExportOpen(false);
+                                    try {
+                                      const csv = generateResultsCSV(activeClass, sortedGradebookStudents);
+                                      downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
+                                      addToast('Results summary CSV downloaded in active sort order!', 'success');
+                                    } catch (e) {
+                                      addToast('Failed to export CSV results.', 'error');
+                                    }
+                                  }}
+                                  style={{ justifyContent: 'flex-start', padding: '0.45rem 0.65rem', fontSize: '0.8rem', fontWeight: 600, gap: '0.45rem', borderRadius: '6px' }}
+                                  title={`Export results summary to CSV in active sort order (${gradebookSortBy})`}
+                                >
+                                  <Download size={14} className="text-primary" />
+                                  <span>CSV Summary (.csv)</span>
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </EditableModuleSlot>
                     )}
@@ -9403,11 +9805,11 @@ export const AdminDashboard: React.FC = () => {
                     >
                       {isResultsTableExpanded ? (
                         <>
-                          <ChevronUp size={14} /> Collapse Gradebook
+                          <ChevronUp size={14} /> Collapse
                         </>
                       ) : (
                         <>
-                          <ChevronDown size={14} /> Expand Gradebook ({stats.totalStudents})
+                          <ChevronDown size={14} /> Expand ({stats.totalStudents})
                         </>
                       )}
                     </button>
@@ -9427,9 +9829,39 @@ export const AdminDashboard: React.FC = () => {
                     <table className="custom-table" style={{ whiteSpace: 'nowrap' }}>
                       <thead>
                         <tr>
-                          <th className="freeze-col-1" style={{ minWidth: '180px' }}>Participant &amp; Team</th>
-                          <th style={{ minWidth: '110px' }}>Review Status</th>
-                          {activeClass.fields.map(f => (
+                          <th
+                            className="freeze-col-1"
+                            style={{ minWidth: '180px', cursor: 'pointer', userSelect: 'none' }}
+                            onClick={() => {
+                              setGradebookSortBy(prev => prev === 'name-asc' ? 'name-desc' : prev === 'name-desc' ? 'team' : 'name-asc');
+                            }}
+                            title="Click to sort alphabetically by student name (A-Z, Z-A, or Team)"
+                          >
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span>Participant &amp; Team</span>
+                              {gradebookSortBy === 'name-asc' && <ArrowUp size={13} className="text-primary" />}
+                              {gradebookSortBy === 'name-desc' && <ArrowDown size={13} className="text-primary" />}
+                              {gradebookSortBy === 'team' && <ArrowUpDown size={12} style={{ opacity: 0.35 }} />}
+                            </div>
+                          </th>
+
+                          <th
+                            style={{ minWidth: '110px', cursor: 'pointer', userSelect: 'none' }}
+                            onClick={() => {
+                              setGradebookSortBy(prev => prev === 'status' ? 'status-pending' : 'status');
+                            }}
+                            title="Click to sort by review status (Completed first or Pending first)"
+                          >
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span>Review Status</span>
+                              {gradebookSortBy === 'status' && <ArrowDown size={13} className="text-primary" />}
+                              {gradebookSortBy === 'status-pending' && <ArrowUp size={13} className="text-primary" />}
+                              {gradebookSortBy !== 'status' && gradebookSortBy !== 'status-pending' && <ArrowUpDown size={12} style={{ opacity: 0.35 }} />}
+                            </div>
+                          </th>
+
+                          {/* Rubric Criteria Columns (Hidden by default for a proper minimal view) */}
+                          {gradebookColumns.criteriaScores && activeClass.fields.map(f => (
                             <th key={f.id} style={{ minWidth: '120px' }}>
                               <div style={{ display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontSize: '0.78rem', textTransform: 'none', fontWeight: 700 }}>{f.name}</span>
@@ -9437,19 +9869,53 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </th>
                           ))}
-                          {evalControls.showPraiseTags && (
+
+                          {evalControls.showPraiseTags && gradebookColumns.praiseTags && (
                             <th style={{ minWidth: '160px' }}>Strengths &amp; Praise</th>
                           )}
-                          <th style={{ minWidth: '120px' }}>WebPA Mark</th>
-                          <th style={{ minWidth: '110px' }}>Weighted Score</th>
-                          {evalControls.allowSelfReview && (
+
+                          {gradebookColumns.webpaMark && (
+                            <th
+                              style={{ minWidth: '120px', cursor: 'pointer', userSelect: 'none' }}
+                              onClick={() => {
+                                setGradebookSortBy(prev => prev === 'webpa-desc' ? 'webpa-asc' : 'webpa-desc');
+                              }}
+                              title="Click to sort by WebPA factor (High to Low or Low to High)"
+                            >
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <span>WebPA Mark</span>
+                                {gradebookSortBy === 'webpa-desc' && <ArrowDown size={13} className="text-primary" />}
+                                {gradebookSortBy === 'webpa-asc' && <ArrowUp size={13} className="text-primary" />}
+                                {gradebookSortBy !== 'webpa-desc' && gradebookSortBy !== 'webpa-asc' && <ArrowUpDown size={12} style={{ opacity: 0.35 }} />}
+                              </div>
+                            </th>
+                          )}
+
+                          {gradebookColumns.weightedScore && (
+                            <th
+                              style={{ minWidth: '110px', cursor: 'pointer', userSelect: 'none' }}
+                              onClick={() => {
+                                setGradebookSortBy(prev => prev === 'score-desc' ? 'score-asc' : 'score-desc');
+                              }}
+                              title="Click to sort by weighted score (High to Low or Low to High)"
+                            >
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <span>Weighted Score</span>
+                                {gradebookSortBy === 'score-desc' && <ArrowDown size={13} className="text-primary" />}
+                                {gradebookSortBy === 'score-asc' && <ArrowUp size={13} className="text-primary" />}
+                                {gradebookSortBy !== 'score-desc' && gradebookSortBy !== 'score-asc' && <ArrowUpDown size={12} style={{ opacity: 0.35 }} />}
+                              </div>
+                            </th>
+                          )}
+
+                          {evalControls.allowSelfReview && gradebookColumns.johari && (
                             <th style={{ minWidth: '130px' }}>Johari Alignment</th>
                           )}
                           <th style={{ textAlign: 'right', minWidth: '180px' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredStudents.map((s) => {
+                        {sortedGradebookStudents.map((s) => {
                           const metrics = calculateStudentMetrics(s, activeClass);
 
                           // Calculate anonymized praise tags
@@ -9549,8 +10015,8 @@ export const AdminDashboard: React.FC = () => {
                                 </div>
                               </td>
 
-                              {/* Rubric Criteria Columns (Unified Mean + StdDev) */}
-                              {activeClass.fields.map(f => {
+                              {/* Rubric Criteria Columns (Unified Mean + StdDev) - Only rendered when enabled */}
+                              {gradebookColumns.criteriaScores && activeClass.fields.map(f => {
                                 const val = metrics.fieldAverages[f.id];
                                 const std = metrics.fieldStdDevs[f.id];
                                 return (
@@ -9568,7 +10034,7 @@ export const AdminDashboard: React.FC = () => {
                               })}
 
                               {/* Received Praise & Strengths */}
-                              {evalControls.showPraiseTags && (
+                              {evalControls.showPraiseTags && gradebookColumns.praiseTags && (
                                 <td>
                                   <div className="praise-badge-list">
                                     {tagEntries.length === 0 ? (
@@ -9601,31 +10067,35 @@ export const AdminDashboard: React.FC = () => {
                               )}
 
                               {/* WebPA Calibrated Mark */}
-                              <td>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-                                  <span style={{ fontWeight: 800, fontSize: '0.9rem', color: adjustedGrade < (teamBaseGrade * 0.7) ? 'var(--accent-rose)' : 'hsl(142, 70%, 35%)' }}>
-                                    {metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : '—'}
-                                  </span>
-                                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--primary)' }}>
-                                    {metrics.reviewsReceived > 0 ? `WebPA: ${ratio.toFixed(2)}x` : 'WebPA: 1.00x'}
-                                  </span>
-                                </div>
-                              </td>
+                              {gradebookColumns.webpaMark && (
+                                <td>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: adjustedGrade < (teamBaseGrade * 0.7) ? 'var(--accent-rose)' : 'hsl(142, 70%, 35%)' }}>
+                                      {metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : '—'}
+                                    </span>
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--primary)' }}>
+                                      {metrics.reviewsReceived > 0 ? `WebPA: ${ratio.toFixed(2)}x` : 'WebPA: 1.00x'}
+                                    </span>
+                                  </div>
+                                </td>
+                              )}
 
                               {/* Overall Weighted Score */}
-                              <td>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-                                  <span style={{ fontWeight: 700, fontSize: '0.88rem', color: metrics.overallPercentage !== null ? 'var(--primary)' : 'var(--text-muted)' }}>
-                                    {metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A'}
-                                  </span>
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 600 }}>
-                                    {metrics.overallPercentage !== null ? `${((metrics.overallPercentage / 100) * activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)).toFixed(1)} / ${activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)}` : '—'}
-                                  </span>
-                                </div>
-                              </td>
+                              {gradebookColumns.weightedScore && (
+                                <td>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                                    <span style={{ fontWeight: 700, fontSize: '0.88rem', color: metrics.overallPercentage !== null ? 'var(--primary)' : 'var(--text-muted)' }}>
+                                      {metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A'}
+                                    </span>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 600 }}>
+                                      {metrics.overallPercentage !== null ? `${((metrics.overallPercentage / 100) * activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)).toFixed(1)} / ${activeClass.fields.reduce((acc, f) => acc + (f.max ?? 0), 0)}` : '—'}
+                                    </span>
+                                  </div>
+                                </td>
+                              )}
 
                               {/* Self-Awareness (Johari) */}
-                              {evalControls.allowSelfReview && (
+                              {evalControls.allowSelfReview && gradebookColumns.johari && (
                                 <td>
                                   {(() => {
                                     const johari = calculateJohariWindowMetric(s.id, activeClass);
@@ -13189,9 +13659,9 @@ export const AdminDashboard: React.FC = () => {
         onExportResultsCSV={() => {
           if (activeClass) {
             try {
-              const csv = generateResultsCSV(activeClass);
+              const csv = generateResultsCSV(activeClass, sortedGradebookStudents);
               downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
-              addToast('Results summary CSV downloaded successfully!', 'success');
+              addToast('Results summary CSV downloaded in active sort order!', 'success');
             } catch (e) {
               addToast('Failed to export CSV results', 'error');
             }
