@@ -29,7 +29,7 @@ import {
   type FeatureToggles
 } from '../utils/featurePreferences';
 import type { FirebaseConfig } from '../context/ClassContext';
-import { calculateClassStats, calculateStudentMetrics, calculateStudentWebPAScore, detectClassAnomalies, getTargetScale, normalizeNationality, DEFAULT_ENROLLMENT_FIELDS, isStandardEnrollmentField } from '../utils/math';
+import { calculateClassStats, calculateStudentMetrics, calculateStudentWebPAScore, detectClassAnomalies, getTargetScale, getGradeScaleConfig, getEvaluationControls, normalizeNationality, DEFAULT_ENROLLMENT_FIELDS, isStandardEnrollmentField } from '../utils/math';
 import type { GradingScaleField, Student, ClassData, Review } from '../utils/math';
 import { detectDuplicateEnrollments } from '../utils/duplicateDetector';
 import type { DuplicateFlag } from '../utils/duplicateDetector';
@@ -878,6 +878,8 @@ export const AdminDashboard: React.FC = () => {
     return localStorage.getItem('peer_has_explored_settings_v1') === 'true';
   });
   const [isEvaluationControlsModalOpen, setIsEvaluationControlsModalOpen] = useState(false);
+  const evalControls = useMemo(() => getEvaluationControls(activeClass), [activeClass]);
+  const gradeScaleConfig = useMemo(() => getGradeScaleConfig(activeClass), [activeClass]);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'email' | 'cloud' | 'shortcuts' | 'appearance' | 'modules'>('email');
   const [shortcuts, setShortcuts] = useState<KeyboardShortcut[]>(() => getStoredShortcuts());
   const [shortcutsEnabled, setShortcutsEnabled] = useState<boolean>(() => getShortcutsEnabled());
@@ -2679,8 +2681,8 @@ export const AdminDashboard: React.FC = () => {
       id: 'f_' + Math.random().toString(36).substring(2, 9),
       name: `Criterion ${nextNum}`,
       description: '',
-      min: 1,
-      max: 20,
+      min: activeClass.scaleMin ?? 1,
+      max: activeClass.scaleMax ?? 5,
       weight: 0
     };
     const allFields = [...activeClass.fields, newField];
@@ -2738,12 +2740,12 @@ export const AdminDashboard: React.FC = () => {
       id: `f_${Date.now()}_${idx}`,
       name: f.name,
       description: f.description,
-      min: f.min,
-      max: f.max,
+      min: f.min ?? 1,
+      max: f.max ?? 5,
       weight: f.weight
     }));
-    updateGradingConfig(activeClass.id, newFields, preset.targetScale);
-    addToast(`Applied "${preset.name}" (Scale out of 20) with ${newFields.length} criteria.`, 'success');
+    updateGradingConfig(activeClass.id, newFields, preset.targetScale, true, 15, 1, 5, false);
+    addToast(`Applied "${preset.name}" with standard 1–5 rating scale and ${newFields.length} criteria.`, 'success');
   };
 
   // Handler for Guided Sandbox Launch & Step Auto-Completion
@@ -3262,12 +3264,12 @@ export const AdminDashboard: React.FC = () => {
             id: 'f_' + Math.random().toString(36).substring(2, 9),
             name: `Criterion ${nextNum}`,
             description: '',
-            min: 1,
-            max: 20,
+            min: activeClass.scaleMin ?? 1,
+            max: activeClass.scaleMax ?? 5,
             weight: 1
           };
           updateGradingConfig(activeClass.id, [...activeClass.fields, newField]);
-          addToast(`Added Criterion ${nextNum} (Scale 1 to 20).`, 'success');
+          addToast(`Added Criterion ${nextNum} (Scale ${activeClass.scaleMin ?? 1} to ${activeClass.scaleMax ?? 5}).`, 'success');
         }
         break;
       case 'auto_balance_weights':
@@ -7045,65 +7047,48 @@ export const AdminDashboard: React.FC = () => {
                     style={{
                       backgroundColor: 'var(--bg-app)',
                       border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-lg)',
-                      padding: '0.85rem 1.15rem',
-                      marginBottom: '1.25rem',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '0.65rem 1rem',
+                      marginBottom: '0.85rem',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       flexWrap: 'wrap',
-                      gap: '0.85rem'
+                      gap: '0.65rem'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                      <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <BookOpen size={17} />
-                      </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                      <BookOpen size={16} className="text-primary" />
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                          <h4 style={{ margin: 0, fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                            Standardized Rubric Framework (IPAF)
-                          </h4>
-                          <FeatureInfoButton featureId="rubric-presets" size="sm" tooltipText="IPAF Rubric Guide" />
-                        </div>
-                        <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                          1-Click load research-synthesized peer evaluation criteria &amp; 100% balanced weights (CATME, Salas, AAC&amp;U, WebPA).
-                        </p>
+                        <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          Academic Rubric Framework (IPAF)
+                        </span>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginLeft: '0.4rem' }}>
+                          &bull; CATME, Salas &amp; AAC&amp;U research standard (6 criteria, 100% balanced)
+                        </span>
                       </div>
+                      <FeatureInfoButton featureId="rubric-presets" size="sm" tooltipText="IPAF Rubric Guide" />
                     </div>
 
-                    {/* Quick Preset Buttons in a Clean Flex Wrap Ribbon */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                      {RUBRIC_PRESETS.map((preset) => (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => handleApplyPreset(preset.id)}
-                          style={{
-                            fontSize: '0.76rem',
-                            padding: '0.35rem 0.7rem',
-                            height: '32px',
-                            borderRadius: '6px',
-                            fontWeight: 600,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.35rem',
-                            backgroundColor: 'var(--bg-surface)',
-                            border: '1px solid var(--border-color)',
-                            whiteSpace: 'nowrap'
-                          }}
-                          title={`${preset.name}: ${preset.description}`}
-                        >
-                          <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
-                            {preset.id === 'ipaf_research_synthesized' ? 'IPAF Standard (Research-Synthesized)' : preset.name}
-                          </span>
-                          <span className="badge badge-teal" style={{ fontSize: '0.65rem', padding: '1px 5px', height: '16px', lineHeight: '14px' }}>
-                            {preset.fields.length} criteria
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleApplyPreset('ipaf_research_synthesized')}
+                      style={{
+                        fontSize: '0.75rem',
+                        padding: '0.3rem 0.65rem',
+                        height: '30px',
+                        borderRadius: '6px',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        backgroundColor: 'var(--bg-surface)'
+                      }}
+                      title="Reload standard 6 criteria with 100% balanced weights"
+                    >
+                      <Sparkles size={12} className="text-primary" /> Reload IPAF Standard
+                    </button>
                   </div>
                 </EditableModuleSlot>
               )}
@@ -7116,51 +7101,145 @@ export const AdminDashboard: React.FC = () => {
                   isVisible={featureToggles.showTargetScaleCard}
                   onToggle={handleToggleModule}
                 >
-                  <div data-tour="target-scale-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'var(--primary-light)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid hsla(243, 75%, 59%, 0.15)', marginBottom: '1.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                      <div style={{ maxWidth: '520px' }}>
-                        <h4 style={{ fontWeight: 700, color: 'var(--primary)', margin: 0, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <Sliders size={15} /> Grade Scale
+                  <div
+                    data-tour="target-scale-card"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.75rem',
+                      backgroundColor: 'var(--bg-surface)',
+                      padding: '0.9rem 1.15rem',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-color)',
+                      marginBottom: '1rem'
+                    }}
+                  >
+                    {/* Header Row: Title, Scale Status, and Clean Opt-In Toggle */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <h4 style={{ fontWeight: 800, color: 'var(--text-primary)', margin: 0, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <Sliders size={15} className="text-primary" /> Evaluation Scale &amp; Benchmark
                         </h4>
-                        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.45 }}>
-                          Sets whether final grades are out of 20, 100, or a custom maximum.
-                        </p>
+                        {activeClass.customScaleEnabled ? (
+                          <span className="badge badge-primary" style={{ fontSize: '0.68rem', padding: '1px 7px', fontWeight: 800, borderRadius: '9999px' }}>
+                            Custom Scale: {gradeScaleConfig.scaleMin}–{gradeScaleConfig.scaleMax}
+                          </span>
+                        ) : (
+                          <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '1px 7px', fontWeight: 800, borderRadius: '9999px' }}>
+                            1–5 Scale (Default)
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {activeClass.customScaleEnabled ? 'Custom rating bounds' : 'Students evaluate peers on a clean 1 to 5 scale'}
+                        </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '240px', flexWrap: 'wrap' }}>
-                        <CustomSelect
-                          value={activeClass.targetScale === 0 ? 'sum' : activeClass.targetScale ? 'custom' : 'default'}
-                          onChange={(val) => {
-                            if (val === 'default') {
-                              updateGradingConfig(activeClass.id, activeClass.fields, null, true);
-                            } else if (val === 'sum') {
-                              updateGradingConfig(activeClass.id, activeClass.fields, 0, true);
-                            } else {
-                              updateGradingConfig(activeClass.id, activeClass.fields, 20, true);
-                            }
-                          }}
-                          options={[
-                            { value: 'default', label: 'Default Benchmark (Out of 20)' },
-                            { value: 'sum', label: 'Sum of Rubrics Scale (Direct Sum)' },
-                            { value: 'custom', label: 'Custom Scaled Total Target' }
-                          ]}
-                          style={{ width: 'auto', minWidth: '230px' }}
-                          triggerStyle={{ height: '36px', fontSize: '0.82rem', fontWeight: 600, borderRadius: '8px' }}
-                        />
 
-                        {activeClass.targetScale !== 0 && activeClass.targetScale !== undefined && activeClass.targetScale !== null && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Out of</span>
-                            <input
-                              type="number"
-                              className="form-input"
-                              value={activeClass.targetScale}
-                              min={1}
-                              max={1000}
-                              onChange={(e) => updateGradingConfig(activeClass.id, activeClass.fields, Number(e.target.value) || 20, true)}
-                              style={{ width: '70px', height: '36px', fontSize: '0.85rem', textAlign: 'center', fontWeight: 700, borderRadius: '8px' }}
-                            />
+                      {/* Icon-Only Action Button */}
+                      {activeClass.customScaleEnabled ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            const resetFields = activeClass.fields.map(f => ({ ...f, min: 1, max: 5 }));
+                            updateGradingConfig(activeClass.id, resetFields, activeClass.targetScale ?? 31, true, activeClass.minTargetScale ?? 15, 1, 5, false);
+                            addToast('Reset to standard 1–5 rating scale!', 'success');
+                          }}
+                          style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '7px' }}
+                          title="Reset to standard 1–5 rating scale"
+                          aria-label="Reset to standard 1–5 rating scale"
+                        >
+                          <RotateCcw size={15} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            updateGradingConfig(activeClass.id, activeClass.fields, activeClass.targetScale ?? 31, true, activeClass.minTargetScale ?? 15, activeClass.scaleMin ?? 1, activeClass.scaleMax ?? 5, true);
+                            addToast('Custom scale enabled! You can now adjust rating numbers.', 'info');
+                          }}
+                          style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '7px' }}
+                          title="Custom Scale (Optional)"
+                          aria-label="Custom Scale (Optional)"
+                        >
+                          <Sliders size={15} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Controls Row: Scale Inputs & Benchmark Inputs */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                        {activeClass.customScaleEnabled && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Rating Scale:</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                              <input
+                                type="number"
+                                className="form-input input-no-spin"
+                                value={activeClass.scaleMin ?? 1}
+                                min={1}
+                                max={(activeClass.scaleMax ?? 5) - 1}
+                                onChange={(e) => {
+                                  const newScaleMin = Math.max(0, Number(e.target.value) || 1);
+                                  const updatedFields = activeClass.fields.map(f => ({ ...f, min: newScaleMin, max: activeClass.scaleMax ?? 5 }));
+                                  updateGradingConfig(activeClass.id, updatedFields, activeClass.targetScale ?? 31, true, activeClass.minTargetScale ?? 15, newScaleMin, activeClass.scaleMax ?? 5, true);
+                                }}
+                                style={{ width: '56px', height: '32px', padding: '0 0.4rem', fontSize: '0.88rem', textAlign: 'center', fontWeight: 800, borderRadius: '6px', backgroundColor: 'var(--bg-surface)' }}
+                                title="Minimum rating button number shown to students"
+                              />
+                              <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>to</span>
+                              <input
+                                type="number"
+                                className="form-input input-no-spin"
+                                value={activeClass.scaleMax ?? 5}
+                                min={(activeClass.scaleMin ?? 1) + 1}
+                                max={100}
+                                onChange={(e) => {
+                                  const newScaleMax = Math.max((activeClass.scaleMin ?? 1) + 1, Number(e.target.value) || 5);
+                                  const updatedFields = activeClass.fields.map(f => ({ ...f, min: activeClass.scaleMin ?? 1, max: newScaleMax }));
+                                  updateGradingConfig(activeClass.id, updatedFields, activeClass.targetScale ?? 31, true, activeClass.minTargetScale ?? 15, activeClass.scaleMin ?? 1, newScaleMax, true);
+                                }}
+                                style={{ width: '56px', height: '32px', padding: '0 0.4rem', fontSize: '0.88rem', textAlign: 'center', fontWeight: 800, borderRadius: '6px', backgroundColor: 'var(--bg-surface)' }}
+                                title="Maximum rating button number shown to students"
+                              />
+                            </div>
                           </div>
                         )}
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Benchmark Score:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <input
+                              type="number"
+                              className="form-input input-no-spin"
+                              value={gradeScaleConfig.minTarget}
+                              min={0}
+                              max={gradeScaleConfig.maxTarget - 1}
+                              onChange={(e) => {
+                                const newMin = Number(e.target.value) || 0;
+                                updateGradingConfig(activeClass.id, activeClass.fields, activeClass.targetScale ?? 31, true, newMin, activeClass.scaleMin ?? 1, activeClass.scaleMax ?? 5, activeClass.customScaleEnabled ?? false);
+                              }}
+                              style={{ width: '64px', height: '32px', padding: '0 0.4rem', fontSize: '0.88rem', textAlign: 'center', fontWeight: 800, borderRadius: '6px', backgroundColor: 'var(--bg-surface)' }}
+                              title={`Minimum benchmark score for rating ${gradeScaleConfig.scaleMin}`}
+                            />
+                            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>pts &rarr;</span>
+                            <input
+                              type="number"
+                              className="form-input input-no-spin"
+                              value={gradeScaleConfig.maxTarget}
+                              min={gradeScaleConfig.minTarget + 1}
+                              max={1000}
+                              onChange={(e) => {
+                                const newMax = Number(e.target.value) || 31;
+                                updateGradingConfig(activeClass.id, activeClass.fields, newMax, true, activeClass.minTargetScale ?? 15, activeClass.scaleMin ?? 1, activeClass.scaleMax ?? 5, activeClass.customScaleEnabled ?? false);
+                              }}
+                              style={{ width: '64px', height: '32px', padding: '0 0.4rem', fontSize: '0.88rem', textAlign: 'center', fontWeight: 800, borderRadius: '6px', backgroundColor: 'var(--bg-surface)' }}
+                              title={`Maximum benchmark target score for rating ${gradeScaleConfig.scaleMax}`}
+                            />
+                            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>pts max</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -7293,61 +7372,58 @@ export const AdminDashboard: React.FC = () => {
                   isVisible={featureToggles.showCriterionCards}
                   onToggle={handleToggleModule}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                     {activeClass.fields.map((field, idx) => (
                       <div
                         key={field.id}
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
-                          gap: '0.75rem',
-                          backgroundColor: 'var(--bg-app)',
-                          padding: '1rem 1.25rem',
+                          gap: '0.45rem',
+                          backgroundColor: 'var(--bg-surface)',
+                          padding: '0.75rem 1rem',
                           borderRadius: 'var(--radius-md)',
-                          border: '1px solid var(--border-color)'
+                          border: '1px solid var(--border-color)',
+                          boxShadow: 'var(--shadow-xs)'
                         }}
                       >
-                        {/* Top Row: Name, Scale, Editable Weightage, and Delete */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(110px, 1fr) auto', gap: '0.85rem', alignItems: 'flex-end' }}>
-                          <div>
-                            <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                              <span className="badge badge-teal" style={{ fontSize: '0.68rem', padding: '1px 5px' }}>#{idx + 1}</span> Criterion Name
-                            </label>
+                        {/* Primary Row: #idx badge, Name input, Weightage, Delete */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.65rem',
+                          width: '100%'
+                        }}>
+                          <span
+                            className="badge badge-teal"
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              padding: '2px 7px',
+                              borderRadius: '6px',
+                              flexShrink: 0
+                            }}
+                          >
+                            #{idx + 1}
+                          </span>
+
+                          <div style={{ flex: 1, minWidth: '160px' }}>
                             <input
                               type="text"
                               className="form-input"
                               value={field.name}
-                              placeholder="e.g. Quality of Contribution, Collaboration..."
+                              placeholder="Criterion name (e.g. Contribution Quality, Reliability...)"
                               onChange={(e) => handleUpdateField(field.id, { name: e.target.value })}
-                              style={{ height: '36px', fontSize: '0.84rem', fontWeight: 600 }}
+                              style={{ height: '34px', fontSize: '0.84rem', fontWeight: 600, width: '100%' }}
                             />
                           </div>
-                          <div>
-                            <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Min Scale</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              value={field.min}
-                              onChange={(e) => handleUpdateField(field.id, { min: Number(e.target.value) })}
-                              style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
-                            />
-                          </div>
-                          <div>
-                            <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Max Scale</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              value={field.max}
-                              onChange={(e) => handleUpdateField(field.id, { max: Number(e.target.value) })}
-                              style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center' }}
-                            />
-                          </div>
-                          <div>
-                            <label className="form-label" style={{ fontSize: '0.76rem', fontWeight: 700, margin: 0, marginBottom: '0.3rem' }}>Weightage (%)</label>
-                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: '85px', maxWidth: '105px', height: '36px' }}>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Weight:</span>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '68px', height: '34px' }}>
                               <input
                                 type="number"
-                                className="form-input"
+                                className="form-input input-no-spin"
                                 value={field.weight !== undefined ? field.weight : Math.round(100 / activeClass.fields.length)}
                                 min={0}
                                 max={100}
@@ -7355,39 +7431,54 @@ export const AdminDashboard: React.FC = () => {
                                   const val = Math.max(0, Math.min(100, Number(e.target.value)));
                                   handleUpdateField(field.id, { weight: val });
                                 }}
-                                style={{ height: '36px', fontSize: '0.84rem', textAlign: 'center', width: '100%', paddingRight: '26px', paddingLeft: '8px', fontWeight: 700 }}
+                                style={{ height: '34px', fontSize: '0.82rem', textAlign: 'center', width: '100%', paddingRight: '20px', paddingLeft: '6px', fontWeight: 700 }}
                               />
-                              <span style={{ position: 'absolute', right: '10px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', pointerEvents: 'none' }}>%</span>
+                              <span style={{ position: 'absolute', right: '7px', fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-muted)', pointerEvents: 'none' }}>%</span>
                             </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
-                            <button
-                              className="btn btn-rose btn-sm"
-                              onClick={() => handleDeleteField(field.id)}
-                              title="Delete rubric scale"
-                              style={{ height: '34px', padding: '0 0.6rem' }}
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
+
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm text-rose"
+                            onClick={() => handleDeleteField(field.id)}
+                            title="Delete this criterion"
+                            style={{ height: '34px', width: '34px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '7px', flexShrink: 0 }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
 
-                        {/* Bottom Row: Behavioral Guidance / Criterion Description */}
-                        <div>
-                          <label className="form-label" style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', margin: 0, marginBottom: '0.25rem' }}>
-                            Guidance &amp; Behavioral Indicator (Shown to students while grading):
-                          </label>
+                        {/* Secondary Row: Student Guidance */}
+                        <div style={{ width: '100%' }}>
                           <input
                             type="text"
                             className="form-input"
                             value={field.description || ''}
-                            placeholder="e.g. Produces thorough, accurate deliverables on schedule with high attention to detail..."
+                            placeholder="Guidance shown to students (e.g. Fair share of work, accurate and consistent deliverables...)"
                             onChange={(e) => handleUpdateField(field.id, { description: e.target.value })}
-                            style={{ fontSize: '0.78rem', height: '32px', color: 'var(--text-secondary)' }}
+                            style={{ fontSize: '0.78rem', height: '30px', color: 'var(--text-secondary)', width: '100%', backgroundColor: 'var(--bg-app)' }}
                           />
                         </div>
                       </div>
                     ))}
+
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleAddField}
+                      style={{
+                        height: '34px',
+                        borderStyle: 'dashed',
+                        gap: '0.4rem',
+                        fontWeight: 600,
+                        fontSize: '0.8rem',
+                        justifyContent: 'center',
+                        color: 'var(--text-secondary)',
+                        marginTop: '0.25rem'
+                      }}
+                    >
+                      <Plus size={14} /> Add Criterion
+                    </button>
                   </div>
                 </EditableModuleSlot>
               )}
@@ -7861,11 +7952,11 @@ export const AdminDashboard: React.FC = () => {
                     )}
 
                     {/* Column 2: Johari Alignment & Qualitative Feedback Insights - Only rendered if enabled */}
-                    {(isEditMode || featureToggles.showJohariMatrix || featureToggles.showQualitativeFeedback) && (
+                    {(isEditMode || (featureToggles.showJohariMatrix && evalControls.allowSelfReview) || (featureToggles.showQualitativeFeedback && (evalControls.showPraiseTags || evalControls.showStrengthsFeedback || evalControls.showGrowthSuggestions))) && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
                         {/* Card 2: Johari Alignment */}
-                        {(isEditMode || featureToggles.showJohariMatrix) && (() => {
+                        {(isEditMode || (featureToggles.showJohariMatrix && evalControls.allowSelfReview)) && (() => {
                           const johariList = activeClass.students.map(s => calculateJohariWindowMetric(s.id, activeClass));
                           const calibrated = johariList.filter(j => j.category === 'calibrated').length;
                           const overestimating = johariList.filter(j => j.category === 'overestimating').length;
@@ -7928,7 +8019,7 @@ export const AdminDashboard: React.FC = () => {
                         })()}
 
                         {/* Card 3: Qualitative Feedback Themes */}
-                        {(isEditMode || featureToggles.showQualitativeFeedback) && (() => {
+                        {(isEditMode || (featureToggles.showQualitativeFeedback && (evalControls.showPraiseTags || evalControls.showStrengthsFeedback || evalControls.showGrowthSuggestions))) && (() => {
                           const insights = extractClassFeedbackInsights(activeClass);
                           return (
                             <EditableModuleSlot
@@ -9346,10 +9437,14 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </th>
                           ))}
-                          <th style={{ minWidth: '160px' }}>Strengths &amp; Praise</th>
+                          {evalControls.showPraiseTags && (
+                            <th style={{ minWidth: '160px' }}>Strengths &amp; Praise</th>
+                          )}
                           <th style={{ minWidth: '120px' }}>WebPA Mark</th>
                           <th style={{ minWidth: '110px' }}>Weighted Score</th>
-                          <th style={{ minWidth: '130px' }}>Johari Alignment</th>
+                          {evalControls.allowSelfReview && (
+                            <th style={{ minWidth: '130px' }}>Johari Alignment</th>
+                          )}
                           <th style={{ textAlign: 'right', minWidth: '180px' }}>Actions</th>
                         </tr>
                       </thead>
@@ -9473,35 +9568,37 @@ export const AdminDashboard: React.FC = () => {
                               })}
 
                               {/* Received Praise & Strengths */}
-                              <td>
-                                <div className="praise-badge-list">
-                                  {tagEntries.length === 0 ? (
-                                    <span className="praise-badge-pill empty">No feedback yet</span>
-                                  ) : (
-                                    tagEntries.map(([tagText, count]) => {
-                                      const tagInfo = getPraiseTagInfo(tagText);
-                                      const TagIcon = tagInfo.icon;
-                                      return (
-                                        <span
-                                          key={tagText}
-                                          className="praise-badge-pill"
-                                          style={{
-                                            backgroundColor: tagInfo.bg,
-                                            color: tagInfo.color,
-                                            borderColor: tagInfo.border,
-                                            fontSize: '0.7rem',
-                                            padding: '0.15rem 0.4rem'
-                                          }}
-                                        >
-                                          <TagIcon size={10} />
-                                          <span>{tagInfo.text}</span>
-                                          <span style={{ opacity: 0.8, marginLeft: '0.15rem' }}>x{count}</span>
-                                        </span>
-                                      );
-                                    })
-                                  )}
-                                </div>
-                              </td>
+                              {evalControls.showPraiseTags && (
+                                <td>
+                                  <div className="praise-badge-list">
+                                    {tagEntries.length === 0 ? (
+                                      <span className="praise-badge-pill empty">No feedback yet</span>
+                                    ) : (
+                                      tagEntries.map(([tagText, count]) => {
+                                        const tagInfo = getPraiseTagInfo(tagText);
+                                        const TagIcon = tagInfo.icon;
+                                        return (
+                                          <span
+                                            key={tagText}
+                                            className="praise-badge-pill"
+                                            style={{
+                                              backgroundColor: tagInfo.bg,
+                                              color: tagInfo.color,
+                                              borderColor: tagInfo.border,
+                                              fontSize: '0.7rem',
+                                              padding: '0.15rem 0.4rem'
+                                            }}
+                                          >
+                                            <TagIcon size={10} />
+                                            <span>{tagInfo.text}</span>
+                                            <span style={{ opacity: 0.8, marginLeft: '0.15rem' }}>x{count}</span>
+                                          </span>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </td>
+                              )}
 
                               {/* WebPA Calibrated Mark */}
                               <td>
@@ -9528,20 +9625,22 @@ export const AdminDashboard: React.FC = () => {
                               </td>
 
                               {/* Self-Awareness (Johari) */}
-                              <td>
-                                {(() => {
-                                  const johari = calculateJohariWindowMetric(s.id, activeClass);
-                                  return (
-                                    <span
-                                      className={`badge ${johari.badgeClass}`}
-                                      style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', whiteSpace: 'nowrap', display: 'inline-flex' }}
-                                      title={johari.description}
-                                    >
-                                      {johari.label} {johari.gapPct !== null && `(${johari.gapPct > 0 ? '+' : ''}${johari.gapPct}%)`}
-                                    </span>
-                                  );
-                                })()}
-                              </td>
+                              {evalControls.allowSelfReview && (
+                                <td>
+                                  {(() => {
+                                    const johari = calculateJohariWindowMetric(s.id, activeClass);
+                                    return (
+                                      <span
+                                        className={`badge ${johari.badgeClass}`}
+                                        style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', whiteSpace: 'nowrap', display: 'inline-flex' }}
+                                        title={johari.description}
+                                      >
+                                        {johari.label} {johari.gapPct !== null && `(${johari.gapPct > 0 ? '+' : ''}${johari.gapPct}%)`}
+                                      </span>
+                                    );
+                                  })()}
+                                </td>
+                              )}
 
                               {/* 1-Click Minimal Segmented Action Dock */}
                               <td style={{ textAlign: 'right' }}>
@@ -12660,9 +12759,12 @@ export const AdminDashboard: React.FC = () => {
                                     // Find evaluation
                                     const review = activeClass.reviews.find(r => r.reviewerId === reviewer.id && r.recipientId === recipient.id);
                                     const isSelf = reviewer.id === recipient.id;
+                                    const isSelfDisabled = isSelf && !evalControls.allowSelfReview;
 
                                     let cellText = '—';
-                                    if (review) {
+                                    if (isSelfDisabled) {
+                                      cellText = 'N/A';
+                                    } else if (review) {
                                       if (activeAuditMetric === 'overall') {
                                         // Compute overall percentage of this review
                                         let sum = 0, max = 0;
@@ -12684,9 +12786,9 @@ export const AdminDashboard: React.FC = () => {
                                         key={recipient.id}
                                         style={{
                                           fontWeight: 600,
-                                          backgroundColor: isSelf ? 'hsla(173, 80%, 50%, 0.05)' : 'transparent',
-                                          border: isSelf ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)',
-                                          color: isSelf ? 'var(--accent-teal)' : 'var(--text-primary)',
+                                          backgroundColor: isSelfDisabled ? 'var(--bg-app)' : (isSelf ? 'hsla(173, 80%, 50%, 0.05)' : 'transparent'),
+                                          border: isSelfDisabled ? '1px solid var(--border-color)' : (isSelf ? '1.5px dashed var(--accent-teal)' : '1px solid var(--border-color)'),
+                                          color: isSelfDisabled ? 'var(--text-muted)' : (isSelf ? 'var(--accent-teal)' : 'var(--text-primary)'),
                                           position: 'relative',
                                           padding: '0.75rem 1rem'
                                         }}
@@ -12694,7 +12796,7 @@ export const AdminDashboard: React.FC = () => {
                                         <div className="tooltip-container" style={{ display: 'inline-block', width: '100%', height: '100%' }}>
                                           <span>{cellText}</span>
                                           <span className="tooltip-text">
-                                            {isSelf ? 'Self Evaluation Rating' : `${reviewer.name} rated ${recipient.name}`}
+                                            {isSelfDisabled ? 'Self-evaluation is turned off' : (isSelf ? 'Self Evaluation Rating' : `${reviewer.name} rated ${recipient.name}`)}
                                           </span>
                                         </div>
                                       </td>
@@ -12835,7 +12937,7 @@ export const AdminDashboard: React.FC = () => {
                                     </div>
 
                                     {/* Praise tags if any */}
-                                    {Array.isArray(rev.praiseTags) && rev.praiseTags.length > 0 && (
+                                    {evalControls.showPraiseTags && Array.isArray(rev.praiseTags) && rev.praiseTags.length > 0 && (
                                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.75rem' }}>
                                         {rev.praiseTags.map(tagText => {
                                           const tagInfo = getPraiseTagInfo(tagText);
@@ -12861,20 +12963,22 @@ export const AdminDashboard: React.FC = () => {
                                     )}
 
                                     {/* Written Text Feed */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.78rem', lineHeight: 1.4 }}>
-                                      {rev.strengthsText && (
-                                        <div>
-                                          <b className="text-teal">Strengths Comment:</b>
-                                          <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.strengthsText}"</p>
-                                        </div>
-                                      )}
-                                      {rev.growthText && (
-                                        <div style={{ marginTop: '0.2rem' }}>
-                                          <b className="text-rose">Growth Comment:</b>
-                                          <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.growthText}"</p>
-                                        </div>
-                                      )}
-                                    </div>
+                                    {(evalControls.showStrengthsFeedback || evalControls.showGrowthSuggestions) && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.78rem', lineHeight: 1.4 }}>
+                                        {evalControls.showStrengthsFeedback && rev.strengthsText && (
+                                          <div>
+                                            <b className="text-teal">Strengths Comment:</b>
+                                            <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.strengthsText}"</p>
+                                          </div>
+                                        )}
+                                        {evalControls.showGrowthSuggestions && rev.growthText && (
+                                          <div style={{ marginTop: '0.2rem' }}>
+                                            <b className="text-rose">Growth Comment:</b>
+                                            <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{rev.growthText}"</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -13900,12 +14004,12 @@ export const AdminDashboard: React.FC = () => {
                 id: 'f_' + Math.random().toString(36).substring(2, 9),
                 name: `Criterion ${nextNum}`,
                 description: '',
-                min: 1,
-                max: 20,
+                min: activeClass.scaleMin ?? 1,
+                max: activeClass.scaleMax ?? 5,
                 weight: 1
               };
               updateGradingConfig(activeClass.id, [...activeClass.fields, newField]);
-              addToast(`Added Criterion ${nextNum} (Scale 1 to 20).`, 'success');
+              addToast(`Added Criterion ${nextNum} (Scale ${activeClass.scaleMin ?? 1} to ${activeClass.scaleMax ?? 5}).`, 'success');
             }
           },
           onAutoBalanceWeights: () => {

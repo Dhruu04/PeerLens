@@ -69,7 +69,7 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
       'Salas\'s Big Five of Teamwork, the AAC&U VALUE Rubric, and the WebPA/Loughborough framework. ' +
       'Six behaviorally anchored dimensions with empirically informed weighting capture both ' +
       'contribution quality and collaborative process effectiveness.',
-    targetScale: 20,
+    targetScale: 31,
     fields: [
       // ── DIMENSION 1 ── Contribution-Oriented (Higher Weight: 20%) ──────────
       // Sources: CATME "Contributing to the Team's Work" + Salas "Team Orientation"
@@ -81,7 +81,7 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
           'thorough, and useful — or incomplete and rushed? High = strong, consistent ' +
           'output. Low = did less than their share or work had to be redone.',
         min: 1,
-        max: 20,
+        max: 5,
         weight: 20
       },
 
@@ -95,7 +95,7 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
           'follow through without reminders? High = always dependable. ' +
           'Low = missed deadlines, skipped meetings, or left others to cover.',
         min: 1,
-        max: 20,
+        max: 5,
         weight: 20
       },
 
@@ -108,7 +108,7 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
           'plans changed, and help teammates who were stuck? High = resourceful and ' +
           'flexible. Low = gave up easily or couldn\'t adjust.',
         min: 1,
-        max: 20,
+        max: 5,
         weight: 15
       },
 
@@ -122,7 +122,7 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
           'they give useful feedback and accept suggestions without defensiveness? ' +
           'High = team felt heard and respected. Low = unresponsive or dismissive.',
         min: 1,
-        max: 20,
+        max: 5,
         weight: 15
       },
 
@@ -136,7 +136,7 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
           'for tasks, and help the group make decisions? High = a driving force. ' +
           'Low = passive, waited for others to organize everything.',
         min: 1,
-        max: 20,
+        max: 5,
         weight: 15
       },
 
@@ -149,7 +149,7 @@ export const RUBRIC_PRESETS: RubricPreset[] = [
           'care about the standard of the final output? High = raised the bar ' +
           'for everyone. Low = showed no concern for quality.',
         min: 1,
-        max: 20,
+        max: 5,
         weight: 15
       }
     ]

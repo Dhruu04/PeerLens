@@ -48,8 +48,9 @@ export const CollapsibleEvaluationControls: React.FC<CollapsibleEvaluationContro
   const controls = getEvaluationControls(activeClass);
 
   const activeCount = Object.values(controls).filter(Boolean).length;
-  const isAllEnabled = activeCount === 6;
-  const isRatingOnly = !controls.allowSelfReview && !controls.showStrengthsFeedback && !controls.showGrowthSuggestions && !controls.showPraiseTags && !controls.showRoleBaseline;
+  const totalCount = 7;
+  const isAllEnabled = activeCount >= totalCount;
+  const isRatingOnly = !controls.allowSelfReview && !controls.showStrengthsFeedback && !controls.showGrowthSuggestions && !controls.showPraiseTags && !controls.showRoleSelection && !controls.showIcebreaker;
 
   return (
     <div

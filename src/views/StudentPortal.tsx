@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShieldCheck, Send, AlertCircle, TrendingUp, 
   ThumbsUp, Rocket, Trophy, Lightbulb, Clock, Heart, 
-  Award, MessageSquare, Target, Minus, Plus, CheckCircle, CheckCircle2,
+  Award, MessageSquare, Target, Plus, CheckCircle, CheckCircle2,
   GraduationCap, Users, Info, BarChart2, Download, Lock, BookOpen,
   Check, Star, AlertTriangle, ChevronLeft, ChevronRight, WifiOff,
   Layers, ListFilter, Sparkles, CheckSquare, SlidersHorizontal, Wand2, RefreshCw,
@@ -957,17 +957,22 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [evaluations, setEvaluations] = useState<Record<string, Record<string, number>>>(() => {
     const initial: Record<string, Record<string, number>> = {};
     if (activeClass && teammates.length > 0 && student) {
+      const isCustom = activeClass.customScaleEnabled === true;
       // Teammates evaluations
       teammates.forEach((t) => {
         initial[t.id] = {};
         activeClass.fields.forEach((f) => {
-          initial[t.id][f.id] = Math.round((f.min + f.max) / 2);
+          const fMin = isCustom ? (f.min ?? 1) : 1;
+          const fMax = isCustom ? (f.max ?? 5) : 5;
+          initial[t.id][f.id] = Math.round((fMin + fMax) / 2);
         });
       });
       // Self evaluation scores
       initial[student.id] = {};
       activeClass.fields.forEach((f) => {
-        initial[student.id][f.id] = Math.round((f.min + f.max) / 2);
+        const fMin = isCustom ? (f.min ?? 1) : 1;
+        const fMax = isCustom ? (f.max ?? 5) : 5;
+        initial[student.id][f.id] = Math.round((fMin + fMax) / 2);
       });
     }
     return initial;
@@ -2066,7 +2071,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         </div>
 
         {/* Shuffled Anonymous Teammate Comments Section */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginTop: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '1.25rem', marginTop: '1.75rem' }}>
           {/* Strengths Comments */}
           <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid var(--accent-teal)' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -2872,7 +2877,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               Available Activity Roles ({availableRoles.length})
             </span>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '0.75rem' }}>
               {availableRoles.map((role) => {
                 const occupants = getRoleOccupants(role.title);
                 const isSelectedByMe = student.role?.toLowerCase() === role.title.toLowerCase();
@@ -3978,75 +3983,77 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               
               {/* Personal Role Spotlight / Claim Banner */}
-              <div
-                style={{
-                  padding: '0.9rem 1.1rem',
-                  borderRadius: '12px',
-                  backgroundColor: student.role ? 'rgba(99, 102, 241, 0.06)' : 'rgba(245, 158, 11, 0.07)',
-                  border: `1.5px solid ${student.role ? 'rgba(99, 102, 241, 0.25)' : 'rgba(245, 158, 11, 0.3)'}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.85rem',
-                  flexWrap: 'wrap'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <div
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '10px',
-                      backgroundColor: student.role ? 'rgba(99, 102, 241, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                      color: student.role ? 'var(--primary)' : '#f59e0b',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}
-                  >
-                    <Sliders size={18} />
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                        {student.role ? `Your Sprint Role: ${student.role}` : 'You have not claimed a team role yet'}
-                      </span>
-                      <span className={student.role ? 'badge badge-primary' : 'badge badge-amber'} style={{ fontSize: '0.62rem', fontWeight: 750 }}>
-                        {student.role ? 'Active Role' : 'Action Recommended'}
-                      </span>
-                    </div>
-                    <p style={{ margin: '0.12rem 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                      {student.role
-                        ? (student.roleDetails || 'Responsibilities mapped. Your entire team sees your assigned role in real-time.')
-                        : 'Choose your activity role (Tech Lead, Scribe, Presenter) to align sprint responsibilities with your teammates.'}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className={student.role ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
-                  onClick={() => {
-                    triggerHaptic(12);
-                    setIsRoleSelectorOpen(true);
+              {evalControls.showRoleSelection && (
+                <div
+                  style={{
+                    padding: '0.9rem 1.1rem',
+                    borderRadius: '12px',
+                    backgroundColor: student.role ? 'rgba(99, 102, 241, 0.06)' : 'rgba(245, 158, 11, 0.07)',
+                    border: `1.5px solid ${student.role ? 'rgba(99, 102, 241, 0.25)' : 'rgba(245, 158, 11, 0.3)'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.85rem',
+                    flexWrap: 'wrap'
                   }}
-                  style={{ fontSize: '0.78rem', fontWeight: 750, padding: '0.4rem 0.95rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
                 >
-                  {student.role ? (
-                    <>
-                      <Edit3 size={13} /> Change My Role
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={13} /> Choose My Role &rarr;
-                    </>
-                  )}
-                </button>
-              </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        backgroundColor: student.role ? 'rgba(99, 102, 241, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                        color: student.role ? 'var(--primary)' : '#f59e0b',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}
+                    >
+                      <Sliders size={18} />
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          {student.role ? `Your Sprint Role: ${student.role}` : 'You have not claimed a team role yet'}
+                        </span>
+                        <span className={student.role ? 'badge badge-primary' : 'badge badge-amber'} style={{ fontSize: '0.62rem', fontWeight: 750 }}>
+                          {student.role ? 'Active Role' : 'Action Recommended'}
+                        </span>
+                      </div>
+                      <p style={{ margin: '0.12rem 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                        {student.role
+                          ? (student.roleDetails || 'Responsibilities mapped. Your entire team sees your assigned role in real-time.')
+                          : 'Choose your activity role (Tech Lead, Scribe, Presenter) to align sprint responsibilities with your teammates.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className={student.role ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
+                    onClick={() => {
+                      triggerHaptic(12);
+                      setIsRoleSelectorOpen(true);
+                    }}
+                    style={{ fontSize: '0.78rem', fontWeight: 750, padding: '0.4rem 0.95rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                  >
+                    {student.role ? (
+                      <>
+                        <Edit3 size={13} /> Change My Role
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={13} /> Choose My Role &rarr;
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               {/* All Team Members Grid (You + Teammates) */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: '0.75rem' }}>
                 {allTeamMembers.map((member) => {
                   const isSelf = member.id === student.id;
                   const memberRole = member.role;
@@ -4058,7 +4065,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                       key={member.id}
                       onClick={() => {
                         if (isSelf) {
-                          setIsRoleSelectorOpen(true);
+                          if (evalControls.showRoleSelection) {
+                            setIsRoleSelectorOpen(true);
+                          }
                         } else {
                           triggerHaptic(8);
                           setViewingPeer(member);
@@ -4073,18 +4082,20 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         flexDirection: 'column',
                         justifyContent: 'space-between',
                         gap: '0.65rem',
-                        cursor: 'pointer',
+                        cursor: (isSelf && !evalControls.showRoleSelection) ? 'default' : 'pointer',
                         transition: 'all 0.15s ease'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--primary)';
-                        e.currentTarget.style.transform = 'translateY(-1px)';
+                        if (!isSelf || evalControls.showRoleSelection) {
+                          e.currentTarget.style.borderColor = 'var(--primary)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.borderColor = isSelf ? 'rgba(99, 102, 241, 0.35)' : 'var(--border-color)';
                         e.currentTarget.style.transform = 'none';
                       }}
-                      title={isSelf ? 'Click to change your role' : `Click to view ${cleanStudentName(member.name)}'s profile`}
+                      title={isSelf ? (evalControls.showRoleSelection ? 'Click to change your role' : 'Your Profile') : `Click to view ${cleanStudentName(member.name)}'s profile`}
                     >
                       {/* Member Info Row */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
@@ -4125,34 +4136,42 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
                       {/* Role & Status Row */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem', paddingTop: '0.45rem', borderTop: '1px dashed var(--border-color)', flexWrap: 'wrap' }}>
-                        {memberRole ? (
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
-                              fontSize: '0.72rem',
-                              fontWeight: 750,
-                              color: roleTemplate?.color || 'var(--primary)',
-                              backgroundColor: 'var(--bg-surface)',
-                              border: `1px solid ${roleTemplate?.color || 'var(--primary)'}40`,
-                              padding: '0.18rem 0.5rem',
-                              borderRadius: '6px'
-                            }}
-                          >
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: roleTemplate?.color || 'var(--primary)' }} />
-                            {memberRole}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                            Role Unassigned
-                          </span>
+                        {evalControls.showRoleSelection && (
+                          memberRole ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                fontSize: '0.72rem',
+                                fontWeight: 750,
+                                color: roleTemplate?.color || 'var(--primary)',
+                                backgroundColor: 'var(--bg-surface)',
+                                border: `1px solid ${roleTemplate?.color || 'var(--primary)'}40`,
+                                padding: '0.18rem 0.5rem',
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: roleTemplate?.color || 'var(--primary)' }} />
+                              {memberRole}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                              Role Unassigned
+                            </span>
+                          )
                         )}
 
                         {isSelf ? (
-                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--primary)' }}>
-                            {memberRole ? 'Change Role' : '+ Select Role'}
-                          </span>
+                          evalControls.showRoleSelection ? (
+                            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--primary)' }}>
+                              {memberRole ? 'Change Role' : '+ Select Role'}
+                            </span>
+                          ) : (
+                            <span className="badge badge-primary" style={{ fontSize: '0.64rem', padding: '0.15rem 0.4rem', borderRadius: '5px' }}>
+                              Your Profile
+                            </span>
+                          )
                         ) : (
                           <div>
                             {(student.submitted || isSubmitted) ? (
@@ -4209,7 +4228,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         </div>
 
         {/* Team Kickoff Icebreaker Activity Card */}
-        {!isUnassigned && allTeamMembers.length > 1 && (
+        {!isUnassigned && allTeamMembers.length > 1 && evalControls.showIcebreaker && (
           <div
             className="card"
             style={{
@@ -4502,18 +4521,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         [fieldId]: value,
       },
     }));
-  };
-
-  const handleApplyArchetype = (peerId: string, arch: RoleArchetype) => {
-    triggerHaptic(15);
-    setEvaluations((prev) => {
-      const current = { ...(prev[peerId] || {}) };
-      activeClass.fields.forEach((f) => {
-        current[f.id] = arch.calculateScore(f);
-      });
-      return { ...prev, [peerId]: current };
-    });
-    setAppliedArchetype((prev) => ({ ...prev, [peerId]: arch.id }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -5070,110 +5077,35 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     <FeatureInfoButton featureId="student-grading-matrix" size="sm" tooltipText="How Peer Grading Works" />
                   </div>
 
-                  {/* Quick Role Baseline Archetypes (Optional - Enabled by Professor) */}
-                  {evalControls.showRoleBaseline && (
-                    <div 
-                      style={{ 
-                        marginBottom: '1.1rem', 
-                        padding: '0.65rem 0.75rem', 
-                        backgroundColor: 'var(--bg-app)', 
-                        borderRadius: '10px', 
-                        border: '1px solid var(--border-color)' 
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.3rem' }}>
-                        <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <SlidersHorizontal size={13} style={{ color: 'var(--primary)' }} />
-                          <span>Starting Role Baseline</span>
-                          <span style={{ fontSize: '0.64rem', fontWeight: 500, color: 'var(--text-muted)' }}>(Optional quick-start)</span>
-                        </span>
-                        {appliedArchetype[peer.id] && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic(8);
-                              setAppliedArchetype(prev => ({ ...prev, [peer.id]: null }));
-                            }}
-                            style={{ fontSize: '0.66rem', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                          >
-                            Clear Baseline
-                          </button>
-                        )}
-                      </div>
-                      
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.4rem' }}>
-                        {ROLE_ARCHETYPES.map(arch => {
-                          const isSelected = appliedArchetype[peer.id] === arch.id;
-                          return (
-                            <button
-                              key={arch.id}
-                              type="button"
-                              onClick={() => handleApplyArchetype(peer.id, arch)}
-                              style={{
-                                padding: '0.45rem 0.6rem',
-                                borderRadius: '8px',
-                                border: `1px solid ${isSelected ? arch.color : 'var(--border-color)'}`,
-                                backgroundColor: isSelected ? arch.bgColor : 'var(--bg-surface)',
-                                cursor: 'pointer',
-                                textAlign: 'left',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '0.15rem',
-                                transition: 'all 0.15s ease'
-                              }}
-                            >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: '0.74rem', fontWeight: 700, color: isSelected ? arch.color : 'var(--text-primary)' }}>
-                                  {arch.name}
-                                </span>
-                                {isSelected && <Check size={12} style={{ color: arch.color }} />}
-                              </div>
-                              <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
-                                {arch.badge}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      
-                      {appliedArchetype[peer.id] === 'custom' ? (
-                        <div style={{ marginTop: '0.45rem', fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <Sparkles size={11} style={{ color: 'var(--primary)' }} />
-                          <span>Customized baseline active. Individual slider values are preserved.</span>
-                        </div>
-                      ) : appliedArchetype[peer.id] ? (
-                        <div style={{ marginTop: '0.45rem', fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <Sparkles size={11} style={{ color: 'var(--primary)' }} />
-                          <span>Baseline loaded. Fine-tune any criteria slider below to reflect {cleanStudentName(peer.name).split(' ')[0]}'s exact deliverables.</span>
-                        </div>
-                      ) : (
-                        <div style={{ marginTop: '0.45rem', fontSize: '0.66rem', color: 'var(--text-muted)' }}>
-                          Select a starting project role above or freely adjust criteria sliders below.
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Rubric Sliders */}
+                  {/* Rubric Rating Scale */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     {activeClass.fields.map((field) => {
-                      const currentVal = evaluations[peer.id]?.[field.id] ?? Math.round((field.min + field.max) / 2);
-                      const pct = ((currentVal - field.min) / (field.max - field.min || 1)) * 100;
-                      const tier = getTierInfo(pct);
-                      
-                      const range = field.max - field.min;
-                      const isNarrowRange = range <= 15;
+                      const isCustomScale = activeClass.customScaleEnabled === true;
+                      const fieldMin = isCustomScale ? (field.min ?? 1) : 1;
+                      const fieldMax = isCustomScale ? (field.max ?? 5) : 5;
+
+                      const rawVal = evaluations[peer.id]?.[field.id];
+                      let currentVal: number;
+                      if (typeof rawVal !== 'number' || isNaN(rawVal)) {
+                        currentVal = Math.round((fieldMin + fieldMax) / 2);
+                      } else if (!isCustomScale && rawVal > 5) {
+                        const prevMax = field.max > 5 ? field.max : 20;
+                        const fraction = Math.max(0, Math.min(1, (rawVal - 1) / (prevMax - 1 || 1)));
+                        currentVal = Math.max(1, Math.min(5, Math.round(1 + fraction * 4)));
+                      } else {
+                        currentVal = Math.max(fieldMin, Math.min(fieldMax, rawVal));
+                      }
+
                       const scoreNodes = [];
-                      for (let val = field.min; val <= field.max; val++) {
+                      for (let val = fieldMin; val <= fieldMax; val++) {
                         scoreNodes.push(val);
                       }
 
-                      const TierIcon = tier.icon;
                       return (
                         <div key={field.id} className="grading-slider-container" style={{ margin: 0 }}>
-                          <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
+                          <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', marginBottom: '0.65rem' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
+                              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
                                 {field.name}
                               </span>
                               {field.description && (
@@ -5182,187 +5114,64 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 </span>
                               )}
                             </div>
-                            <span className="slider-value-bubble" style={{ backgroundColor: tier.color, fontSize: '0.78rem', padding: '0.2rem 0.55rem', borderRadius: '4px', fontWeight: 800, flexShrink: 0, color: '#fff' }}>
-                              {currentVal} / {field.max}
+                            <span className="slider-value-bubble" style={{ backgroundColor: 'var(--primary)', fontSize: '0.82rem', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 800, flexShrink: 0, color: '#fff' }}>
+                              Rating: {currentVal} / {fieldMax}
                             </span>
                           </div>
 
-                          {/* Quick Expectation Tier Snapping Grid */}
-                          <div className="score-fine-tuner" style={{ marginTop: '0.2rem' }}>
-                            <div 
-                              style={{ 
-                                display: 'grid', 
-                                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', 
-                                gap: '0.35rem', 
-                                marginBottom: '0.6rem' 
+                          {/* Rating Scale Buttons (1–5 by default) */}
+                          <div style={{ marginTop: '0.45rem' }}>
+                            <div
+                              className="peer-rating-scale-grid"
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: scoreNodes.length <= 5 
+                                  ? `repeat(${scoreNodes.length}, 1fr)` 
+                                  : 'repeat(auto-fit, minmax(44px, 1fr))',
+                                gap: '0.45rem',
+                                width: '100%'
                               }}
                             >
-                              {[
-                                { label: 'Exemplary', sub: '100%', pct: 1.0, color: 'var(--accent-teal)', icon: Trophy },
-                                { label: 'Proficient', sub: '75%', pct: 0.75, color: 'var(--primary)', icon: ThumbsUp },
-                                { label: 'Developing', sub: '50%', pct: 0.5, color: 'var(--accent-amber)', icon: TrendingUp },
-                                { label: 'Needs Work', sub: '25%', pct: 0.25, color: 'var(--accent-rose)', icon: AlertCircle }
-                              ].map((t) => {
-                                const targetVal = Math.round(field.min + t.pct * (field.max - field.min));
-                                const isCurrent = 
-                                  (t.pct === 0.25 && pct <= 25) ||
-                                  (t.pct === 0.5 && pct > 25 && pct <= 50) ||
-                                  (t.pct === 0.75 && pct > 50 && pct <= 75) ||
-                                  (t.pct === 1.0 && pct > 75);
-                                const TierIcon = t.icon;
+                              {scoreNodes.map((nodeVal) => {
+                                const isSelected = currentVal === nodeVal;
                                 return (
                                   <button
-                                    key={t.label}
+                                    key={nodeVal}
                                     type="button"
-                                    className="btn btn-secondary btn-sm"
                                     onClick={() => {
                                       triggerHaptic(10);
-                                      handleSliderChange(peer.id, field.id, targetVal);
+                                      handleSliderChange(peer.id, field.id, nodeVal);
                                     }}
+                                    className={`rating-node-button ${isSelected ? 'active' : ''}`}
                                     style={{
-                                      fontSize: '0.72rem',
-                                      padding: '0.35rem 0.55rem',
-                                      minHeight: '32px',
-                                      borderRadius: '8px',
-                                      fontWeight: isCurrent ? 800 : 600,
-                                      backgroundColor: isCurrent ? `${t.color}1c` : 'var(--bg-surface)',
-                                      borderColor: isCurrent ? t.color : 'var(--border-color)',
-                                      color: isCurrent ? t.color : 'var(--text-secondary)',
+                                      height: '48px',
+                                      fontSize: scoreNodes.length <= 5 ? '1.15rem' : '0.95rem',
+                                      fontWeight: 800,
+                                      borderRadius: '10px',
+                                      border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                                      backgroundColor: isSelected ? 'var(--primary)' : 'var(--bg-surface)',
+                                      color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                                      boxShadow: isSelected ? '0 4px 14px rgba(99, 102, 241, 0.35)' : 'none',
                                       display: 'flex',
                                       alignItems: 'center',
-                                      justifyContent: 'space-between',
-                                      gap: '0.35rem',
-                                      width: '100%',
-                                      boxSizing: 'border-box',
-                                      boxShadow: isCurrent ? `0 0 0 1px ${t.color}` : 'none',
+                                      justifyContent: 'center',
                                       cursor: 'pointer',
-                                      transition: 'all 0.15s ease'
+                                      transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+                                      touchAction: 'manipulation',
+                                      transform: isSelected ? 'scale(1.02)' : 'scale(1)'
                                     }}
-                                    title={`Set to ${t.label} (${t.sub} = ${targetVal} pts)`}
+                                    title={`Select rating ${nodeVal} out of ${fieldMax}`}
                                   >
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      <TierIcon size={12} style={{ flexShrink: 0, color: t.color }} />
-                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</span>
-                                    </span>
-                                    <span 
-                                      style={{ 
-                                        fontSize: '0.62rem', 
-                                        fontWeight: 800, 
-                                        color: isCurrent ? t.color : 'var(--text-muted)', 
-                                        backgroundColor: isCurrent ? `${t.color}25` : 'var(--bg-surface-hover)', 
-                                        padding: '0.08rem 0.3rem', 
-                                        borderRadius: '4px',
-                                        flexShrink: 0 
-                                      }}
-                                    >
-                                      {t.sub}
-                                    </span>
+                                    {nodeVal}
                                   </button>
                                 );
                               })}
                             </div>
-
-                            {/* Dynamic Qualitative Tier Indicator */}
-                            <div 
-                              style={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: '0.6rem', 
-                                padding: '0.5rem 0.65rem', 
-                                borderRadius: '8px', 
-                                backgroundColor: tier.bgColor, 
-                                color: tier.color,
-                                border: `1px solid ${tier.color}25`,
-                                marginBottom: '0.75rem',
-                                transition: 'all 0.2s ease'
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: tier.color, color: '#fff', width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0 }}>
-                                <TierIcon size={12} />
-                              </div>
-                              <div style={{ minWidth: 0, flex: 1 }}>
-                                <strong style={{ fontSize: '0.78rem', display: 'block', color: 'var(--text-primary)', lineHeight: 1.2 }}>{tier.title}</strong>
-                                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25, marginTop: '2px' }}>{tier.desc}</span>
-                              </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
                             </div>
-
-                            {isNarrowRange ? (
-                              <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', justifyContent: 'center' }}>
-                                {scoreNodes.map((nodeVal) => {
-                                  const isActive = currentVal === nodeVal;
-                                  return (
-                                    <button
-                                      key={nodeVal}
-                                      type="button"
-                                      className={`score-node-btn ${isActive ? 'active' : ''}`}
-                                      style={isActive ? { backgroundColor: tier.color, borderColor: tier.color, color: '#fff' } : {}}
-                                      onClick={() => {
-                                        triggerHaptic(8);
-                                        handleSliderChange(peer.id, field.id, nodeVal);
-                                      }}
-                                    >
-                                      {nodeVal}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-                                  <button
-                                    type="button"
-                                    className="score-stepper-btn"
-                                    disabled={currentVal <= field.min}
-                                    onClick={() => {
-                                      triggerHaptic(8);
-                                      handleSliderChange(peer.id, field.id, Math.max(field.min, currentVal - 1));
-                                    }}
-                                    style={{ width: '32px', height: '32px', minWidth: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
-                                  >
-                                    <Minus size={13} />
-                                  </button>
-                                  
-                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '38px' }}>
-                                    <span style={{ fontSize: '1.2rem', fontWeight: 800, lineHeight: 1.1 }}>{currentVal}</span>
-                                    <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 700 }}>
-                                      {Math.round(pct)}%
-                                    </span>
-                                  </div>
-                                  
-                                  <button
-                                    type="button"
-                                    className="score-stepper-btn"
-                                    disabled={currentVal >= field.max}
-                                    onClick={() => {
-                                      triggerHaptic(8);
-                                      handleSliderChange(peer.id, field.id, Math.min(field.max, currentVal + 1));
-                                    }}
-                                    style={{ width: '32px', height: '32px', minWidth: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
-                                  >
-                                    <Plus size={13} />
-                                  </button>
-                                </div>
-
-                                <div style={{ flex: 1, minWidth: '80px' }}>
-                                  <input
-                                    type="range"
-                                    className="custom-slider"
-                                    min={field.min}
-                                    max={field.max}
-                                    value={currentVal}
-                                    style={{
-                                      width: '100%',
-                                      background: `linear-gradient(to right, ${tier.color} 0%, ${tier.color} ${pct}%, var(--border-color) ${pct}%, var(--border-color) 100%)`
-                                    }}
-                                    onChange={(e) => {
-                                      handleSliderChange(peer.id, field.id, Number(e.target.value));
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            )}
                           </div>
-
                         </div>
                       );
                     })}
@@ -5590,22 +5399,32 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 {/* Rubric Sliders for Self */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                   {activeClass.fields.map((field) => {
-                    const currentVal = evaluations[student.id]?.[field.id] ?? Math.round((field.min + field.max) / 2);
-                    const pct = ((currentVal - field.min) / (field.max - field.min || 1)) * 100;
-                    const tier = getTierInfo(pct);
-                    const range = field.max - field.min;
-                    const isNarrowRange = range <= 15;
+                    const isCustomScale = activeClass.customScaleEnabled === true;
+                    const fieldMin = isCustomScale ? (field.min ?? 1) : 1;
+                    const fieldMax = isCustomScale ? (field.max ?? 5) : 5;
+
+                    const rawVal = evaluations[student.id]?.[field.id];
+                    let currentVal: number;
+                    if (typeof rawVal !== 'number' || isNaN(rawVal)) {
+                      currentVal = Math.round((fieldMin + fieldMax) / 2);
+                    } else if (!isCustomScale && rawVal > 5) {
+                      const prevMax = field.max > 5 ? field.max : 20;
+                      const fraction = Math.max(0, Math.min(1, (rawVal - 1) / (prevMax - 1 || 1)));
+                      currentVal = Math.max(1, Math.min(5, Math.round(1 + fraction * 4)));
+                    } else {
+                      currentVal = Math.max(fieldMin, Math.min(fieldMax, rawVal));
+                    }
+
                     const scoreNodes = [];
-                    for (let val = field.min; val <= field.max; val++) {
+                    for (let val = fieldMin; val <= fieldMax; val++) {
                       scoreNodes.push(val);
                     }
 
-                    const TierIcon = tier.icon;
                     return (
                       <div key={field.id} className="grading-slider-container" style={{ margin: 0 }}>
-                        <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
+                        <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', marginBottom: '0.65rem' }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
+                            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
                               Self-Rating: {field.name}
                             </span>
                             {field.description && (
@@ -5614,183 +5433,63 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               </span>
                             )}
                           </div>
-                          <span className="slider-value-bubble" style={{ backgroundColor: 'var(--accent-teal)', color: '#fff', fontSize: '0.78rem', padding: '0.2rem 0.55rem', borderRadius: '4px', fontWeight: 800, flexShrink: 0 }}>
-                            {currentVal} / {field.max}
+                          <span className="slider-value-bubble" style={{ backgroundColor: 'var(--accent-teal)', color: '#fff', fontSize: '0.82rem', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 800, flexShrink: 0 }}>
+                            Rating: {currentVal} / {fieldMax}
                           </span>
                         </div>
 
-                        {/* Quick Expectation Tier Snapping Grid */}
-                        <div className="score-fine-tuner" style={{ marginTop: '0.2rem' }}>
-                          <div 
-                            style={{ 
-                              display: 'grid', 
-                              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', 
-                              gap: '0.35rem', 
-                              marginBottom: '0.6rem' 
+                        {/* Rating Scale Buttons (1–5 by default) */}
+                        <div style={{ marginTop: '0.45rem' }}>
+                          <div
+                            className="peer-rating-scale-grid"
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: scoreNodes.length <= 5 
+                                ? `repeat(${scoreNodes.length}, 1fr)` 
+                                : 'repeat(auto-fit, minmax(44px, 1fr))',
+                              gap: '0.45rem',
+                              width: '100%'
                             }}
                           >
-                            {[
-                              { label: 'Exemplary', sub: '100%', pct: 1.0, color: 'var(--accent-teal)', icon: Trophy },
-                              { label: 'Proficient', sub: '75%', pct: 0.75, color: 'var(--primary)', icon: ThumbsUp },
-                              { label: 'Developing', sub: '50%', pct: 0.5, color: 'var(--accent-amber)', icon: TrendingUp },
-                              { label: 'Needs Work', sub: '25%', pct: 0.25, color: 'var(--accent-rose)', icon: AlertCircle }
-                            ].map((t) => {
-                              const targetVal = Math.round(field.min + t.pct * (field.max - field.min));
-                              const isCurrent = 
-                                (t.pct === 0.25 && pct <= 25) ||
-                                (t.pct === 0.5 && pct > 25 && pct <= 50) ||
-                                (t.pct === 0.75 && pct > 50 && pct <= 75) ||
-                                (t.pct === 1.0 && pct > 75);
-                              const TierIcon = t.icon;
+                            {scoreNodes.map((nodeVal) => {
+                              const isSelected = currentVal === nodeVal;
                               return (
                                 <button
-                                  key={t.label}
+                                  key={nodeVal}
                                   type="button"
-                                  className="btn btn-secondary btn-sm"
                                   onClick={() => {
                                     triggerHaptic(10);
-                                    handleSliderChange(student.id, field.id, targetVal);
+                                    handleSliderChange(student.id, field.id, nodeVal);
                                   }}
+                                  className={`rating-node-button ${isSelected ? 'active' : ''}`}
                                   style={{
-                                    fontSize: '0.72rem',
-                                    padding: '0.35rem 0.55rem',
-                                    minHeight: '32px',
-                                    borderRadius: '8px',
-                                    fontWeight: isCurrent ? 800 : 600,
-                                    backgroundColor: isCurrent ? `${t.color}1c` : 'var(--bg-surface)',
-                                    borderColor: isCurrent ? t.color : 'var(--border-color)',
-                                    color: isCurrent ? t.color : 'var(--text-secondary)',
+                                    height: '48px',
+                                    fontSize: scoreNodes.length <= 5 ? '1.15rem' : '0.95rem',
+                                    fontWeight: 800,
+                                    borderRadius: '10px',
+                                    border: isSelected ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                                    backgroundColor: isSelected ? 'var(--accent-teal)' : 'var(--bg-surface)',
+                                    color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                                    boxShadow: isSelected ? '0 4px 14px rgba(20, 184, 166, 0.35)' : 'none',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    gap: '0.35rem',
-                                    width: '100%',
-                                    boxSizing: 'border-box',
-                                    boxShadow: isCurrent ? `0 0 0 1px ${t.color}` : 'none',
+                                    justifyContent: 'center',
                                     cursor: 'pointer',
-                                    transition: 'all 0.15s ease'
+                                    transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+                                    touchAction: 'manipulation',
+                                    transform: isSelected ? 'scale(1.02)' : 'scale(1)'
                                   }}
-                                  title={`Set to ${t.label} (${t.sub} = ${targetVal} pts)`}
+                                  title={`Select self-rating ${nodeVal} out of ${fieldMax}`}
                                 >
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    <TierIcon size={12} style={{ flexShrink: 0, color: t.color }} />
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</span>
-                                  </span>
-                                  <span 
-                                    style={{ 
-                                      fontSize: '0.62rem', 
-                                      fontWeight: 800, 
-                                      color: isCurrent ? t.color : 'var(--text-muted)', 
-                                      backgroundColor: isCurrent ? `${t.color}25` : 'var(--bg-surface-hover)', 
-                                      padding: '0.08rem 0.3rem', 
-                                      borderRadius: '4px',
-                                      flexShrink: 0 
-                                    }}
-                                  >
-                                    {t.sub}
-                                  </span>
+                                  {nodeVal}
                                 </button>
                               );
                             })}
                           </div>
-
-                          {/* Dynamic Qualitative Tier Indicator */}
-                          <div 
-                            style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '0.6rem', 
-                              padding: '0.5rem 0.65rem', 
-                              borderRadius: '8px', 
-                              backgroundColor: tier.bgColor, 
-                              color: tier.color,
-                              border: `1px solid ${tier.color}25`,
-                              marginBottom: '0.75rem',
-                              transition: 'all 0.2s ease'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: tier.color, color: '#fff', width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0 }}>
-                              <TierIcon size={12} />
-                            </div>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <strong style={{ fontSize: '0.78rem', display: 'block', color: 'var(--text-primary)', lineHeight: 1.2 }}>{tier.title}</strong>
-                              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'block', lineHeight: 1.25, marginTop: '2px' }}>{tier.desc}</span>
-                            </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
                           </div>
-
-                          {isNarrowRange ? (
-                            <div className="score-nodes-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', justifyContent: 'center' }}>
-                              {scoreNodes.map((nodeVal) => {
-                                const isActive = currentVal === nodeVal;
-                                return (
-                                  <button
-                                    key={nodeVal}
-                                    type="button"
-                                    className={`score-node-btn ${isActive ? 'active' : ''}`}
-                                    style={isActive ? { backgroundColor: 'var(--accent-teal)', borderColor: 'var(--accent-teal)', color: '#fff' } : {}}
-                                    onClick={() => {
-                                      triggerHaptic(8);
-                                      handleSliderChange(student.id, field.id, nodeVal);
-                                    }}
-                                  >
-                                    {nodeVal}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="score-stepper" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-                                <button
-                                  type="button"
-                                  className="score-stepper-btn"
-                                  disabled={currentVal <= field.min}
-                                  onClick={() => {
-                                    triggerHaptic(8);
-                                    handleSliderChange(student.id, field.id, Math.max(field.min, currentVal - 1));
-                                  }}
-                                  style={{ width: '32px', height: '32px', minWidth: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
-                                >
-                                  <Minus size={13} />
-                                </button>
-                                
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '38px' }}>
-                                  <span style={{ fontSize: '1.2rem', fontWeight: 800, lineHeight: 1.1 }}>{currentVal}</span>
-                                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 700 }}>
-                                    {Math.round(pct)}%
-                                  </span>
-                                </div>
-                                
-                                <button
-                                  type="button"
-                                  className="score-stepper-btn"
-                                  disabled={currentVal >= field.max}
-                                  onClick={() => {
-                                    triggerHaptic(8);
-                                    handleSliderChange(student.id, field.id, Math.min(field.max, currentVal + 1));
-                                  }}
-                                  style={{ width: '32px', height: '32px', minWidth: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
-                                >
-                                  <Plus size={13} />
-                                </button>
-                              </div>
-
-                              <div style={{ flex: 1, minWidth: '80px' }}>
-                                <input
-                                  type="range"
-                                  className="custom-slider"
-                                  min={field.min}
-                                  max={field.max}
-                                  value={currentVal}
-                                  style={{
-                                    width: '100%',
-                                    background: `linear-gradient(to right, var(--accent-teal) 0%, var(--accent-teal) ${pct}%, var(--border-color) ${pct}%, var(--border-color) 100%)`
-                                  }}
-                                  onChange={(e) => handleSliderChange(student.id, field.id, Number(e.target.value))}
-                                />
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </div>
                     );
@@ -5854,7 +5553,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               {isComplete ? <Check size={12} /> : tIdx + 1}
                             </div>
                             <strong style={{ fontSize: '0.86rem', color: 'var(--text-primary)' }}>{cleanStudentName(t.name)}</strong>
-                            {appliedArchetype[t.id] && (() => {
+                            {evalControls.showRoleSelection && appliedArchetype[t.id] && (() => {
                               const arch = ROLE_ARCHETYPES.find(a => a.id === appliedArchetype[t.id]);
                               if (arch) {
                                 return (
@@ -5891,22 +5590,36 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         </div>
 
                         {/* Criteria scores chips */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
                           {activeClass.fields.map(f => {
-                            const score = evaluations[t.id]?.[f.id] ?? Math.round((f.min + f.max) / 2);
+                            const isCustomScale = activeClass.customScaleEnabled === true;
+                            const fieldMax = isCustomScale ? (f.max ?? 5) : 5;
+                            const rawScore = evaluations[t.id]?.[f.id];
+                            let score: number;
+                            if (typeof rawScore !== 'number' || isNaN(rawScore)) {
+                              score = Math.round((1 + fieldMax) / 2);
+                            } else if (!isCustomScale && rawScore > 5) {
+                              const prevMax = f.max > 5 ? f.max : 20;
+                              const fraction = Math.max(0, Math.min(1, (rawScore - 1) / (prevMax - 1 || 1)));
+                              score = Math.max(1, Math.min(5, Math.round(1 + fraction * 4)));
+                            } else {
+                              score = Math.max(1, Math.min(fieldMax, rawScore));
+                            }
+
                             return (
                               <span
                                 key={f.id}
                                 style={{
-                                  padding: '0.15rem 0.4rem',
-                                  borderRadius: '4px',
+                                  padding: '0.2rem 0.5rem',
+                                  borderRadius: '6px',
                                   backgroundColor: 'var(--bg-surface)',
                                   border: '1px solid var(--border-color)',
                                   color: 'var(--text-secondary)',
-                                  fontSize: '0.68rem'
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600
                                 }}
                               >
-                                {f.name}: <strong>{score}/{f.max}</strong>
+                                {f.name}: <strong style={{ color: 'var(--text-primary)' }}>{score}/{fieldMax}</strong>
                               </span>
                             );
                           })}
@@ -6086,6 +5799,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           {/* Sticky Mobile Card Navigation Bar (Active in Card Flow Mode) */}
           {viewMode === 'card' && (
             <div 
+              className="card-navigation-bar"
               style={{
                 position: 'sticky',
                 bottom: '0.75rem',

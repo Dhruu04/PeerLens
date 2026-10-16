@@ -83,7 +83,7 @@ import {
     createClass: (name: string) => string;
     deleteClass: (id: string) => void;
     selectClass: (id: string | null) => void;
-    updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify?: boolean) => void;
+    updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify?: boolean, minTargetScale?: number | null, scaleMin?: number | null, scaleMax?: number | null, customScaleEnabled?: boolean) => void;
     updateEvaluationControls: (classId: string, controls: Partial<EvaluationFormControls>) => void;
     updateTeamCharterConfig: (classId: string, config: Partial<TeamCharterConfig>) => void;
     updateEnrollmentFields: (classId: string, fields: CustomEnrollmentField[]) => void;
@@ -126,12 +126,25 @@ import {
     return {
       id: 'c_default',
       name: 'Intro to Web Development',
-      targetScale: 20,
+      targetScale: 31,
+      minTargetScale: 15,
+      scaleMin: 1,
+      scaleMax: 5,
+      customScaleEnabled: false,
       teamBaseGrades: {},
+      evaluationControls: {
+        allowSelfReview: false,
+        showGrowthSuggestions: false,
+        showPraiseTags: false,
+        showStrengthsFeedback: false,
+        showRoleSelection: false,
+        showIcebreaker: false,
+        allowProfileEditing: false
+      },
       fields: [
-        { id: 'f_quality', name: 'Quality of Contribution', description: 'Produces thorough, accurate deliverables on schedule with high attention to detail.', min: 1, max: 20, weight: 34 },
-        { id: 'f_collaboration', name: 'Collaboration & Communication', description: 'Active engagement, responsiveness, transparency, and constructive teamwork.', min: 1, max: 20, weight: 33 },
-        { id: 'f_reliability', name: 'Reliability & Commitment', description: 'Punctuality, meeting milestone deadlines, and dependable follow-through on assignments.', min: 1, max: 20, weight: 33 }
+        { id: 'f_quality', name: 'Quality of Contribution', description: 'Produces thorough, accurate deliverables on schedule with high attention to detail.', min: 1, max: 5, weight: 34 },
+        { id: 'f_collaboration', name: 'Collaboration & Communication', description: 'Active engagement, responsiveness, transparency, and constructive teamwork.', min: 1, max: 5, weight: 33 },
+        { id: 'f_reliability', name: 'Reliability & Commitment', description: 'Punctuality, meeting milestone deadlines, and dependable follow-through on assignments.', min: 1, max: 5, weight: 33 }
       ],
       students: [
         { id: 's_1', name: 'Matteo Rossi', email: 'matteo.rossi@unipr.it', groupName: 'Alpha Team', university: 'University of Parma', degree: 'Computer Science', studentType: 'Normal', isInternational: false, isExchange: false, currentCountry: 'Italy', originalCountry: 'Italy', originalUniversity: 'University of Parma', currentUniversity: 'University of Parma', gender: 'Male', nationality: 'Italy', englishProficiency: 'Fluent (C1/C2)', submitted: false },
@@ -358,21 +371,30 @@ import {
             cloudClasses.push({
               id: doc.id,
               name: data.name || 'Untitled Class',
-              fields: Array.isArray(data.fields) ? data.fields : [],
               students: Array.isArray(data.students) ? data.students : [],
               reviews: Array.isArray(data.reviews) ? data.reviews : [],
               deadline: data.deadline || null,
               milestones: Array.isArray(data.milestones) ? data.milestones : [],
-              targetScale: typeof data.targetScale === 'number' ? data.targetScale : null,
+              targetScale: typeof data.targetScale === 'number' ? data.targetScale : 31,
+              minTargetScale: typeof data.minTargetScale === 'number' ? data.minTargetScale : 15,
+              scaleMin: data.customScaleEnabled === true && typeof data.scaleMin === 'number' ? data.scaleMin : 1,
+              scaleMax: data.customScaleEnabled === true && typeof data.scaleMax === 'number' ? data.scaleMax : 5,
+              customScaleEnabled: data.customScaleEnabled === true,
+              fields: Array.isArray(data.fields) ? data.fields.map((f: any) => ({
+                ...f,
+                min: data.customScaleEnabled === true && typeof f.min === 'number' ? f.min : 1,
+                max: data.customScaleEnabled === true && typeof f.max === 'number' ? f.max : 5
+              })) : [],
               teamBaseGrades: data.teamBaseGrades && typeof data.teamBaseGrades === 'object' ? data.teamBaseGrades : {},
               pulseRounds: Array.isArray(data.pulseRounds) ? data.pulseRounds : [],
               evaluationControls: data.evaluationControls && typeof data.evaluationControls === 'object' ? {
-                allowSelfReview: data.evaluationControls.allowSelfReview !== false,
-                showGrowthSuggestions: data.evaluationControls.showGrowthSuggestions !== false,
-                showPraiseTags: data.evaluationControls.showPraiseTags !== false,
-                showStrengthsFeedback: data.evaluationControls.showStrengthsFeedback !== false,
-                showRoleBaseline: data.evaluationControls.showRoleBaseline !== false,
-                allowProfileEditing: data.evaluationControls.allowProfileEditing !== false
+                allowSelfReview: data.evaluationControls.allowSelfReview === true,
+                showGrowthSuggestions: data.evaluationControls.showGrowthSuggestions === true,
+                showPraiseTags: data.evaluationControls.showPraiseTags === true,
+                showStrengthsFeedback: data.evaluationControls.showStrengthsFeedback === true,
+                showRoleSelection: data.evaluationControls.showRoleSelection === true,
+                showIcebreaker: data.evaluationControls.showIcebreaker === true,
+                allowProfileEditing: data.evaluationControls.allowProfileEditing === true
               } : undefined,
               enrollmentFormFields: Array.isArray(data.enrollmentFormFields) && data.enrollmentFormFields.length > 0 ? data.enrollmentFormFields : [...DEFAULT_ENROLLMENT_FIELDS],
               teamCharterConfig: data.teamCharterConfig || undefined
@@ -665,28 +687,40 @@ import {
             const parsedClasses = JSON.parse(storedClasses) as ClassData[];
             if (Array.isArray(parsedClasses)) {
               // Standardize shape to prevent rendering crashes from malformed storage
-              const validated = parsedClasses.map((c) => ({
-                id: c.id || 'c_' + Math.random().toString(36).substring(2, 9),
-                name: c.name || 'Untitled Class',
-                fields: Array.isArray(c.fields) ? c.fields : [],
-                students: Array.isArray(c.students) ? c.students : [],
-                reviews: Array.isArray(c.reviews) ? c.reviews : [],
-                deadline: c.deadline || null,
-                milestones: Array.isArray(c.milestones) ? c.milestones : [],
-                targetScale: typeof c.targetScale === 'number' ? c.targetScale : null,
-                teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
-                pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds : [],
-                evaluationControls: c.evaluationControls && typeof c.evaluationControls === 'object' ? {
-                  allowSelfReview: c.evaluationControls.allowSelfReview !== false,
-                  showGrowthSuggestions: c.evaluationControls.showGrowthSuggestions !== false,
-                  showPraiseTags: c.evaluationControls.showPraiseTags !== false,
-                  showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback !== false,
-                  showRoleBaseline: c.evaluationControls.showRoleBaseline !== false,
-                  allowProfileEditing: c.evaluationControls.allowProfileEditing !== false
-                } : undefined,
-                enrollmentFormFields: Array.isArray(c.enrollmentFormFields) && c.enrollmentFormFields.length > 0 ? c.enrollmentFormFields : [...DEFAULT_ENROLLMENT_FIELDS],
-                teamCharterConfig: c.teamCharterConfig || undefined
-              }));
+              const validated = parsedClasses.map((c) => {
+                const isCustom = c.customScaleEnabled === true;
+                return {
+                  id: c.id || 'c_' + Math.random().toString(36).substring(2, 9),
+                  name: c.name || 'Untitled Class',
+                  fields: Array.isArray(c.fields) ? c.fields.map(f => ({
+                    ...f,
+                    min: isCustom && typeof f.min === 'number' ? f.min : 1,
+                    max: isCustom && typeof f.max === 'number' ? f.max : 5
+                  })) : [],
+                  students: Array.isArray(c.students) ? c.students : [],
+                  reviews: Array.isArray(c.reviews) ? c.reviews : [],
+                  deadline: c.deadline || null,
+                  milestones: Array.isArray(c.milestones) ? c.milestones : [],
+                  targetScale: typeof c.targetScale === 'number' ? c.targetScale : 31,
+                  minTargetScale: typeof c.minTargetScale === 'number' ? c.minTargetScale : 15,
+                  scaleMin: isCustom && typeof c.scaleMin === 'number' ? c.scaleMin : 1,
+                  scaleMax: isCustom && typeof c.scaleMax === 'number' ? c.scaleMax : 5,
+                  customScaleEnabled: isCustom,
+                  teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
+                  pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds : [],
+                  evaluationControls: c.evaluationControls && typeof c.evaluationControls === 'object' ? {
+                    allowSelfReview: c.evaluationControls.allowSelfReview === true,
+                    showGrowthSuggestions: c.evaluationControls.showGrowthSuggestions === true,
+                    showPraiseTags: c.evaluationControls.showPraiseTags === true,
+                    showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback === true,
+                    showRoleSelection: c.evaluationControls.showRoleSelection === true,
+                    showIcebreaker: c.evaluationControls.showIcebreaker === true,
+                    allowProfileEditing: c.evaluationControls.allowProfileEditing === true
+                  } : undefined,
+                  enrollmentFormFields: Array.isArray(c.enrollmentFormFields) && c.enrollmentFormFields.length > 0 ? c.enrollmentFormFields : [...DEFAULT_ENROLLMENT_FIELDS],
+                  teamCharterConfig: c.teamCharterConfig || undefined
+                };
+              });
               
               setClasses(validated);
               const savedActiveId = localStorage.getItem('peer_active_class_id');
@@ -752,28 +786,40 @@ import {
           try {
             const parsedClasses = JSON.parse(e.newValue) as ClassData[];
             if (Array.isArray(parsedClasses)) {
-              const validated = parsedClasses.map((c) => ({
-                id: c.id || 'c_' + Math.random().toString(36).substring(2, 9),
-                name: c.name || 'Untitled Class',
-                fields: Array.isArray(c.fields) ? c.fields : [],
-                students: Array.isArray(c.students) ? c.students : [],
-                reviews: Array.isArray(c.reviews) ? c.reviews : [],
-                deadline: c.deadline || null,
-                milestones: Array.isArray(c.milestones) ? c.milestones : [],
-                targetScale: typeof c.targetScale === 'number' ? c.targetScale : null,
-                teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
-                pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds : [],
-                evaluationControls: c.evaluationControls && typeof c.evaluationControls === 'object' ? {
-                  allowSelfReview: c.evaluationControls.allowSelfReview !== false,
-                  showGrowthSuggestions: c.evaluationControls.showGrowthSuggestions !== false,
-                  showPraiseTags: c.evaluationControls.showPraiseTags !== false,
-                  showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback !== false,
-                  showRoleBaseline: c.evaluationControls.showRoleBaseline !== false,
-                  allowProfileEditing: c.evaluationControls.allowProfileEditing !== false
-                } : undefined,
-                enrollmentFormFields: Array.isArray(c.enrollmentFormFields) ? c.enrollmentFormFields : [],
-                teamCharterConfig: c.teamCharterConfig || undefined
-              }));
+              const validated = parsedClasses.map((c) => {
+                const isCustom = c.customScaleEnabled === true;
+                return {
+                  id: c.id || 'c_' + Math.random().toString(36).substring(2, 9),
+                  name: c.name || 'Untitled Class',
+                  fields: Array.isArray(c.fields) ? c.fields.map(f => ({
+                    ...f,
+                    min: isCustom && typeof f.min === 'number' ? f.min : 1,
+                    max: isCustom && typeof f.max === 'number' ? f.max : 5
+                  })) : [],
+                  students: Array.isArray(c.students) ? c.students : [],
+                  reviews: Array.isArray(c.reviews) ? c.reviews : [],
+                  deadline: c.deadline || null,
+                  milestones: Array.isArray(c.milestones) ? c.milestones : [],
+                  targetScale: typeof c.targetScale === 'number' ? c.targetScale : 31,
+                  minTargetScale: typeof c.minTargetScale === 'number' ? c.minTargetScale : 15,
+                  scaleMin: isCustom && typeof c.scaleMin === 'number' ? c.scaleMin : 1,
+                  scaleMax: isCustom && typeof c.scaleMax === 'number' ? c.scaleMax : 5,
+                  customScaleEnabled: isCustom,
+                  teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
+                  pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds : [],
+                  evaluationControls: c.evaluationControls && typeof c.evaluationControls === 'object' ? {
+                    allowSelfReview: c.evaluationControls.allowSelfReview === true,
+                    showGrowthSuggestions: c.evaluationControls.showGrowthSuggestions === true,
+                    showPraiseTags: c.evaluationControls.showPraiseTags === true,
+                    showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback === true,
+                    showRoleSelection: c.evaluationControls.showRoleSelection === true,
+                    showIcebreaker: c.evaluationControls.showIcebreaker === true,
+                    allowProfileEditing: c.evaluationControls.allowProfileEditing === true
+                  } : undefined,
+                  enrollmentFormFields: Array.isArray(c.enrollmentFormFields) ? c.enrollmentFormFields : [],
+                  teamCharterConfig: c.teamCharterConfig || undefined
+                };
+              });
               setClasses(validated);
             }
           } catch (err) {
@@ -850,7 +896,11 @@ import {
             growthText: mr.growthText !== undefined ? mr.growthText : null
           })) : []
         })) : [],
-        targetScale: typeof c.targetScale === 'number' ? c.targetScale : null,
+        targetScale: typeof c.targetScale === 'number' ? c.targetScale : 31,
+        minTargetScale: typeof c.minTargetScale === 'number' ? c.minTargetScale : 15,
+        scaleMin: typeof c.scaleMin === 'number' ? c.scaleMin : 1,
+        scaleMax: typeof c.scaleMax === 'number' ? c.scaleMax : 5,
+        customScaleEnabled: c.customScaleEnabled === true,
         teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
         pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds.map(pr => ({
           id: pr.id,
@@ -886,12 +936,13 @@ import {
           })) : []
         })) : [],
         evaluationControls: {
-          allowSelfReview: c.evaluationControls?.allowSelfReview !== false,
-          showGrowthSuggestions: c.evaluationControls?.showGrowthSuggestions !== false,
-          showPraiseTags: c.evaluationControls?.showPraiseTags !== false,
-          showStrengthsFeedback: c.evaluationControls?.showStrengthsFeedback !== false,
-          showRoleBaseline: c.evaluationControls?.showRoleBaseline !== false,
-          allowProfileEditing: c.evaluationControls?.allowProfileEditing !== false
+          allowSelfReview: c.evaluationControls?.allowSelfReview === true,
+          showGrowthSuggestions: c.evaluationControls?.showGrowthSuggestions === true,
+          showPraiseTags: c.evaluationControls?.showPraiseTags === true,
+          showStrengthsFeedback: c.evaluationControls?.showStrengthsFeedback === true,
+          showRoleSelection: c.evaluationControls?.showRoleSelection === true,
+          showIcebreaker: c.evaluationControls?.showIcebreaker === true,
+          allowProfileEditing: c.evaluationControls?.allowProfileEditing === true
         },
         enrollmentFormFields: Array.isArray(c.enrollmentFormFields) && c.enrollmentFormFields.length > 0 ? c.enrollmentFormFields.map(ef => ({
           id: ef.id,
@@ -1181,13 +1232,27 @@ import {
       syncWorkspaceSettingsToCloud({ activeClassId: id });
     };
   
-    const updateGradingConfig = (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify: boolean = false) => {
+    const updateGradingConfig = (
+      classId: string, 
+      fields: GradingScaleField[], 
+      targetScale?: number | null, 
+      notify: boolean = false,
+      minTargetScale?: number | null,
+      scaleMin?: number | null,
+      scaleMax?: number | null,
+      customScaleEnabled?: boolean
+    ) => {
       const updatedClasses = getCurrentClasses().map((c) => {
         if (c.id === classId) {
+          const isCustom = customScaleEnabled !== undefined ? customScaleEnabled : (c.customScaleEnabled === true);
           return { 
             ...c, 
-            fields,
-            targetScale: targetScale !== undefined ? targetScale : c.targetScale
+            fields: isCustom ? fields : fields.map(f => ({ ...f, min: 1, max: 5 })),
+            targetScale: targetScale !== undefined ? targetScale : (c.targetScale ?? 31),
+            minTargetScale: minTargetScale !== undefined ? minTargetScale : (c.minTargetScale ?? 15),
+            scaleMin: isCustom ? (scaleMin !== undefined ? scaleMin : (c.scaleMin ?? 1)) : 1,
+            scaleMax: isCustom ? (scaleMax !== undefined ? scaleMax : (c.scaleMax ?? 5)) : 5,
+            customScaleEnabled: isCustom
           };
         }
         return c;

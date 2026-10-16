@@ -84,28 +84,31 @@ export interface EvaluationFormControls {
   showGrowthSuggestions?: boolean; // Toggle "What is one constructive suggestion for their improvement?"
   showPraiseTags?: boolean; // Toggle "Strengths & Praise Tags"
   showStrengthsFeedback?: boolean; // Toggle "What are this teammate's primary strengths?"
-  showRoleBaseline?: boolean; // Toggle "Starting Role Baseline"
+  showRoleSelection?: boolean; // Toggle "Team Role Selection" on student dashboard
+  showIcebreaker?: boolean; // Toggle "Team Kickoff Icebreaker" on student dashboard
   allowProfileEditing?: boolean; // Toggle if students can edit their profile info or not
 }
 
 export const DEFAULT_EVALUATION_CONTROLS: Required<EvaluationFormControls> = {
-  allowSelfReview: true,
-  showGrowthSuggestions: true,
-  showPraiseTags: true,
-  showStrengthsFeedback: true,
-  showRoleBaseline: true,
-  allowProfileEditing: true
+  allowSelfReview: false,
+  showGrowthSuggestions: false,
+  showPraiseTags: false,
+  showStrengthsFeedback: false,
+  showRoleSelection: false,
+  showIcebreaker: false,
+  allowProfileEditing: false
 };
 
 export function getEvaluationControls(classData?: ClassData | null): Required<EvaluationFormControls> {
   const ec = classData?.evaluationControls;
   return {
-    allowSelfReview: ec?.allowSelfReview !== false,
-    showGrowthSuggestions: ec?.showGrowthSuggestions !== false,
-    showPraiseTags: ec?.showPraiseTags !== false,
-    showStrengthsFeedback: ec?.showStrengthsFeedback !== false,
-    showRoleBaseline: ec?.showRoleBaseline !== false,
-    allowProfileEditing: ec?.allowProfileEditing !== false
+    allowSelfReview: ec?.allowSelfReview === true,
+    showGrowthSuggestions: ec?.showGrowthSuggestions === true,
+    showPraiseTags: ec?.showPraiseTags === true,
+    showStrengthsFeedback: ec?.showStrengthsFeedback === true,
+    showRoleSelection: ec?.showRoleSelection === true,
+    showIcebreaker: ec?.showIcebreaker === true,
+    allowProfileEditing: ec?.allowProfileEditing === true
   };
 }
 
@@ -490,6 +493,10 @@ export interface ClassData {
   deadline?: string | null;
   milestones?: Milestone[];
   targetScale?: number | null;
+  minTargetScale?: number | null;
+  scaleMin?: number | null;
+  scaleMax?: number | null;
+  customScaleEnabled?: boolean;
   teamBaseGrades?: Record<string, number>;
   evaluationControls?: EvaluationFormControls;
   pulseRounds?: PulseRound[];
@@ -511,14 +518,87 @@ export function getTeamBaseGrade(classData: ClassData, groupName: string, defaul
 /**
  * Resolves the final grade scale to display scores out of.
  * - targetScale === 0: Represents the dynamic sum of all rubrics' maximums.
- * - targetScale === null/undefined: Defaults to 20.
+ * - targetScale === null/undefined: Defaults to 31.
  * - any positive number: Scales out of that custom value.
  */
 export function getTargetScale(classData: ClassData): number {
   if (classData.targetScale === 0) {
     return classData.fields.reduce((acc, f) => acc + (f.max ?? 0), 0);
   }
-  return classData.targetScale ?? 20;
+  return classData.targetScale ?? 31;
+}
+
+/**
+ * Resolves the minimum baseline score corresponding to scale 1 (defaults to 15).
+ */
+export function getMinTargetScale(classData: ClassData): number {
+  return classData.minTargetScale ?? 15;
+}
+
+/**
+ * Resolves the active rating scale and distributed points map.
+ * By default: Scale 1 to 5 maps evenly from min score (15) to max score (31):
+ * 1 -> 15, 2 -> 19, 3 -> 23, 4 -> 27, 5 -> 31
+ * Custom scale is ONLY used when explicitly opted into (customScaleEnabled: true).
+ */
+export function getGradeScaleConfig(classData?: ClassData | null): {
+  scaleMin: number;
+  scaleMax: number;
+  scoreMin: number;
+  scoreMax: number;
+  minTarget: number;
+  maxTarget: number;
+  stepScore: number;
+  steps: Array<{ scaleValue: number; scoreValue: number }>;
+  distribution: Array<{ scale: number; rating: number; score: number }>;
+  customScaleEnabled: boolean;
+} {
+  const isCustom = classData?.customScaleEnabled === true;
+  const scaleMin = isCustom ? (classData?.scaleMin ?? 1) : 1;
+  const scaleMax = isCustom ? (classData?.scaleMax ?? 5) : 5;
+  const scoreMin = classData ? getMinTargetScale(classData) : 15;
+  const scoreMax = classData ? getTargetScale(classData) : 31;
+  
+  const stepCount = Math.max(1, scaleMax - scaleMin);
+  const scoreRange = scoreMax - scoreMin;
+  const stepScore = Number((scoreRange / stepCount).toFixed(2));
+  const steps: Array<{ scaleValue: number; scoreValue: number }> = [];
+  const distribution: Array<{ scale: number; rating: number; score: number }> = [];
+
+  for (let s = scaleMin; s <= scaleMax; s++) {
+    const fraction = (s - scaleMin) / stepCount;
+    const score = Number((scoreMin + fraction * scoreRange).toFixed(1));
+    steps.push({ scaleValue: s, scoreValue: score });
+    distribution.push({ scale: s, rating: s, score });
+  }
+
+  return {
+    scaleMin,
+    scaleMax,
+    scoreMin,
+    scoreMax,
+    minTarget: scoreMin,
+    maxTarget: scoreMax,
+    stepScore,
+    steps,
+    distribution,
+    customScaleEnabled: isCustom
+  };
+}
+
+export function scaleRatingToScore(rating: number, classData: ClassData): number {
+  const { scaleMin, scaleMax, scoreMin, scoreMax } = getGradeScaleConfig(classData);
+  if (scaleMax === scaleMin) return scoreMax;
+  const fraction = (rating - scaleMin) / (scaleMax - scaleMin);
+  return Number((scoreMin + fraction * (scoreMax - scoreMin)).toFixed(1));
+}
+
+export function scoreToScaleRating(score: number, classData: ClassData): number {
+  const { scaleMin, scaleMax, scoreMin, scoreMax } = getGradeScaleConfig(classData);
+  if (scoreMax === scoreMin) return scaleMin;
+  const fraction = (score - scoreMin) / (scoreMax - scoreMin);
+  const rating = Math.round(scaleMin + fraction * (scaleMax - scaleMin));
+  return Math.max(scaleMin, Math.min(scaleMax, rating));
 }
 
 export interface Anomaly {
@@ -609,7 +689,22 @@ export function calculateStudentMetrics(
       const fieldWeight = field.weight !== undefined && field.weight > 0 
         ? field.weight 
         : (100 / Math.max(1, classData.fields.length));
-      const fieldPercentage = field.max > 0 ? (avg / field.max) * 100 : 0;
+      
+      let fieldPercentage = 0;
+      if (field.max > field.min) {
+        if (avg > field.max && classData.targetScale) {
+          fieldPercentage = (avg / getTargetScale(classData)) * 100;
+        } else {
+          const fraction = (avg - field.min) / (field.max - field.min);
+          const scoreMin = getMinTargetScale(classData);
+          const scoreMax = getTargetScale(classData);
+          const mappedScore = scoreMin + fraction * (scoreMax - scoreMin);
+          fieldPercentage = scoreMax > 0 ? (mappedScore / scoreMax) * 100 : 0;
+        }
+      } else if (field.max > 0) {
+        fieldPercentage = (avg / field.max) * 100;
+      }
+
       weightedScoreSum += fieldPercentage * fieldWeight;
       totalWeightSum += fieldWeight;
     }
@@ -729,7 +824,22 @@ export function calculateStudentWebPAScore(
         const fieldWeight = field.weight !== undefined && field.weight > 0 
           ? field.weight 
           : (100 / Math.max(1, classData.fields.length));
-        const fieldPercentage = field.max > 0 ? (avg / field.max) * 100 : 0;
+        
+        let fieldPercentage = 0;
+        if (field.max > field.min) {
+          if (avg > field.max && classData.targetScale) {
+            fieldPercentage = (avg / getTargetScale(classData)) * 100;
+          } else {
+            const fraction = (avg - field.min) / (field.max - field.min);
+            const scoreMin = getMinTargetScale(classData);
+            const scoreMax = getTargetScale(classData);
+            const mappedScore = scoreMin + fraction * (scoreMax - scoreMin);
+            fieldPercentage = scoreMax > 0 ? (mappedScore / scoreMax) * 100 : 0;
+          }
+        } else if (field.max > 0) {
+          fieldPercentage = (avg / field.max) * 100;
+        }
+
         weightedScoreSum += fieldPercentage * fieldWeight;
         totalWeightSum += fieldWeight;
       }

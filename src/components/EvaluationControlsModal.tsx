@@ -42,7 +42,8 @@ export const EvaluationControlsContent: React.FC<EvaluationControlsContentProps>
       showGrowthSuggestions: val,
       showPraiseTags: val,
       showStrengthsFeedback: val,
-      showRoleBaseline: val,
+      showRoleSelection: val,
+      showIcebreaker: val,
       allowProfileEditing: val
     });
   };
@@ -53,8 +54,9 @@ export const EvaluationControlsContent: React.FC<EvaluationControlsContentProps>
       showGrowthSuggestions: false,
       showPraiseTags: false,
       showStrengthsFeedback: false,
-      showRoleBaseline: false,
-      allowProfileEditing: controls.allowProfileEditing
+      showRoleSelection: false,
+      showIcebreaker: false,
+      allowProfileEditing: false
     });
   };
 
@@ -99,12 +101,20 @@ export const EvaluationControlsContent: React.FC<EvaluationControlsContentProps>
       badge: 'Micro-Recognition'
     },
     {
-      key: 'showRoleBaseline',
-      title: 'Starting Role Baseline',
-      description: 'Self-selected role archetypes (Project Lead, Architect, Researcher, Implementer, Presenter).',
+      key: 'showRoleSelection',
+      title: 'Team Role Selection',
+      description: 'Allow team members to choose their project role from their student dashboard.',
       icon: <Compass size={18} className="text-purple" />,
       category: 'Evaluation Form',
-      badge: 'Context'
+      badge: 'Role Allocation'
+    },
+    {
+      key: 'showIcebreaker',
+      title: 'Team Kickoff Icebreaker',
+      description: 'Interactive kickoff icebreaker discussion card displayed on student dashboards.',
+      icon: <Zap size={18} className="text-amber" />,
+      category: 'Evaluation Form',
+      badge: 'Collaboration'
     },
     {
       key: 'allowProfileEditing',
