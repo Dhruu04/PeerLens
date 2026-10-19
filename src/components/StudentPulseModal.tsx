@@ -16,6 +16,8 @@ import {
 import type { ClassData, PulseRound, PulseScaleType, PulseResponse } from '../utils/math';
 import { PULSE_SCALE_PRESETS } from '../utils/math';
 import Modal from './Modal';
+import CustomSelect from './CustomSelect';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface StudentPulseModalProps {
   isOpen: boolean;
@@ -131,6 +133,7 @@ export const StudentPulseModal: React.FC<StudentPulseModalProps> = ({
                 <span className="badge badge-teal" style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase' }}>
                   30s Pulse
                 </span>
+                <FeatureInfoButton featureId="team-health-pulse" size="sm" tooltipText="Team Health Check-in Guide" />
               </div>
               <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
                 {activeClass.name} · Quick, frictionless team health check-in
@@ -171,19 +174,24 @@ export const StudentPulseModal: React.FC<StudentPulseModalProps> = ({
                 Select Your Name / Team
               </label>
               <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <select
+                <div style={{ flex: 1 }}>
+                  <CustomSelect
                     value={selectedStudentId}
-                    onChange={(e) => setSelectedStudentId(e.target.value)}
-                    className="form-input"
-                    style={{ height: '38px', fontSize: '0.85rem', fontWeight: 600 }}
-                  >
-                    {activeClass.students.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.groupName || 'Unassigned'})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSelectedStudentId(val)}
+                    options={activeClass.students.map(s => ({
+                      value: s.id,
+                      label: `${s.name} (${s.groupName || 'Unassigned'})`
+                    }))}
+                    triggerStyle={{
+                      height: '38px',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      width: '100%'
+                    }}
+                    dropdownMinWidth="260px"
+                    dropdownStyle={{ zIndex: 10020 }}
+                    title="Select your profile"
+                  />
                 </div>
                 {selectedStudent && (
                   <span className="badge badge-secondary" style={{ height: '38px', padding: '0 0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 700 }}>

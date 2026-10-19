@@ -13,7 +13,8 @@ import {
   Settings, Plane, EyeOff, LogOut, Compass, ArrowLeft, ArrowRight, RotateCcw,
   GraduationCap, Filter, ArrowUp, ArrowDown, Printer,
   ShieldAlert, History, ChevronDown, ChevronRight, ChevronUp,
-  ArrowUpDown, SlidersHorizontal, HelpCircle
+  ArrowUpDown, SlidersHorizontal, HelpCircle, Layers, Calculator,
+  Code, Cpu, Atom, Briefcase, Tag
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { useClass } from '../context/ClassContext';
@@ -30,8 +31,24 @@ import {
   type FeatureToggles
 } from '../utils/featurePreferences';
 import type { FirebaseConfig } from '../context/ClassContext';
-import { calculateClassStats, calculateStudentMetrics, calculateStudentWebPAScore, detectClassAnomalies, getTargetScale, getGradeScaleConfig, getEvaluationControls, normalizeNationality, DEFAULT_ENROLLMENT_FIELDS, isStandardEnrollmentField } from '../utils/math';
+import { 
+  calculateClassStats, 
+  calculateStudentMetrics, 
+  calculateStudentWebPAScore, 
+  getPeerAdjustmentConfig,
+  savePeerAdjustmentConfig,
+  PEER_ADJUSTMENT_METHODS_META,
+  type PeerAdjustmentConfig,
+  detectClassAnomalies, 
+  getTargetScale, 
+  getGradeScaleConfig, 
+  getEvaluationControls, 
+  normalizeNationality, 
+  DEFAULT_ENROLLMENT_FIELDS, 
+  isStandardEnrollmentField 
+} from '../utils/math';
 import type { GradingScaleField, Student, ClassData, Review } from '../utils/math';
+import { PeerAdjustmentInspectorModal } from '../components/PeerAdjustmentInspectorModal';
 import { detectDuplicateEnrollments } from '../utils/duplicateDetector';
 import type { DuplicateFlag } from '../utils/duplicateDetector';
 import {
@@ -77,12 +94,10 @@ import { RUBRIC_PRESETS } from '../utils/rubricPresets';
 import { SettingsModal } from '../components/SettingsModal';
 import { EvaluationControlsModal } from '../components/EvaluationControlsModal';
 import { CollapsibleEvaluationControls } from '../components/CollapsibleEvaluationControls';
-import FeatureInfoButton from '../components/FeatureInfoButton';
 import CommandPaletteModal from '../components/CommandPaletteModal';
 import InteractiveTour from '../components/InteractiveTour';
 import GuideCenterModal from '../components/GuideCenterModal';
 import { StudentPortalPreviewModal } from '../components/StudentPortalPreviewModal';
-import { ContextHelpPopover } from '../components/ContextHelpPopover';
 import { OnboardingChecklistWidget } from '../components/OnboardingChecklistWidget';
 import { NowBarStack } from '../components/NowBarStack';
 import { KeyboardShortcutsModal } from '../components/KeyboardShortcutsModal';
@@ -98,8 +113,10 @@ import { getModuleTab, getModuleByKey } from '../utils/moduleRegistry';
 import {
   getShortcutsEnabled,
   setShortcutsEnabled as saveShortcutsEnabled,
-  subscribeShortcutsEnabled
+  subscribeShortcutsEnabled,
+  resetToDefaultLayout
 } from '../utils/customViewProfiles';
+import { LayoutLibraryModal } from '../components/LayoutLibraryModal';
 import type { KeyboardShortcut } from '../utils/keyboardShortcuts';
 import {
   getStoredShortcuts,
@@ -111,6 +128,50 @@ import {
 import { downloadStudentReportPDF } from '../utils/pdfReport';
 import { QuickLookHUD, type QuickLookPayload } from '../components/QuickLookHUD';
 import { calculateGroupReport } from '../utils/grouping';
+import TeamCohortsGradebookView from '../components/TeamCohortsGradebookView';
+import { BrandingCustomizerModal } from '../components/BrandingCustomizerModal';
+import { 
+  getBranding, 
+  subscribeBranding, 
+  BADGE_COLOR_THEMES,
+  type InstitutionalBranding,
+  type BadgeIconType,
+  type TermIconType
+} from '../utils/brandingPreferences';
+
+const renderBrandingBadgeIcon = (icon?: BadgeIconType) => {
+  switch (icon) {
+    case 'book': return <BookOpen size={11} />;
+    case 'code': return <Code size={11} />;
+    case 'cpu': return <Cpu size={11} />;
+    case 'atom': return <Atom size={11} />;
+    case 'briefcase': return <Briefcase size={11} />;
+    case 'award': return <Award size={11} />;
+    case 'compass': return <Compass size={11} />;
+    case 'graduation':
+    default:
+      return <GraduationCap size={11} />;
+  }
+};
+
+const renderBrandingTermIcon = (icon?: TermIconType) => {
+  switch (icon) {
+    case 'clock': return <Clock size={10} />;
+    case 'sparkles': return <Sparkles size={10} />;
+    case 'tag': return <Tag size={10} />;
+    case 'calendar':
+    default:
+      return <Calendar size={10} />;
+  }
+};
+import { ClassroomSnapshotsModal } from '../components/ClassroomSnapshotsModal';
+import { CardLayoutControls } from '../components/CardLayoutControls';
+import { 
+  getCardVisualOrder,
+  getSection1TopRowOrder,
+  subscribeCardLayout 
+} from '../utils/cardLayoutPreferences';
+import { initDisplayDensity } from '../utils/displayDensity';
 
 
 const getPraiseTagInfo = (tagText: string) => {
@@ -394,6 +455,7 @@ export const AdminDashboard: React.FC = () => {
     syncWorkspaceSettingsToCloud,
     toggleStudentExcused,
     updateEnrollmentFields,
+    updatePeerAdjustmentConfig,
     addToast
   } = useClass();
   const { toggleThemeMode } = useTheme();
@@ -456,6 +518,36 @@ export const AdminDashboard: React.FC = () => {
   const [isLivePresentationModalOpen, setIsLivePresentationModalOpen] = useState(false);
   const [isTeamKickoffModalOpen, setIsTeamKickoffModalOpen] = useState(false);
   const [copiedEnrollLink, setCopiedEnrollLink] = useState(false);
+
+  // Institutional Branding & Custom Header State
+  const [isBrandingModalOpen, setIsBrandingModalOpen] = useState(false);
+  const [branding, setBranding] = useState<InstitutionalBranding>(() => getBranding(activeClass?.id));
+  useEffect(() => {
+    setBranding(getBranding(activeClass?.id));
+    return subscribeBranding((b) => setBranding(b), activeClass?.id);
+  }, [activeClass?.id]);
+
+  const [isSnapshotModalOpen, setIsSnapshotModalOpen] = useState(false);
+
+  // Card Layout & Pinned Cards Re-render trigger + Display Density Init
+  const [, setCardLayoutVersion] = useState(0);
+  useEffect(() => {
+    initDisplayDensity();
+    return subscribeCardLayout(() => setCardLayoutVersion(v => v + 1));
+  }, []);
+
+  // Layout Library & Presets State
+  const [isLayoutLibraryOpen, setIsLayoutLibraryOpen] = useState(false);
+
+  const handleResetLayoutToDefault = useCallback(() => {
+    resetToDefaultLayout({
+      onApplyCustomToggles: (toggles) => {
+        saveFeatureToggles(toggles);
+        syncWorkspaceSettingsToCloud({ featureToggles: toggles });
+      },
+      onToast: (msg, type) => addToast(msg, type || 'info')
+    });
+  }, [syncWorkspaceSettingsToCloud, addToast]);
   const [teamKickoffInitialTab, setTeamKickoffInitialTab] = useState<'roles_config' | 'icebreakers' | 'charters'>('roles_config');
   const [teamKickoffAutoPrint, setTeamKickoffAutoPrint] = useState(false);
   const [stagedAutoGroups, setStagedAutoGroups] = useState<Student[] | null>(null);
@@ -545,6 +637,14 @@ export const AdminDashboard: React.FC = () => {
       case 'command_palette':
         setIsCommandPaletteOpen(true);
         break;
+      case 'branding_customizer':
+        setIsBrandingModalOpen(true);
+        addToast('Opened Institutional Branding Customizer!', 'info');
+        break;
+      case 'edit_layout_mode':
+        toggleEditMode();
+        addToast('Toggled Interactive Layout Edit Mode (Alt+E)!', 'info');
+        break;
       case 'projector_mode':
         setIsProjectorModalOpen(true);
         break;
@@ -567,6 +667,14 @@ export const AdminDashboard: React.FC = () => {
       case 'autogroup_studio':
         setIsAutoGroupModalOpen(true);
         break;
+      case 'team_kickoff_card':
+        handleOpenTeamKickoff('charters');
+        addToast('Opened Team Roles & Mutual Accountability Charters!', 'info');
+        break;
+      case 'team_overview_cards':
+        setGroupFilter('All Groups');
+        addToast('Viewing Team Cohorts Overview & Health cards!', 'info');
+        break;
       case 'classroom_roster':
         setSearchTerm('Sophie');
         addToast('Filtered roster for student "Sophie"', 'info');
@@ -581,6 +689,10 @@ export const AdminDashboard: React.FC = () => {
       case 'eval_simulator':
         addToast('Simulated peer evaluation rating (16/20 mark)!', 'info');
         break;
+      case 'live_presentation_scoring':
+        setIsLivePresentationModalOpen(true);
+        addToast('Opened Live Presentation Scoring Cockpit!', 'info');
+        break;
       case 'analytics_tab':
         setActiveTab('results');
         break;
@@ -588,9 +700,24 @@ export const AdminDashboard: React.FC = () => {
         setRadarTeamFilter('Alpha Team');
         addToast('Selected Radar overlay for "Alpha Team"!', 'info');
         break;
+      case 'johari_matrix':
+        addToast('Inspecting Self vs. Peer Rating Comparison matrix!', 'info');
+        break;
+      case 'qualitative_feedback':
+        addToast('Summarizing written feedback themes and praise tags!', 'info');
+        break;
       case 'gradebook_matrix':
         setFudgeWeight(0.5);
         addToast('WebPA Calibrator adjusted to 50% fudge weighting live!', 'success');
+        break;
+      case 'lms_export_card':
+        try {
+          const csv = generateResultsCSV(activeClass, sortedGradebookStudents);
+          downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
+          addToast('Downloaded calibrated LMS gradebook CSV!', 'success');
+        } catch (e) {
+          addToast('Failed to export CSV', 'error');
+        }
         break;
       case 'guide_center_btn':
         setIsGuideCenterOpen(true);
@@ -745,6 +872,7 @@ export const AdminDashboard: React.FC = () => {
   // Table expansion/contraction states (contracted by default so large tables consume minimal vertical space)
   const [isRosterTableExpanded, setIsRosterTableExpanded] = useState<boolean>(false);
   const [isResultsTableExpanded, setIsResultsTableExpanded] = useState<boolean>(false);
+  const [resultsViewMode, setResultsViewMode] = useState<'table' | 'teams'>('table');
   const [isAuditMatrixExpanded, setIsAuditMatrixExpanded] = useState<boolean>(false);
 
   // Gradebook sorting and column visibility customization state
@@ -810,15 +938,40 @@ export const AdminDashboard: React.FC = () => {
   });
 
   // Advanced settings and controls states
+  const [peerAdjustmentConfig, setPeerAdjustmentConfigState] = useState<PeerAdjustmentConfig>(() => {
+    return getPeerAdjustmentConfig(activeClass);
+  });
+  const [isPeerInspectorOpen, setIsPeerInspectorOpen] = useState(false);
+  const [inspectorStudentId, setInspectorStudentId] = useState<string | null>(null);
+
   const [fudgeWeight, setFudgeWeight] = useState<number>(() => {
-    const val = localStorage.getItem('peer_fudge_weight');
-    return val ? Number(val) : 0.5;
+    return peerAdjustmentConfig?.fudgeWeight ?? 1.0;
   });
   const [baseGroupGrade, setBaseGroupGrade] = useState<number>(() => {
     const val = localStorage.getItem('peer_base_grade');
     return val ? Number(val) : 100;
   });
   const [isTeamBaseGradesModalOpen, setIsTeamBaseGradesModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (activeClass) {
+      const cfg = getPeerAdjustmentConfig(activeClass);
+      setPeerAdjustmentConfigState(cfg);
+      setFudgeWeight(cfg.fudgeWeight);
+    }
+  }, [activeClass?.id, activeClass?.peerAdjustmentConfig]);
+
+  const handleUpdatePeerAdjustmentConfig = (partial: Partial<PeerAdjustmentConfig>) => {
+    const updated = { ...peerAdjustmentConfig, ...partial };
+    setPeerAdjustmentConfigState(updated);
+    if (typeof partial.fudgeWeight === 'number') {
+      setFudgeWeight(partial.fudgeWeight);
+    }
+    if (activeClass?.id) {
+      savePeerAdjustmentConfig(activeClass.id, updated);
+      updatePeerAdjustmentConfig(activeClass.id, updated, false);
+    }
+  };
   const [teamSearchQuery, setTeamSearchQuery] = useState('');
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [newMilestoneName, setNewMilestoneName] = useState('');
@@ -943,13 +1096,28 @@ export const AdminDashboard: React.FC = () => {
   const moduleLayoutUndoStackRef = useRef<Array<{ moduleKey: keyof FeatureToggles; title: string }>>([]);
   const moduleLayoutRedoStackRef = useRef<Array<{ moduleKey: keyof FeatureToggles; title: string }>>([]);
 
+  // Quick Look State (Spacebar Hover Inspect & Pinned Peek)
+  const [quickLookPayload, setQuickLookPayload] = useState<QuickLookPayload | null>(null);
+  const [quickLookPos, setQuickLookPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isSpaceQuickLookActiveRef = useRef<boolean>(false);
+  const isQuickLookPinnedRef = useRef<boolean>(false);
+  const [isQuickLookPinned, setIsQuickLookPinned] = useState<boolean>(false);
+  const lastInspectedTargetKeyRef = useRef<string>('');
+  const quickLookPayloadRef = useRef<QuickLookPayload | null>(null);
+  useEffect(() => {
+    quickLookPayloadRef.current = quickLookPayload;
+  }, [quickLookPayload]);
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       mousePosRef.current = { x: e.clientX, y: e.clientY };
+      if (isSpaceQuickLookActiveRef.current && !isQuickLookPinnedRef.current) {
+        triggerQuickLookInspect(e.clientX, e.clientY);
+      }
     };
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
+  }, [activeClass, featureToggles, stagedAutoGroups]);
 
   const handleHoverDismissModule = () => {
     const el = document.elementFromPoint(mousePosRef.current.x, mousePosRef.current.y);
@@ -994,11 +1162,6 @@ export const AdminDashboard: React.FC = () => {
     addToast(`Re-hidden: "${last.title}"`, 'info');
   };
 
-  // Quick Look State (Spacebar Hover Inspect)
-  const [quickLookPayload, setQuickLookPayload] = useState<QuickLookPayload | null>(null);
-  const [quickLookPos, setQuickLookPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const isSpaceQuickLookActiveRef = useRef<boolean>(false);
-
   // QuickAdd Hold-Key State (KeyA)
   const [isQuickAddActive, setIsQuickAddActive] = useState<boolean>(false);
   const isQuickAddActiveRef = useRef<boolean>(false);
@@ -1013,24 +1176,166 @@ export const AdminDashboard: React.FC = () => {
     isQuickAddActiveRef.current = false;
   };
 
+  const handleToggleFlagStudent = (studentId: string) => {
+    if (!activeClass) return;
+    const student = activeClass.students.find(s => s.id === studentId);
+    if (!student) return;
+    const newFlag = !student.flaggedForReview;
+    updateStudent(activeClass.id, studentId, {
+      flaggedForReview: newFlag,
+      suspiciousReason: newFlag ? 'Flagged via QuickLook Inspector' : null
+    });
+    addToast(newFlag ? `Flagged ${student.name} for audit` : `Cleared flag on ${student.name}`, 'info');
+    setQuickLookPayload(prev => {
+      if (prev && prev.type === 'student' && prev.student.id === studentId) {
+        return {
+          ...prev,
+          student: { ...prev.student, flaggedForReview: newFlag }
+        };
+      }
+      return prev;
+    });
+  };
 
-  const triggerQuickLookInspect = () => {
-    const x = mousePosRef.current.x;
-    const y = mousePosRef.current.y;
+  const handleToggleQuickLookPin = () => {
+    setIsQuickLookPinned(prev => {
+      const next = !prev;
+      isQuickLookPinnedRef.current = next;
+      if (next) {
+        addToast('QuickLook pinned to screen • Press P or Esc to unpin', 'info');
+      } else {
+        addToast('QuickLook unpinned', 'info');
+      }
+      return next;
+    });
+  };
+
+  const dismissQuickLook = () => {
+    if (isQuickLookPinnedRef.current) return;
+    isSpaceQuickLookActiveRef.current = false;
+    lastInspectedTargetKeyRef.current = '';
+    setQuickLookPayload(null);
+  };
+
+  const forceCloseQuickLook = () => {
+    isQuickLookPinnedRef.current = false;
+    setIsQuickLookPinned(false);
+    isSpaceQuickLookActiveRef.current = false;
+    lastInspectedTargetKeyRef.current = '';
+    setQuickLookPayload(null);
+  };
+
+  const handleQuickLookAction = (actionId: string, data?: any) => {
+    switch (actionId) {
+      case 'open_student':
+        if (data) {
+          forceCloseQuickLook();
+          setPreviewingStudent(data);
+        }
+        break;
+      case 'toggle_flag':
+        if (data) {
+          handleToggleFlagStudent(data);
+        }
+        break;
+      case 'toggle_module':
+        if (data) {
+          const modKey = data as keyof FeatureToggles;
+          const nextVal = !featureToggles[modKey];
+          handleToggleModule(modKey, nextVal);
+          setQuickLookPayload(prev => prev && prev.type === 'module' ? { ...prev, isEnabled: nextVal } : prev);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
+  function triggerQuickLookInspect(mouseX?: number, mouseY?: number) {
+    const x = mouseX ?? mousePosRef.current.x;
+    const y = mouseY ?? mousePosRef.current.y;
     const el = document.elementFromPoint(x, y);
     if (!el) return;
+
+    const detectContext = (targetEl: HTMLElement): 'grouping' | 'grading' => {
+      // 1. Explicit data-quicklook-context attribute on self or ancestor
+      const explicit = targetEl.closest('[data-quicklook-context]')?.getAttribute('data-quicklook-context');
+      if (explicit === 'grouping' || explicit === 'grading') {
+        return explicit;
+      }
+
+      // 2. Clear grading & results indicators
+      if (targetEl.closest([
+        '.calculation-matrix-card',
+        '.gradebook-matrix-card',
+        '.gradebook-table',
+        '.results-summary-card',
+        '.results-summary-sheet',
+        '.team-cohorts-gradebook',
+        '[data-tour="gradebook-matrix-card"]',
+        '[data-tour="results-summary-card"]',
+        '[data-tour="results-summary-sheet"]',
+        '[data-module-key="showCalculationMatrix"]',
+        '[data-module-key="showResultsSummarySheet"]',
+        '[data-module-key="showAnomalyAudit"]',
+        '[data-module-key="showWebPACalibration"]',
+        '#section-3',
+        '[id*="section-3"]',
+        '.section-3-results'
+      ].join(', '))) {
+        return 'grading';
+      }
+
+      // 3. Clear Auto-Group / formation indicators
+      if (targetEl.closest([
+        '.autogroup-studio-container',
+        '.autogroup-kanban-board',
+        '.autogroup-modal',
+        '.autogroup-card',
+        '.autogroup-pool',
+        '.autogroup-column',
+        '.team-cohorts-overview',
+        '.roster-table',
+        '.students-table',
+        '[data-module-key="showAutoGroupStudio"]',
+        '[data-tour="auto-group-card"]',
+        '#section-1',
+        '[id*="section-1"]',
+        '.section-1-roster'
+      ].join(', '))) {
+        return 'grouping';
+      }
+
+      return 'grouping';
+    };
 
     // 1. Student / Teammate Element
     const studentEl = el.closest('[data-student-id]') as HTMLElement | null;
     if (studentEl) {
       const studentId = studentEl.getAttribute('data-student-id');
-      const student = activeClass?.students.find(s => s.id === studentId) ||
-        stagedAutoGroups?.find(s => s.id === studentId);
-      if (student) {
-        setQuickLookPos({ x, y });
-        setQuickLookPayload({ type: 'student', student });
-        isSpaceQuickLookActiveRef.current = true;
-        return;
+      if (studentId) {
+        const context = detectContext(studentEl);
+        const targetKey = `student:${studentId}:${context}`;
+        if (targetKey === lastInspectedTargetKeyRef.current) {
+          setQuickLookPos({ x, y });
+          return;
+        }
+        const student = activeClass?.students.find(s => s.id === studentId) ||
+          stagedAutoGroups?.find(s => s.id === studentId);
+        if (student) {
+          lastInspectedTargetKeyRef.current = targetKey;
+          setQuickLookPos({ x, y });
+          setQuickLookPayload({
+            type: 'student',
+            student,
+            context,
+            classData: activeClass,
+            baseGroupGrade: activeClass?.teamBaseGrades?.[student.groupName] ?? activeClass?.targetScale ?? 100,
+            fudgeWeight: activeClass?.peerAdjustmentConfig?.fudgeWeight ?? 1.0
+          });
+          isSpaceQuickLookActiveRef.current = true;
+          return;
+        }
       }
     }
 
@@ -1039,30 +1344,96 @@ export const AdminDashboard: React.FC = () => {
     if (groupEl) {
       const groupName = groupEl.getAttribute('data-group-name');
       if (groupName) {
+        const context = detectContext(groupEl);
+        const targetKey = `team:${groupName}:${context}`;
+        if (targetKey === lastInspectedTargetKeyRef.current) {
+          setQuickLookPos({ x, y });
+          return;
+        }
         const pool = (stagedAutoGroups && stagedAutoGroups.some(s => s.groupName === groupName))
           ? stagedAutoGroups
           : (activeClass?.students || []);
         const groupStudents = pool.filter(s => s.groupName === groupName);
         const report = calculateGroupReport(groupName, groupStudents, 3.5);
+        lastInspectedTargetKeyRef.current = targetKey;
         setQuickLookPos({ x, y });
-        setQuickLookPayload({ type: 'team', team: report });
+        setQuickLookPayload({ 
+          type: 'team', 
+          team: report,
+          context,
+          classData: activeClass,
+          isLocked: false
+        });
         isSpaceQuickLookActiveRef.current = true;
         return;
       }
     }
 
     // 3. Module Slot
-    const moduleEl = el.closest('[data-module-key]') as HTMLElement | null;
-    if (moduleEl) {
-      const moduleKey = moduleEl.getAttribute('data-module-key') as keyof FeatureToggles | null;
-      if (moduleKey) {
-        const mod = getModuleByKey(moduleKey);
-        if (mod) {
-          setQuickLookPos({ x, y });
-          setQuickLookPayload({ type: 'module', module: mod });
-          isSpaceQuickLookActiveRef.current = true;
-          return;
+    let moduleEl = el.closest('[data-module-key]') as HTMLElement | null;
+    let moduleKey = moduleEl?.getAttribute('data-module-key') as keyof FeatureToggles | null;
+
+    if (!moduleKey) {
+      const cardEl = el.closest('.card, [data-tour]') as HTMLElement | null;
+      if (cardEl) {
+        const tour = cardEl.getAttribute('data-tour') || '';
+        const tourMap: Record<string, keyof FeatureToggles> = {
+          'self-enrollment-card': 'showSelfEnrollmentCard',
+          'quick-actions-card': 'showQuickActionsCard',
+          'import-wizard-card': 'showImportWizardCard',
+          'webpa-calibrator-card': 'showWebPACalibration',
+          'anomaly-detection-card': 'showAnomalyAudit',
+          'anomaly-audit-card': 'showAnomalyAudit',
+          'milestones-history-card': 'showMilestonesHistory',
+          'lms-export-card': 'showLmsExport',
+          'results-summary-card': 'showResultsSummarySheet',
+          'gradebook-matrix-card': 'showResultsHeaderCard'
+        };
+        if (tourMap[tour]) {
+          moduleKey = tourMap[tour];
         }
+      }
+    }
+
+    if (moduleKey) {
+      const targetKey = `module:${moduleKey}`;
+      if (targetKey === lastInspectedTargetKeyRef.current) {
+        setQuickLookPos({ x, y });
+        return;
+      }
+      const mod = getModuleByKey(moduleKey);
+      if (mod) {
+        lastInspectedTargetKeyRef.current = targetKey;
+        const isModEnabled = featureToggles[moduleKey] !== false;
+        const liveTelemetry: Record<string, string | number> = {};
+        if (moduleKey === 'showWebPACalibration') {
+          liveTelemetry['Sensitivity'] = `${Math.round((activeClass?.peerAdjustmentConfig?.fudgeWeight ?? 1) * 100)}%`;
+          liveTelemetry['Method'] = (activeClass?.peerAdjustmentConfig?.method ?? 'WebPA').toUpperCase();
+          liveTelemetry['Max Cap'] = activeClass?.peerAdjustmentConfig?.capAtMaxGrade ? `${activeClass?.peerAdjustmentConfig?.maxGradeCap ?? 100}` : 'Uncapped';
+        } else if (moduleKey === 'showSelfEnrollmentCard') {
+          liveTelemetry['Status'] = 'Open / Ready';
+          liveTelemetry['Enrolled'] = activeClass?.students.length || 0;
+        } else if (moduleKey === 'showResultsHeaderCard' || moduleKey === 'showResultsSummarySheet') {
+          liveTelemetry['Reviews'] = activeClass?.reviews?.length || 0;
+          liveTelemetry['Students'] = activeClass?.students.length || 0;
+        } else if (moduleKey === 'showAutoGroupStudio') {
+          const poolCount = activeClass?.students.length || 0;
+          const teamsCount = new Set(activeClass?.students.map(s => s.groupName).filter(Boolean)).size;
+          liveTelemetry['Roster Pool'] = `${poolCount} Students`;
+          liveTelemetry['Formed Teams'] = `${teamsCount} Cohorts`;
+          liveTelemetry['Target Size'] = '4–5 Members';
+        }
+
+        setQuickLookPos({ x, y });
+        setQuickLookPayload({ 
+          type: 'module', 
+          module: mod,
+          isEnabled: isModEnabled,
+          classData: activeClass,
+          liveTelemetry: Object.keys(liveTelemetry).length > 0 ? liveTelemetry : undefined
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
       }
     }
 
@@ -1076,19 +1447,23 @@ export const AdminDashboard: React.FC = () => {
       let richLabel = rawText.slice(0, 45) || 'Action Tool';
       let richDesc = '';
       let shortcutHint = '';
+      let impactMsg = '';
 
       if (lower.includes('reshuffle') || lower.includes('shuffle')) {
         richLabel = 'Reshuffle Teams (Simulated Annealing)';
         richDesc = 'Executes combinatorial simulated annealing to balance student teams across home/host universities, nationality mixing, and gender parity.';
         shortcutHint = 'AutoGroup';
+        impactMsg = `Will rebalance ${activeClass?.students.length || 0} students across teams`;
       } else if (lower.includes('apply') && (lower.includes('group') || lower.includes('team'))) {
         richLabel = 'Apply & Synchronize Teams';
         richDesc = 'Commits the current balanced team configuration into the classroom roster, locking memberships for downstream peer evaluation.';
         shortcutHint = 'Roster Sync';
+        impactMsg = `Locks current team assignments into active class roster`;
       } else if (lower.includes('charter')) {
         richLabel = 'Export Team Charters';
         richDesc = 'Generates structured team agreement documents establishing group norms, member roles, and communication rules.';
         shortcutHint = 'Agreements';
+        impactMsg = `Exports formal charter documents for all teams`;
       } else if (lower.includes('autogroup')) {
         richLabel = 'AutoGroup Diversity Studio';
         richDesc = 'Opens the algorithmic group formation workspace to configure target team sizes, rule weights, and layout views.';
@@ -1097,6 +1472,7 @@ export const AdminDashboard: React.FC = () => {
         richLabel = 'Export Data Spreadsheet';
         richDesc = 'Generates accredited spreadsheet records (.xlsx / .csv) containing cohort placements, diversity ratings, or calibrated marks.';
         shortcutHint = 'Export';
+        impactMsg = `Generates .xlsx workbook with multipliers and formulas`;
       } else if (lower.includes('import')) {
         richLabel = 'Ingest Class Roster';
         richDesc = 'Parses student cohort files from Canvas, Blackboard, or Excel with automatic character encoding and header detection.';
@@ -1109,6 +1485,7 @@ export const AdminDashboard: React.FC = () => {
         richLabel = 'Load 100 Demo Cohort';
         richDesc = 'Populates 100 realistic international university students to test multi-attribute group balancing and WebPA analytics.';
         shortcutHint = 'Sample Data';
+        impactMsg = `Populates 100 sample students across 35+ nationalities`;
       } else if (lower.includes('clear')) {
         richLabel = 'Reset Classroom Roster';
         richDesc = 'Purges student records and group assignments to cleanly prepare the workspace for a fresh academic semester.';
@@ -1149,18 +1526,26 @@ export const AdminDashboard: React.FC = () => {
         richDesc = `Controls ${richLabel} within the ${sectionTitle} workspace to adjust active cohort configurations.`;
       }
 
+      const targetKey = `btn:${richLabel}`;
+      if (targetKey === lastInspectedTargetKeyRef.current) {
+        setQuickLookPos({ x, y });
+        return;
+      }
+      lastInspectedTargetKeyRef.current = targetKey;
+
       setQuickLookPos({ x, y });
       setQuickLookPayload({
         type: 'action',
         label: richLabel,
         description: richDesc,
-        shortcut: shortcutHint || undefined
+        shortcut: shortcutHint || undefined,
+        impact: impactMsg || undefined
       });
       isSpaceQuickLookActiveRef.current = true;
       return;
     }
 
-    // 5. Intelligent Section & Card Fallback (Zero Generic Boilerplate)
+    // 5. Intelligent Section & Card Fallback
     const cardEl = el.closest('.accordion-item, .card, .section-container, table, tr, th, td') as HTMLElement | null;
     if (cardEl) {
       const heading = cardEl.querySelector('h1, h2, h3, h4, h5')?.textContent?.trim() || '';
@@ -1196,6 +1581,13 @@ export const AdminDashboard: React.FC = () => {
         richDetails = `Active classroom management console providing real-time data tracking and student evaluation controls.`;
       }
 
+      const targetKey = `card:${richTitle}`;
+      if (targetKey === lastInspectedTargetKeyRef.current) {
+        setQuickLookPos({ x, y });
+        return;
+      }
+      lastInspectedTargetKeyRef.current = targetKey;
+
       setQuickLookPos({ x, y });
       setQuickLookPayload({
         type: 'generic',
@@ -1205,12 +1597,7 @@ export const AdminDashboard: React.FC = () => {
       });
       isSpaceQuickLookActiveRef.current = true;
     }
-  };
-
-  const dismissQuickLook = () => {
-    isSpaceQuickLookActiveRef.current = false;
-    setQuickLookPayload(null);
-  };
+  }
 
   useEffect(() => {
     // Unconditionally prevent browser Spacebar page scrolling when not editing text
@@ -1306,17 +1693,25 @@ export const AdminDashboard: React.FC = () => {
   }, [activeTab]);
 
   useEffect(() => {
+    let isSubscribed = true;
     const handleShortcutsChanged = (e: any) => {
       if (Array.isArray(e.detail)) {
         const list = e.detail;
         const existingActionIds = new Set(list.map((p: any) => p.actionId || p.id));
         const missingDefaults = DEFAULT_KEYBOARD_SHORTCUTS.filter(d => !existingActionIds.has(d.actionId || d.id));
         const merged = missingDefaults.length > 0 ? [...list, ...missingDefaults] : list;
-        setShortcuts(merged);
+        queueMicrotask(() => {
+          if (isSubscribed) {
+            setShortcuts(merged);
+          }
+        });
       }
     };
     window.addEventListener('peerlens_shortcuts_changed', handleShortcutsChanged);
-    return () => window.removeEventListener('peerlens_shortcuts_changed', handleShortcutsChanged);
+    return () => {
+      isSubscribed = false;
+      window.removeEventListener('peerlens_shortcuts_changed', handleShortcutsChanged);
+    };
   }, []);
 
   // Command Palette & Multi-select Bulk Actions
@@ -1983,6 +2378,10 @@ export const AdminDashboard: React.FC = () => {
 
       // Handle Escape to dismiss open overlays/modals or exit edit mode
       if (e.key === 'Escape') {
+        if (isQuickLookPinnedRef.current || isSpaceQuickLookActiveRef.current) {
+          forceCloseQuickLook();
+          return;
+        }
         if (isQuickAddActiveRef.current) { dismissQuickAdd(); return; }
         if (isEditMode) { setIsEditMode(false); addToast('Exited Layout Edit Mode', 'info'); return; }
         if (isShortcutsModalOpen) { setIsShortcutsModalOpen(false); return; }
@@ -2066,6 +2465,46 @@ export const AdminDashboard: React.FC = () => {
           e.stopPropagation();
           handleRedoDismissModule();
           return;
+        }
+      }
+
+      // QuickLook HUD In-Place Hotkeys: Pin [P], Profile [E]/[Enter], Flag [F], Toggle Module [T]
+      if (isSpaceQuickLookActiveRef.current || isQuickLookPinnedRef.current) {
+        if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.code === 'KeyP' || e.key?.toLowerCase() === 'p')) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleToggleQuickLookPin();
+          return;
+        }
+
+        const currentPayload = quickLookPayloadRef.current;
+        if (currentPayload?.type === 'student') {
+          if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.code === 'KeyE' || e.key?.toLowerCase() === 'e' || e.code === 'Enter')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const studentToPreview = currentPayload.student;
+            forceCloseQuickLook();
+            setPreviewingStudent(studentToPreview);
+            return;
+          }
+          if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.code === 'KeyF' || e.key?.toLowerCase() === 'f')) {
+            e.preventDefault();
+            e.stopPropagation();
+            handleToggleFlagStudent(currentPayload.student.id);
+            return;
+          }
+        }
+
+        if (currentPayload?.type === 'module') {
+          if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.code === 'KeyT' || e.key?.toLowerCase() === 't')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const modKey = currentPayload.module.key;
+            const nextVal = !featureToggles[modKey];
+            handleToggleModule(modKey, nextVal);
+            setQuickLookPayload(prev => prev && prev.type === 'module' ? { ...prev, isEnabled: nextVal } : prev);
+            return;
+          }
         }
       }
 
@@ -3767,18 +4206,76 @@ export const AdminDashboard: React.FC = () => {
       {/* UNIFIED PERSISTENT APP TOPBAR */}
       <header className="app-header">
         {/* Left: Brand + Course Picker + ID + Delete */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0, flexWrap: 'wrap' }}>
           <div
             className="brand"
+            data-tour="branding-customizer-btn"
             onClick={() => setActiveTab('hub')}
-            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}
-            title="Return to Classroom Hub"
+            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}
+            title="PeerLens Classroom Hub (Click to return to Hub)"
           >
-            <img src="/PeerGrading.png" alt="PeerLens" style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'contain' }} />
-            <span style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center' }}>
-              PeerLens
+            <img 
+              src={(branding.showInHeader && branding.institutionLogo) ? branding.institutionLogo : "/PeerGrading.png"} 
+              alt="PeerLens" 
+              style={{ 
+                width: '28px', 
+                height: '28px', 
+                borderRadius: branding.logoShape === 'circle' ? '50%' : (branding.logoShape === 'square' ? '2px' : '6px'), 
+                objectFit: 'contain' 
+              }} 
+            />
+            <span style={{ fontWeight: 800, fontSize: '1.02rem', color: 'var(--text-primary)', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center' }}>
+              {(branding.showInHeader && branding.institutionName) ? branding.institutionName : 'PeerLens'}
             </span>
           </div>
+
+          {/* Institutional Course Badge & Term Banner (Hidden by default, shown when showInHeader is true) */}
+          {branding.showInHeader && (branding.courseBadge || branding.termBanner) && (
+            <div
+              onClick={() => setIsBrandingModalOpen(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}
+              title="Click to customize Institutional Branding, Course Badge & Term Banner"
+            >
+              {branding.courseBadge && (
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 750,
+                    padding: '0.15rem 0.55rem',
+                    borderRadius: '9999px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    cursor: 'pointer',
+                    backgroundColor: (BADGE_COLOR_THEMES[branding.badgeColor || 'indigo'] || BADGE_COLOR_THEMES.indigo).bg,
+                    color: (BADGE_COLOR_THEMES[branding.badgeColor || 'indigo'] || BADGE_COLOR_THEMES.indigo).text,
+                    border: `1px solid ${(BADGE_COLOR_THEMES[branding.badgeColor || 'indigo'] || BADGE_COLOR_THEMES.indigo).border}`
+                  }}
+                >
+                  {renderBrandingBadgeIcon(branding.badgeIcon)}
+                  <span>{branding.courseBadge}</span>
+                </span>
+              )}
+              {branding.termBanner && (
+                <span
+                  className="badge badge-secondary"
+                  style={{
+                    fontSize: '0.7rem',
+                    fontWeight: 650,
+                    padding: '0.12rem 0.45rem',
+                    borderRadius: '9999px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {renderBrandingTermIcon(branding.termIcon)}
+                  <span>{branding.termBanner}</span>
+                </span>
+              )}
+            </div>
+          )}
 
           {(isEditMode || featureToggles.showClassPicker) && (
             <span style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-color)', margin: '0 0.15rem', flexShrink: 0 }} />
@@ -3889,7 +4386,7 @@ export const AdminDashboard: React.FC = () => {
                 title="Quick Command Palette & Student Finder (Ctrl+K or /)"
               >
                 <Search size={15} className="topbar-search-icon" />
-                <span className="topbar-search-placeholder">Search students, rubrics, micro-pulse, actions...</span>
+                <span className="topbar-search-placeholder">Search students (#), teams (@), actions (&gt;), guides (?), presentation, custom questions...</span>
                 <kbd className="topbar-search-kbd">⌘K</kbd>
               </div>
             </EditableModuleSlot>
@@ -4394,16 +4891,53 @@ export const AdminDashboard: React.FC = () => {
         {/* INSTRUCTOR ONBOARDING & SETUP TRACKER */}
         {!isSandboxActive && showOnboardingChecklist && (
           <OnboardingChecklistWidget
+            activeClass={activeClass}
             studentCount={stats.totalStudents}
+            uniqueTeamCount={new Set(activeClass.students.map(s => s.groupName).filter(Boolean)).size}
             rubricWeightSum={activeClass.fields.reduce((sum, f) => sum + (f.weight !== undefined && f.weight > 0 ? f.weight : Math.round(100 / Math.max(1, activeClass.fields.length))), 0)}
             hasEvaluations={stats.submittedCount > 0}
             onNavigateTab={(tab) => setActiveTab(tab)}
-            onStartTour={() => setIsTourOpen(true)}
+            onStartTour={(stepIds) => {
+              if (stepIds && stepIds.length > 0) {
+                setCustomTourStepIds(stepIds);
+              } else {
+                setCustomTourStepIds(null);
+              }
+              setIsTourOpen(true);
+            }}
             onLaunchSandbox={handleLaunchSandbox}
+            onOpenEnrollmentBuilder={() => setIsEnrollmentFormBuilderOpen(true)}
+            onOpenTeamKickoff={(tab) => handleOpenTeamKickoff(tab || 'charters')}
+            onOpenBranding={() => setIsBrandingModalOpen(true)}
+            onOpenAutoGroup={() => {
+              setActiveTab('roster');
+              setTimeout(() => {
+                const el = document.querySelector('[data-tour="autogroup-studio"]');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }, 100);
+            }}
+            onAutoBalanceRubric={handleAutoBalanceWeights}
+            onExportCSV={() => {
+              try {
+                const csv = generateResultsCSV(activeClass, sortedGradebookStudents);
+                downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
+                addToast('Results summary CSV exported in active sort order!', 'success');
+              } catch (e) {
+                addToast('Failed to export CSV results', 'error');
+              }
+            }}
+            onOpenSettings={() => {
+              setSettingsInitialTab('modules');
+              setIsSettingsModalOpen(true);
+            }}
+            onOpenLayoutLibrary={() => setIsLayoutLibraryOpen(true)}
+            onToggleEditMode={() => toggleEditMode()}
+            featureToggles={featureToggles}
             onDismiss={() => {
               setShowOnboardingChecklist(false);
               localStorage.setItem('peer_onboarding_dismissed', 'true');
             }}
+            onToast={(msg, type) => addToast(msg, type || 'info')}
           />
         )}
 
@@ -4930,7 +5464,7 @@ export const AdminDashboard: React.FC = () => {
 
             {/* Top Auxiliary Cards Row - Only rendered if at least 1 card is enabled, leaving zero blank space when all are hidden */}
             {(isEditMode || featureToggles.showSelfEnrollmentCard || featureToggles.showQuickActionsCard || featureToggles.showImportWizardCard) && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'stretch', order: getSection1TopRowOrder() }}>
                 {/* 1. Student Self-Enrollment QR & Link Card */}
                 {(isEditMode || featureToggles.showSelfEnrollmentCard) && (
                   <EditableModuleSlot
@@ -4938,18 +5472,21 @@ export const AdminDashboard: React.FC = () => {
                     isEditMode={isEditMode}
                     isVisible={featureToggles.showSelfEnrollmentCard}
                     onToggle={handleToggleModule}
+                    style={{ order: getCardVisualOrder('section1', 'showSelfEnrollmentCard') }}
                   >
-                    <div className="card" data-tour="self-enrollment-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
+                    <div className="card" data-tour="self-enrollment-card" style={{ order: getCardVisualOrder('section1', 'showSelfEnrollmentCard'), display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
                       {/* Tier 1: Header & Dynamic Description */}
                       <div>
                         <div className="card-header" style={{ marginBottom: '0.35rem' }}>
                           <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
                             <QrCode size={18} className="text-primary" /> Student Join Code &amp; Link
-                            <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Student Join Code &amp; Link Guide" />
                           </h3>
-                          <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                            QR &amp; Link
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <CardLayoutControls cardId="showSelfEnrollmentCard" section="section1" isEditMode={isEditMode} onToast={addToast} />
+                            <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                              QR &amp; Link
+                            </span>
+                          </div>
                         </div>
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
                           {(() => {
@@ -5068,17 +5605,21 @@ export const AdminDashboard: React.FC = () => {
                     isEditMode={isEditMode}
                     isVisible={featureToggles.showQuickActionsCard}
                     onToggle={handleToggleModule}
+                    style={{ order: getCardVisualOrder('section1', 'showQuickActionsCard') }}
                   >
-                    <div className="card" data-tour="quick-actions-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
+                    <div className="card" data-tour="quick-actions-card" style={{ order: getCardVisualOrder('section1', 'showQuickActionsCard'), display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
                       {/* Tier 1: Header & Dynamic Description */}
                       <div>
                         <div className="card-header" style={{ marginBottom: '0.35rem' }}>
                           <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
                             <Sliders size={18} className="text-indigo" /> Quick Actions
                           </h3>
-                          <span className="badge badge-secondary" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                            Tools
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <CardLayoutControls cardId="showQuickActionsCard" section="section1" isEditMode={isEditMode} onToast={addToast} />
+                            <span className="badge badge-secondary" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                              Tools
+                            </span>
+                          </div>
                         </div>
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
                           {(() => {
@@ -5185,18 +5726,21 @@ export const AdminDashboard: React.FC = () => {
                     isEditMode={isEditMode}
                     isVisible={featureToggles.showImportWizardCard}
                     onToggle={handleToggleModule}
+                    style={{ order: getCardVisualOrder('section1', 'showImportWizardCard') }}
                   >
-                    <div className="card" data-tour="import-wizard-card" style={{ display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
+                    <div className="card" data-tour="import-wizard-card" style={{ order: getCardVisualOrder('section1', 'showImportWizardCard'), display: 'flex', flexDirection: 'column', padding: '1.25rem', gap: '0.75rem', height: '100%', boxSizing: 'border-box' }}>
                       {/* Tier 1: Header & Dynamic Description */}
                       <div>
                         <div className="card-header" style={{ marginBottom: '0.35rem' }}>
                           <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem', fontWeight: 800, margin: 0 }}>
                             <Upload size={18} className="text-teal" /> Import &amp; Export Hub
-                            <FeatureInfoButton featureId="import-wizard" size="sm" tooltipText="Import &amp; Export Hub Guide" />
                           </h3>
-                          <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                            Hub
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <CardLayoutControls cardId="showImportWizardCard" section="section1" isEditMode={isEditMode} onToast={addToast} />
+                            <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                              Hub
+                            </span>
+                          </div>
                         </div>
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4, minHeight: '38px', display: 'flex', alignItems: 'center' }}>
                           {(() => {
@@ -5330,8 +5874,9 @@ export const AdminDashboard: React.FC = () => {
                 isEditMode={isEditMode}
                 isVisible={featureToggles.showAutoGroupStudio}
                 onToggle={handleToggleModule}
+                style={{ order: getCardVisualOrder('section1', 'showAutoGroupStudio') }}
               >
-                <div data-tour="autogroup-studio">
+                <div data-tour="autogroup-studio" style={{ order: getCardVisualOrder('section1', 'showAutoGroupStudio') }}>
                   <AutoGroupStudio
                     students={activeClass.students}
                     defaultExpanded={true}
@@ -5351,6 +5896,9 @@ export const AdminDashboard: React.FC = () => {
                     classId={activeClass.id}
                     onOpenEnrollmentBuilder={() => setIsEnrollmentFormBuilderOpen(true)}
                     onStagedGroupsChange={handleStagedGroupsChange}
+                    cardControls={
+                      <CardLayoutControls cardId="showAutoGroupStudio" section="section1" isEditMode={isEditMode} onToast={addToast} />
+                    }
                   />
                 </div>
               </EditableModuleSlot>
@@ -5363,10 +5911,13 @@ export const AdminDashboard: React.FC = () => {
                 isEditMode={isEditMode}
                 isVisible={featureToggles.showTeamKickoffAndRoles}
                 onToggle={handleToggleModule}
+                style={{ order: getCardVisualOrder('section1', 'showTeamKickoffAndRoles') }}
               >
                 <div
                   className="card"
+                  data-tour="team-kickoff-card"
                   style={{
+                    order: getCardVisualOrder('section1', 'showTeamKickoffAndRoles'),
                     padding: '1.5rem',
                     display: 'flex',
                     flexDirection: 'column',
@@ -5403,6 +5954,7 @@ export const AdminDashboard: React.FC = () => {
                           <span className="badge badge-primary" style={{ fontSize: '0.66rem', padding: '0.12rem 0.5rem' }}>
                             Roles &amp; Norms
                           </span>
+                          <CardLayoutControls cardId="showTeamKickoffAndRoles" section="section1" isEditMode={isEditMode} onToast={addToast} />
                         </div>
                         <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
                           Assigns student roles (Lead, Scribe, Presenter) and sets group agreements.
@@ -5618,8 +6170,9 @@ export const AdminDashboard: React.FC = () => {
                 isVisible={featureToggles.showRosterTable}
                 onToggle={handleToggleModule}
                 slotType="table"
+                style={{ order: getCardVisualOrder('section1', 'showRosterTable') }}
               >
-                <div className="card" data-tour="classroom-roster-table" style={{ padding: isRosterTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
+                <div className="card" data-tour="classroom-roster-table" style={{ order: getCardVisualOrder('section1', 'showRosterTable'), padding: isRosterTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
                   <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isRosterTableExpanded ? '1.25rem' : 0 }}>
                     <div
                       style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
@@ -5628,7 +6181,6 @@ export const AdminDashboard: React.FC = () => {
                     >
                       <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
                         <Users size={20} className="text-indigo" /> Classroom Roster
-                        <FeatureInfoButton featureId="classroom-roster" size="sm" tooltipText="Classroom Roster Guide" />
                       </h3>
                       <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
                         {filteredStudents.length} of {activeClass.students.length} members
@@ -5638,6 +6190,7 @@ export const AdminDashboard: React.FC = () => {
                           <AlertTriangle size={11} /> {duplicateFlagsMap.size} flags
                         </span>
                       )}
+                      <CardLayoutControls cardId="showRosterTable" section="section1" isEditMode={isEditMode} onToast={addToast} />
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                       {(isEditMode || featureToggles.showRosterSearchFilter) && (
@@ -6536,7 +7089,7 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   ) : !isRosterTableExpanded ? null : (
                     <>
-                      <div className="table-container table-container-sticky">
+                      <div className="table-container table-container-sticky roster-table" data-quicklook-context="grouping">
                         <table className="custom-table">
                           <thead>
                             <tr>
@@ -7031,48 +7584,54 @@ export const AdminDashboard: React.FC = () => {
                 isEditMode={isEditMode}
                 isVisible={featureToggles.showTeamOverviewCards}
                 onToggle={handleToggleModule}
+                style={{ order: getCardVisualOrder('section1', 'showTeamOverviewCards') }}
               >
-                {uniqueGroups.length > 0 && (
-                  <TeamCohortsOverview
-                    activeClass={activeClass}
-                    selectedGroup={groupFilter}
-                    onSelectGroup={(grp) => setGroupFilter(grp)}
-                    baseGroupGrade={baseGroupGrade}
-                    fudgeWeight={fudgeWeight}
-                    onUpdateTeamBaseGrade={updateTeamBaseGrade}
-                    onPreviewStudent={(s) => setPreviewingStudent(s)}
-                    onEditStudent={(s) => {
-                      const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
-                      setEditStudentData({
-                        id: s.id,
-                        name: s.name,
-                        email: s.email,
-                        groupName: s.groupName,
-                        gender: s.gender || 'Prefer not to say',
-                        isInternational: isIntl,
-                        isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
-                        nationality: s.nationality || '',
-                        currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
-                        englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
-                        university: s.university || '',
-                        degree: s.degree || '',
-                        originalUniversity: s.originalUniversity || '',
-                        originalCountry: s.originalCountry || '',
-                        currentUniversity: s.currentUniversity || s.university || '',
-                        studentType: s.studentType || 'Normal',
-                        customFields: s.customFields || {}
-                      });
-                      setIsEditStudentModalOpen(true);
-                    }}
-                    onOpenReport={(studentId) => openReportModal(studentId)}
-                    onResetStudentReviews={(classId, studentId) => resetStudentReviews(classId, studentId)}
-                    addToast={(msg, type) => addToast(msg, type)}
-                    triggerConfirm={triggerConfirm}
-                    firebaseConfig={firebaseConfig}
-                    isCloudSynced={isCloudSynced}
-                    user={user}
-                  />
-                )}
+                <div data-tour="team-overview-cards" style={{ order: getCardVisualOrder('section1', 'showTeamOverviewCards') }}>
+                  {uniqueGroups.length > 0 && (
+                    <TeamCohortsOverview
+                      activeClass={activeClass}
+                      selectedGroup={groupFilter}
+                      onSelectGroup={(grp) => setGroupFilter(grp)}
+                      baseGroupGrade={baseGroupGrade}
+                      fudgeWeight={fudgeWeight}
+                      onUpdateTeamBaseGrade={updateTeamBaseGrade}
+                      onPreviewStudent={(s) => setPreviewingStudent(s)}
+                      onEditStudent={(s) => {
+                        const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
+                        setEditStudentData({
+                          id: s.id,
+                          name: s.name,
+                          email: s.email,
+                          groupName: s.groupName,
+                          gender: s.gender || 'Prefer not to say',
+                          isInternational: isIntl,
+                          isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
+                          nationality: s.nationality || '',
+                          currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
+                          englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
+                          university: s.university || '',
+                          degree: s.degree || '',
+                          originalUniversity: s.originalUniversity || '',
+                          originalCountry: s.originalCountry || '',
+                          currentUniversity: s.currentUniversity || s.university || '',
+                          studentType: s.studentType || 'Normal',
+                          customFields: s.customFields || {}
+                        });
+                        setIsEditStudentModalOpen(true);
+                      }}
+                      onOpenReport={(studentId) => openReportModal(studentId)}
+                      onResetStudentReviews={(classId, studentId) => resetStudentReviews(classId, studentId)}
+                      addToast={(msg, type) => addToast(msg, type)}
+                      triggerConfirm={triggerConfirm}
+                      firebaseConfig={firebaseConfig}
+                      isCloudSynced={isCloudSynced}
+                      user={user}
+                      cardControls={
+                        <CardLayoutControls cardId="showTeamOverviewCards" section="section1" isEditMode={isEditMode} onToast={addToast} />
+                      }
+                    />
+                  )}
+                </div>
               </EditableModuleSlot>
             )}
           </div>
@@ -7081,7 +7640,7 @@ export const AdminDashboard: React.FC = () => {
         {/* TAB CONTENT: GRADING SCALE CONFIG */}
         {activeTab === 'grading' && (
           <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div className="card" data-tour="rubric-builder-card" style={{ padding: '1.25rem' }}>
+            <div className="card" data-tour="rubric-builder-card" style={{ order: getCardVisualOrder('section2', 'showCriterionCards'), padding: '1.25rem' }}>
               {/* Header & Presets Bar */}
               {(isEditMode || featureToggles.showRubricHeader) && (
                 <EditableModuleSlot
@@ -7095,11 +7654,11 @@ export const AdminDashboard: React.FC = () => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                         <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
                           <Sliders size={20} className="text-indigo" /> Evaluation Rubric &amp; Grading Scales
-                          <FeatureInfoButton featureId="grading-rubric" size="sm" tooltipText="Rubric & Grading Scales Guide" />
                         </h3>
                         <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
                           {activeClass.fields.length} Criteria
                         </span>
+                        <CardLayoutControls cardId="showCriterionCards" section="section2" isEditMode={isEditMode} onToast={addToast} />
                       </div>
                       <p className="card-subtitle" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.4 }}>
                         Configure multi-criteria rubrics with behavioral guidance. Define custom scales and load accredited academic presets.
@@ -7158,7 +7717,6 @@ export const AdminDashboard: React.FC = () => {
                           &bull; CATME, Salas &amp; AAC&amp;U research standard (6 criteria, 100% balanced)
                         </span>
                       </div>
-                      <FeatureInfoButton featureId="rubric-presets" size="sm" tooltipText="IPAF Rubric Guide" />
                     </div>
 
                     <button
@@ -7220,6 +7778,7 @@ export const AdminDashboard: React.FC = () => {
                             1–5 Scale (Default)
                           </span>
                         )}
+                        <CardLayoutControls cardId="showCriterionCards" section="section2" isEditMode={isEditMode} onToast={addToast} />
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                           {activeClass.customScaleEnabled ? 'Custom rating bounds' : 'Students evaluate peers on a clean 1 to 5 scale'}
                         </span>
@@ -7848,124 +8407,135 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </EditableModuleSlot>
               )}
-
-              {/* Evaluation Form Controls & Student Permissions (Collapsible & Minimal) */}
-              {(isEditMode || featureToggles.showEvaluationFormControls) && (
-                <EditableModuleSlot
-                  moduleKey="showEvaluationFormControls"
-                  isEditMode={isEditMode}
-                  isVisible={featureToggles.showEvaluationFormControls}
-                  onToggle={handleToggleModule}
-                >
-                  <div data-tour="eval-controls-card" style={{ marginTop: '1.5rem' }}>
-                    <CollapsibleEvaluationControls
-                      activeClass={activeClass}
-                      onUpdateControls={(controls) => updateEvaluationControls(activeClass.id, controls)}
-                      defaultExpanded={false}
-                    />
-                  </div>
-                </EditableModuleSlot>
-              )}
-
-              {/* Team Health "Micro-Pulse" Check-ins (On-Demand & Customizable Scales) */}
-              {(isEditMode || featureToggles.showTeamHealthPulse || (activeClass.pulseRounds && activeClass.pulseRounds.length > 0)) && (
-                <EditableModuleSlot
-                  moduleKey="showTeamHealthPulse"
-                  isEditMode={isEditMode}
-                  isVisible={featureToggles.showTeamHealthPulse}
-                  onToggle={handleToggleModule}
-                >
-                  <div id="team-health-pulse-card" data-tour="team-health-pulse-card" style={{ marginTop: '1.5rem' }}>
-                    <TeamHealthPulseCard
-                      activeClass={activeClass}
-                      onCreateRound={(classId, roundData) => {
-                        if (!featureToggles.showTeamHealthPulse) {
-                          saveFeatureToggle('showTeamHealthPulse', true);
-                        }
-                        createPulseRound(classId, roundData);
-                      }}
-                      onUpdateRound={updatePulseRound}
-                      onSubmitResponse={submitPulseResponse}
-                      onDeleteRound={deletePulseRound}
-                      onSeedSampleData={(classId) => {
-                        if (!featureToggles.showTeamHealthPulse) {
-                          saveFeatureToggle('showTeamHealthPulse', true);
-                        }
-                        seedSamplePulseRounds(classId);
-                      }}
-                      addToast={addToast}
-                    />
-                  </div>
-                </EditableModuleSlot>
-              )}
-
-              {/* Live Presentation Day Scoring Cockpit - Togglable in Settings */}
-              {(isEditMode || featureToggles.showLivePresentationScoring) && (
-                <EditableModuleSlot
-                  moduleKey="showLivePresentationScoring"
-                  isEditMode={isEditMode}
-                  isVisible={featureToggles.showLivePresentationScoring}
-                  onToggle={handleToggleModule}
-                >
-                  <div
-                    id="live-presentation-scoring-card"
-                    style={{
-                      marginTop: '1.5rem',
-                      padding: '1.25rem 1.5rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '1rem',
-                      background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(13, 148, 136, 0.05) 100%)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-lg)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-                      <div
-                        style={{
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: '12px',
-                          backgroundColor: 'rgba(13, 148, 136, 0.12)',
-                          color: 'var(--accent-teal, #0d9488)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        <Presentation size={22} />
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                            Live Presentation Scoring
-                          </h3>
-                          <span className="badge badge-teal" style={{ fontSize: '0.68rem' }}>
-                            Real-Time Scoring
-                          </span>
-                        </div>
-                        <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                          Lets audience and professors score live group presentations in real time.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <button
-                        type="button"
-                        className="btn btn-teal btn-sm"
-                        onClick={() => setIsLivePresentationModalOpen(true)}
-                        style={{ gap: '0.4rem', fontWeight: 700, padding: '0.45rem 0.95rem' }}
-                      >
-                        <Presentation size={14} /> Open Live Scoring Cockpit
-                      </button>
-                    </div>
-                  </div>
-                </EditableModuleSlot>
-              )}
             </div>
+
+            {/* Evaluation Form Controls & Student Permissions (Collapsible & Minimal) */}
+            {(isEditMode || featureToggles.showEvaluationFormControls) && (
+              <EditableModuleSlot
+                moduleKey="showEvaluationFormControls"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showEvaluationFormControls}
+                onToggle={handleToggleModule}
+                style={{ order: getCardVisualOrder('section2', 'showEvaluationFormControls') }}
+              >
+                <div data-tour="eval-controls-card" style={{ order: getCardVisualOrder('section2', 'showEvaluationFormControls') }}>
+                  <CollapsibleEvaluationControls
+                    activeClass={activeClass}
+                    onUpdateControls={(controls) => updateEvaluationControls(activeClass.id, controls)}
+                    defaultExpanded={false}
+                    cardControls={
+                      <CardLayoutControls cardId="showEvaluationFormControls" section="section2" isEditMode={isEditMode} onToast={addToast} />
+                    }
+                  />
+                </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Team Health "Micro-Pulse" Check-ins (On-Demand & Customizable Scales) */}
+            {(isEditMode || featureToggles.showTeamHealthPulse || (activeClass.pulseRounds && activeClass.pulseRounds.length > 0)) && (
+              <EditableModuleSlot
+                moduleKey="showTeamHealthPulse"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showTeamHealthPulse}
+                onToggle={handleToggleModule}
+                style={{ order: getCardVisualOrder('section2', 'showTeamHealthPulse') }}
+              >
+                <div id="team-health-pulse-card" data-tour="team-health-pulse-card" style={{ order: getCardVisualOrder('section2', 'showTeamHealthPulse') }}>
+                  <TeamHealthPulseCard
+                    activeClass={activeClass}
+                    onCreateRound={(classId, roundData) => {
+                      if (!featureToggles.showTeamHealthPulse) {
+                        saveFeatureToggle('showTeamHealthPulse', true);
+                      }
+                      createPulseRound(classId, roundData);
+                    }}
+                    onUpdateRound={updatePulseRound}
+                    onSubmitResponse={submitPulseResponse}
+                    onDeleteRound={deletePulseRound}
+                    onSeedSampleData={(classId) => {
+                      if (!featureToggles.showTeamHealthPulse) {
+                        saveFeatureToggle('showTeamHealthPulse', true);
+                      }
+                      seedSamplePulseRounds(classId);
+                    }}
+                    addToast={addToast}
+                    cardControls={
+                      <CardLayoutControls cardId="showTeamHealthPulse" section="section2" isEditMode={isEditMode} onToast={addToast} />
+                    }
+                  />
+                </div>
+              </EditableModuleSlot>
+            )}
+
+            {/* Live Presentation Day Scoring Cockpit - Togglable in Settings */}
+            {(isEditMode || featureToggles.showLivePresentationScoring) && (
+              <EditableModuleSlot
+                moduleKey="showLivePresentationScoring"
+                isEditMode={isEditMode}
+                isVisible={featureToggles.showLivePresentationScoring}
+                onToggle={handleToggleModule}
+                style={{ order: getCardVisualOrder('section2', 'showLivePresentationScoring') }}
+              >
+                <div
+                  id="live-presentation-scoring-card"
+                  data-tour="live-presentation-card"
+                  style={{
+                    order: getCardVisualOrder('section2', 'showLivePresentationScoring'),
+                    padding: '1.25rem 1.5rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '1rem',
+                    background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(13, 148, 136, 0.05) 100%)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-lg)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                    <div
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '12px',
+                        backgroundColor: 'rgba(13, 148, 136, 0.12)',
+                        color: 'var(--accent-teal, #0d9488)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <Presentation size={22} />
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          Live Presentation Scoring
+                        </h3>
+                        <span className="badge badge-teal" style={{ fontSize: '0.68rem' }}>
+                          Real-Time Scoring
+                        </span>
+                        <CardLayoutControls cardId="showLivePresentationScoring" section="section2" isEditMode={isEditMode} onToast={addToast} />
+                      </div>
+                      <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                        Lets audience and professors score live group presentations in real time.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className="btn btn-teal btn-sm"
+                      onClick={() => setIsLivePresentationModalOpen(true)}
+                      style={{ gap: '0.4rem', fontWeight: 700, padding: '0.45rem 0.95rem' }}
+                    >
+                      <Presentation size={14} /> Open Live Scoring Cockpit
+                    </button>
+                  </div>
+                </div>
+              </EditableModuleSlot>
+            )}
           </div>
         )}
 
@@ -7979,12 +8549,13 @@ export const AdminDashboard: React.FC = () => {
                 isEditMode={isEditMode}
                 isVisible={featureToggles.showResultsHeaderCard}
                 onToggle={handleToggleModule}
+                style={{ order: getCardVisualOrder('section3', 'showResultsHeaderCard') }}
               >
-                <div className="card" data-tour="gradebook-matrix-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                <div className="card" data-tour="gradebook-matrix-card" style={{ order: getCardVisualOrder('section3', 'showResultsHeaderCard'), display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                   <div>
                     <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                       <Award size={18} className="text-teal" /> Real-time Calculation Matrix
-                      <FeatureInfoButton featureId="calculation-matrix" size="sm" tooltipText="Calculation Matrix Guide" />
+                      <CardLayoutControls cardId="showResultsHeaderCard" section="section3" isEditMode={isEditMode} onToast={addToast} />
                     </h3>
                     <p className="card-subtitle">Self-excluded student averages recalculate instantly as submissions arrive. Calculations do not count self-grading reviews.</p>
                   </div>
@@ -8076,7 +8647,6 @@ export const AdminDashboard: React.FC = () => {
                             <div>
                               <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.98rem', fontWeight: 800 }}>
                                 <Activity size={17} className="text-primary" /> Skills Radar Chart
-                                <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Skills Radar Chart Guide" />
                               </h3>
                               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                                 Visual chart comparing team strengths across all rubric criteria.
@@ -8201,12 +8771,10 @@ export const AdminDashboard: React.FC = () => {
                               isVisible={featureToggles.showJohariMatrix}
                               onToggle={handleToggleModule}
                             >
-                              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
+                              <div className="card" data-tour="johari-matrix-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
                                 <div>
                                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                                     <UserCheck size={17} className="text-teal" /> Self vs. Peer Rating Comparison
-                                    <FeatureInfoButton featureId="johari-window" size="sm" tooltipText="Self vs. Peer Rating Comparison Guide" />
-                                    <ContextHelpPopover topicKey="johari" />
                                   </h3>
                                   <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                                     Shows if students rate themselves much higher or lower than teammates rated them.
@@ -8259,11 +8827,10 @@ export const AdminDashboard: React.FC = () => {
                               isVisible={featureToggles.showQualitativeFeedback}
                               onToggle={handleToggleModule}
                             >
-                              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
+                              <div className="card" data-tour="qualitative-feedback-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', flex: 1 }}>
                                 <div>
                                   <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                                     <MessageSquare size={17} className="text-primary" /> Written Feedback Summary
-                                    <FeatureInfoButton featureId="feedback-sentiment" size="sm" tooltipText="Written Feedback Summary Guide" />
                                   </h3>
                                   <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                                     Summarizes common themes and praise words written by teammates.
@@ -8329,17 +8896,44 @@ export const AdminDashboard: React.FC = () => {
                     >
                       <div className="card" data-tour="webpa-calibrator-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', height: '100%' }}>
                         <div>
-                          <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
-                            <Sliders size={17} className="text-teal" /> Peer Score Adjustment
-                            <FeatureInfoButton featureId="webpa-calibration" size="sm" tooltipText="Peer Score Adjustment Guide" />
-                            <ContextHelpPopover topicKey="webpa" />
-                          </h3>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800, margin: 0 }}>
+                              <Sliders size={17} className="text-teal" /> Peer Score Adjustment
+                            </h3>
+
+                            {(isEditMode || featureToggles.showInspectCalculationsBtn) && (
+                              <EditableModuleSlot
+                                moduleKey="showInspectCalculationsBtn"
+                                title="Inspect Calculations"
+                                isVisible={featureToggles.showInspectCalculationsBtn}
+                                isEditMode={isEditMode}
+                                onToggle={handleToggleModule}
+                                slotType="button"
+                              >
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => {
+                                    setInspectorStudentId(null);
+                                    setIsPeerInspectorOpen(true);
+                                  }}
+                                  style={{ width: '28px', height: '28px', padding: 0, color: 'var(--text-secondary)' }}
+                                  title="Inspect live calculation breakdown for any student"
+                                >
+                                  <Calculator size={15} className="text-teal" />
+                                </button>
+                              </EditableModuleSlot>
+                            )}
+                          </div>
+
                           <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
                             Adjusts individual student grades up or down based on teammate reviews.
                           </p>
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {/* Base Marks & Controls */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                          
                           {/* Default Project Base Mark */}
                           <div className="form-group" style={{ margin: 0 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
@@ -8354,6 +8948,7 @@ export const AdminDashboard: React.FC = () => {
                                     const newGrades: Record<string, number> = {};
                                     classTeams.forEach(t => { newGrades[t] = baseGroupGrade; });
                                     setAllTeamBaseGrades(activeClass.id, newGrades);
+                                    addToast(`Applied base mark ${baseGroupGrade} to all ${classTeams.length} teams.`, 'success');
                                   }}
                                   style={{ fontSize: '0.68rem', padding: '0.12rem 0.4rem', height: '22px', fontWeight: 700 }}
                                   title="Set all teams in the class to this default base mark"
@@ -8390,7 +8985,7 @@ export const AdminDashboard: React.FC = () => {
                                 </button>
                               </div>
 
-                              <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.35rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                              <div style={{ maxHeight: '95px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.35rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
                                 {classTeams.map(team => {
                                   const teamMark = activeClass?.teamBaseGrades?.[team] ?? baseGroupGrade;
                                   const isCustom = activeClass?.teamBaseGrades && typeof activeClass.teamBaseGrades[team] === 'number';
@@ -8418,11 +9013,15 @@ export const AdminDashboard: React.FC = () => {
                             </div>
                           )}
 
-                          {/* Fudge Weight Slider */}
+                          {/* Peer Review Impact (Sensitivity Slider) */}
                           <div className="form-group" style={{ margin: 0 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                              <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem' }}>Peer Review Impact (0–100%)</label>
-                              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>{Math.round(fudgeWeight * 100)}%</span>
+                              <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem' }}>
+                                Peer Review Impact (0–100%)
+                              </label>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>
+                                {Math.round(peerAdjustmentConfig.fudgeWeight * 100)}%
+                              </span>
                             </div>
                             <input
                               type="range"
@@ -8430,13 +9029,40 @@ export const AdminDashboard: React.FC = () => {
                               min={0}
                               max={1}
                               step={0.05}
-                              value={fudgeWeight}
-                              onChange={(e) => setFudgeWeight(Number(e.target.value))}
+                              value={peerAdjustmentConfig.fudgeWeight}
+                              onChange={(e) => handleUpdatePeerAdjustmentConfig({ fudgeWeight: Number(e.target.value) })}
                               style={{
-                                background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${fudgeWeight * 100}%, var(--border-color) ${fudgeWeight * 100}%, var(--border-color) 100%)`
+                                background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${peerAdjustmentConfig.fudgeWeight * 100}%, var(--border-color) ${peerAdjustmentConfig.fudgeWeight * 100}%, var(--border-color) 100%)`
                               }}
                             />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem' }}>
+                              <button
+                                type="button"
+                                className="btn btn-link btn-sm"
+                                onClick={() => handleUpdatePeerAdjustmentConfig({ fudgeWeight: 0.5 })}
+                                style={{ fontSize: '0.65rem', padding: 0, color: peerAdjustmentConfig.fudgeWeight === 0.5 ? 'var(--primary)' : 'var(--text-muted)' }}
+                              >
+                                50% (Gentle)
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-link btn-sm"
+                                onClick={() => handleUpdatePeerAdjustmentConfig({ fudgeWeight: 0.7 })}
+                                style={{ fontSize: '0.65rem', padding: 0, color: peerAdjustmentConfig.fudgeWeight === 0.7 ? 'var(--primary)' : 'var(--text-muted)' }}
+                              >
+                                70% (Balanced)
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-link btn-sm"
+                                onClick={() => handleUpdatePeerAdjustmentConfig({ fudgeWeight: 1.0 })}
+                                style={{ fontSize: '0.65rem', padding: 0, color: peerAdjustmentConfig.fudgeWeight === 1.0 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 800 }}
+                              >
+                                100% (Pure WebPA ★)
+                              </button>
+                            </div>
                           </div>
+
                         </div>
                       </div>
                     </EditableModuleSlot>
@@ -8453,7 +9079,6 @@ export const AdminDashboard: React.FC = () => {
                         <div>
                           <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                             <ShieldCheck size={17} className="text-rose" /> Suspicious Ratings Alert
-                            <FeatureInfoButton featureId="anomaly-detection" size="sm" tooltipText="Suspicious Ratings Guide" />
                           </h3>
                           <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
                             Detects students who trade high scores, grade randomly, or give uniform marks.
@@ -8501,7 +9126,6 @@ export const AdminDashboard: React.FC = () => {
                         <div>
                           <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.95rem', fontWeight: 800 }}>
                             <RefreshCw size={17} className="text-indigo" /> Past Review Rounds
-                            <FeatureInfoButton featureId="milestones-sprints" size="sm" tooltipText="Past Review Rounds Guide" />
                           </h3>
                           <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0.85rem 0', lineHeight: 1.35 }}>
                             Archives past peer evaluations (e.g., Midterm Review, Final Review).
@@ -8561,11 +9185,13 @@ export const AdminDashboard: React.FC = () => {
               isVisible={featureToggles.showLmsExport}
               isEditMode={isEditMode}
               onToggle={handleToggleModule}
+              style={{ order: getCardVisualOrder('section3', 'showLmsExport') }}
             >
               <div
                 className="card"
                 data-tour="lms-export-card"
                 style={{
+                  order: getCardVisualOrder('section3', 'showLmsExport'),
                   padding: '1.25rem',
                   backgroundColor: 'var(--bg-surface)',
                   borderRadius: 'var(--radius-lg)',
@@ -8591,7 +9217,6 @@ export const AdminDashboard: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                       <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
                         <GraduationCap size={22} className="text-teal" /> Export to Canvas / Blackboard / Moodle
-                        <FeatureInfoButton featureId="lms-export" size="sm" tooltipText="LMS Gradebook Export Guide" />
                       </h3>
                       <span className="badge badge-teal" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px' }}>
                         Smart LMS Sync
@@ -8601,6 +9226,7 @@ export const AdminDashboard: React.FC = () => {
                           Custom Schema Builder
                         </span>
                       )}
+                      <CardLayoutControls cardId="showLmsExport" section="section3" isEditMode={isEditMode} onToast={addToast} />
                     </div>
                     <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.35rem 0 0 0', lineHeight: 1.4 }}>
                       Export formatted gradebook files for Canvas, Blackboard, Moodle, Brightspace D2L, or build a custom schema tailored to your institution's LMS with team &amp; student filters.
@@ -8884,29 +9510,30 @@ export const AdminDashboard: React.FC = () => {
                           <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                             Team Filter:
                           </span>
-                          <select
-                            className="form-input"
+                          <CustomSelect
                             value={lmsTeamFilter}
-                            onChange={(e) => setLmsTeamFilter(e.target.value)}
-                            style={{
+                            onChange={(val) => setLmsTeamFilter(val)}
+                            options={[
+                              { value: 'all', label: `All Teams (Entire Class - ${activeClass.students.length})` },
+                              ...classTeams.map(t => {
+                                const count = activeClass.students.filter(s => s.groupName === t).length;
+                                return {
+                                  value: t,
+                                  label: `${t} (${count} student${count === 1 ? '' : 's'})`
+                                };
+                              })
+                            ]}
+                            triggerStyle={{
                               height: '30px',
                               fontSize: '0.76rem',
                               fontWeight: 700,
-                              padding: '0 0.5rem',
-                              minWidth: '150px',
-                              borderRadius: '6px'
+                              padding: '0 0.55rem',
+                              minWidth: '150px'
                             }}
-                          >
-                            <option value="all">All Teams (Entire Class - {activeClass.students.length})</option>
-                            {classTeams.map(t => {
-                              const count = activeClass.students.filter(s => s.groupName === t).length;
-                              return (
-                                <option key={t} value={t}>
-                                  {t} ({count} student{count === 1 ? '' : 's'})
-                                </option>
-                              );
-                            })}
-                          </select>
+                            dropdownMinWidth="195px"
+                            dropdownStyle={{ zIndex: 110 }}
+                            title="Filter export by team"
+                          />
                         </div>
 
                         {/* Submission Status Filter */}
@@ -8914,23 +9541,25 @@ export const AdminDashboard: React.FC = () => {
                           <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                             Student Status:
                           </span>
-                          <select
-                            className="form-input"
+                          <CustomSelect
                             value={lmsStatusFilter}
-                            onChange={(e) => setLmsStatusFilter(e.target.value as any)}
-                            style={{
+                            onChange={(val) => setLmsStatusFilter(val as any)}
+                            options={[
+                              { value: 'all', label: `All Students (${activeClass.students.length})` },
+                              { value: 'submitted', label: `Evaluated Only (${stats.submittedCount})` },
+                              { value: 'pending', label: `Pending Reviews (${activeClass.students.filter(s => !s.submitted).length})` }
+                            ]}
+                            triggerStyle={{
                               height: '30px',
                               fontSize: '0.76rem',
                               fontWeight: 600,
-                              padding: '0 0.5rem',
-                              minWidth: '130px',
-                              borderRadius: '6px'
+                              padding: '0 0.55rem',
+                              minWidth: '140px'
                             }}
-                          >
-                            <option value="all">All Students ({activeClass.students.length})</option>
-                            <option value="submitted">Evaluated Only ({stats.submittedCount})</option>
-                            <option value="pending">Pending Reviews ({activeClass.students.filter(s => !s.submitted).length})</option>
-                          </select>
+                            dropdownMinWidth="175px"
+                            dropdownStyle={{ zIndex: 110 }}
+                            title="Filter export by evaluation status"
+                          />
                         </div>
 
                         {/* Clear Filter Button */}
@@ -9539,166 +10168,128 @@ export const AdminDashboard: React.FC = () => {
               isVisible={featureToggles.showResultsSummarySheet}
               isEditMode={isEditMode}
               onToggle={handleToggleModule}
+              style={{ order: getCardVisualOrder('section3', 'showResultsSummarySheet') }}
             >
-              <div className="card" data-tour="results-summary-card" style={{ padding: isResultsTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
-                <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isResultsTableExpanded ? '1.25rem' : 0 }}>
+              <div className="card results-summary-card" data-quicklook-context="grading" data-tour="results-summary-card" style={{ order: getCardVisualOrder('section3', 'showResultsSummarySheet'), padding: isResultsTableExpanded ? '1.25rem' : '0.85rem 1.25rem', transition: 'padding 0.2s ease' }}>
+                <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.85rem', flexWrap: 'wrap', marginBottom: isResultsTableExpanded ? '1rem' : 0 }}>
+                  {/* Left: Icon, Title, and Evaluation Badge */}
                   <div
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer', userSelect: 'none' }}
                     onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
                     title={isResultsTableExpanded ? 'Click to collapse gradebook' : 'Click to expand gradebook'}
                   >
-                    <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
-                      <Award size={20} className="text-indigo" /> Results Summary Sheet &amp; Gradebook
-                      <FeatureInfoButton featureId="results-summary-sheet" size="sm" tooltipText="Gradebook & Results Matrix Guide" />
-                    </h3>
-                    <span className="badge badge-secondary" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
-                      {stats.submittedCount} of {stats.totalStudents} evaluated
-                    </span>
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                      color: 'var(--primary, #6366f1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <Award size={18} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '1.05rem', fontWeight: 800 }}>
+                        Results Summary Sheet &amp; Gradebook
+                      </h3>
+                      <span
+                        className="badge"
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          padding: '0.15rem 0.55rem',
+                          borderRadius: '9999px',
+                          backgroundColor: stats.completionRate === 100 ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-app)',
+                          color: stats.completionRate === 100 ? 'var(--accent-teal, #0d9488)' : 'var(--text-secondary)',
+                          border: '1px solid var(--border-color)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem'
+                        }}
+                      >
+                        <span style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          backgroundColor: stats.completionRate === 100 ? '#10b981' : stats.completionRate > 0 ? '#d97706' : 'var(--text-muted)'
+                        }} />
+                        {stats.submittedCount} of {stats.totalStudents} evaluated ({stats.completionRate}%)
+                      </span>
+                      <CardLayoutControls cardId="showResultsSummarySheet" section="section3" isEditMode={isEditMode} onToast={addToast} />
+                    </div>
                   </div>
 
+                  {/* Right: View Switcher, Export Dropdown, Collapse/Expand Button */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                    {/* Gradebook Custom Sort Dropdown */}
-                    <CustomSelect
-                      options={gradebookSortOptions}
-                      value={gradebookSortBy}
-                      onChange={(val) => setGradebookSortBy(val)}
-                      style={{ width: 'auto', minWidth: '135px' }}
-                      triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600 }}
-                    />
-
-                    {(isEditMode || featureToggles.showGradebookSearchFilter) && (
-                      <EditableModuleSlot
-                        moduleKey="showGradebookSearchFilter"
-                        isEditMode={isEditMode}
-                        isVisible={featureToggles.showGradebookSearchFilter}
-                        onToggle={handleToggleModule}
-                        inline
-                        slotType="bar"
-                      >
-                        <CustomSelect
-                          options={groupOptions}
-                          value={groupFilter}
-                          onChange={(val) => setGroupFilter(val)}
-                          style={{ width: 'auto', minWidth: '115px' }}
-                          triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.8rem' }}
-                        />
-                      </EditableModuleSlot>
-                    )}
-
-                    {/* Columns Popover Menu */}
-                    <div style={{ position: 'relative' }}>
+                    {/* View Switcher: Table Matrix vs Team Cohorts */}
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        backgroundColor: 'var(--bg-app)',
+                        padding: '3px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        gap: '2px'
+                      }}
+                      role="tablist"
+                      aria-label="Gradebook View Modes"
+                    >
                       <button
                         type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => setIsGradebookColumnsOpen(!isGradebookColumnsOpen)}
-                        style={{ height: '36px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, gap: '0.35rem' }}
-                        title="Customize table columns & visibility"
+                        onClick={() => {
+                          setResultsViewMode('table');
+                          if (!isResultsTableExpanded) setIsResultsTableExpanded(true);
+                        }}
+                        style={{
+                          padding: '0.32rem 0.7rem',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          borderRadius: '6px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          backgroundColor: resultsViewMode === 'table' ? 'var(--bg-surface)' : 'transparent',
+                          color: resultsViewMode === 'table' ? 'var(--primary)' : 'var(--text-secondary)',
+                          boxShadow: resultsViewMode === 'table' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title="Display full tabular matrix of all criteria scores"
                       >
-                        <SlidersHorizontal size={13} />
-                        <span>Columns</span>
-                        <ChevronDown size={12} />
+                        <Layers size={13} />
+                        <span>Table Matrix</span>
                       </button>
 
-                      {isGradebookColumnsOpen && (
-                        <>
-                          <div
-                            style={{ position: 'fixed', inset: 0, zIndex: 99 }}
-                            onClick={() => setIsGradebookColumnsOpen(false)}
-                          />
-                          <div
-                            style={{
-                              position: 'absolute',
-                              top: '100%',
-                              right: 0,
-                              marginTop: '0.35rem',
-                              backgroundColor: 'var(--bg-surface)',
-                              border: '1px solid var(--border-color)',
-                              borderRadius: '10px',
-                              padding: '0.65rem',
-                              boxShadow: '0 12px 28px -4px rgba(0,0,0,0.25)',
-                              zIndex: 100,
-                              minWidth: '240px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '0.4rem',
-                              animation: 'fadeIn 0.15s ease-out'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.35rem', borderBottom: '1px solid var(--border-color)' }}>
-                              <span style={{ fontSize: '0.74rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
-                                Column Visibility
-                              </span>
-                              <div style={{ display: 'flex', gap: '0.25rem' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => setGradebookColumns({ criteriaScores: false, praiseTags: false, webpaMark: true, weightedScore: true, johari: false })}
-                                  style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-app)', color: 'var(--text-secondary)', cursor: 'pointer' }}
-                                  title="Reset to minimal main fields view"
-                                >
-                                  Main Only
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setGradebookColumns({ criteriaScores: true, praiseTags: true, webpaMark: true, weightedScore: true, johari: true })}
-                                  style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px', border: 'none', background: 'var(--primary)', color: '#fff', cursor: 'pointer' }}
-                                  title="Show all columns"
-                                >
-                                  Show All
-                                </button>
-                              </div>
-                            </div>
-
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
-                              <input
-                                type="checkbox"
-                                checked={gradebookColumns.criteriaScores}
-                                onChange={(e) => setGradebookColumns(c => ({ ...c, criteriaScores: e.target.checked }))}
-                              />
-                              <span>Rubric Criteria Mean &amp; StdDev</span>
-                            </label>
-
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
-                              <input
-                                type="checkbox"
-                                checked={gradebookColumns.webpaMark}
-                                onChange={(e) => setGradebookColumns(c => ({ ...c, webpaMark: e.target.checked }))}
-                              />
-                              <span>WebPA Calibrated Mark</span>
-                            </label>
-
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
-                              <input
-                                type="checkbox"
-                                checked={gradebookColumns.weightedScore}
-                                onChange={(e) => setGradebookColumns(c => ({ ...c, weightedScore: e.target.checked }))}
-                              />
-                              <span>Overall Weighted Score</span>
-                            </label>
-
-                            {evalControls.showPraiseTags && (
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={gradebookColumns.praiseTags}
-                                  onChange={(e) => setGradebookColumns(c => ({ ...c, praiseTags: e.target.checked }))}
-                                />
-                                <span>Strengths &amp; Praise Tags</span>
-                              </label>
-                            )}
-
-                            {evalControls.allowSelfReview && (
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={gradebookColumns.johari}
-                                  onChange={(e) => setGradebookColumns(c => ({ ...c, johari: e.target.checked }))}
-                                />
-                                <span>Johari Alignment Badge</span>
-                              </label>
-                            )}
-                          </div>
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResultsViewMode('teams');
+                          if (!isResultsTableExpanded) setIsResultsTableExpanded(true);
+                        }}
+                        style={{
+                          padding: '0.32rem 0.7rem',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          borderRadius: '6px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          backgroundColor: resultsViewMode === 'teams' ? 'var(--bg-surface)' : 'transparent',
+                          color: resultsViewMode === 'teams' ? 'var(--primary)' : 'var(--text-secondary)',
+                          boxShadow: resultsViewMode === 'teams' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title="Display AutoGroup-style Team Cohort cards with deep-dive performance details"
+                      >
+                        <Users size={13} />
+                        <span>Team Cohorts</span>
+                      </button>
                     </div>
 
                     {/* Unified Export Dropdown (Excel & CSV) */}
@@ -9716,7 +10307,7 @@ export const AdminDashboard: React.FC = () => {
                             type="button"
                             className="btn btn-teal btn-sm"
                             onClick={() => setIsGradebookExportOpen(!isGradebookExportOpen)}
-                            style={{ fontSize: '0.8rem', padding: '0 0.8rem', gap: '0.35rem', fontWeight: 700, height: '36px', borderRadius: '8px' }}
+                            style={{ fontSize: '0.8rem', padding: '0 0.8rem', gap: '0.35rem', fontWeight: 700, height: '34px', borderRadius: '8px' }}
                             title="Export gradebook to Excel or CSV"
                           >
                             <Download size={13} />
@@ -9771,7 +10362,7 @@ export const AdminDashboard: React.FC = () => {
                                       const csv = generateResultsCSV(activeClass, sortedGradebookStudents);
                                       downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
                                       addToast('Results summary CSV downloaded in active sort order!', 'success');
-                                    } catch (e) {
+                                    } catch {
                                       addToast('Failed to export CSV results.', 'error');
                                     }
                                   }}
@@ -9794,14 +10385,14 @@ export const AdminDashboard: React.FC = () => {
                       className={isResultsTableExpanded ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
                       onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
                       style={{
-                        height: '36px',
+                        height: '34px',
                         borderRadius: '8px',
                         fontSize: '0.8rem',
                         fontWeight: 700,
                         gap: '0.35rem',
                         boxShadow: 'none'
                       }}
-                      title={isResultsTableExpanded ? 'Collapse gradebook matrix table' : 'Expand gradebook matrix table'}
+                      title={isResultsTableExpanded ? 'Collapse gradebook' : 'Expand gradebook'}
                     >
                       {isResultsTableExpanded ? (
                         <>
@@ -9816,6 +10407,177 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Sub-toolbar for Table Matrix mode */}
+                {isResultsTableExpanded && resultsViewMode === 'table' && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '0.65rem',
+                      padding: '0.6rem 0.85rem',
+                      backgroundColor: 'var(--bg-app)',
+                      borderRadius: '10px',
+                      border: '1px solid var(--border-color)',
+                      marginBottom: '1rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                        Table Controls:
+                      </span>
+                      {/* Gradebook Custom Sort Dropdown */}
+                      <CustomSelect
+                        options={gradebookSortOptions}
+                        value={gradebookSortBy}
+                        onChange={(val) => setGradebookSortBy(val)}
+                        style={{ width: 'auto', minWidth: '135px' }}
+                        triggerStyle={{ height: '32px', borderRadius: '7px', fontSize: '0.78rem', fontWeight: 600 }}
+                      />
+
+                      {(isEditMode || featureToggles.showGradebookSearchFilter) && (
+                        <EditableModuleSlot
+                          moduleKey="showGradebookSearchFilter"
+                          isEditMode={isEditMode}
+                          isVisible={featureToggles.showGradebookSearchFilter}
+                          onToggle={handleToggleModule}
+                          inline
+                          slotType="bar"
+                        >
+                          <CustomSelect
+                            options={groupOptions}
+                            value={groupFilter}
+                            onChange={(val) => setGroupFilter(val)}
+                            style={{ width: 'auto', minWidth: '115px' }}
+                            triggerStyle={{ height: '32px', borderRadius: '7px', fontSize: '0.78rem' }}
+                          />
+                        </EditableModuleSlot>
+                      )}
+
+                      {/* Columns Popover Menu */}
+                      <div style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setIsGradebookColumnsOpen(!isGradebookColumnsOpen)}
+                          style={{ height: '32px', borderRadius: '7px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem' }}
+                          title="Customize table columns & visibility"
+                        >
+                          <SlidersHorizontal size={13} />
+                          <span>Columns</span>
+                          <ChevronDown size={12} />
+                        </button>
+
+                        {isGradebookColumnsOpen && (
+                          <>
+                            <div
+                              style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                              onClick={() => setIsGradebookColumnsOpen(false)}
+                            />
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: '100%',
+                                right: 0,
+                                marginTop: '0.35rem',
+                                backgroundColor: 'var(--bg-surface)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '10px',
+                                padding: '0.65rem',
+                                boxShadow: '0 12px 28px -4px rgba(0,0,0,0.25)',
+                                zIndex: 100,
+                                minWidth: '240px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.4rem',
+                                animation: 'fadeIn 0.15s ease-out'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.35rem', borderBottom: '1px solid var(--border-color)' }}>
+                                <span style={{ fontSize: '0.74rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                                  Column Visibility
+                                </span>
+                                <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setGradebookColumns({ criteriaScores: false, praiseTags: false, webpaMark: true, weightedScore: true, johari: false })}
+                                    style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-app)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                                    title="Reset to minimal main fields view"
+                                  >
+                                    Main Only
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setGradebookColumns({ criteriaScores: true, praiseTags: true, webpaMark: true, weightedScore: true, johari: true })}
+                                    style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px', border: 'none', background: 'var(--primary)', color: '#fff', cursor: 'pointer' }}
+                                    title="Show all columns"
+                                  >
+                                    Show All
+                                  </button>
+                                </div>
+                              </div>
+
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={gradebookColumns.criteriaScores}
+                                  onChange={(e) => setGradebookColumns(c => ({ ...c, criteriaScores: e.target.checked }))}
+                                />
+                                <span>Rubric Criteria Mean &amp; StdDev</span>
+                              </label>
+
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={gradebookColumns.webpaMark}
+                                  onChange={(e) => setGradebookColumns(c => ({ ...c, webpaMark: e.target.checked }))}
+                                />
+                                <span>WebPA Calibrated Mark</span>
+                              </label>
+
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={gradebookColumns.weightedScore}
+                                  onChange={(e) => setGradebookColumns(c => ({ ...c, weightedScore: e.target.checked }))}
+                                />
+                                <span>Overall Weighted Score</span>
+                              </label>
+
+                              {evalControls.showPraiseTags && (
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={gradebookColumns.praiseTags}
+                                    onChange={(e) => setGradebookColumns(c => ({ ...c, praiseTags: e.target.checked }))}
+                                  />
+                                  <span>Strengths &amp; Praise Tags</span>
+                                </label>
+                              )}
+
+                              {evalControls.allowSelfReview && (
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem 0.25rem' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={gradebookColumns.johari}
+                                    onChange={(e) => setGradebookColumns(c => ({ ...c, johari: e.target.checked }))}
+                                  />
+                                  <span>Johari Alignment Badge</span>
+                                </label>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                      Showing {sortedGradebookStudents.length} students
+                    </span>
+                  </div>
+                )}
+
                 {activeClass.students.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
                     <div style={{ width: '60px', height: '60px', borderRadius: '18px', background: 'hsla(45,93%,58%,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.25rem' }}>
@@ -9824,7 +10586,52 @@ export const AdminDashboard: React.FC = () => {
                     <p style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', margin: 0 }}>No results to compute</p>
                     <p style={{ fontSize: '0.82rem', margin: 0, maxWidth: '300px', lineHeight: 1.5 }}>Add participants to the roster and collect peer evaluations before viewing the performance matrix.</p>
                   </div>
-                ) : !isResultsTableExpanded ? null : (
+                ) : !isResultsTableExpanded ? null : resultsViewMode === 'teams' ? (
+                  <TeamCohortsGradebookView
+                    activeClass={activeClass}
+                    gradebookSortBy={gradebookSortBy}
+                    groupFilter={groupFilter}
+                    onSelectGroup={(grp) => setGroupFilter(grp)}
+                    onViewStudentDetails={(st) => setSelectedStudentReport(st)}
+                    onPreviewStudent={(st) => setPreviewingStudent(st)}
+                    onOpenReport={(stId) => openReportModal(stId)}
+                    onEditStudent={(s) => {
+                      const isIntl = s.isInternational ?? (s.studentType === 'International' || s.studentType === 'Erasmus');
+                      setEditStudentData({
+                        id: s.id,
+                        name: s.name,
+                        email: s.email,
+                        groupName: s.groupName,
+                        gender: s.gender || 'Prefer not to say',
+                        isInternational: isIntl,
+                        isExchange: s.isExchange ?? (s.studentType === 'Erasmus' || s.studentType === 'Exchange'),
+                        nationality: s.nationality || '',
+                        currentCountry: s.currentCountry || (isIntl ? '' : (s.nationality || '')),
+                        englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
+                        university: s.university || '',
+                        degree: s.degree || '',
+                        originalUniversity: s.originalUniversity || '',
+                        originalCountry: s.originalCountry || '',
+                        currentUniversity: s.currentUniversity || s.university || '',
+                        studentType: s.studentType || 'Normal',
+                        customFields: s.customFields || {}
+                      });
+                      setIsEditStudentModalOpen(true);
+                    }}
+                    onResetStudentReviews={(classId, studentId) => resetStudentReviews(classId, studentId)}
+                    onUpdateTeamBaseGrade={(classId, grp, grade) => updateTeamBaseGrade(classId, grp, grade)}
+                    addToast={(msg, type) => addToast(msg, type)}
+                    triggerConfirm={triggerConfirm}
+                    baseGroupGrade={baseGroupGrade}
+                    fudgeWeight={fudgeWeight}
+                    evalControls={{
+                      allowSelfReview: evalControls?.allowSelfReview,
+                      showPraiseTags: evalControls?.showPraiseTags,
+                      showStrengthsFeedback: evalControls?.showStrengthsFeedback,
+                      showGrowthSuggestions: evalControls?.showGrowthSuggestions
+                    }}
+                  />
+                ) : (
                   <div className="table-container table-container-sticky">
                     <table className="custom-table" style={{ whiteSpace: 'nowrap' }}>
                       <thead>
@@ -9911,6 +10718,8 @@ export const AdminDashboard: React.FC = () => {
                           {evalControls.allowSelfReview && gradebookColumns.johari && (
                             <th style={{ minWidth: '130px' }}>Johari Alignment</th>
                           )}
+
+
                           <th style={{ textAlign: 'right', minWidth: '180px' }}>Actions</th>
                         </tr>
                       </thead>
@@ -9940,11 +10749,11 @@ export const AdminDashboard: React.FC = () => {
                             s.groupName,
                             activeClass,
                             baseGroupGrade,
-                            fudgeWeight
+                            peerAdjustmentConfig
                           );
 
                           return (
-                            <tr key={s.id}>
+                            <tr key={s.id} data-student-id={s.id}>
                               {/* Participant & Team */}
                               <td className="freeze-col-1">
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
@@ -10069,13 +10878,62 @@ export const AdminDashboard: React.FC = () => {
                               {/* WebPA Calibrated Mark */}
                               {gradebookColumns.webpaMark && (
                                 <td>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-                                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: adjustedGrade < (teamBaseGrade * 0.7) ? 'var(--accent-rose)' : 'hsl(142, 70%, 35%)' }}>
-                                      {metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : '—'}
-                                    </span>
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--primary)' }}>
-                                      {metrics.reviewsReceived > 0 ? `WebPA: ${ratio.toFixed(2)}x` : 'WebPA: 1.00x'}
-                                    </span>
+                                  <div 
+                                    style={{ 
+                                      display: 'flex', 
+                                      flexDirection: 'column', 
+                                      gap: '0.12rem',
+                                      cursor: 'pointer' 
+                                    }}
+                                    onClick={() => {
+                                      setInspectorStudentId(s.id);
+                                      setIsPeerInspectorOpen(true);
+                                    }}
+                                    title="Click to inspect live mathematical derivation and audit"
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                      <span 
+                                        style={{ 
+                                          fontWeight: 800, 
+                                          fontSize: '0.88rem', 
+                                          color: adjustedGrade > teamBaseGrade 
+                                            ? '#059669' 
+                                            : adjustedGrade < (teamBaseGrade * 0.75) 
+                                              ? 'var(--accent-rose)' 
+                                              : adjustedGrade < teamBaseGrade 
+                                                ? '#d97706' 
+                                                : 'var(--text-primary)' 
+                                        }}
+                                      >
+                                        {adjustedGrade} / {teamBaseGrade}
+                                      </span>
+                                      {adjustedGrade > teamBaseGrade && (
+                                        <span className="badge badge-emerald" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', fontWeight: 800 }}>
+                                          +{(adjustedGrade - teamBaseGrade).toFixed(1)}
+                                        </span>
+                                      )}
+                                      {adjustedGrade < teamBaseGrade && metrics.reviewsReceived > 0 && (
+                                        <span className="badge badge-rose" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', fontWeight: 800 }}>
+                                          {(adjustedGrade - teamBaseGrade).toFixed(1)}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: ratio > 1.02 ? '#059669' : ratio < 0.98 ? '#e11d48' : 'var(--primary)' }}>
+                                        {PEER_ADJUSTMENT_METHODS_META[peerAdjustmentConfig.method]?.shortLabel || 'WebPA'}: {ratio.toFixed(2)}x
+                                      </span>
+                                      {!s.submitted && !s.isExcused && peerAdjustmentConfig.penalizeNonSubmitters && (
+                                        <span className="badge badge-amber" style={{ fontSize: '0.55rem', padding: '0.02rem 0.2rem' }} title={`Non-submitter penalty (-${peerAdjustmentConfig.nonSubmitterPenalty}%)`}>
+                                          -{peerAdjustmentConfig.nonSubmitterPenalty}%
+                                        </span>
+                                      )}
+                                      {s.isExcused && (
+                                        <span className="badge badge-indigo" style={{ fontSize: '0.55rem', padding: '0.02rem 0.2rem' }}>
+                                          Excused
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
                               )}
@@ -10111,6 +10969,7 @@ export const AdminDashboard: React.FC = () => {
                                   })()}
                                 </td>
                               )}
+
 
                               {/* 1-Click Minimal Segmented Action Dock */}
                               <td style={{ textAlign: 'right' }}>
@@ -10575,7 +11434,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div className="card">
               <div className="card-header">
-                <h3 className="card-title">
+                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                   <Database size={18} className={isCloudSynced ? 'text-teal' : 'text-indigo'} />
                   Cloud Database Configurations
                 </h3>
@@ -11857,11 +12716,17 @@ export const AdminDashboard: React.FC = () => {
               type="button"
               className="btn btn-secondary"
               onClick={() => {
-                if (window.confirm("Are you sure you want to reset the template to the professional default? Your current customizations will be overwritten.")) {
-                  setCustomEmailSubject('Evaluation Invitation: Anonymous Peer Assessment - {{courseName}}');
-                  setCustomEmailBody(`Dear {{studentName}},\n\nYour Professor has initiated the anonymous Peer-to-Peer grading session for the course {{courseName}}. Peer assessment is a vital component of this course, designed to ensure fair, objective, and collaborative feedback within your team.\n\nPlease use the secure, personal link below to evaluate your teammates on their contributions. Your feedback is completely confidential: teammates will only see aggregated group scores, and individual ratings are strictly anonymous.\n\nBest regards,\nYour Professor`);
-                  addToast('Reset to professional default values!', 'success');
-                }
+                triggerConfirm(
+                  'Reset Email Template',
+                  'Are you sure you want to reset the template to the professional default? Your current customizations will be overwritten.',
+                  () => {
+                    setCustomEmailSubject('Evaluation Invitation: Anonymous Peer Assessment - {{courseName}}');
+                    setCustomEmailBody(`Dear {{studentName}},\n\nYour Professor has initiated the anonymous Peer-to-Peer grading session for the course {{courseName}}. Peer assessment is a vital component of this course, designed to ensure fair, objective, and collaborative feedback within your team.\n\nPlease use the secure, personal link below to evaluate your teammates on their contributions. Your feedback is completely confidential: teammates will only see aggregated group scores, and individual ratings are strictly anonymous.\n\nBest regards,\nYour Professor`);
+                    addToast('Reset to professional default values!', 'success');
+                  },
+                  'Reset Template',
+                  'Cancel'
+                );
               }}
               style={{ padding: '0.5rem 1rem' }}
             >
@@ -13048,7 +13913,7 @@ export const AdminDashboard: React.FC = () => {
                         const m = calculateStudentMetrics(ts, activeClass);
                         const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(ts.id, ts.groupName, activeClass, baseGroupGrade, fudgeWeight);
                         return (
-                          <tr key={ts.id}>
+                          <tr key={ts.id} data-student-id={ts.id}>
                             <td style={{ fontWeight: 600 }}>{ts.name}</td>
                             <td>{ts.email}</td>
                             <td>
@@ -13129,17 +13994,16 @@ export const AdminDashboard: React.FC = () => {
                         </p>
                       </div>
                       <div className="hide-on-print" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <select
-                          className="form-input"
+                        <CustomSelect
                           value={activeAuditMetric}
-                          onChange={(e) => setActiveAuditMetric(e.target.value)}
-                          style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.5rem', fontSize: '0.82rem', minWidth: '180px' }}
-                        >
-                          <option value="overall">Overall Averages (%)</option>
-                          {activeClass.fields.map(f => (
-                            <option key={f.id} value={f.id}>{f.name}</option>
-                          ))}
-                        </select>
+                          onChange={(val) => setActiveAuditMetric(val)}
+                          options={[
+                            { value: 'overall', label: 'Overall Averages (%)' },
+                            ...activeClass.fields.map(f => ({ value: f.id, label: f.name }))
+                          ]}
+                          style={{ minWidth: '180px' }}
+                          triggerStyle={{ height: '36px', borderRadius: '8px', fontSize: '0.82rem' }}
+                        />
 
                         <button
                           type="button"
@@ -13616,6 +14480,10 @@ export const AdminDashboard: React.FC = () => {
         }}
         onOpenAddStudent={() => setIsAddStudentModalOpen(true)}
         onOpenEnrollmentBuilder={() => setIsEnrollmentFormBuilderOpen(true)}
+        onOpenSnapshots={() => setIsSnapshotModalOpen(true)}
+        onOpenLayoutLibrary={() => setIsLayoutLibraryOpen(true)}
+        onOpenBranding={() => setIsBrandingModalOpen(true)}
+        onResetLayout={handleResetLayoutToDefault}
         onOpenTeamCharter={() => handleOpenTeamKickoff('charters')}
         onOpenLivePresentation={() => setIsLivePresentationModalOpen(true)}
         onOpenReportModal={(studentId) => openReportModal(studentId)}
@@ -13739,6 +14607,41 @@ export const AdminDashboard: React.FC = () => {
           saveShortcutsEnabled(val);
         }}
       />
+      )}
+
+      {/* MODAL: LAYOUT LIBRARY & WORKSPACE PRESETS */}
+      {isLayoutLibraryOpen && (
+        <LayoutLibraryModal
+          isOpen={isLayoutLibraryOpen}
+          onClose={() => setIsLayoutLibraryOpen(false)}
+          featureToggles={featureToggles}
+          onToggleFeature={(key, value) => {
+            const updated = { ...featureToggles, [key]: value };
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          }}
+          onApplyCustomToggles={(toggles) => {
+            saveFeatureToggles(toggles);
+            syncWorkspaceSettingsToCloud({ featureToggles: toggles });
+          }}
+          onApplyPreset={(preset) => {
+            const updated = preset === 'minimal' 
+              ? MINIMAL_FEATURE_TOGGLES 
+              : (preset === 'full' 
+                ? FULL_FEATURE_TOGGLES 
+                : (preset === 'none' 
+                  ? NONE_FEATURE_TOGGLES 
+                  : DEFAULT_FEATURE_TOGGLES));
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          }}
+          shortcutsEnabled={shortcutsEnabled}
+          onToggleShortcutsEnabled={(val) => {
+            setShortcutsEnabled(val);
+            saveShortcutsEnabled(val);
+          }}
+          onToast={(msg, type) => addToast(msg, type || 'info')}
+        />
       )}
 
       {/* ACADEMIC GUIDANCE & INTERACTIVE TUTORIAL CENTER */}
@@ -13943,7 +14846,7 @@ export const AdminDashboard: React.FC = () => {
                         const maxGrade = studentGrades.length > 0 ? Math.max(...studentGrades) : currentMark;
 
                         return (
-                          <tr key={team}>
+                          <tr key={team} data-group-name={team}>
                             <td style={{ fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap' }}>
                                 <span style={{ whiteSpace: 'nowrap' }}>{team}</span>
@@ -14390,6 +15293,46 @@ export const AdminDashboard: React.FC = () => {
         />
       )}
 
+      {/* Institutional Branding & Custom Header Modal */}
+      <BrandingCustomizerModal
+        isOpen={isBrandingModalOpen}
+        onClose={() => setIsBrandingModalOpen(false)}
+        classId={activeClass?.id}
+        className={activeClass?.name}
+        onToast={addToast}
+      />
+
+      {/* Peer Score Adjustment Calculation Inspector Modal */}
+      {isPeerInspectorOpen && activeClass && (
+        <PeerAdjustmentInspectorModal
+          isOpen={isPeerInspectorOpen}
+          onClose={() => {
+            setIsPeerInspectorOpen(false);
+            setInspectorStudentId(null);
+          }}
+          activeClass={activeClass}
+          initialStudentId={inspectorStudentId}
+          baseGroupGrade={baseGroupGrade}
+          config={peerAdjustmentConfig}
+          onConfigChange={handleUpdatePeerAdjustmentConfig}
+          onToast={addToast}
+        />
+      )}
+
+      {/* Classroom State Snapshots & Rollback Modal */}
+      {isSnapshotModalOpen && activeClass && (
+        <ClassroomSnapshotsModal
+          isOpen={isSnapshotModalOpen}
+          onClose={() => setIsSnapshotModalOpen(false)}
+          classData={activeClass}
+          onRestore={(restoredData) => {
+            const updated = classes.map(c => c.id === restoredData.id ? restoredData : c);
+            restoreClassesSnapshot(updated);
+          }}
+          onToast={addToast}
+        />
+      )}
+
       {/* =========================================================================
           SAMSUNG ONE UI 7 "NOW BAR" BOTTOM ACTIVITY PILL STACK
           Unifies Quick Action Dock, Guided Sandbox HUD, Layout Edit Mode,
@@ -14555,6 +15498,8 @@ export const AdminDashboard: React.FC = () => {
           onOpenEditMode: () => setIsEditMode(true),
           onOpenLivePresentation: () => setIsLivePresentationModalOpen(true),
           onOpenTeamKickoff: (tab?: 'roles_config' | 'icebreakers' | 'charters') => handleOpenTeamKickoff(tab || 'roles_config'),
+          onOpenEnrollmentBuilder: () => setIsEnrollmentFormBuilderOpen(true),
+          onOpenSnapshots: () => setIsSnapshotModalOpen(true),
           onClearRoster: () => {
             if (!activeClass) return;
             triggerConfirm(
@@ -14617,7 +15562,10 @@ export const AdminDashboard: React.FC = () => {
           onToggleShortcutsEnabled: (val) => {
             setShortcutsEnabled(val);
             saveShortcutsEnabled(val);
-          }
+          },
+          onOpenLayoutLibrary: () => setIsLayoutLibraryOpen(true),
+          onOpenBranding: () => setIsBrandingModalOpen(true),
+          onResetLayout: handleResetLayoutToDefault
         }}
         isSandboxActive={isSandboxActive}
         sandboxProps={{
@@ -14635,6 +15583,7 @@ export const AdminDashboard: React.FC = () => {
           activeTab,
           onNavigateTab: (tab) => setActiveTab(tab),
           featureToggles,
+          onOpenBranding: () => setIsBrandingModalOpen(true),
           onApplyPreset: (preset) => {
             const updated = preset === 'minimal' 
               ? MINIMAL_FEATURE_TOGGLES 
@@ -14657,7 +15606,13 @@ export const AdminDashboard: React.FC = () => {
             const updated = { ...featureToggles, [key]: val };
             saveFeatureToggles(updated);
             syncWorkspaceSettingsToCloud({ featureToggles: updated });
-          }
+          },
+          onApplyCustomToggles: (toggles) => {
+            saveFeatureToggles(toggles);
+            syncWorkspaceSettingsToCloud({ featureToggles: toggles });
+          },
+          onOpenLayoutLibrary: () => setIsLayoutLibraryOpen(true),
+          onResetToDefault: handleResetLayoutToDefault
         }}
         isStickySummaryVisible={isStickySummaryVisible}
         stickySummaryProps={{
@@ -14675,7 +15630,14 @@ export const AdminDashboard: React.FC = () => {
         }}
       />
       {/* SPACEBAR HOVER QUICK LOOK HUD */}
-      <QuickLookHUD payload={quickLookPayload} cursorPos={quickLookPos} />
+      <QuickLookHUD 
+        payload={quickLookPayload} 
+        cursorPos={quickLookPos} 
+        isPinned={isQuickLookPinned}
+        onTogglePin={handleToggleQuickLookPin}
+        onDismiss={forceCloseQuickLook}
+        onAction={handleQuickLookAction}
+      />
 
       {/* QUICKADD HOLD-KEY ACTIVE FLOATING HUD */}
       {isQuickAddActive && (

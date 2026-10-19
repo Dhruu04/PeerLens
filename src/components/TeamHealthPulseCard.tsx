@@ -49,6 +49,7 @@ interface TeamHealthPulseCardProps {
   onDeleteRound: (classId: string, roundId: string) => void;
   onSeedSampleData: (classId: string) => void;
   addToast: (msg: string, type: 'success' | 'info' | 'warning' | 'error') => void;
+  cardControls?: React.ReactNode;
 }
 
 export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
@@ -58,7 +59,8 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
   onSubmitResponse,
   onDeleteRound,
   onSeedSampleData,
-  addToast
+  addToast,
+  cardControls
 }) => {
   const [isCardExpanded, setIsCardExpanded] = useState<boolean>(false);
   const [selectedRoundId, setSelectedRoundId] = useState<string>('');
@@ -78,6 +80,7 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
   // Modals state
   const [isLaunchModalOpen, setIsLaunchModalOpen] = useState<boolean>(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
+  const [confirmDeleteRoundId, setConfirmDeleteRoundId] = useState<string | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [isStudentModalOpen, setIsStudentModalOpen] = useState<boolean>(false);
   const [isResponsesModalOpen, setIsResponsesModalOpen] = useState<boolean>(false);
@@ -471,6 +474,7 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                   <AlertTriangle size={11} /> {pulseMetrics.teamsBlockedCount} Blocked
                 </span>
               )}
+              {cardControls}
             </div>
             <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
               Quick 30-second morale and blocker check-ins during group projects.
@@ -670,11 +674,7 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                   {/* Delete Round */}
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm(`Delete pulse round "${currentRound.title}"?`)) {
-                        onDeleteRound(activeClass.id, currentRound.id);
-                      }
-                    }}
+                    onClick={() => setConfirmDeleteRoundId(currentRound.id)}
                     className="btn btn-secondary btn-sm text-rose"
                     style={{ fontSize: '0.72rem', height: '28px', padding: '0 0.5rem' }}
                     title="Delete this pulse check round"
@@ -1881,6 +1881,58 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
             onSubmitResponse(activeClass.id, roundId, resp);
           }}
         />
+      )}
+
+      {/* MODAL 5: Custom Confirmation for Deleting Round */}
+      {confirmDeleteRoundId && (
+        <Modal
+          isOpen={Boolean(confirmDeleteRoundId)}
+          onClose={() => setConfirmDeleteRoundId(null)}
+          title="Delete Pulse Round"
+          maxWidth="440px"
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setConfirmDeleteRoundId(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-rose"
+                onClick={() => {
+                  onDeleteRound(activeClass.id, confirmDeleteRoundId);
+                  setConfirmDeleteRoundId(null);
+                  addToast('Pulse check round deleted.', 'info');
+                }}
+              >
+                Delete Round
+              </button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', alignItems: 'center', textAlign: 'center', padding: '0.75rem 0' }}>
+            <div
+              style={{
+                width: '50px',
+                height: '50px',
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                color: '#ef4444',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Trash2 size={24} />
+            </div>
+            <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+              Are you sure you want to permanently delete this pulse check round and all associated responses?
+            </p>
+          </div>
+        </Modal>
       )}
     </div>
   );

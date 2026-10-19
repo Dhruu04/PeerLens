@@ -3181,35 +3181,40 @@ kbd {
   }
 }
 
-/* --- MINIMAL FEATURE INFO TRIGGER BUTTON --- */
+/* --- MINIMAL & SUBTLE FEATURE INFO TRIGGER BUTTON --- */
 .feature-info-trigger-btn {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background-color: var(--bg-surface, #ffffff) !important;
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.45)) !important;
-  color: var(--text-secondary, #64748b) !important;
-  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--text-muted, #94a3b8) !important;
+  opacity: 0.52 !important;
+  transition: opacity 150ms ease, color 150ms ease, background-color 150ms ease, transform 120ms ease !important;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  cursor: pointer !important;
 }
 
 .feature-info-trigger-btn:hover {
-  background-color: rgba(99, 102, 241, 0.09) !important;
+  opacity: 1 !important;
   color: var(--primary, #6366f1) !important;
-  border-color: rgba(99, 102, 241, 0.45) !important;
-  transform: translateY(-1px) scale(1.08);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.18) !important;
+  background-color: rgba(99, 102, 241, 0.08) !important;
+  transform: scale(1.06);
 }
 
 .feature-info-trigger-btn:active {
-  transform: translateY(0) scale(0.94);
-  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.12) !important;
+  transform: scale(0.94);
+  opacity: 0.8 !important;
 }
 
 .feature-info-trigger-btn:focus-visible {
-  outline: 2px solid var(--primary, #6366f1);
-  outline-offset: 2px;
+  outline: 1.5px solid var(--primary, #6366f1);
+  outline-offset: 1px;
+  opacity: 1 !important;
 }
 
 /* --- STICKY TABLE & FROZEN COLUMN UTILITIES --- */
@@ -6055,16 +6060,16 @@ kbd {
 
 /* Expanded Card Mode (for Layout Edit Mode and expanded views) */
 .now-bar-pile-layer.layer-expanded-edit {
-  border-radius: 20px !important;
-  width: min(920px, calc(100vw - 28px)) !important;
-  max-width: calc(100vw - 28px) !important;
+  border-radius: 18px !important;
+  width: min(1040px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px) !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: stretch !important;
-  padding: 0.95rem 1.35rem 0.8rem !important;
+  padding: 0.65rem 0.95rem 0.6rem !important;
   background-color: var(--bg-surface) !important;
   border: 1px solid var(--border-color) !important;
-  box-shadow: 0 24px 60px -8px rgba(0, 0, 0, 0.42), 0 0 0 1px var(--border-color), 0 0 32px rgba(99, 102, 241, 0.15) !important;
+  box-shadow: 0 20px 50px -8px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--border-color), 0 0 28px rgba(99, 102, 241, 0.12) !important;
   transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1) !important;
   transform: none !important;
   overflow: visible !important;
@@ -6768,7 +6773,21 @@ body.spotlight-slots-active .edit-mode-slot-hidden {
 }
 
 .quicklook-hud-glass {
-  transition: all 0.15s ease-out;
+  transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out, background-color 0.15s ease-out;
+}
+
+.quicklook-content-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.quicklook-content-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.quicklook-content-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-color, rgba(0, 0, 0, 0.15));
+  border-radius: 999px;
+}
+.quicklook-content-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted, rgba(0, 0, 0, 0.3));
 }
 
 [data-theme='dark'] .quicklook-hud-glass {
@@ -7081,4 +7100,531 @@ body.spotlight-slots-active .edit-mode-slot-hidden {
   .slider-value-bubble {
     align-self: flex-start !important;
   }
+}
+
+/* =========================================================================
+   DISPLAY DENSITY ENGINE (High Impact Transformations)
+   Compact: High information density, 2.5x more students/cards visible on laptop
+   Balanced: Calibrated default modern standard (15.5px root)
+   Spacious: Luxury touch targets, high visibility for podiums & iPads
+   ========================================================================= */
+
+/* Root Typography & Layout Scale Modulation */
+html[data-density="compact"],
+body.density-compact {
+  font-size: 13.5px !important;
+  --density-scale: 0.88;
+  --radius-sm: 4px;
+  --radius-md: 7px;
+  --radius-lg: 11px;
+}
+
+html[data-density="balanced"],
+body.density-balanced {
+  font-size: 15.5px !important;
+  --density-scale: 1.0;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+html[data-density="spacious"],
+body.density-spacious {
+  font-size: 17.5px !important;
+  --density-scale: 1.14;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+}
+
+/* Smooth fluid transitions when switching density modes */
+html,
+body,
+.card,
+.card-premium,
+.custom-table th,
+.custom-table td,
+.custom-table tr,
+.custom-table td span,
+.custom-table td div,
+.stat-card,
+.stats-grid,
+.form-input,
+.form-select,
+.btn,
+.badge,
+.table-action-btn,
+.table-action-dock,
+.table-container {
+  transition: padding 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              font-size 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              height 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              gap 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              margin 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              border-radius 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   1. COMPACT DENSITY (Power-User & Dense Information Mode)
+   ───────────────────────────────────────────────────────────────────────── */
+html[data-density="compact"] .app-main,
+body.density-compact .app-main,
+html[data-density="compact"] .dashboard-container,
+body.density-compact .dashboard-container {
+  gap: 0.65rem !important;
+}
+
+/* Compact Tables (Roster, Rubrics, Analytics, Exports) */
+html[data-density="compact"] .custom-table th,
+body.density-compact .custom-table th {
+  padding: 0.25rem 0.55rem !important;
+  font-size: 0.7rem !important;
+  letter-spacing: 0.02em !important;
+  height: 26px !important;
+}
+
+html[data-density="compact"] .custom-table td,
+body.density-compact .custom-table td {
+  padding: 0.2rem 0.55rem !important;
+  font-size: 0.74rem !important;
+  line-height: 1.2 !important;
+  height: 30px !important;
+}
+
+html[data-density="compact"] .custom-table tr,
+body.density-compact .custom-table tr {
+  height: 30px !important;
+}
+
+/* High-specificity overrides for child elements inside compact tables (overrides inline styles) */
+html[data-density="compact"] .custom-table td span,
+body.density-compact .custom-table td span,
+html[data-density="compact"] .custom-table td div,
+body.density-compact .custom-table td div,
+html[data-density="compact"] .custom-table td p,
+body.density-compact .custom-table td p,
+html[data-density="compact"] .custom-table td a,
+body.density-compact .custom-table td a {
+  font-size: 0.74rem !important;
+  line-height: 1.2 !important;
+}
+
+html[data-density="compact"] .custom-table td span[style*="font-weight: 700"],
+body.density-compact .custom-table td span[style*="font-weight: 700"],
+html[data-density="compact"] .custom-table td strong,
+body.density-compact .custom-table td strong {
+  font-size: 0.78rem !important;
+}
+
+html[data-density="compact"] .custom-table td div,
+body.density-compact .custom-table td div {
+  gap: 1px !important;
+}
+
+html[data-density="compact"] .custom-table td code,
+body.density-compact .custom-table td code {
+  font-size: 0.62rem !important;
+  padding: 0.04rem 0.2rem !important;
+}
+
+html[data-density="compact"] .custom-table td .badge,
+body.density-compact .custom-table td .badge {
+  font-size: 0.62rem !important;
+  padding: 0.04rem 0.25rem !important;
+  border-radius: 3px !important;
+}
+
+html[data-density="compact"] .custom-table td button,
+body.density-compact .custom-table td button {
+  font-size: 0.64rem !important;
+  padding: 0.05rem 0.3rem !important;
+  min-height: 20px !important;
+}
+
+html[data-density="compact"] .custom-table td svg,
+body.density-compact .custom-table td svg {
+  width: 10px !important;
+  height: 10px !important;
+}
+
+/* Table Actions & Mini Avatars */
+html[data-density="compact"] .table-action-dock,
+body.density-compact .table-action-dock {
+  height: 22px !important;
+  padding: 1px !important;
+  gap: 1px !important;
+  border-radius: 4px !important;
+}
+
+html[data-density="compact"] .table-action-btn,
+body.density-compact .table-action-btn {
+  width: 20px !important;
+  height: 18px !important;
+  font-size: 0.64rem !important;
+  border-radius: 3px !important;
+}
+
+html[data-density="compact"] .avatar-circle,
+body.density-compact .avatar-circle {
+  width: 22px !important;
+  height: 22px !important;
+  font-size: 0.65rem !important;
+}
+
+/* Compact Cards */
+html[data-density="compact"] .card,
+body.density-compact .card,
+html[data-density="compact"] .card-premium,
+body.density-compact .card-premium {
+  padding: 0.75rem 1rem !important;
+  border-radius: 9px !important;
+  margin-bottom: 0.65rem !important;
+}
+
+html[data-density="compact"] .card-header,
+body.density-compact .card-header {
+  margin-bottom: 0.45rem !important;
+}
+
+html[data-density="compact"] .card-title,
+body.density-compact .card-title {
+  font-size: 1.02rem !important;
+  gap: 0.35rem !important;
+}
+
+html[data-density="compact"] .card-subtitle,
+body.density-compact .card-subtitle {
+  font-size: 0.72rem !important;
+  margin-top: 0.1rem !important;
+}
+
+/* Compact Metric / Stat Cards */
+html[data-density="compact"] .stats-grid,
+body.density-compact .stats-grid {
+  gap: 0.45rem !important;
+}
+
+html[data-density="compact"] .stat-card,
+body.density-compact .stat-card {
+  padding: 0.45rem 0.75rem !important;
+  gap: 0.45rem !important;
+  border-radius: 7px !important;
+}
+
+html[data-density="compact"] .stat-icon,
+body.density-compact .stat-icon {
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: 5px !important;
+}
+
+html[data-density="compact"] .stat-val,
+body.density-compact .stat-val {
+  font-size: 1.05rem !important;
+}
+
+html[data-density="compact"] .stat-label,
+body.density-compact .stat-label {
+  font-size: 0.62rem !important;
+}
+
+html[data-density="compact"] .stat-subtext,
+body.density-compact .stat-subtext {
+  font-size: 0.6rem !important;
+}
+
+/* Compact Form Controls, Inputs, and Badges */
+html[data-density="compact"] .form-group,
+body.density-compact .form-group {
+  margin-bottom: 0.65rem !important;
+}
+
+html[data-density="compact"] .form-label,
+body.density-compact .form-label {
+  font-size: 0.76rem !important;
+  margin-bottom: 0.25rem !important;
+}
+
+html[data-density="compact"] .form-input,
+body.density-compact .form-input {
+  height: 29px !important;
+  padding: 0.2rem 0.55rem !important;
+  font-size: 0.79rem !important;
+  border-radius: 5px !important;
+}
+
+html[data-density="compact"] .form-select,
+body.density-compact .form-select {
+  height: 29px !important;
+  padding: 0 1.6rem 0 0.55rem !important;
+  font-size: 0.79rem !important;
+  border-radius: 5px !important;
+}
+
+html[data-density="compact"] .btn,
+body.density-compact .btn {
+  min-height: 27px !important;
+  padding: 0.22rem 0.65rem !important;
+  font-size: 0.77rem !important;
+  border-radius: 5px !important;
+  gap: 0.3rem !important;
+}
+
+html[data-density="compact"] .btn-sm,
+body.density-compact .btn-sm {
+  min-height: 22px !important;
+  padding: 0.15rem 0.45rem !important;
+  font-size: 0.7rem !important;
+}
+
+html[data-density="compact"] .badge,
+body.density-compact .badge,
+html[data-density="compact"] .praise-badge-pill,
+body.density-compact .praise-badge-pill {
+  padding: 0.05rem 0.3rem !important;
+  font-size: 0.64rem !important;
+  border-radius: 3px !important;
+}
+
+/* Compact Toolbar & Filter Bars */
+html[data-density="compact"] .filter-bar,
+body.density-compact .filter-bar,
+html[data-density="compact"] .toolbar,
+body.density-compact .toolbar {
+  padding: 0.35rem 0.6rem !important;
+  gap: 0.35rem !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   2. SPACIOUS DENSITY (Podium, Presentation & Touch / Tablet Mode)
+   ───────────────────────────────────────────────────────────────────────── */
+html[data-density="spacious"] .app-main,
+body.density-spacious .app-main,
+html[data-density="spacious"] .dashboard-container,
+body.density-spacious .dashboard-container {
+  gap: 2rem !important;
+}
+
+/* Spacious Roomy Tables (Comfortable for touchscreens & podium reading) */
+html[data-density="spacious"] .custom-table th,
+body.density-spacious .custom-table th {
+  padding: 1.25rem 1.6rem !important;
+  font-size: 0.94rem !important;
+  letter-spacing: 0.06em !important;
+  height: 50px !important;
+}
+
+html[data-density="spacious"] .custom-table td,
+body.density-spacious .custom-table td {
+  padding: 1.2rem 1.6rem !important;
+  font-size: 1rem !important;
+  line-height: 1.55 !important;
+  height: 56px !important;
+}
+
+html[data-density="spacious"] .custom-table tr,
+body.density-spacious .custom-table tr {
+  height: 56px !important;
+}
+
+/* High-specificity overrides for child elements inside spacious tables (overrides inline styles) */
+html[data-density="spacious"] .custom-table td span,
+body.density-spacious .custom-table td span,
+html[data-density="spacious"] .custom-table td div,
+body.density-spacious .custom-table td div,
+html[data-density="spacious"] .custom-table td p,
+body.density-spacious .custom-table td p,
+html[data-density="spacious"] .custom-table td a,
+body.density-spacious .custom-table td a {
+  font-size: 1rem !important;
+  line-height: 1.55 !important;
+}
+
+html[data-density="spacious"] .custom-table td span[style*="font-weight: 700"],
+body.density-spacious .custom-table td span[style*="font-weight: 700"],
+html[data-density="spacious"] .custom-table td strong,
+body.density-spacious .custom-table td strong {
+  font-size: 1.12rem !important;
+}
+
+html[data-density="spacious"] .custom-table td div,
+body.density-spacious .custom-table td div {
+  gap: 0.35rem !important;
+}
+
+html[data-density="spacious"] .custom-table td code,
+body.density-spacious .custom-table td code {
+  font-size: 0.82rem !important;
+  padding: 0.15rem 0.45rem !important;
+}
+
+html[data-density="spacious"] .custom-table td .badge,
+body.density-spacious .custom-table td .badge {
+  font-size: 0.82rem !important;
+  padding: 0.25rem 0.65rem !important;
+}
+
+html[data-density="spacious"] .custom-table td button,
+body.density-spacious .custom-table td button {
+  font-size: 0.85rem !important;
+  padding: 0.35rem 0.75rem !important;
+  min-height: 32px !important;
+  border-radius: 6px !important;
+}
+
+html[data-density="spacious"] .custom-table td svg,
+body.density-spacious .custom-table td svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* Spacious Table Actions & Large Avatars */
+html[data-density="spacious"] .table-action-dock,
+body.density-spacious .table-action-dock {
+  height: 40px !important;
+  padding: 4px !important;
+  gap: 4px !important;
+  border-radius: 10px !important;
+}
+
+html[data-density="spacious"] .table-action-btn,
+body.density-spacious .table-action-btn {
+  width: 36px !important;
+  height: 34px !important;
+  font-size: 0.92rem !important;
+  border-radius: 7px !important;
+}
+
+html[data-density="spacious"] .avatar-circle,
+body.density-spacious .avatar-circle {
+  width: 44px !important;
+  height: 44px !important;
+  font-size: 1rem !important;
+}
+
+/* Spacious Cards */
+html[data-density="spacious"] .card,
+body.density-spacious .card,
+html[data-density="spacious"] .card-premium,
+body.density-spacious .card-premium {
+  padding: 2.5rem 2.85rem !important;
+  border-radius: 24px !important;
+  margin-bottom: 2rem !important;
+  box-shadow: var(--shadow-xl) !important;
+}
+
+html[data-density="spacious"] .card-header,
+body.density-spacious .card-header {
+  margin-bottom: 2rem !important;
+}
+
+html[data-density="spacious"] .card-title,
+body.density-spacious .card-title {
+  font-size: 1.6rem !important;
+  gap: 0.75rem !important;
+}
+
+html[data-density="spacious"] .card-subtitle,
+body.density-spacious .card-subtitle {
+  font-size: 1.05rem !important;
+  margin-top: 0.45rem !important;
+}
+
+/* Spacious Metric / Stat Cards */
+html[data-density="spacious"] .stats-grid,
+body.density-spacious .stats-grid {
+  gap: 1.4rem !important;
+}
+
+html[data-density="spacious"] .stat-card,
+body.density-spacious .stat-card {
+  padding: 1.4rem 1.65rem !important;
+  gap: 1.35rem !important;
+  border-radius: 16px !important;
+}
+
+html[data-density="spacious"] .stat-icon,
+body.density-spacious .stat-icon {
+  width: 54px !important;
+  height: 54px !important;
+  border-radius: 14px !important;
+}
+
+html[data-density="spacious"] .stat-val,
+body.density-spacious .stat-val {
+  font-size: 2.2rem !important;
+  font-weight: 900 !important;
+}
+
+html[data-density="spacious"] .stat-label,
+body.density-spacious .stat-label {
+  font-size: 0.88rem !important;
+}
+
+html[data-density="spacious"] .stat-subtext,
+body.density-spacious .stat-subtext {
+  font-size: 0.82rem !important;
+}
+
+/* Spacious Form Controls, Inputs, and Badges (Touch-Optimized WCAG AAA) */
+html[data-density="spacious"] .form-group,
+body.density-spacious .form-group {
+  margin-bottom: 1.65rem !important;
+}
+
+html[data-density="spacious"] .form-label,
+body.density-spacious .form-label {
+  font-size: 1rem !important;
+  margin-bottom: 0.65rem !important;
+}
+
+html[data-density="spacious"] .form-input,
+body.density-spacious .form-input {
+  height: 50px !important;
+  padding: 0.85rem 1.4rem !important;
+  font-size: 1.06rem !important;
+  border-radius: 14px !important;
+}
+
+html[data-density="spacious"] .form-select,
+body.density-spacious .form-select {
+  height: 50px !important;
+  padding: 0 2.8rem 0 1.3rem !important;
+  font-size: 1.06rem !important;
+  border-radius: 14px !important;
+}
+
+html[data-density="spacious"] .btn,
+body.density-spacious .btn {
+  min-height: 48px !important;
+  padding: 0.85rem 1.8rem !important;
+  font-size: 1.06rem !important;
+  border-radius: 14px !important;
+  gap: 0.65rem !important;
+}
+
+html[data-density="spacious"] .btn-sm,
+body.density-spacious .btn-sm {
+  min-height: 40px !important;
+  padding: 0.5rem 1.1rem !important;
+  font-size: 0.92rem !important;
+  border-radius: 10px !important;
+}
+
+html[data-density="spacious"] .badge,
+body.density-spacious .badge,
+html[data-density="spacious"] .praise-badge-pill,
+body.density-spacious .praise-badge-pill {
+  padding: 0.35rem 0.85rem !important;
+  font-size: 0.86rem !important;
+  border-radius: 9px !important;
+}
+
+/* Spacious Toolbar & Filter Bars */
+html[data-density="spacious"] .filter-bar,
+body.density-spacious .filter-bar,
+html[data-density="spacious"] .toolbar,
+body.density-spacious .toolbar {
+  padding: 1rem 1.4rem !important;
+  gap: 0.9rem !important;
 }

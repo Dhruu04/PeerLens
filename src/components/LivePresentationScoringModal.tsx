@@ -21,8 +21,12 @@ import {
   Tv,
   RefreshCw,
   Eye,
-  SlidersHorizontal
+  SlidersHorizontal,
+  AlertCircle
 } from 'lucide-react';
+import Modal from './Modal';
+import FeatureInfoButton from './FeatureInfoButton';
+import CustomSelect from './CustomSelect';
 import QRCode from 'qrcode';
 import type { ClassData, PresentationCriterion, PresentationScoreSubmission, PresentationDaySession } from '../utils/math';
 import { DEFAULT_PRESENTATION_CRITERIA } from '../utils/math';
@@ -260,21 +264,26 @@ export const LivePresentationScoringModal: React.FC<LivePresentationScoringModal
     }
   };
 
+  const [isClearVotesConfirmOpen, setIsClearVotesConfirmOpen] = useState(false);
+
   // Reset Submissions for Current Team
   const handleClearCurrentTeamVotes = () => {
-    if (window.confirm(`Clear all ${activeSubmissions.length} audience ratings for ${activeTeam}?`)) {
-      const filtered = submissions.filter(s => s.teamName !== activeTeam);
-      setSubmissions(filtered);
-      if (onUpdateSession) {
-        onUpdateSession({
-          activeTeamName: activeTeam,
-          criteria,
-          submissions: filtered,
-          timerDurationSeconds: timerDuration,
-          isOpenForVoting: isVotingOpen
-        });
-      }
+    setIsClearVotesConfirmOpen(true);
+  };
+
+  const executeClearVotes = () => {
+    const filtered = submissions.filter(s => s.teamName !== activeTeam);
+    setSubmissions(filtered);
+    if (onUpdateSession) {
+      onUpdateSession({
+        activeTeamName: activeTeam,
+        criteria,
+        submissions: filtered,
+        timerDurationSeconds: timerDuration,
+        isOpenForVoting: isVotingOpen
+      });
     }
+    setIsClearVotesConfirmOpen(false);
   };
 
   // Format Timer Display
@@ -402,8 +411,9 @@ export const LivePresentationScoringModal: React.FC<LivePresentationScoringModal
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   Live Presentation Scoring
+                  <FeatureInfoButton featureId="presentation-scoring" size="sm" tooltipText="Live Presentation Scoring Guide" />
                 </h3>
                 <span
                   style={{
@@ -546,26 +556,25 @@ export const LivePresentationScoringModal: React.FC<LivePresentationScoringModal
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Presenting:</span>
-            <select
+            <CustomSelect
               value={activeTeam}
-              onChange={(e) => setActiveTeam(e.target.value)}
-              className="form-select"
-              style={{
+              onChange={(val) => setActiveTeam(val)}
+              options={teamNames.map(tName => ({
+                value: tName,
+                label: `${tName} (${submissions.filter(s => s.teamName === tName).length} votes)`
+              }))}
+              triggerStyle={{
+                height: '30px',
                 fontSize: '0.78rem',
                 fontWeight: 700,
-                padding: '0.25rem 0.65rem',
-                borderRadius: '8px',
-                backgroundColor: 'var(--bg-app)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--primary)'
+                padding: '0 0.65rem',
+                color: 'var(--primary)',
+                minWidth: '150px'
               }}
-            >
-              {teamNames.map(tName => (
-                <option key={tName} value={tName}>
-                  {tName} ({submissions.filter(s => s.teamName === tName).length} votes)
-                </option>
-              ))}
-            </select>
+              dropdownMinWidth="190px"
+              dropdownStyle={{ zIndex: 10020 }}
+              title="Select presenting team"
+            />
           </div>
         </div>
 
@@ -1294,6 +1303,54 @@ export const LivePresentationScoringModal: React.FC<LivePresentationScoringModal
           </div>
         </div>
       </div>
+
+      {/* Custom Confirmation Modal for Clearing Votes */}
+      {isClearVotesConfirmOpen && (
+        <Modal
+          isOpen={isClearVotesConfirmOpen}
+          onClose={() => setIsClearVotesConfirmOpen(false)}
+          title="Clear Team Ratings"
+          maxWidth="440px"
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setIsClearVotesConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-rose"
+                onClick={executeClearVotes}
+              >
+                Clear Ratings
+              </button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', alignItems: 'center', textAlign: 'center', padding: '0.75rem 0' }}>
+            <div
+              style={{
+                width: '50px',
+                height: '50px',
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                color: '#ef4444',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <AlertCircle size={24} />
+            </div>
+            <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+              Are you sure you want to clear all <strong>{activeSubmissions.length}</strong> audience ratings submitted for <strong>&quot;{activeTeam}&quot;</strong>?
+            </p>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

@@ -5,8 +5,10 @@ import {
   Sliders, Type, ListFilter, CheckSquare, Hash,
   Sparkles, Eye, RotateCcw,
   ChevronUp, ChevronDown, ExternalLink,
-  Globe
+  Globe, AlertCircle
 } from 'lucide-react';
+import Modal from './Modal';
+import FeatureInfoButton from './FeatureInfoButton';
 import {
   type CustomEnrollmentField,
   type EnrollmentFieldType,
@@ -277,17 +279,39 @@ export const EnrollmentFormBuilderModal: React.FC<EnrollmentFormBuilderModalProp
     setErrorMsg('');
   };
 
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
   const handleDeleteField = (idToDelete: string, label: string) => {
     const isCoreId = ['name', 'email'].includes(idToDelete);
     const confirmPrompt = isCoreId
       ? `"${label}" is an account sign-in identifier. Are you sure you want to remove it from this form?`
       : `Remove question "${label}" from the student enrollment form?`;
 
-    if (window.confirm(confirmPrompt)) {
-      const updatedList = currentFields.filter(f => f.id !== idToDelete);
-      setCurrentFields(updatedList);
-      onSaveFields(updatedList);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: isCoreId ? 'Remove Account Identifier' : 'Remove Form Field',
+      message: confirmPrompt,
+      confirmText: 'Remove Field',
+      cancelText: 'Cancel',
+      onConfirm: () => {
+        const updatedList = currentFields.filter(f => f.id !== idToDelete);
+        setCurrentFields(updatedList);
+        onSaveFields(updatedList);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleToggleRequired = (id: string) => {
@@ -313,10 +337,18 @@ export const EnrollmentFormBuilderModal: React.FC<EnrollmentFormBuilderModalProp
   };
 
   const handleRestoreDefaults = () => {
-    if (window.confirm('Reset this enrollment form to the standard 10 baseline course questions? Custom additions will be replaced.')) {
-      setCurrentFields(DEFAULT_ENROLLMENT_FIELDS);
-      onSaveFields(DEFAULT_ENROLLMENT_FIELDS);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reset Enrollment Form',
+      message: 'Reset this enrollment form to the standard 10 baseline course questions? Custom additions will be replaced.',
+      confirmText: 'Reset to Defaults',
+      cancelText: 'Cancel',
+      onConfirm: () => {
+        setCurrentFields(DEFAULT_ENROLLMENT_FIELDS);
+        onSaveFields(DEFAULT_ENROLLMENT_FIELDS);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const previewJoinUrl = `${window.location.origin}${window.location.pathname}?enrollClassId=${classId}&preview=true`;
@@ -374,6 +406,7 @@ export const EnrollmentFormBuilderModal: React.FC<EnrollmentFormBuilderModalProp
                 <span className="badge badge-secondary" style={{ fontSize: '0.68rem', padding: '0.12rem 0.45rem' }}>
                   {classNameTitle}
                 </span>
+                <FeatureInfoButton featureId="enrollment-builder" size="sm" tooltipText="Custom Enrollment Questions Guide" />
               </div>
               <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', margin: '0.1rem 0 0 0' }}>
                 Every question is editable, reorderable, or removable. Set requirements and team balancing.
@@ -1512,6 +1545,54 @@ export const EnrollmentFormBuilderModal: React.FC<EnrollmentFormBuilderModalProp
           </div>
         )}
       </div>
+
+      {/* Custom Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <Modal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          title={confirmModal.title}
+          maxWidth="440px"
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+              >
+                {confirmModal.cancelText || 'Cancel'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-rose"
+                onClick={confirmModal.onConfirm}
+              >
+                {confirmModal.confirmText || 'Confirm'}
+              </button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', alignItems: 'center', textAlign: 'center', padding: '0.75rem 0' }}>
+            <div
+              style={{
+                width: '50px',
+                height: '50px',
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                color: '#ef4444',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <AlertCircle size={24} />
+            </div>
+            <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+              {confirmModal.message}
+            </p>
+          </div>
+        </Modal>
+      )}
     </div>,
     document.body
   );

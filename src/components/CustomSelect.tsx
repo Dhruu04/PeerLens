@@ -74,7 +74,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     displayText = options[0]?.label || '';
   }
 
-  const effectiveIcon = triggerIcon || selectedOption?.icon;
+  const effectiveIcon = triggerIcon !== undefined ? triggerIcon : (triggerLabel !== undefined ? null : selectedOption?.icon);
 
   // Calculate drop direction when opening
   useEffect(() => {

@@ -53,6 +53,7 @@ import {
 } from '../utils/customViewProfiles';
 import { MODULE_GROUPS, MODULE_ITEMS, type ModuleItem } from '../utils/moduleRegistry';
 import CustomSelect from './CustomSelect';
+import FeatureInfoButton from './FeatureInfoButton';
 import { CollapsibleEvaluationControls } from './CollapsibleEvaluationControls';
 
 interface SettingsModalProps {
@@ -459,6 +460,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2 }}>
                   Workspace &amp; Feature Studio
                 </h3>
+                <FeatureInfoButton featureId="cloud-sync" size="sm" tooltipText="Local-First Storage &amp; Cloud Sync Guide" />
                 <span
                   style={{
                     fontSize: '0.62rem',

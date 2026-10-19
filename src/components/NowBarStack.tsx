@@ -63,6 +63,10 @@ export interface NowBarStackProps {
     onToggleShortcutsEnabled: (enabled: boolean) => void;
     onToast: (msg: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
     onToggleFeature?: (key: keyof FeatureToggles, value: boolean) => void;
+    onApplyCustomToggles?: (toggles: FeatureToggles) => void;
+    onOpenBranding?: () => void;
+    onOpenLayoutLibrary?: () => void;
+    onResetToDefault?: () => void;
   };
 
   // Sticky Section Action Summary Bar (Appears on scroll in Roster and Grading sections)
@@ -584,9 +588,13 @@ export const NowBarStack: React.FC<NowBarStackProps> = ({
                           onToggleShortcutsEnabled={layoutEditProps.onToggleShortcutsEnabled}
                           onToast={layoutEditProps.onToast}
                           onToggleFeature={layoutEditProps.onToggleFeature}
+                          onApplyCustomToggles={layoutEditProps.onApplyCustomToggles}
                           embedded={true}
                           isExpanded={isLayoutEditExpanded}
                           onExpandChange={setIsLayoutEditExpanded}
+                          onOpenBranding={layoutEditProps.onOpenBranding}
+                          onOpenLayoutLibrary={layoutEditProps.onOpenLayoutLibrary}
+                          onResetToDefault={layoutEditProps.onResetToDefault}
                         />
                       </div>
                     )}

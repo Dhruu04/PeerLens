@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, ExternalLink, Smartphone, Wifi, BatteryCharging,
-  ChevronDown
+  X, ExternalLink, Smartphone, Wifi, BatteryCharging
 } from 'lucide-react';
 import type { Student, ClassData } from '../utils/math';
 import StudentPortal from '../views/StudentPortal';
+import CustomSelect from './CustomSelect';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface StudentPortalPreviewModalProps {
   isOpen: boolean;
@@ -120,8 +121,11 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
             <Smartphone size={14} />
           </div>
           <div>
-            <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>
-              Student Mobile Preview
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+                Student Mobile Preview
+              </div>
+              <FeatureInfoButton featureId="eval-simulator" size="sm" tooltipText="Student View Simulator Guide" />
             </div>
             <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 500 }}>
               Live 1:1 Smartphone View
@@ -131,33 +135,21 @@ export const StudentPortalPreviewModal: React.FC<StudentPortalPreviewModalProps>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
           {/* Quick Student Switcher Dropdown */}
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <select
-              value={currentStudent.id}
-              onChange={(e) => setSelectedStudentId(e.target.value)}
-              style={{
-                appearance: 'none',
-                backgroundColor: 'var(--bg-surface-hover)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '7px',
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                padding: '0.25rem 1.3rem 0.25rem 0.5rem',
-                cursor: 'pointer',
-                maxWidth: '120px',
-                outline: 'none'
-              }}
-              title="Switch previewing student"
-            >
-              {studentOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={11} style={{ position: 'absolute', right: '5px', pointerEvents: 'none', color: '#64748b' }} />
-          </div>
+          <CustomSelect
+            value={currentStudent.id}
+            onChange={(val) => setSelectedStudentId(val)}
+            options={studentOptions}
+            triggerStyle={{
+              height: '28px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              padding: '0 0.5rem',
+              maxWidth: '135px'
+            }}
+            dropdownMinWidth="230px"
+            dropdownStyle={{ zIndex: 10020 }}
+            title="Switch previewing student"
+          />
 
           {/* External Tab Link */}
           <button

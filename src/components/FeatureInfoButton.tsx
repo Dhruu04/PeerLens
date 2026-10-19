@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, CheckCircle, Sparkles, BookOpen, Lightbulb, Compass, Award, Calculator } from 'lucide-react';
+import {
+  X, CheckCircle, BookOpen, Lightbulb, Compass,
+  Award, Calculator, Copy, Check, Users, Smartphone,
+  Sliders, Shield, BarChart3, Cpu
+} from 'lucide-react';
 import { FEATURE_INFO_REGISTRY, type FeatureInfoItem } from '../data/featureDescriptions';
 
 interface FeatureInfoButtonProps {
@@ -13,8 +17,8 @@ interface FeatureInfoButtonProps {
   tooltipText?: string;
 }
 
-/** Minimalist, ultra-crisp vector Info glyph */
-const MinimalInfoGlyph: React.FC<{ size?: number }> = ({ size = 13 }) => (
+/** Minimal, featherweight Info glyph - simple, crisp, and non-distracting */
+const MinimalInfoGlyph: React.FC<{ size?: number }> = ({ size = 12 }) => (
   <svg 
     width={size} 
     height={size} 
@@ -23,11 +27,56 @@ const MinimalInfoGlyph: React.FC<{ size?: number }> = ({ size = 13 }) => (
     xmlns="http://www.w3.org/2000/svg"
     style={{ display: 'block', flexShrink: 0 }}
   >
-    <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" opacity="0.85" />
-    <circle cx="8" cy="4.75" r="0.9" fill="currentColor" />
-    <path d="M8 7.25V11.5M6.8 11.5H9.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="8" cy="8" r="6.75" stroke="currentColor" strokeWidth="1.2" />
+    <circle cx="8" cy="4.8" r="0.8" fill="currentColor" />
+    <path d="M8 7.3V11.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
   </svg>
 );
+
+const CATEGORY_THEMES: Record<string, { bg: string; color: string; border: string; icon: React.ReactNode }> = {
+  'Algorithm': {
+    bg: 'rgba(99, 102, 241, 0.12)',
+    color: '#6366f1',
+    border: 'rgba(99, 102, 241, 0.25)',
+    icon: <Cpu size={18} />
+  },
+  'Grading': {
+    bg: 'rgba(245, 158, 11, 0.12)',
+    color: '#d97706',
+    border: 'rgba(245, 158, 11, 0.25)',
+    icon: <Award size={18} />
+  },
+  'Analytics': {
+    bg: 'rgba(13, 148, 136, 0.12)',
+    color: '#0d9488',
+    border: 'rgba(13, 148, 136, 0.25)',
+    icon: <BarChart3 size={18} />
+  },
+  'Roster': {
+    bg: 'rgba(2, 132, 199, 0.12)',
+    color: '#0284c7',
+    border: 'rgba(2, 132, 199, 0.25)',
+    icon: <Users size={18} />
+  },
+  'Student Portal': {
+    bg: 'rgba(16, 185, 129, 0.12)',
+    color: '#059669',
+    border: 'rgba(16, 185, 129, 0.25)',
+    icon: <Smartphone size={18} />
+  },
+  'Interface & Layout': {
+    bg: 'rgba(139, 92, 246, 0.12)',
+    color: '#7c3aed',
+    border: 'rgba(139, 92, 246, 0.25)',
+    icon: <Sliders size={18} />
+  },
+  'Security': {
+    bg: 'rgba(225, 29, 72, 0.12)',
+    color: '#e11d48',
+    border: 'rgba(225, 29, 72, 0.25)',
+    icon: <Shield size={18} />
+  }
+};
 
 export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
   featureId,
@@ -39,6 +88,7 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
   tooltipText = 'Feature Guide & How to Use'
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -51,19 +101,21 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
     summary: customInfo?.summary || registeredInfo?.summary || 'Learn how to get the most out of this tool.',
     whatItDoes: customInfo?.whatItDoes || registeredInfo?.whatItDoes || 'Provides actionable insights and streamlined workflow management.',
     whatToDo: customInfo?.whatToDo || registeredInfo?.whatToDo || [
-      'Interact with the controls shown in this section.',
-      'Review real-time calculations and updates.',
-      'Export or save results when finished.'
+      'Select active parameters for this module.',
+      'Review computed metrics and live indicators.',
+      'Save, finalize, or export your results.'
     ],
     whatYouGet: customInfo?.whatYouGet || registeredInfo?.whatYouGet || [
-      'Automated, error-free results.',
-      'Clear, defensible academic metrics.'
+      'Automated, mathematically sound results.',
+      'Clear, defensible metrics for academic grading.'
     ],
     formula: customInfo?.formula || registeredInfo?.formula,
     proTip: customInfo?.proTip || registeredInfo?.proTip
   };
 
-  // Strict universal scroll locking (body, html, touchAction)
+  const theme = CATEGORY_THEMES[info.category] || CATEGORY_THEMES['Algorithm'];
+
+  // Strict universal scroll locking
   useEffect(() => {
     if (isOpen) {
       const origBodyOverflow = document.body.style.overflow;
@@ -99,7 +151,18 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
-  const btnDiameter = size === 'sm' ? 20 : 24;
+  const handleCopySummary = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const formatted = `${info.title} (${info.category})\n${info.summary}\n\nWhat It Does:\n${info.whatItDoes}\n\nHow to Use:\n${info.whatToDo.map((step, idx) => `${idx + 1}. ${step}`).join('\n')}\n\nKey Outcomes:\n${info.whatYouGet.map(item => `• ${item}`).join('\n')}${info.proTip ? `\n\nPro Tip: ${info.proTip}` : ''}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(formatted).then(() => {
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2000);
+      });
+    }
+  };
+
+  const btnDiameter = size === 'sm' ? 18 : 22;
   const iconPixel = size === 'sm' ? 12 : 14;
 
   const placementStyle: React.CSSProperties = placement === 'top-right' || placement === 'card-corner'
@@ -112,11 +175,10 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
     : {
         display: 'inline-flex',
         verticalAlign: 'middle',
-        marginLeft: '0.4rem',
+        marginLeft: '0.35rem',
         flexShrink: 0
       };
 
-  // Dynamically resolve target element for portal (supports Fullscreen element, body, or active container)
   const getPortalTarget = (): HTMLElement => {
     if (typeof document === 'undefined') return null as unknown as HTMLElement;
     return (document.fullscreenElement as HTMLElement) || document.body;
@@ -142,19 +204,20 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
           minWidth: `${btnDiameter}px`,
           minHeight: `${btnDiameter}px`,
           borderRadius: '50%',
-          border: '1px solid var(--border-color, rgba(148, 163, 184, 0.4))',
-          backgroundColor: 'var(--bg-surface, #ffffff)',
-          color: 'var(--text-secondary, #64748b)',
+          border: 'none',
+          backgroundColor: 'transparent',
+          color: 'var(--text-muted, #94a3b8)',
+          opacity: 0.52,
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
           cursor: 'pointer',
           padding: 0,
-          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+          boxShadow: 'none',
           userSelect: 'none',
           outline: 'none',
           boxSizing: 'border-box',
-          transition: 'all 160ms cubic-bezier(0.16, 1, 0.3, 1)',
+          transition: 'opacity 150ms ease, color 150ms ease, background-color 150ms ease, transform 120ms ease',
           ...style
         }}
       >
@@ -168,7 +231,7 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
           style={{ 
             animation: 'fadeIn 160ms ease', 
             zIndex: 999999, 
-            backdropFilter: 'blur(6px)',
+            backdropFilter: 'blur(8px)',
             backgroundColor: 'rgba(15, 23, 42, 0.65)',
             display: 'flex',
             alignItems: 'center',
@@ -186,7 +249,7 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
             ref={modalRef}
             className="modal-content" 
             style={{ 
-              maxWidth: '560px', 
+              maxWidth: '580px', 
               width: '100%', 
               maxHeight: '90vh', 
               overflowY: 'auto',
@@ -194,7 +257,7 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
               backgroundColor: 'var(--bg-surface, #ffffff)',
               color: 'var(--text-primary, #0f172a)',
               border: '1px solid var(--border-color, #e2e8f0)',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
               animation: 'scaleIn 180ms cubic-bezier(0.16, 1, 0.3, 1)',
               display: 'flex',
               flexDirection: 'column',
@@ -202,52 +265,56 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
+            {/* ─── Header ─── */}
             <div 
               style={{ 
-                padding: '1.25rem 1.4rem', 
+                padding: '1.2rem 1.4rem', 
                 borderBottom: '1px solid var(--border-color, #e2e8f0)', 
                 display: 'flex', 
                 alignItems: 'flex-start', 
                 justifyContent: 'space-between',
                 gap: '0.75rem',
-                backgroundColor: 'var(--bg-app, #f8fafc)'
+                backgroundColor: 'var(--bg-app, #f8fafc)',
+                borderRadius: '16px 16px 0 0'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
                 <div 
                   style={{ 
                     width: '38px', 
                     height: '38px', 
                     borderRadius: '10px', 
-                    backgroundColor: 'rgba(99, 102, 241, 0.12)', 
-                    color: 'var(--primary, #6366f1)',
+                    backgroundColor: theme.bg, 
+                    color: theme.color,
+                    border: `1px solid ${theme.border}`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0
                   }}
                 >
-                  <Sparkles size={19} />
+                  {theme.icon}
                 </div>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', letterSpacing: '-0.01em' }}>
                       {info.title}
                     </h3>
                     <span 
-                      className="badge badge-primary" 
                       style={{ 
-                        fontSize: '0.68rem', 
-                        padding: '0.15rem 0.5rem', 
+                        fontSize: '0.67rem', 
+                        padding: '0.12rem 0.5rem', 
                         borderRadius: '20px',
-                        fontWeight: 700 
+                        fontWeight: 750,
+                        backgroundColor: theme.bg,
+                        color: theme.color,
+                        border: `1px solid ${theme.border}`
                       }}
                     >
                       {info.category}
                     </span>
                   </div>
-                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>
+                  <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', lineHeight: 1.4 }}>
                     {info.summary}
                   </p>
                 </div>
@@ -277,97 +344,126 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
               </button>
             </div>
 
-            {/* Body */}
-            <div style={{ padding: '1.25rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
+            {/* ─── Body ─── */}
+            <div style={{ padding: '1.25rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               
-              {/* Section 1: What It Does & Why It Matters */}
+              {/* Card 1: What It Does & Why It Matters */}
               <div 
                 style={{ 
                   backgroundColor: 'var(--bg-app, #f8fafc)', 
-                  padding: '1rem', 
+                  padding: '0.9rem 1rem', 
                   borderRadius: '12px', 
                   border: '1px solid var(--border-color, #e2e8f0)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.4rem'
+                  gap: '0.35rem'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  <BookOpen size={14} className="text-primary" /> What It Does &amp; Why It Matters
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <BookOpen size={13} style={{ color: theme.color }} /> In a Nutshell
                 </div>
-                <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-secondary, #475569)', lineHeight: 1.55 }}>
+                <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-primary, #0f172a)', lineHeight: 1.55 }}>
                   {info.whatItDoes}
                 </p>
               </div>
 
-              {/* Section 2: What To Do (Actionable Step-by-Step) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  <Compass size={14} className="text-teal" /> What To Do (Step-by-Step)
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {info.whatToDo.map((step, idx) => (
-                    <div 
-                      key={idx} 
-                      style={{ 
-                        display: 'flex', 
-                        alignItems: 'flex-start', 
-                        gap: '0.65rem', 
-                        fontSize: '0.84rem', 
-                        color: 'var(--text-secondary, #475569)',
-                        lineHeight: 1.45 
-                      }}
-                    >
+              {/* Card 2: Dual Grid (3 Quick Steps & Key Outcomes) */}
+              <div 
+                style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', 
+                  gap: '0.85rem' 
+                }}
+              >
+                {/* Left: How to Use (3 Steps) */}
+                <div 
+                  style={{ 
+                    backgroundColor: 'var(--bg-app, #f8fafc)', 
+                    padding: '0.9rem 1rem', 
+                    borderRadius: '12px', 
+                    border: '1px solid var(--border-color, #e2e8f0)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.55rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <Compass size={13} className="text-teal" /> 3 Quick Steps
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {info.whatToDo.slice(0, 3).map((step, idx) => (
                       <div 
+                        key={idx} 
                         style={{ 
-                          width: '20px', 
-                          height: '20px', 
-                          borderRadius: '50%', 
-                          backgroundColor: 'rgba(20, 184, 166, 0.12)', 
-                          color: 'var(--accent-teal, #14b8a6)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.72rem',
-                          fontWeight: 800,
-                          flexShrink: 0,
-                          marginTop: '1px'
+                          display: 'flex', 
+                          alignItems: 'flex-start', 
+                          gap: '0.55rem', 
+                          fontSize: '0.8rem', 
+                          color: 'var(--text-secondary, #475569)',
+                          lineHeight: 1.45 
                         }}
                       >
-                        {idx + 1}
+                        <div 
+                          style={{ 
+                            width: '18px', 
+                            height: '18px', 
+                            borderRadius: '50%', 
+                            backgroundColor: 'rgba(20, 184, 166, 0.12)', 
+                            color: 'var(--accent-teal, #14b8a6)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.68rem',
+                            fontWeight: 800,
+                            flexShrink: 0,
+                            marginTop: '1px'
+                          }}
+                        >
+                          {idx + 1}
+                        </div>
+                        <span>{step}</span>
                       </div>
-                      <span>{step}</span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right: Key Outcomes */}
+                <div 
+                  style={{ 
+                    backgroundColor: 'var(--bg-app, #f8fafc)', 
+                    padding: '0.9rem 1rem', 
+                    borderRadius: '12px', 
+                    border: '1px solid var(--border-color, #e2e8f0)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.55rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <Award size={13} className="text-indigo" /> Key Outcomes
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    {info.whatYouGet.slice(0, 3).map((item, idx) => (
+                      <div 
+                        key={idx} 
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'flex-start', 
+                          gap: '0.5rem', 
+                          fontSize: '0.8rem', 
+                          color: 'var(--text-secondary, #475569)',
+                          lineHeight: 1.45 
+                        }}
+                      >
+                        <CheckCircle size={14} style={{ color: 'var(--primary, #6366f1)', flexShrink: 0, marginTop: '2px' }} />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Section 3: What You Get From It */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  <Award size={14} className="text-indigo" /> What You Get (Outcomes &amp; Insights)
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  {info.whatYouGet.map((item, idx) => (
-                    <div 
-                      key={idx} 
-                      style={{ 
-                        display: 'flex', 
-                        alignItems: 'flex-start', 
-                        gap: '0.55rem', 
-                        fontSize: '0.83rem', 
-                        color: 'var(--text-secondary, #475569)',
-                        lineHeight: 1.45 
-                      }}
-                    >
-                      <CheckCircle size={14} style={{ color: 'var(--primary, #6366f1)', flexShrink: 0, marginTop: '2px' }} />
-                      <span>{item}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Section 4: Formula Breakdown (If present) */}
+              {/* Card 3: Formula Breakdown (If present) */}
               {info.formula && (
                 <div 
                   style={{ 
@@ -377,30 +473,30 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
                     border: '1px solid rgba(99, 102, 241, 0.2)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '0.3rem'
+                    gap: '0.25rem'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.74rem', fontWeight: 800, color: 'var(--primary, #6366f1)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    <Calculator size={13} /> Mathematical Formula
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', fontWeight: 800, color: 'var(--primary, #6366f1)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <Calculator size={12} /> Calculation Formula
                   </div>
-                  <code style={{ fontSize: '0.82rem', color: 'var(--text-primary, #0f172a)', fontFamily: 'ui-monospace, monospace', fontWeight: 700, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  <code style={{ fontSize: '0.8rem', color: 'var(--text-primary, #0f172a)', fontFamily: 'ui-monospace, monospace', fontWeight: 700, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {info.formula}
                   </code>
                 </div>
               )}
 
-              {/* Section 5: Pro-Tip & Best Practice */}
+              {/* Card 4: Pro-Tip & Best Practice */}
               {info.proTip && (
                 <div 
                   style={{ 
                     display: 'flex', 
                     alignItems: 'flex-start', 
                     gap: '0.65rem', 
-                    padding: '0.85rem 1rem', 
+                    padding: '0.8rem 1rem', 
                     borderRadius: '10px', 
                     backgroundColor: 'rgba(245, 158, 11, 0.08)', 
                     border: '1px solid rgba(245, 158, 11, 0.25)',
-                    fontSize: '0.82rem',
+                    fontSize: '0.8rem',
                     color: 'var(--text-primary, #0f172a)',
                     lineHeight: 1.5
                   }}
@@ -415,36 +511,64 @@ export const FeatureInfoButton: React.FC<FeatureInfoButtonProps> = ({
 
             </div>
 
-            {/* Footer */}
+            {/* ─── Footer ─── */}
             <div 
               style={{ 
-                padding: '0.9rem 1.4rem', 
+                padding: '0.85rem 1.4rem', 
                 borderTop: '1px solid var(--border-color, #e2e8f0)', 
                 display: 'flex', 
-                justifyContent: 'flex-end',
+                alignItems: 'center',
+                justifyContent: 'space-between',
                 backgroundColor: 'var(--bg-app, #f8fafc)',
                 borderRadius: '0 0 16px 16px'
               }}
             >
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsOpen(false);
-                }}
+                onClick={handleCopySummary}
                 style={{
-                  padding: '0.45rem 1.25rem',
-                  fontSize: '0.84rem',
-                  fontWeight: 700,
-                  borderRadius: '8px',
+                  background: 'none',
+                  border: 'none',
+                  color: isCopied ? 'var(--accent-teal, #0d9488)' : 'var(--text-muted, #64748b)',
+                  fontSize: '0.76rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '0.35rem'
+                  gap: '0.35rem',
+                  padding: '0.2rem 0.4rem',
+                  borderRadius: '5px'
                 }}
+                title="Copy guide text to clipboard for syllabus or slides"
               >
-                <CheckCircle size={14} /> Got it
+                {isCopied ? <Check size={13} /> : <Copy size={13} />}
+                <span>{isCopied ? 'Copied to clipboard!' : 'Copy summary'}</span>
               </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Press <kbd style={{ padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-surface)', fontSize: '0.68rem' }}>Esc</kbd>
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsOpen(false);
+                  }}
+                  style={{
+                    padding: '0.4rem 1.1rem',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    borderRadius: '8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  <CheckCircle size={13} /> Got it
+                </button>
+              </div>
             </div>
           </div>
         </div>,

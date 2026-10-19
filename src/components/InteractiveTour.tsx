@@ -5,7 +5,8 @@ import {
   Sparkles, QrCode, Sliders, Users, Award, Mail,
   Layers, ShieldCheck, Maximize2, Search,
   Settings, Activity, BookOpen, Download, RotateCcw,
-  Play, Check, Compass, Calculator, FileText, Zap, Heart
+  Play, Check, Compass, Calculator, FileText, Zap, Heart, Building2,
+  UserCheck, MessageSquare
 } from 'lucide-react';
 import { type FeatureToggles, loadFeatureToggles } from '../utils/featurePreferences';
 
@@ -47,6 +48,17 @@ export const TOUR_STEPS: TourStep[] = [
     tab: 'hub',
     preferredPlacement: 'bottom',
     icon: <BookOpen size={16} style={{ color: 'var(--primary)' }} />
+  },
+  {
+    id: 'branding_customizer',
+    targetSelector: '[data-tour="branding-customizer-btn"]',
+    stage: 'Setup & Navigation',
+    title: 'Institutional Branding & Custom Header',
+    description: 'Set your university or school logo, custom course badge, term subtitle, and header theme color.',
+    demoLabel: 'Customize Branding',
+    tab: 'hub',
+    preferredPlacement: 'bottom',
+    icon: <Building2 size={16} style={{ color: 'var(--primary)' }} />
   },
   {
     id: 'workspace_switcher',
@@ -121,6 +133,18 @@ export const TOUR_STEPS: TourStep[] = [
     icon: <Settings size={16} style={{ color: 'var(--primary)' }} />
   },
   {
+    id: 'edit_layout_mode',
+    targetSelector: '[data-tour="edit-layout-btn"]',
+    stage: 'Setup & Navigation',
+    featureKey: 'showEditModeButton',
+    title: 'Interactive Layout Edit Mode (Alt+E)',
+    description: 'Press Alt+E or click the pencil icon to visually reorder, show, or hide any dashboard card and submodule on-screen.',
+    demoLabel: 'Toggle Edit Mode',
+    tab: 'hub',
+    preferredPlacement: 'bottom',
+    icon: <Sliders size={16} style={{ color: 'var(--primary)' }} />
+  },
+  {
     id: 'settings_hub',
     targetSelector: '[data-tour="settings-hub-btn"]',
     stage: 'Setup & Navigation',
@@ -149,6 +173,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'hub_enrollment',
     targetSelector: '[data-tour="hub-enrollment-card"]',
     stage: 'Home Hub Overview',
+    featureKey: 'showEnrollmentCard',
     title: 'Section 1: Enrollment & Teams',
     description: 'Onboard student rosters, distribute join QR codes, and generate balanced teams with diversity algorithms.',
     demoLabel: 'Go to Section 1',
@@ -160,6 +185,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'hub_review',
     targetSelector: '[data-tour="hub-review-card"]',
     stage: 'Home Hub Overview',
+    featureKey: 'showReviewSystemCard',
     title: 'Section 2: Review System',
     description: 'Configure criteria rubrics, auto-balance weights to 100%, and deploy 30-second team health pulses.',
     demoLabel: 'Go to Section 2',
@@ -171,6 +197,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'hub_analytics',
     targetSelector: '[data-tour="hub-analytics-card"]',
     stage: 'Home Hub Overview',
+    featureKey: 'showGradingAnalyticsCard',
     title: 'Section 3: Grading & Analytics',
     description: 'Calculate Loughborough WebPA multipliers, inspect Johari radars, and export master gradebooks.',
     demoLabel: 'Go to Section 3',
@@ -240,15 +267,40 @@ export const TOUR_STEPS: TourStep[] = [
     icon: <Users size={16} style={{ color: 'var(--primary)' }} />
   },
   {
+    id: 'team_kickoff_card',
+    targetSelector: '[data-tour="team-kickoff-card"]',
+    stage: 'Section 1: Students & Teams',
+    featureKey: 'showTeamKickoffAndRoles',
+    title: 'Team Roles & Mutual Accountability Charters',
+    description: 'Assign student roles (Lead, Scribe, Presenter) and enforce mutual group agreements with print-ready charters.',
+    demoLabel: 'Open Team Charters',
+    tab: 'roster',
+    preferredPlacement: 'top',
+    icon: <Award size={16} style={{ color: 'var(--primary)' }} />
+  },
+  {
     id: 'classroom_roster',
     targetSelector: '[data-tour="classroom-roster-table"]',
     stage: 'Section 1: Students & Teams',
+    featureKey: 'showRosterTable',
     title: 'Interactive Roster Table',
     description: 'Search, filter, and bulk-manage students, team transfers, and individual submission statuses.',
     demoLabel: 'Filter by Student',
     tab: 'roster',
     preferredPlacement: 'top',
     icon: <Users size={16} style={{ color: 'var(--primary)' }} />
+  },
+  {
+    id: 'team_overview_cards',
+    targetSelector: '[data-tour="team-overview-cards"]',
+    stage: 'Section 1: Students & Teams',
+    featureKey: 'showTeamOverviewCards',
+    title: 'Team Cohorts Overview & Health Cards',
+    description: 'Track cohort baseline grades, student allocations, and team submission progress at a glance.',
+    demoLabel: 'View Team Cohorts',
+    tab: 'roster',
+    preferredPlacement: 'top',
+    icon: <Users size={16} style={{ color: 'var(--accent-teal)' }} />
   },
 
   // --- STAGE 4: SECTION 2 (GRADING RUBRIC) ---
@@ -267,6 +319,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'rubric_builder',
     targetSelector: '[data-tour="rubric-builder-card"]',
     stage: 'Section 2: Grading Rubric',
+    featureKey: 'showCriterionCards',
     title: 'Weight Total (100%) & Rubric Builder',
     description: 'Create multi-criteria rubrics with auto-balancing weights, or load the research-backed 6-dimension IPAF standard.',
     demoLabel: 'Apply IPAF Preset',
@@ -322,6 +375,18 @@ export const TOUR_STEPS: TourStep[] = [
     preferredPlacement: 'top',
     icon: <Heart size={16} style={{ color: 'var(--accent-rose)' }} />
   },
+  {
+    id: 'live_presentation_scoring',
+    targetSelector: '[data-tour="live-presentation-card"]',
+    stage: 'Section 2: Grading Rubric',
+    featureKey: 'showLivePresentationScoring',
+    title: 'Real-Time Live Presentation Scoring',
+    description: 'Score student group presentations in real time with live auditorium sync, multi-criteria rubrics, and professor weighting.',
+    demoLabel: 'Open Scoring Cockpit',
+    tab: 'grading',
+    preferredPlacement: 'top',
+    icon: <Maximize2 size={16} style={{ color: 'var(--accent-teal)' }} />
+  },
 
   // --- STAGE 5: SECTION 3 (GRADES & REPORTS) ---
   {
@@ -346,6 +411,30 @@ export const TOUR_STEPS: TourStep[] = [
     tab: 'results',
     preferredPlacement: 'bottom',
     icon: <Activity size={16} style={{ color: 'var(--primary)' }} />
+  },
+  {
+    id: 'johari_matrix',
+    targetSelector: '[data-tour="johari-matrix-card"]',
+    stage: 'Section 3: Grades & Reports',
+    featureKey: 'showJohariMatrix',
+    title: 'Self vs. Peer Rating Comparison',
+    description: 'Identifies students whose self-ratings significantly diverge from teammate assessments (blind spots or imposters).',
+    demoLabel: 'Inspect Johari Matrix',
+    tab: 'results',
+    preferredPlacement: 'top',
+    icon: <UserCheck size={16} style={{ color: 'var(--accent-teal)' }} />
+  },
+  {
+    id: 'qualitative_feedback',
+    targetSelector: '[data-tour="qualitative-feedback-card"]',
+    stage: 'Section 3: Grades & Reports',
+    featureKey: 'showQualitativeFeedback',
+    title: 'Qualitative Written Feedback & Praise',
+    description: 'Summarizes peer feedback themes, positive praise tags, and areas for student professional growth.',
+    demoLabel: 'Review Feedback Themes',
+    tab: 'results',
+    preferredPlacement: 'top',
+    icon: <MessageSquare size={16} style={{ color: 'var(--primary)' }} />
   },
   {
     id: 'webpa_calibrator',
@@ -384,9 +473,22 @@ export const TOUR_STEPS: TourStep[] = [
     icon: <FileText size={16} style={{ color: 'var(--accent-teal)' }} />
   },
   {
+    id: 'lms_export_card',
+    targetSelector: '[data-tour="lms-export-card"]',
+    stage: 'Section 3: Grades & Reports',
+    featureKey: 'showLmsExport',
+    title: 'LMS Sync & Custom Gradebook Exports',
+    description: 'Export calibrated grades directly formatted for Canvas, Moodle, Blackboard, Brightspace, or custom CSV with individual WebPA multipliers.',
+    demoLabel: 'Export LMS CSV',
+    tab: 'results',
+    preferredPlacement: 'top',
+    icon: <Download size={16} style={{ color: 'var(--accent-teal)' }} />
+  },
+  {
     id: 'gradebook_matrix',
     targetSelector: '[data-tour="gradebook-matrix-card"]',
     stage: 'Section 3: Grades & Reports',
+    featureKey: 'showDetailedReviewMatrix',
     title: 'Master Gradebook Matrix',
     description: 'Detailed student-by-student mark matrix with per-criterion scores, WebPA factors, and batch student PDF reports.',
     demoLabel: 'Review Gradebook',
@@ -416,7 +518,7 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
 
   const effectiveToggles = featureToggles || loadFeatureToggles();
 
-  // Smart adaptive steps: only show steps for features that are visible / enabled
+  // Smart adaptive steps: ONLY show steps for features that are visible / enabled
   const activeSteps = useMemo(() => {
     let baseSteps = TOUR_STEPS;
     if (customStepIds && customStepIds.length > 0) {
@@ -427,12 +529,21 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
       }
     }
 
+    // Strict filter: only include steps where featureKey is either not required or explicitly enabled
     const visibleSteps = baseSteps.filter(step => {
-      if (!step.featureKey) return true;
-      return effectiveToggles[step.featureKey] === true;
+      if (step.featureKey && effectiveToggles[step.featureKey] === false) {
+        return false;
+      }
+      return true;
     });
 
-    return visibleSteps.length > 0 ? visibleSteps : baseSteps;
+    if (visibleSteps.length > 0) {
+      return visibleSteps;
+    }
+
+    // Safety fallback: only show enabled steps from full TOUR_STEPS
+    const fallback = TOUR_STEPS.filter(step => !step.featureKey || effectiveToggles[step.featureKey] === true);
+    return fallback.length > 0 ? fallback : TOUR_STEPS.slice(0, 3);
   }, [customStepIds, effectiveToggles]);
 
   useEffect(() => {
@@ -554,7 +665,8 @@ export const InteractiveTour: React.FC<InteractiveTourProps> = ({
 
     const attemptHighlight = (retryCount = 0) => {
       const el = document.querySelector(step.targetSelector) as HTMLElement | null;
-      if (el) {
+      const isVisible = !!el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0);
+      if (el && isVisible) {
         el.style.position = 'relative';
         el.style.zIndex = '10001';
         highlightedElRef.current = el;

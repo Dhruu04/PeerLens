@@ -5,6 +5,7 @@ import {
   Smartphone, Sliders, Maximize2, Minimize2
 } from 'lucide-react';
 import Modal from './Modal';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface ClassQRCodeModalProps {
   isOpen: boolean;
@@ -78,15 +79,18 @@ export const ClassQRCodeModal: React.FC<ClassQRCodeModalProps> = ({
         
         {/* Subtle Class Title & Enrolled Info */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
-          <h3 style={{
-            margin: 0,
-            fontSize: presentationMode ? '1.5rem' : '1.2rem',
-            fontWeight: 800,
-            color: 'var(--text-primary)',
-            letterSpacing: '-0.02em'
-          }}>
-            Scan to Join <span style={{ color: 'var(--primary)' }}>{classNameTitle}</span>
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+            <h3 style={{
+              margin: 0,
+              fontSize: presentationMode ? '1.5rem' : '1.2rem',
+              fontWeight: 800,
+              color: 'var(--text-primary)',
+              letterSpacing: '-0.02em'
+            }}>
+              Scan to Join <span style={{ color: 'var(--primary)' }}>{classNameTitle}</span>
+            </h3>
+            <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Student Self-Enrollment &amp; QR Guide" />
+          </div>
           <p style={{
             margin: 0,
             fontSize: '0.8rem',

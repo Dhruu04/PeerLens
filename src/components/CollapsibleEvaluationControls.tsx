@@ -20,6 +20,7 @@ interface CollapsibleEvaluationControlsProps {
   description?: string;
   style?: React.CSSProperties;
   compact?: boolean;
+  cardControls?: React.ReactNode;
 }
 
 export const CollapsibleEvaluationControls: React.FC<CollapsibleEvaluationControlsProps> = ({
@@ -29,7 +30,8 @@ export const CollapsibleEvaluationControls: React.FC<CollapsibleEvaluationContro
   title = 'Peer Evaluation Form Fields & Student Permissions',
   description = 'Configure which questions, praise tags, and self-review steps appear on student portals.',
   style,
-  compact = false
+  compact = false,
+  cardControls
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
@@ -149,6 +151,7 @@ export const CollapsibleEvaluationControls: React.FC<CollapsibleEvaluationContro
 
         {/* Expand / Contract Toggle Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+          {cardControls}
           <button
             type="button"
             className="btn btn-secondary btn-xs"

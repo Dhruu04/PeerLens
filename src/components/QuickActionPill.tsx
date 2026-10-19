@@ -49,7 +49,10 @@ import {
   Edit3,
   UserCheck,
   Presentation,
-  ShieldCheck
+  ShieldCheck,
+  History,
+  Layers,
+  Building2
 } from 'lucide-react';
 import type { ClassData } from '../utils/math';
 import type { FeatureToggles } from '../utils/featurePreferences';
@@ -64,6 +67,7 @@ import {
   subscribeCustomProfiles,
   type CustomViewProfile
 } from '../utils/customViewProfiles';
+import FeatureInfoButton from './FeatureInfoButton';
 
 export interface QuickActionPillProps {
   activeTab: string;
@@ -114,11 +118,16 @@ export interface QuickActionPillProps {
   onOpenEditMode?: () => void;
   onOpenLivePresentation?: () => void;
   onOpenTeamKickoff?: (tab?: 'roles_config' | 'icebreakers' | 'charters') => void;
+  onOpenEnrollmentBuilder?: () => void;
+  onOpenSnapshots?: () => void;
   onClearRoster?: () => void;
   onExportLMS?: (platform: 'canvas' | 'blackboard' | 'moodle' | 'brightspace') => void;
   onExportPulseCSV?: () => void;
   shortcutsEnabled?: boolean;
   onToggleShortcutsEnabled?: (enabled: boolean) => void;
+  onOpenLayoutLibrary?: () => void;
+  onOpenBranding?: () => void;
+  onResetLayout?: () => void;
   embedded?: boolean;
   isExpanded?: boolean;
   onExpandChange?: (expanded: boolean) => void;
@@ -173,11 +182,16 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
   onOpenEditMode,
   onOpenLivePresentation,
   onOpenTeamKickoff,
+  onOpenEnrollmentBuilder,
+  onOpenSnapshots,
   onClearRoster,
   onExportLMS,
   onExportPulseCSV,
   shortcutsEnabled: propShortcutsEnabled,
   onToggleShortcutsEnabled,
+  onOpenLayoutLibrary,
+  onOpenBranding,
+  onResetLayout,
   embedded = false,
   isExpanded: propIsExpanded,
   onExpandChange
@@ -442,8 +456,8 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
 
   // Intelligent synonym aliases for fast semantic search across all modules
   const MODULE_ALIASES: Record<string, string[]> = useMemo(() => ({
-    showLmsExport: ['canvas', 'moodle', 'blackboard', 'brightspace', 'd2l', 'lms', 'sis', 'gradebook', 'export', 'sync', 'csv', 'tsv'],
-    showTeamHealthPulse: ['pulse', 'health', 'morale', 'check-in', 'survey', 'sprint', 'sparkline', 'question', 'feedback', 'blocker'],
+    showLmsExport: ['custom lms', 'canvas', 'moodle', 'blackboard', 'brightspace', 'd2l', 'lms', 'sis', 'gradebook', 'export', 'sync', 'csv', 'tsv', 'column schema', 'delimiter', 'mapping'],
+    showTeamHealthPulse: ['pulse', 'health', 'morale', 'check-in', 'survey', 'sprint', 'sparkline', 'question', 'feedback', 'blocker', 'roadblock', '30-second', 'checkin', 'standup'],
     showAutoGroupStudio: ['autogroup', 'group', 'cohort', 'diversity', 'balance', 'formation', 'algorithm', 'team', 'shuffle', 'partition'],
     showAutoGroupTargetSize: ['size', 'target size', 'team size', 'stepper', 'count'],
     showAutoGroupNamingFormat: ['naming', 'prefix', 'team 1', 'squad', 'group format'],
@@ -462,9 +476,9 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     showAutoGroupShuffleBtn: ['shuffle', 'reshuffle', 're-run', 'randomize'],
     showAutoGroupCharterBtn: ['charter', 'agreements', 'roles button'],
     showAutoGroupApplyBtn: ['apply', 'commit', 'save teams', 'finalize roster'],
-    showTeamKickoffAndRoles: ['roles', 'lead', 'scribe', 'icebreaker', 'charter', 'kickoff', 'agreements', 'teamwork', 'allocator'],
-    showLivePresentationScoring: ['presentation', 'scoring', 'live', 'cockpit', 'audience', 'qr', 'voting', 'timer', 'leaderboard'],
-    showSelfEnrollmentCard: ['qr', 'join', 'link', 'enroll', 'self', 'code', 'mobile'],
+    showTeamKickoffAndRoles: ['roles', 'lead', 'scribe', 'icebreaker', 'charter', 'kickoff', 'agreements', 'teamwork', 'allocator', 'contract', '5-min', 'presentation lead', 'team contract'],
+    showLivePresentationScoring: ['presentation', 'scoring', 'live', 'cockpit', 'audience', 'qr', 'voting', 'timer', 'leaderboard', 'pitch', 'presentation day', 'audience scoring'],
+    showSelfEnrollmentCard: ['qr', 'join', 'link', 'enroll', 'self', 'code', 'mobile', 'questions', 'form builder'],
     showSelfEnrollmentQr: ['qr box', 'qr code preview', 'join url'],
     showSelfEnrollmentPresentationBtn: ['presentation mode', 'projector onboarding', 'fullscreen qr'],
     showQuickActionsCard: ['demo', 'sample', '100', 'populate', 'random', 'fast add'],
@@ -490,12 +504,12 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     showCustomCriterionButton: ['add criterion', 'new criterion', 'custom'],
     showCriterionCards: ['criteria', 'cards', 'rubric sliders', 'criterion'],
     showEvaluationSimulator: ['simulator', 'preview', 'student view', 'test'],
-    showEvaluationFormControls: ['questions', 'permissions', 'form controls', 'praise', 'tags', 'self review'],
+    showEvaluationFormControls: ['questions', 'permissions', 'form controls', 'praise', 'tags', 'self review', 'constructive', 'profile lock', 'form fields', 'survey questions', 'praise chips'],
     showResultsHeaderCard: ['results', 'banner', 'overview', 'stats', 'average'],
     showResultsSummarySheet: ['matrix', 'sheet', 'gradebook', 'webpa', 'grades', 'scores'],
     showWebPACalibration: ['webpa', 'calibration', 'fudge', 'factor', 'multiplier', 'weight'],
     showExportReportButtons: ['pdf', 'report', 'export', 'download report'],
-    showDetailedReviewMatrix: ['matrix', 'cross', 'evaluation', 'peer scores', 'grid'],
+    showDetailedReviewMatrix: ['who rated whom', 'matrix', 'cross matrix', 'cross grid', 'score transmissions', 'ratings grid', 'evaluation matrix', 'who scored who', 'grid', 'raw scores'],
     showTeammateAuditLog: ['audit', 'log', 'teammate', 'timestamp', 'history'],
     showCompetencyRadar: ['radar', 'spider', 'chart', 'competency', 'visual'],
     showJohariMatrix: ['johari', 'window', 'blind spot', 'hidden', 'perception'],
@@ -505,7 +519,7 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     showSubmissionReset: ['reset', 'unlock', 'clear reviews', 'danger'],
     showGradebookSearchFilter: ['search gradebook', 'filter results', 'find grade'],
     showThemeSwitcher: ['theme', 'dark', 'light', 'mode', 'color', 'moon', 'sun'],
-    showCommandSearch: ['search', 'command', 'palette', 'ctrl+k', 'bar'],
+    showCommandSearch: ['search', 'command', 'palette', 'ctrl+k', 'bar', 'omni', 'spotlight', 'quick finder', 'find student', 'searchbar', 'search bar'],
     showProjectorButton: ['projector', 'fullscreen', 'lecture', 'screen'],
     showClassPicker: ['switch class', 'dropdown', 'course', 'picker'],
     showSettingsButton: ['settings', 'preferences', 'configuration'],
@@ -513,8 +527,8 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
     showProfilePill: ['profile', 'account', 'user', 'instructor'],
     showEmailButton: ['email', 'dispatcher', 'send', 'mail'],
     showCloudStatus: ['cloud', 'firebase', 'sync', 'online'],
-    showEditModeButton: ['edit', 'layout', 'pencil', 'customizer', 'in-place', 'edit mode'],
-    showQuickActionPill: ['quick action', 'pill', 'dock', 'bottom dock', 'floating bar'],
+    showEditModeButton: ['edit', 'layout', 'pencil', 'customizer', 'in-place', 'edit mode', 'studio', 'density', 'clean canvas', 'hide all', 'page layout'],
+    showQuickActionPill: ['quick action', 'pill', 'dock', 'bottom dock', 'floating bar', 'tools dock', 'quick tools'],
     showFooterBrandLogo: ['footer logo', 'peerlens logo', 'branding'],
     showFooterBrandName: ['footer name', 'brand text', 'title'],
     showFooterBrandTagline: ['tagline', 'subtitle', 'intelligent peer assessment'],
@@ -700,6 +714,7 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                     <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
                       Quick Action Center
                     </span>
+                    <FeatureInfoButton featureId="quick-action-pill" size="sm" tooltipText="Floating Quick Action Dock Guide" />
                     <span
                       style={{
                         fontSize: '0.6rem',
@@ -1373,6 +1388,66 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Interactive Guide</div>
                       </div>
                     </button>
+
+                    {onOpenSnapshots && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onOpenSnapshots();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366f1', flexShrink: 0 }}>
+                          <History size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Snapshots</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Rollback &amp; History</div>
+                        </div>
+                      </button>
+                    )}
+
+                    {onOpenLayoutLibrary && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onOpenLayoutLibrary();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(168, 85, 247, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9333ea', flexShrink: 0 }}>
+                          <Layers size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Layout Library</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>7 Professor Presets</div>
+                        </div>
+                      </button>
+                    )}
+
+                    {onOpenBranding && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onOpenBranding();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', flexShrink: 0 }}>
+                          <Building2 size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Institutional Branding</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Logo, Badge &amp; Header</div>
+                        </div>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1489,6 +1564,21 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                         <FolderPlus size={12} />
                         <span>Save View</span>
                       </button>
+                      {onOpenLayoutLibrary && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsExpanded(false);
+                            onOpenLayoutLibrary();
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', fontWeight: 700, gap: '0.25rem', color: 'var(--text-primary)' }}
+                          title="Open Layout Library to apply curated templates or switch profiles"
+                        >
+                          <Layers size={12} />
+                          <span>Layout Library</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2278,6 +2368,26 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                       </button>
                     )}
 
+                    {onOpenEnrollmentBuilder && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onOpenEnrollmentBuilder();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5', flexShrink: 0 }}>
+                          <FileText size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Form Questions (Alt Q)</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Custom fields &amp; survey prompts</div>
+                        </div>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -2683,6 +2793,56 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                       </button>
                     )}
 
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsExpanded(false);
+                        onNavigateTab('results');
+                        if (!featureToggles.showDetailedReviewMatrix && onToggleFeature) {
+                          onToggleFeature('showDetailedReviewMatrix', true);
+                        }
+                        setTimeout(() => {
+                          const el = document.getElementById('detailed-review-matrix');
+                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 150);
+                      }}
+                      className="quick-tool-card"
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                    >
+                      <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(139, 92, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b5cf6', flexShrink: 0 }}>
+                        <LayoutGrid size={14} />
+                      </div>
+                      <div style={{ textAlign: 'left', minWidth: 0 }}>
+                        <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Who-Rated-Whom Grid</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Cross-eval scores &amp; audit</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsExpanded(false);
+                        onNavigateTab('results');
+                        if (!featureToggles.showLmsExport && onToggleFeature) {
+                          onToggleFeature('showLmsExport', true);
+                        }
+                        setTimeout(() => {
+                          const el = document.getElementById('lms-export-card');
+                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 150);
+                      }}
+                      className="quick-tool-card"
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                    >
+                      <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(14, 165, 233, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284c7', flexShrink: 0 }}>
+                        <Sliders size={14} />
+                      </div>
+                      <div style={{ textAlign: 'left', minWidth: 0 }}>
+                        <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>LMS Column Schema</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Custom delimiters &amp; columns</div>
+                      </div>
+                    </button>
+
                     {onExportPulseCSV && (
                       <button
                         type="button"
@@ -2813,6 +2973,84 @@ export const QuickActionPill: React.FC<QuickActionPillProps> = ({
                     5. Workspace Utilities &amp; Preferences
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.55rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsExpanded(false);
+                        onOpenSearch();
+                      }}
+                      className="quick-tool-card"
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px', background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(14, 165, 233, 0.08) 100%)' }}
+                    >
+                      <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', flexShrink: 0 }}>
+                        <Search size={14} />
+                      </div>
+                      <div style={{ textAlign: 'left', minWidth: 0 }}>
+                        <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Command Search (⌘K)</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Omni spotlight search palette</div>
+                      </div>
+                    </button>
+
+                    {onOpenLayoutLibrary && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onOpenLayoutLibrary();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', flexShrink: 0 }}>
+                          <Layers size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Layout Library &amp; Presets</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Curated templates &amp; saved views</div>
+                        </div>
+                      </button>
+                    )}
+
+                    {onOpenBranding && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onOpenBranding();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', flexShrink: 0 }}>
+                          <Building2 size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Institutional Branding</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Emblem, badge &amp; custom header</div>
+                        </div>
+                      </button>
+                    )}
+
+                    {onResetLayout && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          onResetLayout();
+                        }}
+                        className="quick-tool-card"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.8rem', borderRadius: '10px' }}
+                      >
+                        <div className="tool-icon-wrapper" style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-amber, #d97706)', flexShrink: 0 }}>
+                          <RotateCcw size={14} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Reset to Default Layout</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Restore standard cards &amp; views</div>
+                        </div>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {

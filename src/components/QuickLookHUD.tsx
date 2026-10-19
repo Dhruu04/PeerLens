@@ -1,20 +1,60 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   User, Users, Sparkles, Mail, GraduationCap, 
   Globe, Languages, CheckCircle2, Clock, 
-  Layers, Lock, Plane, Award, Info, Command
+  Layers, Lock, Plane, Award, Command,
+  TrendingUp, BarChart2, BookOpen,
+  Calculator, Lightbulb, Check, Pin, PinOff, X,
+  Copy, ExternalLink, Flag, AlertTriangle,
+  Activity, Zap, Compass, Eye, EyeOff
 } from 'lucide-react';
-import type { Student } from '../utils/math';
+import type { Student, ClassData } from '../utils/math';
+import { calculateStudentMetrics, calculateStudentWebPAScore } from '../utils/math';
+import { calculateJohariWindowMetric } from '../utils/feedbackAnalytics';
 import type { GroupDiversityReport } from '../utils/grouping';
 import type { ModuleItem } from '../utils/moduleRegistry';
+import { FEATURE_INFO_REGISTRY } from '../data/featureDescriptions';
 
 export type QuickLookPayload = 
-  | { type: 'student'; student: Student; teamReport?: GroupDiversityReport | null }
-  | { type: 'team'; team: GroupDiversityReport; isLocked?: boolean }
-  | { type: 'module'; module: ModuleItem }
-  | { type: 'action'; label: string; description: string; shortcut?: string; icon?: React.ReactNode }
-  | { type: 'generic'; title: string; subtitle?: string; details?: string };
+  | { 
+      type: 'student'; 
+      student: Student; 
+      context?: 'grouping' | 'grading';
+      teamReport?: GroupDiversityReport | null;
+      classData?: ClassData | null;
+      baseGroupGrade?: number;
+      fudgeWeight?: number;
+    }
+  | { 
+      type: 'team'; 
+      team: GroupDiversityReport; 
+      context?: 'grouping' | 'grading';
+      isLocked?: boolean;
+      classData?: ClassData | null;
+    }
+  | { 
+      type: 'module'; 
+      module: ModuleItem;
+      isEnabled?: boolean;
+      classData?: ClassData | null;
+      liveTelemetry?: Record<string, string | number>;
+    }
+  | { 
+      type: 'action'; 
+      label: string; 
+      description: string; 
+      shortcut?: string; 
+      icon?: React.ReactNode;
+      impact?: string;
+    }
+  | { 
+      type: 'generic'; 
+      title: string; 
+      subtitle?: string; 
+      details?: string;
+      metrics?: Array<{ label: string; value: string | number }>;
+    };
 
 const MODULE_SPECIFIC_GUIDES: Record<string, {
   badge: string;
@@ -643,78 +683,608 @@ const MODULE_SPECIFIC_GUIDES: Record<string, {
   }
 };
 
+const MODULE_KEY_TO_FEATURE_ID: Record<string, string> = {
+  // Navigation & Tools
+  showClassPicker: 'density-presets',
+  showDeleteClassButton: 'density-presets',
+  showNewClassButton: 'density-presets',
+  showLayoutPresets: 'density-presets',
+  showCommandPalette: 'command-palette',
+  showQuickActionPill: 'quick-action-pill',
+  showClassroomSnapshots: 'classroom-snapshots',
+
+  // Section 1: Roster, Enrollment & Teams
+  showSelfEnrollmentCard: 'classroom-qr',
+  showClassroomQRCard: 'classroom-qr',
+  showQuickActionsCard: 'quick-actions',
+  showImportWizardCard: 'import-wizard',
+  showRosterTable: 'classroom-roster',
+  showDuplicateDetector: 'duplicate-detector',
+  showTeamOverviewCards: 'team-cohorts',
+  showTeamCohorts: 'team-cohorts',
+  showAutoGroupStudio: 'auto-group-studio',
+  showTeamKickoffAndRoles: 'team-kickoff-roles',
+
+  // Section 2: Rubric & Grading Scales
+  showRubricBuilder: 'grading-rubric',
+  showRubricPresets: 'rubric-presets',
+  showTargetScale: 'target-scale',
+
+  // Section 3: Evaluation Controls & Windows
+  showSubmissionWindow: 'submission-window',
+  showEmailAutomation: 'email-automation',
+  showLinkDispatcher: 'link-dispatcher',
+  showCloudSync: 'cloud-sync',
+  showLivePresentationScoring: 'presentation-scoring',
+
+  // Section 4: Analytics & Score Adjustment
+  showResultsHeaderCard: 'calculation-matrix',
+  showCalculationMatrix: 'calculation-matrix',
+  showDetailedReviewMatrix: 'who-rated-whom',
+  showSkillsRadarAnalytics: 'radar-analytics',
+  showJohariWindow: 'johari-window',
+  showQualitativeFeedback: 'feedback-sentiment',
+  showWebPACalibration: 'webpa-calibration',
+  showAnomalyAudit: 'anomaly-detection',
+  showMilestonesHistory: 'milestones-sprints',
+
+  // Section 5: Gradebook & Exports
+  showLmsExport: 'lms-export',
+  showLmsCustomExport: 'lms-custom-export',
+  showResultsSummarySheet: 'results-summary-sheet',
+  showExportReportButtons: 'results-summary-sheet',
+  showGradebookSearchFilter: 'results-summary-sheet'
+};
+
+const CATEGORY_THEMES: Record<string, { bg: string; color: string; border: string }> = {
+  'Algorithm': {
+    bg: 'rgba(139, 92, 246, 0.12)',
+    color: '#8b5cf6',
+    border: 'rgba(139, 92, 246, 0.25)'
+  },
+  'Grading': {
+    bg: 'rgba(13, 148, 136, 0.12)',
+    color: '#0d9488',
+    border: 'rgba(13, 148, 136, 0.25)'
+  },
+  'Analytics': {
+    bg: 'rgba(37, 99, 235, 0.12)',
+    color: '#2563eb',
+    border: 'rgba(37, 99, 235, 0.25)'
+  },
+  'Roster': {
+    bg: 'rgba(5, 150, 105, 0.12)',
+    color: '#059669',
+    border: 'rgba(5, 150, 105, 0.25)'
+  },
+  'Student Portal': {
+    bg: 'rgba(217, 119, 6, 0.12)',
+    color: '#d97706',
+    border: 'rgba(245, 158, 11, 0.25)'
+  },
+  'Interface & Layout': {
+    bg: 'rgba(99, 102, 241, 0.12)',
+    color: '#6366f1',
+    border: 'rgba(99, 102, 241, 0.25)'
+  },
+  'Security': {
+    bg: 'rgba(225, 29, 72, 0.12)',
+    color: '#e11d48',
+    border: 'rgba(225, 29, 72, 0.25)'
+  }
+};
+
 interface QuickLookHUDProps {
   payload: QuickLookPayload | null;
   cursorPos: { x: number; y: number };
+  isPinned?: boolean;
+  onTogglePin?: () => void;
+  onDismiss?: () => void;
+  onAction?: (actionId: string, payload?: any) => void;
 }
 
-export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({ payload, cursorPos }) => {
+export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({ 
+  payload, 
+  cursorPos,
+  isPinned = false,
+  onTogglePin,
+  onDismiss,
+  onAction
+}) => {
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const hudRef = useRef<HTMLDivElement>(null);
+  const [measuredHeight, setMeasuredHeight] = useState<number>(380);
+
+  useEffect(() => {
+    if (!hudRef.current) return;
+    const updateSize = () => {
+      if (hudRef.current) {
+        const rect = hudRef.current.getBoundingClientRect();
+        if (rect.height > 0) {
+          setMeasuredHeight(Math.ceil(rect.height));
+        }
+      }
+    };
+    updateSize();
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => {
+        updateSize();
+      });
+      ro.observe(hudRef.current);
+    }
+
+    return () => {
+      if (ro) ro.disconnect();
+    };
+  }, [payload, isPinned]);
+
   if (!payload || typeof document === 'undefined') return null;
 
-  // Compute safe viewport positioning
-  const hudWidth = payload.type === 'student' ? 360 : payload.type === 'team' ? 380 : payload.type === 'module' ? 380 : 320;
-  const margin = 16;
-  
-  let left = cursorPos.x + margin;
-  let top = cursorPos.y + margin;
+  const handleCopy = (text: string, fieldId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedField(fieldId);
+      setTimeout(() => setCopiedField(null), 1600);
+    }
+  };
 
-  if (typeof window !== 'undefined') {
-    if (left + hudWidth > window.innerWidth - margin) {
-      left = Math.max(margin, cursorPos.x - hudWidth - margin);
-    }
-    if (top + 400 > window.innerHeight - margin) {
-      top = Math.max(margin, window.innerHeight - 420);
-    }
+  // Viewport-safe bounds computation
+  const hudWidth = payload.type === 'student' ? 390 : payload.type === 'team' ? 415 : payload.type === 'module' ? 390 : 340;
+  const margin = 16;
+  const screenW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+  const screenH = typeof window !== 'undefined' ? window.innerHeight : 800;
+
+  // Horizontal positioning: Flip to left of cursor if overflowing right edge
+  let left = cursorPos.x + margin;
+  if (left + hudWidth > screenW - margin) {
+    left = cursorPos.x - hudWidth - margin;
   }
+  left = Math.max(margin, Math.min(left, screenW - hudWidth - margin));
+
+  // Vertical positioning: Flip above cursor if overflowing bottom edge
+  const effectiveCardHeight = Math.min(measuredHeight, screenH - 32);
+  let top = cursorPos.y + margin;
+  if (top + effectiveCardHeight > screenH - margin) {
+    top = cursorPos.y - effectiveCardHeight - margin;
+  }
+  top = Math.max(margin, Math.min(top, screenH - effectiveCardHeight - margin));
 
   const renderContent = () => {
     switch (payload.type) {
       case 'student': {
-        const { student } = payload;
+        const { student, classData, baseGroupGrade = 100, fudgeWeight = 0.5, context = 'grouping' } = payload;
+        const isGradingContext = context === 'grading';
         const isUnassigned = !student.groupName || student.groupName === 'Unassigned' || student.groupName === 'None';
         const role = student.role || 'Role Pending';
-        const isExchange = student.isExchange;
+        const isExchange = student.isExchange || student.studentType === 'Erasmus' || student.studentType === 'Exchange';
+        const isIntl = student.isInternational || student.studentType === 'International';
+        const studentTypeLabel = isExchange ? 'Exchange / Erasmus' : isIntl ? 'International' : 'Domestic';
+
+        if (!isGradingContext) {
+          // =========================================================================
+          // CONTEXT: AUTO-GROUP TEAMS / ROSTER / FORMATION (Personal & Demographics)
+          // =========================================================================
+          const nationality = student.nationality || student.currentCountry || student.originalCountry || 'Unspecified';
+          const degree = student.degree || 'General Program';
+          const university = student.university || student.currentUniversity || student.originalUniversity || 'Host Campus';
+          const english = student.englishProficiency || 'Proficient';
+
+          return (
+            <div className="quicklook-card student-quicklook-profile" style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              {/* Header Profile */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div 
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, var(--accent-teal, #0d9488), var(--primary, #6366f1))',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.05rem',
+                    fontWeight: 800,
+                    boxShadow: '0 4px 12px rgba(13, 148, 136, 0.25)',
+                    flexShrink: 0
+                  }}
+                >
+                  {student.name ? student.name.charAt(0).toUpperCase() : <User size={20} />}
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
+                      {student.name || 'Unnamed Student'}
+                    </h4>
+                    {student.flaggedForReview && (
+                      <span className="badge badge-rose" style={{ fontSize: '0.6rem', padding: '0.08rem 0.35rem' }}>
+                        Flagged
+                      </span>
+                    )}
+                    {student.isExcused && (
+                      <span className="badge badge-amber" style={{ fontSize: '0.6rem', padding: '0.08rem 0.35rem' }}>
+                        Excused
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                    <Mail size={12} style={{ opacity: 0.7, flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{student.email}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Team, Role & Cohort Pill Row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <span style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: '6px',
+                  backgroundColor: isUnassigned ? 'rgba(225, 29, 72, 0.12)' : 'rgba(13, 148, 136, 0.12)',
+                  color: isUnassigned ? 'var(--accent-rose, #e11d48)' : 'var(--accent-teal, #0d9488)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}>
+                  <Users size={12} />
+                  {isUnassigned ? 'Unassigned' : student.groupName}
+                </span>
+
+                <span style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: '6px',
+                  backgroundColor: student.role ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-app)',
+                  color: student.role ? 'var(--primary, #6366f1)' : 'var(--text-muted)',
+                  border: '1px solid var(--border-color)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}>
+                  <Award size={12} />
+                  {role}
+                </span>
+
+                <span style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: '6px',
+                  backgroundColor: isExchange ? 'rgba(16, 185, 129, 0.12)' : isIntl ? 'rgba(14, 165, 233, 0.12)' : 'var(--bg-app)',
+                  color: isExchange ? '#059669' : isIntl ? '#0284c7' : 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  marginLeft: 'auto'
+                }}>
+                  {isExchange ? <Plane size={12} /> : isIntl ? <Globe size={12} /> : <User size={12} />}
+                  {studentTypeLabel}
+                </span>
+              </div>
+
+              {/* Personal & Academic Profile 2x2 Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '0.45rem',
+                backgroundColor: 'var(--bg-app)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                padding: '0.65rem'
+              }}>
+                {/* 1. Nationality & Region */}
+                <div style={{ padding: '0.35rem 0.45rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', textTransform: 'uppercase', fontWeight: 750, letterSpacing: '0.2px' }}>
+                    <Globe size={11} style={{ color: 'var(--accent-teal, #0d9488)' }} /> Nationality &amp; Origin
+                  </span>
+                  <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={nationality}>
+                    {nationality}
+                  </strong>
+                </div>
+
+                {/* 2. Degree / Program */}
+                <div style={{ padding: '0.35rem 0.45rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', textTransform: 'uppercase', fontWeight: 750, letterSpacing: '0.2px' }}>
+                    <GraduationCap size={11} style={{ color: 'var(--primary, #6366f1)' }} /> Degree / Major
+                  </span>
+                  <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={degree}>
+                    {degree}
+                  </strong>
+                </div>
+
+                {/* 3. University / Campus */}
+                <div style={{ padding: '0.35rem 0.45rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', textTransform: 'uppercase', fontWeight: 750, letterSpacing: '0.2px' }}>
+                    <BookOpen size={11} style={{ color: '#d97706' }} /> Origin Campus
+                  </span>
+                  <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={university}>
+                    {university}
+                  </strong>
+                </div>
+
+                {/* 4. Language Level */}
+                <div style={{ padding: '0.35rem 0.45rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', textTransform: 'uppercase', fontWeight: 750, letterSpacing: '0.2px' }}>
+                    <Languages size={11} style={{ color: '#10b981' }} /> Language Level
+                  </span>
+                  <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={english}>
+                    {english}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Extra Personal Notes / Charter Agreement / Exemption */}
+              {student.roleDetails && (
+                <div style={{
+                  padding: '0.35rem 0.55rem',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)',
+                  fontSize: '0.68rem',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}>
+                  <Award size={12} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                  <span><strong>Charter Responsibility:</strong> {student.roleDetails}</span>
+                </div>
+              )}
+
+              {student.isExcused && student.excusedReason && (
+                <div style={{
+                  padding: '0.35rem 0.55rem',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                  fontSize: '0.68rem',
+                  color: '#d97706',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}>
+                  <Clock size={12} style={{ flexShrink: 0 }} />
+                  <span><strong>Approved Leave:</strong> {student.excusedReason}</span>
+                </div>
+              )}
+
+              {student.flaggedForReview && student.suspiciousReason && (
+                <div style={{
+                  padding: '0.35rem 0.55rem',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(225, 29, 72, 0.1)',
+                  border: '1px solid rgba(225, 29, 72, 0.25)',
+                  fontSize: '0.68rem',
+                  color: '#e11d48',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}>
+                  <Flag size={12} style={{ flexShrink: 0 }} />
+                  <span><strong>Audit Flag:</strong> {student.suspiciousReason}</span>
+                </div>
+              )}
+
+              {/* Action Bar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', paddingTop: '0.45rem', borderTop: '1px solid var(--border-color)' }}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAction?.('open_student', student);
+                  }}
+                  style={{
+                    flex: 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.35rem',
+                    padding: '0.3rem 0.55rem',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--bg-app)',
+                    border: '1px solid var(--border-color)',
+                    fontSize: '0.7rem',
+                    fontWeight: 750,
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    pointerEvents: 'auto'
+                  }}
+                  title="Open Student Profile Modal (E)"
+                >
+                  <ExternalLink size={11} style={{ color: 'var(--primary)' }} />
+                  <span>Profile</span>
+                  <kbd style={{ fontSize: '0.58rem', padding: '0.05rem 0.25rem', borderRadius: '3px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontFamily: 'monospace' }}>E</kbd>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAction?.('toggle_flag', student.id);
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.35rem',
+                    padding: '0.3rem 0.55rem',
+                    borderRadius: '6px',
+                    backgroundColor: student.flaggedForReview ? 'rgba(225, 29, 72, 0.12)' : 'var(--bg-app)',
+                    border: student.flaggedForReview ? '1px solid rgba(225, 29, 72, 0.3)' : '1px solid var(--border-color)',
+                    fontSize: '0.7rem',
+                    fontWeight: 750,
+                    color: student.flaggedForReview ? '#e11d48' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    pointerEvents: 'auto'
+                  }}
+                  title="Toggle Audit Flag (F)"
+                >
+                  <Flag size={11} />
+                  <span>{student.flaggedForReview ? 'Flagged' : 'Flag'}</span>
+                  <kbd style={{ fontSize: '0.58rem', padding: '0.05rem 0.25rem', borderRadius: '3px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontFamily: 'monospace' }}>F</kbd>
+                </button>
+              </div>
+            </div>
+          );
+        }
+
+        // =========================================================================
+        // CONTEXT: RESULTS SUMMARY SHEET & GRADEBOOK (Gradebook & WebPA Performance)
+        // =========================================================================
+        const hasClassData = !!(classData && classData.students && classData.students.length > 0);
+        const metrics = hasClassData ? calculateStudentMetrics(student, classData) : null;
+        const webpa = hasClassData ? calculateStudentWebPAScore(student.id, student.groupName, classData, baseGroupGrade, fudgeWeight) : null;
+        const johari = hasClassData ? calculateJohariWindowMetric(student.id, classData) : null;
+
+        const selfReview = hasClassData
+          ? (classData.reviews || []).find(r => r.reviewerId === student.id && r.recipientId === student.id)
+          : null;
+
+        const webpaRatio = webpa ? webpa.ratio : 1.0;
+        const webpaColor = webpaRatio >= 1.05
+          ? '#059669'
+          : webpaRatio >= 0.98
+            ? 'var(--primary, #6366f1)'
+            : webpaRatio >= 0.90
+              ? '#d97706'
+              : '#e11d48';
+
+        const webpaBg = webpaRatio >= 1.05
+          ? 'rgba(16, 185, 129, 0.12)'
+          : webpaRatio >= 0.98
+            ? 'rgba(99, 102, 241, 0.1)'
+            : webpaRatio >= 0.90
+              ? 'rgba(245, 158, 11, 0.12)'
+              : 'rgba(225, 29, 72, 0.12)';
+
+        // Smart Context-Aware Diagnostics
+        const smartAlerts: Array<{ icon: any; color: string; bg: string; text: string }> = [];
+
+        if (student.flaggedForReview) {
+          smartAlerts.push({
+            icon: Flag,
+            color: '#e11d48',
+            bg: 'rgba(225, 29, 72, 0.1)',
+            text: student.suspiciousReason || 'Flagged for grading audit'
+          });
+        }
+
+        if (!student.submitted) {
+          smartAlerts.push({
+            icon: Clock,
+            color: '#d97706',
+            bg: 'rgba(245, 158, 11, 0.1)',
+            text: `Review pending: At risk of non-submission penalty (-${classData?.peerAdjustmentConfig?.nonSubmitterPenalty ?? 10}%)`
+          });
+        }
+
+        if (webpa && webpa.ratio >= 1.15) {
+          smartAlerts.push({
+            icon: TrendingUp,
+            color: '#059669',
+            bg: 'rgba(16, 185, 129, 0.1)',
+            text: `High contributor: Rated +${((webpa.ratio - 1) * 100).toFixed(0)}% above team contribution benchmark`
+          });
+        } else if (webpa && webpa.ratio <= 0.85) {
+          smartAlerts.push({
+            icon: AlertTriangle,
+            color: '#e11d48',
+            bg: 'rgba(225, 29, 72, 0.1)',
+            text: `Contribution gap: Rated ${((1 - webpa.ratio) * 100).toFixed(0)}% below team average`
+          });
+        }
+
+        if (johari && johari.category === 'underestimating') {
+          smartAlerts.push({
+            icon: Sparkles,
+            color: '#6366f1',
+            bg: 'rgba(99, 102, 241, 0.1)',
+            text: `Hidden Talent: Peers rate student higher than self-evaluation (+${johari.gapPct}%)`
+          });
+        } else if (johari && johari.category === 'overestimating') {
+          smartAlerts.push({
+            icon: AlertTriangle,
+            color: '#d97706',
+            bg: 'rgba(245, 158, 11, 0.1)',
+            text: `Perception Gap: Student self-rating exceeds peer assessment (-${Math.abs(johari.gapPct || 0)}%)`
+          });
+        }
 
         return (
-          <div className="quicklook-card student-quicklook">
+          <div className="quicklook-card student-quicklook-grading">
             {/* Header Profile */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.65rem' }}>
               <div 
                 style={{
-                  width: '44px',
-                  height: '44px',
+                  width: '42px',
+                  height: '42px',
                   borderRadius: '12px',
                   background: 'linear-gradient(135deg, var(--accent-teal, #0d9488), var(--primary, #6366f1))',
                   color: '#ffffff',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '1.1rem',
+                  fontSize: '1.05rem',
                   fontWeight: 800,
-                  boxShadow: '0 4px 12px rgba(13, 148, 136, 0.3)',
+                  boxShadow: '0 4px 12px rgba(13, 148, 136, 0.25)',
                   flexShrink: 0
                 }}
               >
                 {student.name ? student.name.charAt(0).toUpperCase() : <User size={20} />}
               </div>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
                     {student.name || 'Unnamed Student'}
                   </h4>
-                  <span style={{ fontSize: '0.66rem', padding: '0.1rem 0.35rem', borderRadius: '4px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                    #{student.id}
-                  </span>
+                  {student.flaggedForReview && (
+                    <span className="badge badge-rose" style={{ fontSize: '0.6rem', padding: '0.08rem 0.35rem' }}>
+                      Flagged
+                    </span>
+                  )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                  <Mail size={12} style={{ opacity: 0.7 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                  <Mail size={12} style={{ opacity: 0.7, flexShrink: 0 }} />
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{student.email}</span>
                 </div>
               </div>
             </div>
 
+            {/* Smart Diagnostics Banner */}
+            {smartAlerts.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', marginBottom: '0.65rem' }}>
+                {smartAlerts.slice(0, 2).map((alert, idx) => (
+                  <div 
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.3rem 0.55rem',
+                      borderRadius: '6px',
+                      backgroundColor: alert.bg,
+                      border: `1px solid ${alert.color}33`,
+                      fontSize: '0.68rem',
+                      color: alert.color,
+                      fontWeight: 700,
+                      lineHeight: 1.3
+                    }}
+                  >
+                    <alert.icon size={12} style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{alert.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Team & Role Status Row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.65rem', flexWrap: 'wrap' }}>
               <span style={{
                 fontSize: '0.72rem',
                 fontWeight: 800,
@@ -763,96 +1333,537 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({ payload, cursorPos }
               </span>
             </div>
 
-            {/* Demographics & Academic Grid */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '0.5rem',
-              backgroundColor: 'var(--bg-app)',
-              padding: '0.65rem 0.75rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              marginBottom: '0.65rem',
-              fontSize: '0.74rem'
-            }}>
-              <div>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <Globe size={11} /> Nationality
-                </span>
-                <strong style={{ color: 'var(--text-primary)', display: 'block', marginTop: '0.1rem' }}>
-                  {student.nationality || 'Unspecified'}
-                </strong>
-              </div>
-
-              <div>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <Languages size={11} /> English
-                </span>
-                <strong style={{ color: 'var(--text-primary)', display: 'block', marginTop: '0.1rem' }}>
-                  {student.englishProficiency || 'Intermediate'}
-                </strong>
-              </div>
-
-              <div style={{ gridColumn: 'span 2' }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <GraduationCap size={11} /> University & Degree
-                </span>
-                <strong style={{ color: 'var(--text-primary)', display: 'block', marginTop: '0.1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {student.university || 'General Institution'} {student.degree ? `• ${student.degree}` : ''}
-                </strong>
-                {isExchange && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: 'var(--accent-teal, #0d9488)', fontSize: '0.68rem', marginTop: '0.15rem' }}>
-                    <Plane size={10} /> Exchange: {student.originalUniversity || 'Home'} → {student.currentUniversity || 'Host'}
+            {/* Gradebook & Evaluation Results */}
+            {hasClassData && (
+              <div style={{
+                backgroundColor: 'var(--bg-app)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                padding: '0.65rem 0.75rem',
+                marginBottom: '0.65rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.55rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <BarChart2 size={12} style={{ color: 'var(--primary)' }} />
+                    Gradebook &amp; Evaluation Results
                   </span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.66rem' }}>
+                    {metrics ? `${metrics.reviewsReceived}/${metrics.expectedReviewsCount} reviews` : ''}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+                  <div style={{
+                    backgroundColor: webpaBg,
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    padding: '0.4rem 0.45rem',
+                    textAlign: 'center'
+                  }}>
+                    <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', fontWeight: 700 }}>
+                      WebPA
+                    </span>
+                    <strong style={{ fontSize: '0.92rem', color: webpaColor, display: 'inline-flex', alignItems: 'center', gap: '2px', marginTop: '0.1rem', whiteSpace: 'nowrap' }}>
+                      <TrendingUp size={11} /> {webpa ? `${webpa.ratio.toFixed(2)}x` : '1.00x'}
+                    </strong>
+                  </div>
+
+                  <div style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    padding: '0.4rem 0.45rem',
+                    textAlign: 'center'
+                  }}>
+                    <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', fontWeight: 700 }}>
+                      Final Mark
+                    </span>
+                    <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.1rem', whiteSpace: 'nowrap' }}>
+                      {webpa ? `${webpa.adjustedGrade.toFixed(1)}` : '—'}
+                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}> / {webpa ? webpa.teamBaseGrade : 100}</span>
+                    </strong>
+                  </div>
+
+                  <div style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    padding: '0.4rem 0.45rem',
+                    textAlign: 'center'
+                  }}>
+                    <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', fontWeight: 700 }}>
+                      Peer Score
+                    </span>
+                    <strong style={{ fontSize: '0.92rem', color: 'var(--primary)', display: 'block', marginTop: '0.1rem', whiteSpace: 'nowrap' }}>
+                      {metrics?.overallPercentage !== null ? `${metrics?.overallPercentage}%` : 'N/A'}
+                    </strong>
+                  </div>
+                </div>
+
+                {johari && johari.category !== 'insufficient_data' && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.35rem 0.5rem',
+                    borderRadius: '6px',
+                    backgroundColor: johari.bgColor || 'var(--bg-surface)',
+                    border: `1px solid ${johari.color}33`,
+                    fontSize: '0.68rem',
+                    gap: '0.4rem',
+                    flexWrap: 'wrap'
+                  }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 750, color: johari.color }}>
+                      <Sparkles size={11} /> {johari.label}
+                    </span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.64rem' }}>
+                      Self: {johari.selfScorePct}% vs Peers: {johari.peerScorePct}% ({johari.gapPct !== null && johari.gapPct > 0 ? '+' : ''}{johari.gapPct}%)
+                    </span>
+                  </div>
+                )}
+
+                {/* Rubric Criteria Teammate Averages */}
+                {classData.fields && classData.fields.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.2rem' }}>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                      Rubric Criteria Teammate Averages
+                    </span>
+                    {classData.fields.slice(0, 3).map(f => {
+                      const avg = metrics?.fieldAverages?.[f.id] ?? f.min;
+                      const fMax = f.max || 5;
+                      const fMin = f.min || 1;
+                      const pct = Math.max(0, Math.min(100, ((avg - fMin) / (fMax - fMin || 1)) * 100));
+                      const selfScore = selfReview?.scores?.[f.id];
+
+                      return (
+                        <div key={f.id} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem', gap: '0.5rem' }}>
+                            <span style={{ fontWeight: 650, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }} title={f.name}>
+                              {f.name}
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 800, flexShrink: 0 }}>
+                              <span style={{ color: 'var(--text-primary)' }}>{avg.toFixed(1)} <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>/ {fMax}</span></span>
+                              {selfScore !== undefined && (
+                                <span style={{ color: 'var(--accent-teal, #0d9488)', fontSize: '0.62rem', fontWeight: 700 }}>
+                                  (Self {selfScore})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ width: '100%', height: '4px', backgroundColor: 'var(--border-color)', borderRadius: '999px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, backgroundColor: 'var(--primary)', borderRadius: '999px' }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-            </div>
+            )}
 
-            {/* Gender & Student Type */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', padding: '0 0.2rem' }}>
-              <span>Gender: <strong style={{ color: 'var(--text-secondary)' }}>{student.gender || 'Not specified'}</strong></span>
-              <span>Type: <strong style={{ color: 'var(--text-secondary)' }}>{student.studentType || 'Standard'}</strong></span>
+            {/* Interactive Smart Action Bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', paddingTop: '0.45rem', borderTop: '1px solid var(--border-color)' }}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAction?.('open_student', student);
+                }}
+                style={{
+                  flex: 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem',
+                  padding: '0.3rem 0.55rem',
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bg-app)',
+                  border: '1px solid var(--border-color)',
+                  fontSize: '0.7rem',
+                  fontWeight: 750,
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  pointerEvents: 'auto'
+                }}
+                title="Open Student Profile Modal (E)"
+              >
+                <ExternalLink size={11} style={{ color: 'var(--primary)' }} />
+                <span>Profile</span>
+                <kbd style={{ fontSize: '0.58rem', padding: '0.05rem 0.25rem', borderRadius: '3px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontFamily: 'monospace' }}>E</kbd>
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAction?.('toggle_flag', student.id);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem',
+                  padding: '0.3rem 0.55rem',
+                  borderRadius: '6px',
+                  backgroundColor: student.flaggedForReview ? 'rgba(225, 29, 72, 0.12)' : 'var(--bg-app)',
+                  border: student.flaggedForReview ? '1px solid rgba(225, 29, 72, 0.3)' : '1px solid var(--border-color)',
+                  fontSize: '0.7rem',
+                  fontWeight: 750,
+                  color: student.flaggedForReview ? '#e11d48' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  pointerEvents: 'auto'
+                }}
+                title="Toggle Audit Flag (F)"
+              >
+                <Flag size={11} />
+                <span>{student.flaggedForReview ? 'Flagged' : 'Flag'}</span>
+                <kbd style={{ fontSize: '0.58rem', padding: '0.05rem 0.25rem', borderRadius: '3px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontFamily: 'monospace' }}>F</kbd>
+              </button>
             </div>
           </div>
         );
       }
 
       case 'team': {
-        const { team, isLocked } = payload;
+        const { team, isLocked, classData, context = 'grouping' } = payload;
+        const isGradingContext = context === 'grading';
+        const total = team.students.length;
+        const submitted = team.students.filter(s => s.submitted).length;
+        const submitPct = total > 0 ? Math.round((submitted / total) * 100) : 0;
+        const filledRoles = team.students.filter(s => Boolean(s.role)).length;
+
+        const baseGroupGrade = classData?.teamBaseGrades?.[team.groupName] ?? classData?.targetScale ?? 100;
+        const fudgeWeight = classData?.peerAdjustmentConfig?.fudgeWeight ?? 1.0;
+
+        if (!isGradingContext) {
+          // =========================================================================
+          // CONTEXT: AUTO-GROUP TEAMS / ROSTER / FORMATION (Diversity & Composition)
+          // =========================================================================
+          const genderEntries = Object.entries(team.genderCounts || {}).filter(([, c]) => c > 0);
+          const fullGenderSummary = genderEntries.map(([g, c]) => `${c} ${g}`).join(' • ');
+          const genderSummary = genderEntries.length > 2 || fullGenderSummary.length > 18
+            ? genderEntries.map(([g, c]) => `${c}${g.charAt(0).toUpperCase()}`).join(' • ')
+            : fullGenderSummary;
+
+          const hasOptimalBalance = team.diversityScore >= 85;
+          const hasSoloGender = Object.values(team.genderCounts || {}).some(c => c === 1) && total >= 3;
+          const allRolesFilled = filledRoles === total && total > 0;
+
+          return (
+            <div className="quicklook-card team-quicklook-formation" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {/* Team Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                  <div style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(13, 148, 136, 0.15)',
+                    color: 'var(--accent-teal, #0d9488)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.9rem',
+                    fontWeight: 800,
+                    flexShrink: 0
+                  }}>
+                    <Users size={18} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
+                      {team.groupName}
+                    </h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.1rem' }}>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        {team.studentCount} {team.studentCount === 1 ? 'member' : 'members'}
+                      </span>
+                      <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>•</span>
+                      <span style={{ fontSize: '0.68rem', color: allRolesFilled ? 'var(--accent-teal, #0d9488)' : 'var(--text-muted)', fontWeight: 650 }}>
+                        {filledRoles}/{total} Roles Claimed
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  {isLocked && (
+                    <span style={{
+                      fontSize: '0.65rem',
+                      padding: '0.12rem 0.4rem',
+                      borderRadius: '4px',
+                      backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                      color: '#d97706',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '2px'
+                    }}>
+                      <Lock size={10} /> Locked
+                    </span>
+                  )}
+                  <div style={{
+                    fontSize: '0.82rem',
+                    fontWeight: 800,
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: '6px',
+                    backgroundColor: team.diversityScore >= 80 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                    color: team.diversityScore >= 80 ? '#10b981' : 'var(--primary, #6366f1)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    lineHeight: 1
+                  }}>
+                    <span>{team.diversityScore}%</span>
+                    <span style={{ fontSize: '0.55rem', textTransform: 'uppercase', opacity: 0.8, marginTop: '2px' }}>Mix</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Diversity & Composition Breakdown Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '0.45rem',
+                backgroundColor: 'var(--bg-app)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                padding: '0.55rem'
+              }}>
+                {/* 1. Nationalities */}
+                <div style={{ padding: '0.35rem 0.45rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', textTransform: 'uppercase', fontWeight: 750, letterSpacing: '0.2px' }}>
+                    <Globe size={11} style={{ color: 'var(--accent-teal, #0d9488)' }} /> Nationalities
+                  </span>
+                  <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={team.nationalities.join(', ')}>
+                    {team.uniqueNationalityCount} {team.uniqueNationalityCount === 1 ? 'Country' : 'Countries'} ({team.nationalities.slice(0, 2).join(', ')}{team.nationalities.length > 2 ? ` +${team.nationalities.length - 2}` : ''})
+                  </strong>
+                </div>
+
+                {/* 2. Campuses / Universities */}
+                <div style={{ padding: '0.35rem 0.45rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', textTransform: 'uppercase', fontWeight: 750, letterSpacing: '0.2px' }}>
+                    <GraduationCap size={11} style={{ color: 'var(--primary, #6366f1)' }} /> Campuses
+                  </span>
+                  <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={team.universities.join(', ')}>
+                    {team.uniqueUniversityCount} {team.uniqueUniversityCount === 1 ? 'Institution' : 'Institutions'}
+                  </strong>
+                </div>
+
+                {/* 3. Language Proficiency */}
+                <div style={{ padding: '0.35rem 0.45rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', textTransform: 'uppercase', fontWeight: 750, letterSpacing: '0.2px' }}>
+                    <Languages size={11} style={{ color: '#10b981' }} /> Language Level
+                  </span>
+                  <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Avg {team.avgEnglishCEFR || 'Fluent'}
+                  </strong>
+                </div>
+
+                {/* 4. Gender Balance */}
+                <div style={{ padding: '0.35rem 0.45rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', textTransform: 'uppercase', fontWeight: 750, letterSpacing: '0.2px' }}>
+                    <Users size={11} style={{ color: '#d97706' }} /> Gender Parity
+                  </span>
+                  <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fullGenderSummary}>
+                    {genderSummary || 'Balanced'}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Smart Composition Highlight Banner */}
+              {hasOptimalBalance ? (
+                <div style={{
+                  padding: '0.35rem 0.55rem',
+                  backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(16, 185, 129, 0.22)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontSize: '0.7rem',
+                  color: '#059669'
+                }}>
+                  <Sparkles size={12} style={{ flexShrink: 0 }} />
+                  <span><strong>Optimal Balance:</strong> High demographic mixing across grouping criteria.</span>
+                </div>
+              ) : hasSoloGender ? (
+                <div style={{
+                  padding: '0.35rem 0.55rem',
+                  backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(245, 158, 11, 0.22)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontSize: '0.7rem',
+                  color: '#d97706'
+                }}>
+                  <Lightbulb size={12} style={{ flexShrink: 0 }} />
+                  <span><strong>Composition Tip:</strong> Solo gender representation detected. Consider swapping to ensure peer support.</span>
+                </div>
+              ) : null}
+
+              {/* Grouping Rule Satisfaction Pills */}
+              {team.ruleSatisfactions && team.ruleSatisfactions.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  {team.ruleSatisfactions.slice(0, 3).map(r => (
+                    <span 
+                      key={r.ruleId}
+                      style={{
+                        fontSize: '0.64rem',
+                        fontWeight: 700,
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '5px',
+                        backgroundColor: r.satisfactionScore >= 80 ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-app)',
+                        color: r.satisfactionScore >= 80 ? '#059669' : 'var(--text-secondary)',
+                        border: '1px solid var(--border-color)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}
+                    >
+                      <span>{r.ruleName}:</span>
+                      <strong>{r.satisfactionScore}%</strong>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Assigned Teammates Roster Overview */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                  <span style={{ fontSize: '0.66rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                    Assigned Members ({team.students.length})
+                  </span>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                    Role &amp; Origin
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', maxHeight: '220px', overflowY: 'auto' }}>
+                  {team.students.map(s => {
+                    const nat = s.nationality || s.currentCountry || '';
+                    const deg = s.degree || '';
+                    const originTag = [deg, nat].filter(Boolean).join(' • ');
+
+                    return (
+                      <div 
+                        key={s.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.3rem 0.5rem',
+                          borderRadius: '6px',
+                          backgroundColor: 'var(--bg-app)',
+                          fontSize: '0.74rem',
+                          gap: '0.5rem'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, flex: 1 }}>
+                          <div style={{
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: '5px',
+                            backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                            color: 'var(--primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.62rem',
+                            fontWeight: 800,
+                            flexShrink: 0
+                          }}>
+                            {s.name ? s.name.charAt(0).toUpperCase() : 'S'}
+                          </div>
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {s.name}
+                          </span>
+                          {s.role && (
+                            <span style={{ fontSize: '0.62rem', padding: '0.05rem 0.3rem', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary, #6366f1)', fontWeight: 700, flexShrink: 0 }}>
+                              {s.role}
+                            </span>
+                          )}
+                        </div>
+
+                        {originTag && (
+                          <span style={{
+                            fontSize: '0.64rem',
+                            color: 'var(--text-muted)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            minWidth: 0,
+                            flexShrink: 1,
+                            textAlign: 'right'
+                          }} title={originTag}>
+                            {originTag}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // =========================================================================
+        // CONTEXT: RESULTS SUMMARY SHEET & GRADEBOOK (Gradebook, WebPA, Velocity)
+        // =========================================================================
+        const memberScores = classData ? team.students.map(s => {
+          return calculateStudentWebPAScore(s.id, team.groupName, classData, baseGroupGrade, fudgeWeight);
+        }).filter(Boolean) : [];
+
+        const ratios = memberScores.map(m => m!.ratio);
+        const minRatio = ratios.length > 0 ? Math.min(...ratios) : 1.0;
+        const maxRatio = ratios.length > 0 ? Math.max(...ratios) : 1.0;
+        const spread = maxRatio - minRatio;
+
         return (
-          <div className="quicklook-card team-quicklook">
+          <div className="quicklook-card team-quicklook-grading" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
             {/* Team Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                 <div style={{
                   width: '36px',
                   height: '36px',
                   borderRadius: '10px',
-                  backgroundColor: 'rgba(13, 148, 136, 0.15)',
-                  color: 'var(--accent-teal, #0d9488)',
+                  backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                  color: 'var(--primary, #6366f1)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '0.9rem',
-                  fontWeight: 800
+                  fontWeight: 800,
+                  flexShrink: 0
                 }}>
-                  <Users size={18} />
+                  <BarChart2 size={18} />
                 </div>
                 <div>
-                  <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
                     {team.groupName}
                   </h4>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    {team.studentCount} {team.studentCount === 1 ? 'member' : 'members'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.1rem' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                      {team.studentCount} {team.studentCount === 1 ? 'member' : 'members'}
+                    </span>
+                    <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>•</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 650 }}>
+                      Base Grade: {baseGroupGrade} pts
+                    </span>
+                  </div>
                 </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 {isLocked && (
                   <span style={{
-                    fontSize: '0.68rem',
-                    padding: '0.15rem 0.4rem',
+                    fontSize: '0.65rem',
+                    padding: '0.12rem 0.4rem',
                     borderRadius: '4px',
                     backgroundColor: 'rgba(245, 158, 11, 0.15)',
                     color: '#d97706',
@@ -864,196 +1875,545 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({ payload, cursorPos }
                     <Lock size={10} /> Locked
                   </span>
                 )}
-                <span style={{
-                  fontSize: '0.82rem',
+                <div style={{
+                  fontSize: '0.78rem',
                   fontWeight: 800,
-                  padding: '0.2rem 0.55rem',
+                  padding: '0.2rem 0.5rem',
                   borderRadius: '6px',
-                  backgroundColor: team.diversityScore >= 80 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.15)',
-                  color: team.diversityScore >= 80 ? '#10b981' : 'var(--primary, #6366f1)'
+                  backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                  color: 'var(--primary, #6366f1)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  lineHeight: 1
                 }}>
-                  {team.diversityScore}%
+                  <span>{minRatio.toFixed(2)}x – {maxRatio.toFixed(2)}x</span>
+                  <span style={{ fontSize: '0.54rem', textTransform: 'uppercase', opacity: 0.8, marginTop: '2px' }}>Spread</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Smart Peer Consensus Insight Banner */}
+            <div style={{
+              padding: '0.35rem 0.55rem',
+              borderRadius: '6px',
+              backgroundColor: spread <= 0.10 ? 'rgba(13, 148, 136, 0.08)' : spread <= 0.30 ? 'rgba(99, 102, 241, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+              border: `1px solid ${spread <= 0.10 ? 'rgba(13, 148, 136, 0.22)' : spread <= 0.30 ? 'rgba(99, 102, 241, 0.22)' : 'rgba(245, 158, 11, 0.22)'}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              fontSize: '0.7rem',
+              color: spread <= 0.10 ? '#0d9488' : spread <= 0.30 ? 'var(--primary, #6366f1)' : '#d97706'
+            }}>
+              {spread <= 0.10 ? (
+                <>
+                  <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
+                  <span><strong>High Team Consensus:</strong> Teammates evaluated each other with strong agreement (Spread: {spread.toFixed(2)}x).</span>
+                </>
+              ) : spread <= 0.30 ? (
+                <>
+                  <Activity size={13} style={{ flexShrink: 0 }} />
+                  <span><strong>Moderate Variation:</strong> Minor differentiation in individual student contributions (Spread: {spread.toFixed(2)}x).</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+                  <span><strong>Contribution Gap Flagged:</strong> Significant peer rating divergence across members (Spread: {spread.toFixed(2)}x).</span>
+                </>
+              )}
+            </div>
+
+            {/* Smart Submission Velocity Meter */}
+            <div style={{
+              padding: '0.4rem 0.55rem',
+              borderRadius: '6px',
+              backgroundColor: 'var(--bg-app)',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.25rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)', fontWeight: 650 }}>
+                  <Clock size={11} style={{ color: submitPct === 100 ? '#10b981' : '#d97706' }} />
+                  Evaluation Submissions
+                </span>
+                <strong style={{ color: submitPct === 100 ? '#10b981' : submitPct >= 50 ? 'var(--primary)' : '#d97706', fontSize: '0.72rem' }}>
+                  {submitted} of {total} ({submitPct}%)
+                </strong>
+              </div>
+              <div style={{ width: '100%', height: '5px', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden' }}>
+                <div style={{ width: `${submitPct}%`, height: '100%', backgroundColor: submitPct === 100 ? '#10b981' : 'var(--primary)', borderRadius: '9999px', transition: 'width 0.3s ease' }} />
+              </div>
+            </div>
+
+            {/* Team Roster Members Evaluation Preview */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                <span style={{ fontSize: '0.66rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  Teammate Multipliers &amp; Marks ({team.students.length})
+                </span>
+                <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                  ● Submitted / ○ Pending
                 </span>
               </div>
-            </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', maxHeight: '220px', overflowY: 'auto' }}>
+                {team.students.map(s => {
+                  const sScore = classData ? calculateStudentWebPAScore(s.id, team.groupName, classData, baseGroupGrade, fudgeWeight) : null;
+                  const ratioColor = sScore ? (sScore.ratio >= 1.05 ? '#059669' : sScore.ratio < 0.95 ? '#d97706' : 'var(--text-primary)') : 'var(--text-primary)';
 
-            {/* Team Roster Members Preview */}
-            <div style={{ marginBottom: '0.85rem' }}>
-              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Assigned Teammates ({team.students.length})
-              </span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', marginTop: '0.35rem', maxHeight: '150px', overflowY: 'auto' }}>
-                {team.students.map(s => (
-                  <div 
-                    key={s.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '0.28rem 0.5rem',
-                      borderRadius: '6px',
-                      backgroundColor: 'var(--bg-app)',
-                      fontSize: '0.74rem'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0 }}>
-                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {s.name}
-                      </span>
-                      {s.role && (
-                        <span style={{ fontSize: '0.64rem', padding: '0.04rem 0.25rem', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary, #6366f1)', fontWeight: 700 }}>
-                          {s.role}
+                  return (
+                    <div 
+                      key={s.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.3rem 0.5rem',
+                        borderRadius: '6px',
+                        backgroundColor: 'var(--bg-app)',
+                        fontSize: '0.74rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, flex: 1, marginRight: '0.4rem' }}>
+                        {s.submitted ? (
+                          <CheckCircle2 size={13} style={{ color: '#10b981', flexShrink: 0 }} />
+                        ) : (
+                          <Clock size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                        )}
+                        <span style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {s.name}
                         </span>
-                      )}
+                        {s.role && (
+                          <span style={{ fontSize: '0.62rem', padding: '0.05rem 0.3rem', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary, #6366f1)', fontWeight: 700, flexShrink: 0 }}>
+                            {s.role}
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                        {sScore ? (
+                          <span style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 750,
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '4px',
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--border-color)',
+                            color: ratioColor,
+                            fontVariantNumeric: 'tabular-nums'
+                          }}>
+                            {sScore.ratio.toFixed(2)}x &bull; {sScore.adjustedGrade.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>
+                            {s.submitted ? 'Submitted' : 'Pending'}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-                      {s.nationality || s.university || ''}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
-
-            {/* Diversity Breakdown Summary */}
-            {team.ruleSatisfactions && team.ruleSatisfactions.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.6rem' }}>
-                {team.ruleSatisfactions.map(rs => (
-                  <span 
-                    key={rs.ruleId}
-                    style={{
-                      fontSize: '0.66rem',
-                      padding: '0.1rem 0.35rem',
-                      borderRadius: '4px',
-                      backgroundColor: rs.satisfactionScore >= 75 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                      color: rs.satisfactionScore >= 75 ? '#10b981' : '#d97706',
-                      fontWeight: 700
-                    }}
-                  >
-                    {rs.ruleName}: {rs.satisfactionScore}%
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
         );
       }
 
       case 'module': {
-        const { module } = payload;
-        const info = MODULE_SPECIFIC_GUIDES[module.key] || {
-          badge: `${module.category.toUpperCase()} TOOL`,
-          whatItDoes: module.desc || 'Provides dedicated classroom management and configuration controls.',
-          howToUse: 'Interact directly with this component to configure classroom settings or inspect cohort data.',
-          pedagogicalValue: 'Enhances instructor workflow efficiency and supports equitable team collaboration.'
+        const { module, isEnabled, liveTelemetry, classData } = payload;
+        const featureId = MODULE_KEY_TO_FEATURE_ID[module.key] || module.key;
+        const featureInfo = FEATURE_INFO_REGISTRY[featureId] || (FEATURE_INFO_REGISTRY[module.key as string]);
+        const guide = MODULE_SPECIFIC_GUIDES[module.key];
+
+        const title = featureInfo?.title || module.title;
+        const rawCategory = featureInfo?.category || module.category || 'General';
+        const normalizedCategory = rawCategory.toLowerCase();
+        const theme = Object.entries(CATEGORY_THEMES).find(([k]) => k.toLowerCase() === normalizedCategory)?.[1] || {
+          bg: 'rgba(99, 102, 241, 0.12)',
+          color: 'var(--primary, #6366f1)',
+          border: 'rgba(99, 102, 241, 0.25)'
         };
 
+        const categorySectionMap: Record<string, string> = {
+          header: 'Navigation & Tools',
+          hub: 'Hub Overview',
+          roster: 'Section 1: Roster & Enrollment',
+          autogroup: 'Section 1: Auto-Group Teams',
+          rubric: 'Section 2: Rubric & Scales',
+          analytics: 'Section 3: Grades & Analytics',
+          footer: 'Footer & Compliance'
+        };
+        const sectionLabel = categorySectionMap[module.category] || rawCategory;
+
+        const description = featureInfo?.summary || guide?.whatItDoes || featureInfo?.whatItDoes || module.desc;
+        const formula = featureInfo?.formula;
+        const whatToDo = featureInfo?.whatToDo || (guide?.howToUse ? [guide.howToUse] : []);
+
+        const IconComp = module.icon || Layers;
+
+        // Auto-discover live telemetry from workspace state
+        const telemetryData: Record<string, string | number> = { ...(liveTelemetry || {}) };
+        if (classData) {
+          if (module.key === 'showRosterTable' || module.key === 'showBulkActionBar') {
+            if (!telemetryData['Enrolled']) telemetryData['Enrolled'] = `${classData.students.length} Students`;
+            if (!telemetryData['Teams']) telemetryData['Teams'] = `${new Set(classData.students.map(s => s.groupName).filter(Boolean)).size} Cohorts`;
+          } else if (module.key === 'showRubricHeader' || module.key === 'showCriterionCards' || module.key === 'showRubricPresets') {
+            if (!telemetryData['Criteria']) telemetryData['Criteria'] = `${classData.fields.length} Dimensions`;
+            if (!telemetryData['Target Scale']) telemetryData['Target Scale'] = `${classData.targetScale ?? 100} Pts`;
+          } else if (module.key === 'showDeadlineTimer' || module.key === 'showEvaluationFormControls') {
+            if (!telemetryData['Deadline']) telemetryData['Deadline'] = classData.deadline ? new Date(classData.deadline).toLocaleDateString() : 'Open / Unset';
+            if (!telemetryData['Reviews']) telemetryData['Reviews'] = `${classData.reviews.length} Received`;
+          } else if (module.key === 'showQualitativeFeedback') {
+            if (!telemetryData['Written Notes']) telemetryData['Written Notes'] = `${classData.reviews.filter(r => Boolean(r.strengthsText || r.growthText)).length} Feedback`;
+          } else if (module.key === 'showWebPACalibration') {
+            if (!telemetryData['Algorithm']) telemetryData['Algorithm'] = (classData.peerAdjustmentConfig?.method ?? 'WebPA').toUpperCase();
+            if (!telemetryData['Sensitivity']) telemetryData['Sensitivity'] = `${Math.round((classData.peerAdjustmentConfig?.fudgeWeight ?? 1) * 100)}%`;
+          } else if (module.key === 'showSelfEnrollmentCard' || module.key === 'showSelfEnrollmentQr') {
+            if (!telemetryData['Status']) telemetryData['Status'] = 'Open / Ready';
+            if (!telemetryData['Enrolled']) telemetryData['Enrolled'] = `${classData.students.length} Members`;
+          } else if (module.key === 'showResultsHeaderCard' || module.key === 'showResultsSummarySheet') {
+            if (!telemetryData['Reviews']) telemetryData['Reviews'] = `${classData.reviews.length} Completed`;
+            if (!telemetryData['Roster']) telemetryData['Roster'] = `${classData.students.length} Students`;
+          } else if (module.key === 'showAutoGroupStudio') {
+            if (!telemetryData['Roster Pool'] && !telemetryData['Pool'] && !telemetryData['Students in Pool']) {
+              const poolCount = classData.students.length;
+              const teamsCount = new Set(classData.students.map(s => s.groupName).filter(Boolean)).size;
+              telemetryData['Roster Pool'] = `${poolCount} Students`;
+              telemetryData['Formed Teams'] = `${teamsCount} Cohorts`;
+              telemetryData['Target Size'] = '4–5 Members';
+            }
+          }
+        }
+
+        // Clean up any duplicate telemetry keys to prevent repetitive metrics
+        if (telemetryData['Students in Pool'] && (telemetryData['Pool'] || telemetryData['Roster Pool'])) {
+          delete telemetryData['Students in Pool'];
+        }
+        if (telemetryData['Pool'] && telemetryData['Roster Pool']) {
+          delete telemetryData['Pool'];
+        }
+
         return (
-          <div className="quicklook-card module-quicklook">
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.75rem' }}>
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                backgroundColor: 'rgba(99, 102, 241, 0.12)',
-                color: 'var(--primary, #6366f1)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}>
-                <Layers size={18} />
-              </div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {module.title}
-                </h4>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', borderRadius: '4px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    {module.category}
-                  </span>
-                  {info.badge && (
-                    <span style={{ fontSize: '0.65rem', padding: '0.08rem 0.35rem', borderRadius: '4px', backgroundColor: 'rgba(13, 148, 136, 0.12)', color: 'var(--accent-teal, #0d9488)', fontWeight: 700 }}>
-                      {info.badge}
+          <div 
+            className="quicklook-card module-quicklook"
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.6rem'
+            }}
+          >
+            {/* Header: Icon, Category Pill, Status Badge, Title, and Inline Quick Toggle */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.55rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  backgroundColor: theme.bg,
+                  color: theme.color,
+                  border: `1px solid ${theme.border}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <IconComp size={18} />
+                </div>
+
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.15rem', flexWrap: 'wrap' }}>
+                    <span style={{
+                      fontSize: '0.6rem',
+                      fontWeight: 800,
+                      padding: '0.08rem 0.38rem',
+                      borderRadius: '4px',
+                      backgroundColor: theme.bg,
+                      color: theme.color,
+                      border: `1px solid ${theme.border}`,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px'
+                    }}>
+                      {sectionLabel}
                     </span>
-                  )}
+
+                    {isEnabled !== undefined && (
+                      <span style={{
+                        fontSize: '0.6rem',
+                        fontWeight: 750,
+                        padding: '0.08rem 0.35rem',
+                        borderRadius: '4px',
+                        backgroundColor: isEnabled ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-app)',
+                        color: isEnabled ? '#10b981' : 'var(--text-muted)',
+                        border: '1px solid var(--border-color)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}>
+                        <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: isEnabled ? '#10b981' : 'var(--text-muted)' }} />
+                        {isEnabled ? 'Active' : 'Hidden'}
+                      </span>
+                    )}
+                  </div>
+                  <h4 
+                    style={{ 
+                      margin: 0, 
+                      fontSize: '0.94rem', 
+                      fontWeight: 800, 
+                      color: 'var(--text-primary)', 
+                      lineHeight: 1.25 
+                    }} 
+                    title={title}
+                  >
+                    {title}
+                  </h4>
                 </div>
               </div>
+
+              {/* In-Header Quick Toggle Action Button */}
+              {isEnabled !== undefined && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAction?.('toggle_module', module.key);
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    padding: '0.22rem 0.5rem',
+                    borderRadius: '6px',
+                    backgroundColor: isEnabled ? 'rgba(225, 29, 72, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+                    border: `1px solid ${isEnabled ? 'rgba(225, 29, 72, 0.25)' : 'rgba(16, 185, 129, 0.25)'}`,
+                    fontSize: '0.66rem',
+                    fontWeight: 750,
+                    color: isEnabled ? 'var(--accent-rose, #e11d48)' : 'var(--accent-teal, #0d9488)',
+                    cursor: 'pointer',
+                    pointerEvents: 'auto',
+                    flexShrink: 0
+                  }}
+                  title={isEnabled ? "Hide module (T)" : "Enable module (T)"}
+                >
+                  {isEnabled ? <EyeOff size={11} /> : <Eye size={11} />}
+                  <span>{isEnabled ? 'Hide' : 'Enable'}</span>
+                  <kbd style={{ fontSize: '0.55rem', padding: '0.04rem 0.22rem', borderRadius: '3px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontFamily: 'monospace' }}>T</kbd>
+                </button>
+              )}
             </div>
 
-            {/* In-Depth Concrete Description */}
-            <p style={{ margin: '0 0 0.75rem', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-              {info.whatItDoes}
-            </p>
-
-            {/* How It Operates / Practical Guidance */}
-            {info.howToUse && (
+            {/* Live Workspace Telemetry Stats Grid */}
+            {Object.keys(telemetryData).length > 0 && (
               <div style={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(${Math.min(3, Object.keys(telemetryData).length)}, 1fr)`,
+                gap: '0.4rem',
                 backgroundColor: 'var(--bg-app)',
-                padding: '0.55rem 0.75rem',
-                borderRadius: '8px',
                 border: '1px solid var(--border-color)',
-                marginBottom: '0.65rem',
-                fontSize: '0.72rem'
+                borderRadius: '8px',
+                padding: '0.45rem'
               }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.2rem' }}>
-                  <Info size={11} /> Practical Guidance
-                </span>
-                <span style={{ color: 'var(--text-primary)', lineHeight: 1.4, display: 'block' }}>
-                  {info.howToUse}
-                </span>
+                {Object.entries(telemetryData).slice(0, 3).map(([k, v]) => (
+                  <div key={k} style={{ textAlign: 'center', padding: '0.2rem 0.35rem', backgroundColor: 'var(--bg-surface)', borderRadius: '5px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.56rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.3px', display: 'block' }}>{k}</span>
+                    <strong style={{ fontSize: '0.76rem', color: 'var(--text-primary)', display: 'block', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(v)}>{v}</strong>
+                  </div>
+                ))}
               </div>
             )}
 
-            {/* Pedagogical Insight / Value */}
-            {info.pedagogicalValue && (
+            {/* Core Description - Crisp & High Signal */}
+            {description && (
+              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                {description}
+              </p>
+            )}
+
+            {/* Formula / Calculation Standard with Click-to-Copy */}
+            {formula && (
+              <div 
+                onClick={(e) => handleCopy(formula, 'formula', e)}
+                style={{
+                  padding: '0.35rem 0.55rem',
+                  backgroundColor: 'var(--bg-app)',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  cursor: 'pointer',
+                  pointerEvents: 'auto',
+                  transition: 'background-color 0.15s ease'
+                }}
+                title="Click to copy formula to clipboard"
+              >
+                <Calculator size={13} style={{ color: theme.color, flexShrink: 0 }} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.58rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.3px', lineHeight: 1 }}>
+                    <span>Calculation Standard</span>
+                    <span style={{ color: copiedField === 'formula' ? '#10b981' : 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                      {copiedField === 'formula' ? <><Check size={10} /> Copied!</> : <><Copy size={10} /> Copy</>}
+                    </span>
+                  </div>
+                  <code 
+                    style={{ 
+                      fontSize: '0.68rem', 
+                      fontFamily: 'monospace', 
+                      fontWeight: 700, 
+                      color: 'var(--text-primary)', 
+                      display: 'block', 
+                      overflow: 'hidden', 
+                      textOverflow: 'ellipsis', 
+                      whiteSpace: 'nowrap', 
+                      marginTop: '0.15rem' 
+                    }} 
+                    title={formula}
+                  >
+                    {formula}
+                  </code>
+                </div>
+              </div>
+            )}
+
+            {/* Practical Pro Tip or Actionable Highlight */}
+            {featureInfo?.proTip ? (
               <div style={{
-                backgroundColor: 'rgba(99, 102, 241, 0.06)',
-                border: '1px solid rgba(99, 102, 241, 0.18)',
-                padding: '0.5rem 0.65rem',
+                padding: '0.4rem 0.55rem',
+                backgroundColor: 'rgba(245, 158, 11, 0.08)',
                 borderRadius: '6px',
-                fontSize: '0.7rem',
-                color: 'var(--primary, #6366f1)',
+                border: '1px solid rgba(245, 158, 11, 0.22)',
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: '0.4rem',
-                lineHeight: 1.35
+                fontSize: '0.71rem',
+                lineHeight: 1.35,
+                color: 'var(--text-secondary)'
               }}>
-                <Sparkles size={13} style={{ flexShrink: 0, marginTop: '1px' }} />
-                <span>{info.pedagogicalValue}</span>
+                <Lightbulb size={13} style={{ color: '#d97706', flexShrink: 0, marginTop: '1px' }} />
+                <div>
+                  <strong style={{ color: '#d97706' }}>Instructor Tip: </strong>
+                  <span>{featureInfo.proTip}</span>
+                </div>
               </div>
-            )}
+            ) : whatToDo && whatToDo.length > 0 ? (
+              <div style={{
+                padding: '0.35rem 0.55rem',
+                backgroundColor: 'var(--bg-app)',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.25rem'
+              }}>
+                {whatToDo.slice(0, 2).map((step, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem', fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                    <CheckCircle2 size={12} style={{ color: theme.color, flexShrink: 0, marginTop: '2px' }} />
+                    <span style={{ flex: 1 }}>{step}</span>
+                  </div>
+                ))}
+              </div>
+            ) : guide?.pedagogicalValue ? (
+              <div style={{
+                padding: '0.35rem 0.55rem',
+                backgroundColor: 'var(--bg-app)',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.4rem',
+                fontSize: '0.7rem',
+                lineHeight: 1.35,
+                color: 'var(--text-secondary)'
+              }}>
+                <GraduationCap size={13} style={{ color: 'var(--primary, #6366f1)', flexShrink: 0, marginTop: '1px' }} />
+                <div>
+                  <strong style={{ color: 'var(--text-primary)' }}>Syllabus Value: </strong>
+                  <span>{guide.pedagogicalValue}</span>
+                </div>
+              </div>
+            ) : null}
           </div>
         );
       }
 
       case 'action': {
+        const isDestructive = Boolean(
+          payload.impact?.toLowerCase().includes('delete') || 
+          payload.impact?.toLowerCase().includes('wipe') || 
+          payload.impact?.toLowerCase().includes('purge') || 
+          payload.impact?.toLowerCase().includes('reset') ||
+          payload.label.toLowerCase().includes('clear') ||
+          payload.label.toLowerCase().includes('reset')
+        );
+
         return (
-          <div className="quicklook-card action-quicklook">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.45rem' }}>
+          <div className="quicklook-card action-quicklook" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  backgroundColor: isDestructive ? 'rgba(225, 29, 72, 0.12)' : 'rgba(13, 148, 136, 0.15)',
+                  color: isDestructive ? 'var(--accent-rose, #e11d48)' : 'var(--accent-teal, #0d9488)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  {payload.icon || (isDestructive ? <AlertTriangle size={16} /> : <Zap size={16} />)}
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ fontSize: '0.58rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px', color: isDestructive ? 'var(--accent-rose, #e11d48)' : 'var(--text-muted)', display: 'block' }}>
+                    {isDestructive ? 'Destructive Action' : 'Action Tool'}
+                  </span>
+                  <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
+                    {payload.label}
+                  </h4>
+                </div>
+              </div>
+
+              {payload.shortcut && (
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.2rem',
+                  fontSize: '0.62rem',
+                  padding: '0.15rem 0.4rem',
+                  borderRadius: '5px',
+                  backgroundColor: 'var(--bg-app)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                  fontWeight: 700
+                }}>
+                  <Command size={10} style={{ color: 'var(--text-muted)' }} />
+                  <span>{payload.shortcut}</span>
+                </div>
+              )}
+            </div>
+
+            {payload.description && (
+              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                {payload.description}
+              </p>
+            )}
+
+            {payload.impact && (
               <div style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '6px',
-                backgroundColor: 'rgba(13, 148, 136, 0.15)',
-                color: 'var(--accent-teal, #0d9488)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                gap: '0.4rem',
+                padding: '0.35rem 0.55rem',
+                borderRadius: '6px',
+                backgroundColor: isDestructive ? 'rgba(225, 29, 72, 0.08)' : 'rgba(99, 102, 241, 0.08)',
+                border: `1px solid ${isDestructive ? 'rgba(225, 29, 72, 0.22)' : 'rgba(99, 102, 241, 0.2)'}`,
+                fontSize: '0.68rem',
+                color: isDestructive ? 'var(--accent-rose, #e11d48)' : 'var(--primary, #6366f1)',
+                fontWeight: 650
               }}>
-                {payload.icon || <Sparkles size={15} />}
-              </div>
-              <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                {payload.label}
-              </h4>
-            </div>
-            <p style={{ margin: '0 0 0.5rem', fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-              {payload.description}
-            </p>
-            {payload.shortcut && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                <Command size={11} />
-                <span>Shortcut: <strong style={{ color: 'var(--text-primary)' }}>{payload.shortcut}</strong></span>
+                {isDestructive ? <AlertTriangle size={12} style={{ flexShrink: 0 }} /> : <Activity size={12} style={{ flexShrink: 0 }} />}
+                <span>{payload.impact}</span>
               </div>
             )}
           </div>
@@ -1062,19 +2422,50 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({ payload, cursorPos }
 
       case 'generic': {
         return (
-          <div className="quicklook-card generic-quicklook">
-            <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-              {payload.title}
-            </h4>
-            {payload.subtitle && (
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>
+          <div className="quicklook-card generic-quicklook" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                color: 'var(--primary, #6366f1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Compass size={16} />
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <span style={{ fontSize: '0.58rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px', color: 'var(--text-muted)', display: 'block' }}>
+                  Workspace Component
+                </span>
+                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
+                  {payload.title}
+                </h4>
+              </div>
+            </div>
+
+            {payload.subtitle && payload.subtitle !== payload.title && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
                 {payload.subtitle}
               </span>
             )}
             {payload.details && (
-              <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
                 {payload.details}
               </p>
+            )}
+            {payload.metrics && payload.metrics.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(3, payload.metrics.length)}, 1fr)`, gap: '0.35rem', marginTop: '0.2rem' }}>
+                {payload.metrics.map((m, i) => (
+                  <div key={i} style={{ padding: '0.3rem 0.4rem', borderRadius: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                    <span style={{ fontSize: '0.56rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', fontWeight: 750 }}>{m.label}</span>
+                    <strong style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'block', marginTop: '1px' }}>{m.value}</strong>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         );
@@ -1090,28 +2481,131 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({ payload, cursorPos }
         left: `${left}px`,
         top: `${top}px`,
         width: `${hudWidth}px`,
+        maxHeight: 'calc(100vh - 32px)',
         zIndex: 999999,
-        pointerEvents: 'none',
-        userSelect: 'none',
-        WebkitUserSelect: 'none'
+        pointerEvents: isPinned ? 'auto' : 'none',
+        userSelect: isPinned ? 'text' : 'none',
+        WebkitUserSelect: isPinned ? 'text' : 'none',
+        transition: isPinned ? 'none' : 'left 0.05s ease-out, top 0.05s ease-out',
+        display: 'flex',
+        flexDirection: 'column'
       }}
     >
       <div 
+        ref={hudRef}
         className="quicklook-hud-glass"
         style={{
-          backgroundColor: 'var(--bg-surface, rgba(255, 255, 255, 0.96))',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          border: '1px solid var(--border-color, rgba(255, 255, 255, 0.2))',
+          backgroundColor: 'var(--bg-surface, rgba(255, 255, 255, 0.98))',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: isPinned 
+            ? '2px solid var(--primary, #6366f1)' 
+            : '1px solid var(--border-color, rgba(255, 255, 255, 0.2))',
           borderRadius: '14px',
-          boxShadow: '0 20px 45px -10px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.05)',
-          padding: '1rem',
-          animation: 'quickLookPop 0.12s cubic-bezier(0.16, 1, 0.3, 1)'
+          boxShadow: isPinned
+            ? '0 24px 60px -12px rgba(99, 102, 241, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.3)'
+            : '0 20px 45px -10px rgba(0, 0, 0, 0.35)',
+          padding: '0.85rem',
+          maxHeight: 'calc(100vh - 32px)',
+          display: 'flex',
+          flexDirection: 'column',
+          boxSizing: 'border-box'
         }}
       >
-        {renderContent()}
+        {/* HUD Smart Control Bar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span style={{
+              fontSize: '0.62rem',
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              letterSpacing: '0.4px',
+              padding: '0.12rem 0.45rem',
+              borderRadius: '5px',
+              backgroundColor: 'var(--bg-app)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              {payload.type === 'student' ? <User size={10} style={{ color: payload.context === 'grading' ? '#6366f1' : '#0d9488' }} /> :
+               payload.type === 'team' ? <Users size={10} style={{ color: payload.context === 'grading' ? '#6366f1' : '#0d9488' }} /> :
+               payload.type === 'module' ? <Layers size={10} style={{ color: '#6366f1' }} /> :
+               payload.type === 'action' ? <Zap size={10} style={{ color: '#d97706' }} /> :
+               <Compass size={10} style={{ color: 'var(--text-secondary)' }} />}
+              {payload.type === 'student' ? (payload.context === 'grading' ? 'Student Evaluation' : 'Student Profile') :
+               payload.type === 'team' ? (payload.context === 'grading' ? 'Team Gradebook' : 'Team Composition') :
+               payload.type === 'module' ? 'Module Assistant' :
+               payload.type === 'action' ? 'Quick Action' : 'Live Inspector'}
+            </span>
+          </div>
 
-        {/* Spacebar Release Hint Footer */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <button
+              type="button"
+              onClick={onTogglePin}
+              style={{
+                background: 'none',
+                border: '1px solid var(--border-color)',
+                borderRadius: '4px',
+                padding: '2px 5px',
+                fontSize: '0.62rem',
+                fontWeight: 700,
+                color: isPinned ? 'var(--primary)' : 'var(--text-muted)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                pointerEvents: 'auto'
+              }}
+              title={isPinned ? "Unpin HUD (P)" : "Pin HUD to screen (P)"}
+            >
+              {isPinned ? <PinOff size={11} /> : <Pin size={11} />}
+              <span>{isPinned ? 'Unpin' : 'Pin'}</span>
+              <kbd style={{ fontSize: '0.55rem', opacity: 0.7 }}>P</kbd>
+            </button>
+
+            {isPinned && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px 4px',
+                  color: 'var(--text-muted)',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'auto'
+                }}
+                title="Dismiss (Esc)"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Scrollable Content Container */}
+        <div 
+          className="quicklook-content-scroll"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            scrollbarWidth: 'thin',
+            paddingRight: '2px'
+          }}
+        >
+          {renderContent()}
+        </div>
+
+        {/* Smart QuickLook Master Footer */}
         <div 
           style={{
             marginTop: '0.65rem',
@@ -1120,26 +2614,36 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({ payload, cursorPos }
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            fontSize: '0.66rem',
-            color: 'var(--text-muted)'
+            fontSize: '0.65rem',
+            color: 'var(--text-muted)',
+            flexShrink: 0,
+            gap: '0.5rem'
           }}
         >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-            <span style={{
-              display: 'inline-block',
-              padding: '0.08rem 0.35rem',
-              borderRadius: '4px',
-              backgroundColor: 'var(--bg-app)',
-              border: '1px solid var(--border-color)',
-              fontWeight: 800,
-              fontFamily: 'monospace',
-              fontSize: '0.64rem'
-            }}>
-              Space
-            </span>
-            Release to dismiss
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            {isPinned ? (
+              <span>Press <kbd style={{ padding: '1px 4px', borderRadius: '3px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', fontFamily: 'monospace' }}>Esc</kbd> to close • <kbd style={{ padding: '1px 4px', borderRadius: '3px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', fontFamily: 'monospace' }}>P</kbd> to unpin</span>
+            ) : (
+              <>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  <kbd style={{ padding: '1px 4px', borderRadius: '3px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', fontFamily: 'monospace', fontWeight: 800 }}>
+                    Space
+                  </kbd>
+                  Scrub &amp; Peek
+                </span>
+                <span>•</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  <kbd style={{ padding: '1px 4px', borderRadius: '3px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', fontFamily: 'monospace', fontWeight: 800 }}>
+                    P
+                  </kbd>
+                  Pin HUD
+                </span>
+              </>
+            )}
+          </div>
+          <span style={{ opacity: 0.75, fontWeight: 700, whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>
+            Smart Peek
           </span>
-          <span style={{ opacity: 0.7 }}>PeerLens Quick Look</span>
         </div>
       </div>
     </div>,

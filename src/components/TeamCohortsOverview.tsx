@@ -7,6 +7,7 @@ import {
 import type { ClassData, Student } from '../utils/math';
 import { calculateStudentWebPAScore, normalizeNationality } from '../utils/math';
 import { exportRosterToExcel, exportRosterToCSV } from '../utils/csv';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface TeamCohortsOverviewProps {
   activeClass: ClassData;
@@ -25,6 +26,7 @@ interface TeamCohortsOverviewProps {
   firebaseConfig?: any;
   isCloudSynced?: boolean;
   user?: any;
+  cardControls?: React.ReactNode;
 }
 
 export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
@@ -42,7 +44,8 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
   triggerConfirm,
   firebaseConfig,
   isCloudSynced,
-  user
+  user,
+  cardControls
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'in_progress' | 'pending'>('all');
@@ -237,7 +240,8 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
 
   return (
     <div
-      className="card"
+      className="card team-cohorts-overview"
+      data-quicklook-context="grouping"
       style={{
         padding: '1.25rem',
         borderRadius: 'var(--radius-lg, 14px)',
@@ -289,6 +293,7 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
                 <Users size={18} className="text-teal" />
               </div>
               Team Cohorts Overview &amp; Deep Dive
+              <FeatureInfoButton featureId="team-cohorts" size="sm" tooltipText="Team Cohorts Overview Guide" />
             </h3>
             <span
               className="badge badge-teal"
@@ -296,6 +301,7 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
             >
               {summary.totalTeams} Teams ({activeClass.students.length} Students)
             </span>
+            {cardControls}
           </div>
           <p
             style={{

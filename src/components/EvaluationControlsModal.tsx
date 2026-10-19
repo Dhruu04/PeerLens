@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { ClassData, EvaluationFormControls } from '../utils/math';
 import { getEvaluationControls, DEFAULT_EVALUATION_CONTROLS } from '../utils/math';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface EvaluationControlsContentProps {
   activeClass: ClassData | null;
@@ -461,8 +462,9 @@ export const EvaluationControlsModal: React.FC<EvaluationControlsModalProps> = (
               <SlidersHorizontal size={17} className="text-teal" />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 Evaluation Form Controls &amp; Permissions
+                <FeatureInfoButton featureId="evaluation-controls" size="sm" tooltipText="Evaluation Form & Feedback Controls Guide" />
               </h3>
               <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
                 {activeClass ? `Active Classroom: ${activeClass.name}` : 'Course Configuration'}

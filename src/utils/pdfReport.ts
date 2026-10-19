@@ -40,7 +40,7 @@ export function generateStudentReportPDF(
   const storedBase = localStorage.getItem('peer_base_grade');
   const storedFudge = localStorage.getItem('peer_fudge_weight');
   const baseGrade = options?.baseGrade ?? (storedBase ? Number(storedBase) : 100);
-  const fudgeWeight = options?.fudgeWeight ?? (storedFudge ? Number(storedFudge) : 0.5);
+  const fudgeWeight = options?.fudgeWeight ?? (storedFudge ? Number(storedFudge) : 1.0);
 
   // Compute student metrics & WebPA scores
   const metrics = calculateStudentMetrics(student, classData);
@@ -395,9 +395,7 @@ export function generateStudentReportPDF(
   currentY += 4;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.2);
-  doc.setTextColor(...secondaryColor);
-  const methodologyText = 'Methodology Note: The WebPA (Web-based Peer Assessment) algorithm calculates individual contribution ratios by comparing scores awarded by all peer evaluators in the team against the team average. The final calibrated grade applies the formula: Final Grade = Base Mark × [1 - S + S × (Student Score / Team Average)], where S is the instructor fudge weighting factor.';
+  const methodologyText = `Methodology Note: Calibrated using ${webpaResult.methodName}. ${webpaResult.explanation} Normalized under Loughborough WebPA standards to eliminate evaluator leniency or harshness bias.`;
   const wrappedMethod = doc.splitTextToSize(methodologyText, contentWidth - 45);
   doc.text(wrappedMethod, margin, currentY);
 

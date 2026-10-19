@@ -932,13 +932,15 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
           isCustom: !!p.isCustom
         }));
 
+        let hasChanges = false;
+
         // Ensure toggle_quick_pill is present and uses key 'q' and category 'Tools & Modals'
         const pillIdx = list.findIndex(s => s.actionId === 'toggle_quick_pill' || s.id === 'toggle_quick_pill');
         if (pillIdx === -1) {
           const def = DEFAULT_KEYBOARD_SHORTCUTS.find(d => d.actionId === 'toggle_quick_pill');
           if (def) {
             list.push({ ...def });
-            saveStoredShortcuts(list);
+            hasChanges = true;
           }
         } else if (list[pillIdx].key !== 'q' || list[pillIdx].category !== 'Tools & Modals') {
           list[pillIdx] = {
@@ -949,7 +951,7 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
             modifiers: undefined,
             description: 'Toggle the floating all-in-one Quick Action Pill at the bottom of the window (Q).'
           };
-          saveStoredShortcuts(list);
+          hasChanges = true;
         }
 
         // Ensure open_enrollment_builder is present
@@ -958,7 +960,7 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
           const def = DEFAULT_KEYBOARD_SHORTCUTS.find(d => d.actionId === 'open_enrollment_builder');
           if (def) {
             list.push({ ...def });
-            saveStoredShortcuts(list);
+            hasChanges = true;
           }
         }
 
@@ -967,7 +969,7 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
         if (portalUrlIdx !== -1 && list[portalUrlIdx].key?.toLowerCase() === 'l' && list[portalUrlIdx].modifiers?.alt) {
           list[portalUrlIdx].key = 'p';
           list[portalUrlIdx].modifiers = { alt: true };
-          saveStoredShortcuts(list);
+          hasChanges = true;
         }
 
         // Free up 'a' for hold_quickadd if previously mapped to add_criterion
@@ -975,20 +977,25 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
         if (addCritIdx !== -1 && list[addCritIdx].key?.toLowerCase() === 'a' && !list[addCritIdx].modifiers?.alt) {
           list[addCritIdx].key = 'c';
           list[addCritIdx].modifiers = { alt: true };
-          saveStoredShortcuts(list);
+          hasChanges = true;
         }
 
         const removedActionIds = new Set(['hover_toggle_section', 'hover_focus_module', 'toggle_lock_all_teams', 'hold_quickadd']);
         const hadRemoved = list.some(s => removedActionIds.has(s.actionId) || removedActionIds.has(s.id));
         if (hadRemoved) {
           list = list.filter(s => !removedActionIds.has(s.actionId) && !removedActionIds.has(s.id));
+          hasChanges = true;
         }
 
         // Add any other missing default shortcuts
         const existingActionIds = new Set(list.map((p) => p.actionId || p.id));
         const missingDefaults = DEFAULT_KEYBOARD_SHORTCUTS.filter(d => !existingActionIds.has(d.actionId || d.id));
-        if (missingDefaults.length > 0 || hadRemoved) {
+        if (missingDefaults.length > 0) {
           list.push(...missingDefaults);
+          hasChanges = true;
+        }
+
+        if (hasChanges) {
           saveStoredShortcuts(list);
         }
         return list;
@@ -1013,7 +1020,11 @@ export function getStoredShortcuts(): KeyboardShortcut[] {
 export function saveStoredShortcuts(shortcuts: KeyboardShortcut[]): void {
   try {
     localStorage.setItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(shortcuts));
-    window.dispatchEvent(new CustomEvent('peerlens_shortcuts_changed', { detail: shortcuts }));
+    if (typeof window !== 'undefined') {
+      queueMicrotask(() => {
+        window.dispatchEvent(new CustomEvent('peerlens_shortcuts_changed', { detail: shortcuts }));
+      });
+    }
   } catch (e) {
     console.error('Failed to save shortcuts:', e);
   }

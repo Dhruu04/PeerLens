@@ -484,6 +484,50 @@ export const isStandardEnrollmentField = (fieldId: string): boolean => {
   return STANDARD_ENROLLMENT_FIELD_IDS.has(fieldId.trim());
 };
 
+export type PeerAdjustmentMethodType = 
+  | 'webpa'         // Loughborough WebPA (Default & Recommended)
+  | 'goldfinch'     // Kaufman & Goldfinch (Tolerance Band PAF)
+  | 'johnston'      // Johnston Additive Point Redistribution
+  | 'spark'         // SPARK / UTS Self & Peer Assessment
+  | 'clamped'       // Safety Net Guardrail (Floor & Ceiling)
+  | 'hybrid';       // Syllabus Hybrid (e.g. 70% Base / 30% Peer)
+
+export interface PeerAdjustmentConfig {
+  method: PeerAdjustmentMethodType;
+  fudgeWeight: number;          // Sensitivity / Impact factor: 0.0 to 1.0 (default 1.0 for true WebPA)
+  nonSubmitterPenalty: number;  // Percentage penalty deduction for non-submitters (default 10)
+  penalizeNonSubmitters: boolean; // default true
+  capAtMaxGrade: boolean;       // whether final grade is capped at max possible grade (default true)
+  maxGradeCap?: number;         // default 100
+  allowBonusAboveBase: boolean; // default true: deserving students can exceed team base mark!
+  deadbandThreshold?: number;   // for Goldfinch: default 0.05 (±5%)
+  johnstonSensitivity?: number; // for Johnston: default 1.0
+  minClamp?: number;            // for Clamped: default 0.75
+  maxClamp?: number;            // for Clamped: default 1.25
+  clampMin?: number;            // alias for minClamp
+  clampMax?: number;            // alias for maxClamp
+  baseWeight?: number;          // for Hybrid: default 0.70
+  peerWeight?: number;          // for Hybrid: default 0.30
+  hybridBaseWeight?: number;    // alias for baseWeight
+  hybridPeerWeight?: number;    // alias for peerWeight
+}
+
+export const DEFAULT_PEER_ADJUSTMENT_CONFIG: PeerAdjustmentConfig = {
+  method: 'webpa',
+  fudgeWeight: 1.0,               // 100% peer adjustment by default!
+  nonSubmitterPenalty: 10,        // 10% deduction if student didn't submit reviews
+  penalizeNonSubmitters: true,
+  capAtMaxGrade: true,
+  maxGradeCap: 100,
+  allowBonusAboveBase: true,      // Deserving students get more points!
+  deadbandThreshold: 0.05,
+  johnstonSensitivity: 1.0,
+  minClamp: 0.75,
+  maxClamp: 1.25,
+  baseWeight: 0.70,
+  peerWeight: 0.30
+};
+
 export interface ClassData {
   id: string;
   name: string;
@@ -503,6 +547,7 @@ export interface ClassData {
   presentationSession?: PresentationDaySession;
   teamCharterConfig?: TeamCharterConfig;
   enrollmentFormFields?: CustomEnrollmentField[];
+  peerAdjustmentConfig?: PeerAdjustmentConfig;
 }
 
 /**
@@ -702,7 +747,7 @@ export function calculateStudentMetrics(
         : (100 / Math.max(1, classData.fields.length));
       
       let fieldPercentage = 0;
-      if (field.max > field.min) {
+      if (classData.customScaleEnabled === true && field.max > field.min) {
         if (avg > field.max && classData.targetScale) {
           fieldPercentage = (avg / getTargetScale(classData)) * 100;
         } else {
@@ -784,120 +829,509 @@ export function calculateClassStats(classData: ClassData) {
   };
 }
 
-/**
- * Calculates WebPA adjustment factor and scaled grade for a student.
- * If baseGroupGrade is provided (e.g. 100), applies the scaling formula.
- */
-export function calculateStudentWebPAScore(
-  studentId: string,
-  groupName: string,
-  classData: ClassData,
-  baseGroupGrade: number = 100,
-  fudgeWeight: number = 0.5
-): {
+export interface PeerAdjustmentBreakdown {
+  rawPeerPercentage: number;
+  teamAveragePeerPercentage: number;
+  normalizedReviewerScore: number;
+  teamExpectedNormalizedScore: number;
+  baseMultiplier: number;
+  finalMultiplier: number;
+  nonSubmitterDeduction: number;
+  isNonSubmitter: boolean;
+  unadjustedTeamBase: number;
+  effectiveGrade: number;
+  reviewsCount: number;
+  teammatesCount: number;
+}
+
+export interface PeerAdjustmentResult {
   ratio: number;
   adjustedGrade: number;
   teamBaseGrade: number;
   isExcused?: boolean;
-} {
-  const effectiveBaseGrade = getTeamBaseGrade(classData, groupName, baseGroupGrade);
+  rawRatio: number;
+  penaltyApplied: number;
+  method: PeerAdjustmentMethodType;
+  methodName: string;
+  explanation: string;
+  breakdown: PeerAdjustmentBreakdown;
+}
 
+export interface PeerAdjustmentMethodMeta {
+  id: PeerAdjustmentMethodType;
+  name: string;
+  shortLabel: string;
+  badge: string;
+  badgeClass: string;
+  formula: string;
+  academicOrigin: string;
+  description: string;
+  whyItsFair: string;
+  handlingOfSlackers: string;
+  handlingOfDeserving: string;
+}
+
+export const PEER_ADJUSTMENT_METHODS_META: Record<PeerAdjustmentMethodType, PeerAdjustmentMethodMeta> = {
+  webpa: {
+    id: 'webpa',
+    name: 'Loughborough WebPA Algorithm',
+    shortLabel: 'WebPA (Standard)',
+    badge: 'Default & Recommended',
+    badgeClass: 'badge-teal',
+    formula: 'Adjusted Grade = Team Base × [(1 - W) + W × WebPA Ratio]',
+    academicOrigin: 'Loughborough University (UK Higher Education Assessment Standard)',
+    description: 'Normalizes each reviewer’s evaluations to eliminate leniency or harshness bias, then computes individual contribution ratios relative to team consensus.',
+    whyItsFair: 'Deserving contributors receive marks scaled above the team base mark, while free-riders receive proportional deductions down to zero.',
+    handlingOfSlackers: 'Students with zero peer ratings receive 0. Non-submitters are docked by the non-submission penalty (-10%) and capped at 1.00x.',
+    handlingOfDeserving: 'Standout contributors scale up to 100% or extra-credit bonus according to their high contribution ratio.'
+  },
+  goldfinch: {
+    id: 'goldfinch',
+    name: 'Kaufman & Goldfinch Method',
+    shortLabel: 'Goldfinch (Tolerance Band)',
+    badge: '5% Deadband Protection',
+    badgeClass: 'badge-indigo',
+    formula: 'Adjusted Grade = Team Base × [(1 - W) + W × Goldfinch PAF]',
+    academicOrigin: 'Kaufman, Felder, Fuller (2000) & Goldfinch (1994) - Engineering Education Standard',
+    description: 'Incorporates a 5% tolerance band (0.95–1.05) to filter out petty grading variations, while aggressively rewarding high contributors and penalizing non-performers.',
+    whyItsFair: 'Protects students from friendship bias and minor friction while ensuring significant contribution gaps are penalized or rewarded.',
+    handlingOfSlackers: 'Under-performers below 0.95 are penalized proportionally. Non-submitters forfeit bonus scaling and receive penalty deductions.',
+    handlingOfDeserving: 'Standout performers above 1.05 receive amplified bonus scaling rewarding genuine leadership.'
+  },
+  johnston: {
+    id: 'johnston',
+    name: 'Johnston Additive Redistribution',
+    shortLabel: 'Johnston (Additive)',
+    badge: 'Direct Point Transfer',
+    badgeClass: 'badge-purple',
+    formula: 'Adjusted Grade = Team Base + [(Student Peer % - Team Avg %) × Sensitivity × W]',
+    academicOrigin: 'Johnston, S. (2001) - Additive Peer Assessment Model',
+    description: 'Directly transfers marks from slackers to high performers. Points deducted from non-contributors are added to deserving teammates.',
+    whyItsFair: 'Team grade average is mathematically invariant (zero-sum redistribution). Points lost by freeloaders directly reward hard workers.',
+    handlingOfSlackers: 'Points below team average are subtracted from their grade. Non-submitters receive an additional penalty.',
+    handlingOfDeserving: 'High performers receive the exact points forfeited by non-contributing teammates.'
+  },
+  spark: {
+    id: 'spark',
+    name: 'SPARK / UTS Self & Peer Assessment',
+    shortLabel: 'SPARK (UTS)',
+    badge: 'Self vs Peer Multiplier',
+    badgeClass: 'badge-blue',
+    formula: 'Adjusted Grade = Team Base × [(1 - W) + W × SPA Multiplier]',
+    academicOrigin: 'Freeman & McKenzie (University of Technology Sydney)',
+    description: 'Separates peer assessment (SPA) from self-assessment (SAPA) to assess both deliverable contribution and metacognitive self-awareness.',
+    whyItsFair: 'Ensures objective peer review consensus drives grading while flagging students who over-rate or under-rate their work.',
+    handlingOfSlackers: 'Low SPA directly decreases project mark. Non-evaluating students suffer non-submission penalties.',
+    handlingOfDeserving: 'Earns higher SPA factor boosting the final grade above team mark.'
+  },
+  clamped: {
+    id: 'clamped',
+    name: 'Safety-Net Guardrail (Clamped WebPA)',
+    shortLabel: 'Safety Net (Guardrail)',
+    badge: 'Floor & Ceiling Clamped',
+    badgeClass: 'badge-amber',
+    formula: 'Adjusted Grade = Team Base × [(1 - W) + W × Clamp(WebPA, Min, Max)]',
+    academicOrigin: 'Institutional Safety Net & Accreditations Guardrails',
+    description: 'Applies hard minimum floor (0.75x) and maximum ceiling (1.25x) bounds to prevent runaway grading while still penalizing slackers.',
+    whyItsFair: 'Prevents catastrophic failures from personality clashes while still rewarding high contributors and penalizing free-riders.',
+    handlingOfSlackers: 'Drops to floor limit (e.g. 75% of base) with additional non-submitter deductions.',
+    handlingOfDeserving: 'Scales up to ceiling limit (e.g. 125% of base).'
+  },
+  hybrid: {
+    id: 'hybrid',
+    name: 'Syllabus Hybrid (ABET / AACSB Split)',
+    shortLabel: '70/30 Syllabus Hybrid',
+    badge: 'Accreditation Split',
+    badgeClass: 'badge-emerald',
+    formula: 'Adjusted Grade = (Team Base × 70%) + (Team Base × WebPA × 30%)',
+    academicOrigin: 'ABET & AACSB Institutional Syllabus Requirements',
+    description: 'Guarantees a fixed percentage for the group deliverable (e.g. 70%), with peer review evaluating the individual contribution share (e.g. 30%).',
+    whyItsFair: 'Complies with strict accreditation policies requiring shared team deliverable ownership while holding individuals accountable.',
+    handlingOfSlackers: 'Free-riders forfeit the individual peer share (up to 30% of grade lost) plus non-submitter deductions.',
+    handlingOfDeserving: 'High performers earn the maximum individual contribution share.'
+  }
+};
+
+const PEER_ADJUSTMENT_CONFIG_PREFIX = 'peerlens_adjustment_config_v1_';
+
+export function getPeerAdjustmentConfig(classData?: ClassData | null): PeerAdjustmentConfig {
+  if (classData?.peerAdjustmentConfig) {
+    return { ...DEFAULT_PEER_ADJUSTMENT_CONFIG, ...classData.peerAdjustmentConfig };
+  }
+  if (classData?.id) {
+    try {
+      const raw = localStorage.getItem(`${PEER_ADJUSTMENT_CONFIG_PREFIX}${classData.id}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return { ...DEFAULT_PEER_ADJUSTMENT_CONFIG, ...parsed };
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+  // Check global / legacy fudge weight if present
+  try {
+    const legacyWeight = localStorage.getItem('peer_fudge_weight');
+    if (legacyWeight !== null && !isNaN(Number(legacyWeight))) {
+      return { ...DEFAULT_PEER_ADJUSTMENT_CONFIG, fudgeWeight: Number(legacyWeight) };
+    }
+  } catch {
+    // fallback
+  }
+  return { ...DEFAULT_PEER_ADJUSTMENT_CONFIG };
+}
+
+export function savePeerAdjustmentConfig(classId: string, config: PeerAdjustmentConfig): void {
+  try {
+    localStorage.setItem(`${PEER_ADJUSTMENT_CONFIG_PREFIX}${classId || 'default'}`, JSON.stringify(config));
+    localStorage.setItem('peer_fudge_weight', String(config.fudgeWeight));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Calculates academic peer score adjustments using the selected methodology
+ * (WebPA, Goldfinch, Johnston, SPARK, Clamped, or Hybrid).
+ * Loughborough WebPA is the default standard.
+ */
+export function calculateStudentPeerAdjustment(
+  studentId: string,
+  groupName: string,
+  classData: ClassData,
+  baseGroupGrade: number = 100,
+  configOverrides?: number | Partial<PeerAdjustmentConfig>
+): PeerAdjustmentResult {
+  const baseConfig = getPeerAdjustmentConfig(classData);
+  const config: PeerAdjustmentConfig = typeof configOverrides === 'number'
+    ? { ...baseConfig, fudgeWeight: configOverrides }
+    : { ...baseConfig, ...configOverrides };
+
+  const effectiveBaseGrade = getTeamBaseGrade(classData, groupName, baseGroupGrade);
   const targetStudent = classData.students.find((s) => s.id === studentId);
+  const meta = PEER_ADJUSTMENT_METHODS_META[config.method] || PEER_ADJUSTMENT_METHODS_META.webpa;
+
   // 1. If target student is explicitly excused, award neutral multiplier 1.00 and effective base grade
   if (targetStudent?.isExcused) {
     return {
       ratio: 1.0,
       adjustedGrade: effectiveBaseGrade,
       teamBaseGrade: effectiveBaseGrade,
-      isExcused: true
+      isExcused: true,
+      rawRatio: 1.0,
+      penaltyApplied: 0,
+      method: config.method,
+      methodName: 'Excused Exemption',
+      explanation: 'Excused due to approved extenuating circumstances. Awarded neutral 1.00x multiplier and base grade without penalty.',
+      breakdown: {
+        rawPeerPercentage: 100,
+        teamAveragePeerPercentage: 100,
+        normalizedReviewerScore: 1.0,
+        teamExpectedNormalizedScore: 1.0,
+        baseMultiplier: 1.0,
+        finalMultiplier: 1.0,
+        nonSubmitterDeduction: 0,
+        isNonSubmitter: false,
+        unadjustedTeamBase: effectiveBaseGrade,
+        effectiveGrade: effectiveBaseGrade,
+        reviewsCount: 0,
+        teammatesCount: 0
+      }
     };
   }
 
   const groupStudents = classData.students.filter((s) => s.groupName === groupName);
-  if (groupStudents.length <= 1) {
+  const teammates = getTeammates(studentId, groupName, classData.students);
+  const activeStudents = groupStudents.filter((s) => !s.isExcused);
+
+  if (groupStudents.length <= 1 || activeStudents.length <= 1) {
     return {
       ratio: 1.0,
       adjustedGrade: effectiveBaseGrade,
       teamBaseGrade: effectiveBaseGrade,
-      isExcused: false
+      isExcused: false,
+      rawRatio: 1.0,
+      penaltyApplied: 0,
+      method: config.method,
+      methodName: meta.name,
+      explanation: 'Solo team or single active member. Neutral 1.00x multiplier applied.',
+      breakdown: {
+        rawPeerPercentage: 100,
+        teamAveragePeerPercentage: 100,
+        normalizedReviewerScore: 1.0,
+        teamExpectedNormalizedScore: 1.0,
+        baseMultiplier: 1.0,
+        finalMultiplier: 1.0,
+        nonSubmitterDeduction: 0,
+        isNonSubmitter: false,
+        unadjustedTeamBase: effectiveBaseGrade,
+        effectiveGrade: effectiveBaseGrade,
+        reviewsCount: 0,
+        teammatesCount: teammates.length
+      }
     };
   }
 
-  // Calculate peer averages received for each student in the group
-  const peerAverages = groupStudents.map((s) => {
-    const teammates = getTeammates(s.id, s.groupName, classData.students);
-    let weightedScoreSum = 0;
-    let totalWeightSum = 0;
+  // --- STEP 1: REVIEWER-LEVEL NORMALIZATION (Loughborough WebPA Core) ---
+  // For each active reviewer j, calculate their awarded marks to active peers
+  // Normalize each reviewer's marks so every teammate's evaluation carries identical voting weight.
+  const activeReviewers = activeStudents;
+  const normalizedReviewsMap: Record<string, Record<string, number>> = {};
+  
+  activeReviewers.forEach((revStudent) => {
+    const peersOfRev = activeStudents.filter((s) => s.id !== revStudent.id);
+    if (peersOfRev.length === 0) return;
     
-    classData.fields.forEach((field) => {
-      const avg = calculateStudentFieldAverage(s.id, field.id, classData.reviews, teammates);
-      if (avg !== null) {
-        const fieldWeight = field.weight !== undefined && field.weight > 0 
-          ? field.weight 
-          : (100 / Math.max(1, classData.fields.length));
-        
-        let fieldPercentage = 0;
-        if (field.max > field.min) {
-          if (avg > field.max && classData.targetScale) {
-            fieldPercentage = (avg / getTargetScale(classData)) * 100;
-          } else {
-            const fraction = (avg - field.min) / (field.max - field.min);
-            const scoreMin = getMinTargetScale(classData);
-            const scoreMax = getTargetScale(classData);
-            const mappedScore = scoreMin + fraction * (scoreMax - scoreMin);
-            fieldPercentage = scoreMax > 0 ? (mappedScore / scoreMax) * 100 : 0;
-          }
-        } else if (field.max > 0) {
-          fieldPercentage = (avg / field.max) * 100;
-        }
+    const revsWritten = classData.reviews.filter(
+      (r) => r.reviewerId === revStudent.id && peersOfRev.some((p) => p.id === r.recipientId)
+    );
 
-        weightedScoreSum += fieldPercentage * fieldWeight;
-        totalWeightSum += fieldWeight;
+    if (revsWritten.length === 0) {
+      return;
+    }
+
+    normalizedReviewsMap[revStudent.id] = {};
+
+    let criterionWeightsSum = 0;
+    const criterionScoresByPeer: Record<string, number> = {};
+    peersOfRev.forEach((p) => { criterionScoresByPeer[p.id] = 0; });
+
+    classData.fields.forEach((field) => {
+      const fieldWeight = field.weight !== undefined && field.weight > 0
+        ? field.weight
+        : (100 / Math.max(1, classData.fields.length));
+      criterionWeightsSum += fieldWeight;
+
+      let sumAwardedOnField = 0;
+      peersOfRev.forEach((peer) => {
+        const review = revsWritten.find((r) => r.recipientId === peer.id);
+        const score = review && typeof review.scores[field.id] === 'number' ? review.scores[field.id] : 0;
+        sumAwardedOnField += score;
+      });
+
+      peersOfRev.forEach((peer) => {
+        const review = revsWritten.find((r) => r.recipientId === peer.id);
+        const score = review && typeof review.scores[field.id] === 'number' ? review.scores[field.id] : 0;
+        const normScore = sumAwardedOnField > 0 ? (score / sumAwardedOnField) : (1 / peersOfRev.length);
+        criterionScoresByPeer[peer.id] += normScore * fieldWeight;
+      });
+    });
+
+    peersOfRev.forEach((peer) => {
+      normalizedReviewsMap[revStudent.id][peer.id] = criterionWeightsSum > 0
+        ? (criterionScoresByPeer[peer.id] / criterionWeightsSum)
+        : (1 / peersOfRev.length);
+    });
+  });
+
+  // --- STEP 2: AGGREGATE RECEIVED EVALUATIONS PER ACTIVE STUDENT ---
+  const studentMetricsMap: Record<string, { normScore: number | null; rawPct: number | null; reviewsCount: number }> = {};
+
+  activeStudents.forEach((student) => {
+    const peersWhoCouldReview = activeStudents.filter((s) => s.id !== student.id);
+    const reviewsReceived = classData.reviews.filter(
+      (r) => r.recipientId === student.id && peersWhoCouldReview.some((p) => p.id === r.reviewerId)
+    );
+    const validNormScores: number[] = [];
+
+    peersWhoCouldReview.forEach((peer) => {
+      if (normalizedReviewsMap[peer.id] && normalizedReviewsMap[peer.id][student.id] !== undefined) {
+        validNormScores.push(normalizedReviewsMap[peer.id][student.id]);
       }
     });
 
-    // percentage score
-    const pct = totalWeightSum > 0 ? (weightedScoreSum / totalWeightSum) / 100 : null;
-    return { studentId: s.id, pct, isExcused: !!s.isExcused };
+    const normScore = validNormScores.length > 0
+      ? validNormScores.reduce((a, b) => a + b, 0) / validNormScores.length
+      : null;
+
+    let rawPct: number | null = null;
+    if (reviewsReceived.length > 0 && classData.fields.length > 0) {
+      let weightSum = 0;
+      let scoreSum = 0;
+      classData.fields.forEach((field) => {
+        const fieldWeight = field.weight !== undefined && field.weight > 0 ? field.weight : (100 / classData.fields.length);
+        const scores = reviewsReceived.map((r) => r.scores[field.id]).filter((sc): sc is number => typeof sc === 'number');
+        if (scores.length > 0) {
+          const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+          const critPct = field.max > 0 ? (avgScore / field.max) * 100 : 0;
+          scoreSum += critPct * fieldWeight;
+          weightSum += fieldWeight;
+        }
+      });
+      rawPct = weightSum > 0 ? Number((scoreSum / weightSum).toFixed(1)) : null;
+    }
+
+    studentMetricsMap[student.id] = {
+      normScore,
+      rawPct,
+      reviewsCount: reviewsReceived.length
+    };
   });
 
-  const validAverages = peerAverages.filter((x) => x.pct !== null && !x.isExcused) as { studentId: string; pct: number }[];
-  if (validAverages.length === 0) {
-    return {
-      ratio: 1.0,
-      adjustedGrade: effectiveBaseGrade,
-      teamBaseGrade: effectiveBaseGrade,
-      isExcused: false
-    };
+  // --- STEP 3: COMPUTE TEAM BENCHMARKS ---
+  const validNormScores = activeStudents.map((s) => studentMetricsMap[s.id]?.normScore).filter((v): v is number => v !== null);
+  const validRawPcts = activeStudents.map((s) => studentMetricsMap[s.id]?.rawPct).filter((v): v is number => v !== null);
+
+  const teamExpectedShare = activeStudents.length > 1 ? (1 / (activeStudents.length - 1)) : 1.0;
+  const teamNormAvg = validNormScores.length > 0
+    ? validNormScores.reduce((a, b) => a + b, 0) / validNormScores.length
+    : teamExpectedShare;
+  const teamRawPctAvg = validRawPcts.length > 0
+    ? validRawPcts.reduce((a, b) => a + b, 0) / validRawPcts.length
+    : 100;
+
+  const targetMetrics = studentMetricsMap[studentId];
+  const targetNormScore = targetMetrics?.normScore ?? null;
+  const targetRawPct = targetMetrics?.rawPct ?? null;
+  const reviewsCount = targetMetrics?.reviewsCount ?? 0;
+
+  // Raw WebPA Multiplier (Ratio of individual normalized performance to team average)
+  let rawWebPARatio = 1.0;
+  if (targetNormScore !== null && teamNormAvg > 0) {
+    rawWebPARatio = Number((targetNormScore / teamNormAvg).toFixed(3));
+  } else if (reviewsCount === 0 && validNormScores.length > 0) {
+    rawWebPARatio = 1.0;
   }
 
-  // Group sum of peer average percentages across active, non-excused students
-  const groupSum = validAverages.reduce((acc, x) => acc + x.pct, 0);
-  const activeStudentCount = groupStudents.filter(s => !s.isExcused).length;
-  const groupAvg = groupSum / Math.max(1, validAverages.length > 0 ? validAverages.length : activeStudentCount);
+  // --- STEP 4: APPLY SELECTED METHOD FORMULA ---
+  const W = typeof config.fudgeWeight === 'number' ? Math.max(0, Math.min(1, config.fudgeWeight)) : 1.0;
+  let methodMultiplier = rawWebPARatio;
 
-  const studentAvg = validAverages.find((x) => x.studentId === studentId)?.pct ?? null;
-  if (studentAvg === null || groupAvg === 0) {
-    return {
-      ratio: 1.0,
-      adjustedGrade: effectiveBaseGrade,
-      teamBaseGrade: effectiveBaseGrade,
-      isExcused: false
-    };
+  switch (config.method) {
+    case 'goldfinch': {
+      const threshold = config.deadbandThreshold ?? 0.05;
+      if (Math.abs(rawWebPARatio - 1.0) <= threshold) {
+        methodMultiplier = 1.000;
+      } else if (rawWebPARatio > 1.0 + threshold) {
+        const standoutBonus = (rawWebPARatio - (1.0 + threshold)) * 1.25;
+        methodMultiplier = Number((1.0 + standoutBonus).toFixed(3));
+      } else {
+        methodMultiplier = rawWebPARatio;
+      }
+      break;
+    }
+
+    case 'johnston': {
+      const sensitivity = config.johnstonSensitivity ?? 1.0;
+      const studentPct = targetRawPct ?? teamRawPctAvg;
+      const deltaPct = (studentPct - teamRawPctAvg) * sensitivity;
+      const pointsShift = Number(((effectiveBaseGrade * (deltaPct / 100)) * W).toFixed(1));
+      methodMultiplier = effectiveBaseGrade > 0 ? Number(((effectiveBaseGrade + pointsShift) / effectiveBaseGrade).toFixed(3)) : 1.0;
+      break;
+    }
+
+    case 'spark': {
+      methodMultiplier = rawWebPARatio;
+      break;
+    }
+
+    case 'clamped': {
+      const minC = config.clampMin ?? config.minClamp ?? 0.75;
+      const maxC = config.clampMax ?? config.maxClamp ?? 1.25;
+      const clamped = Math.max(minC, Math.min(maxC, rawWebPARatio));
+      methodMultiplier = Number(clamped.toFixed(3));
+      break;
+    }
+
+    case 'hybrid': {
+      const bWeight = config.hybridBaseWeight ?? config.baseWeight ?? 0.70;
+      const pWeight = config.hybridPeerWeight ?? config.peerWeight ?? 0.30;
+      methodMultiplier = Number(((bWeight) + (pWeight * rawWebPARatio)).toFixed(3));
+      break;
+    }
+
+    case 'webpa':
+    default: {
+      methodMultiplier = rawWebPARatio;
+      break;
+    }
   }
 
-  // WebPA ratio: individual peer average percentage divided by team's average percentage
-  const ratio = Number((studentAvg / groupAvg).toFixed(3));
-  
-  // Adjusted Grade = effectiveBaseGrade * ((1 - fudgeWeight) + fudgeWeight * ratio)
-  const adjustedGrade = Number((effectiveBaseGrade * ((1 - fudgeWeight) + fudgeWeight * ratio)).toFixed(1));
+  let effectiveMultiplier = (1 - W) + (W * methodMultiplier);
+
+  // --- STEP 5: NON-SUBMISSION ACCOUNTABILITY ---
+  const isNonSubmitter = targetStudent ? !targetStudent.submitted : false;
+  let nonSubmitterPenaltyApplied = 0;
+
+  if (isNonSubmitter && config.penalizeNonSubmitters) {
+    nonSubmitterPenaltyApplied = config.nonSubmitterPenalty ?? 10;
+    // Non-submitters cannot receive bonus multiplier > 1.0
+    effectiveMultiplier = Math.min(1.0, effectiveMultiplier);
+    // Deduct non-submission penalty percentage
+    effectiveMultiplier = Math.max(0, effectiveMultiplier * (1 - (nonSubmitterPenaltyApplied / 100)));
+  }
+
+  // --- STEP 6: FINAL GRADE CALCULATION & CAP ENFORCEMENT ---
+  let rawGrade = effectiveBaseGrade * effectiveMultiplier;
+
+  if (config.capAtMaxGrade) {
+    const maxCap = config.maxGradeCap ?? 100;
+    rawGrade = Math.min(maxCap, Math.max(0, rawGrade));
+  } else {
+    rawGrade = Math.max(0, rawGrade);
+  }
+
+  const finalAdjustedGrade = Number(rawGrade.toFixed(1));
+  const finalRatio = Number(effectiveMultiplier.toFixed(3));
+
+  let explanation = '';
+  if (reviewsCount === 0) {
+    explanation = `No reviews received yet from teammates. Neutral 1.00x multiplier awarded.`;
+  } else if (finalRatio > 1.0) {
+    const ptsAbove = Number((finalAdjustedGrade - effectiveBaseGrade).toFixed(1));
+    explanation = `High Contributor: Earned +${ptsAbove} pts above team base mark (${effectiveBaseGrade}) based on strong peer reviews.`;
+  } else if (finalRatio < 1.0) {
+    const ptsBelow = Number((effectiveBaseGrade - finalAdjustedGrade).toFixed(1));
+    explanation = `Lower Contribution: Scaled down by -${ptsBelow} pts below team base mark due to peer review consensus.`;
+  } else {
+    explanation = `Expected Contribution: Matched team average consensus, receiving exactly the team base mark.`;
+  }
+
+  if (isNonSubmitter && config.penalizeNonSubmitters) {
+    explanation += ` Non-submission penalty applied (-${nonSubmitterPenaltyApplied}% deduction for failing to submit reviews).`;
+  }
 
   return {
-    ratio,
-    adjustedGrade,
+    ratio: finalRatio,
+    adjustedGrade: finalAdjustedGrade,
     teamBaseGrade: effectiveBaseGrade,
-    isExcused: false
+    isExcused: false,
+    rawRatio: rawWebPARatio,
+    penaltyApplied: nonSubmitterPenaltyApplied,
+    method: config.method,
+    methodName: meta.name,
+    explanation,
+    breakdown: {
+      rawPeerPercentage: targetRawPct ?? 0,
+      teamAveragePeerPercentage: Number(teamRawPctAvg.toFixed(1)),
+      normalizedReviewerScore: Number((targetNormScore ?? 0).toFixed(4)),
+      teamExpectedNormalizedScore: Number(teamNormAvg.toFixed(4)),
+      baseMultiplier: rawWebPARatio,
+      finalMultiplier: finalRatio,
+      nonSubmitterDeduction: nonSubmitterPenaltyApplied,
+      isNonSubmitter,
+      unadjustedTeamBase: effectiveBaseGrade,
+      effectiveGrade: finalAdjustedGrade,
+      reviewsCount,
+      teammatesCount: teammates.length
+    }
   };
+}
+
+/**
+ * Calculates WebPA adjustment factor and scaled grade for a student.
+ * Fully backwards-compatible with all existing callers.
+ */
+export function calculateStudentWebPAScore(
+  studentId: string,
+  groupName: string,
+  classData: ClassData,
+  baseGroupGrade: number = 100,
+  fudgeWeightOrConfig: number | Partial<PeerAdjustmentConfig> = 1.0
+): PeerAdjustmentResult {
+  return calculateStudentPeerAdjustment(studentId, groupName, classData, baseGroupGrade, fudgeWeightOrConfig);
 }
 
 export interface CriterionDisputeRow {

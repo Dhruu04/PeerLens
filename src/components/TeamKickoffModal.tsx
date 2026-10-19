@@ -20,6 +20,7 @@ import {
 import type { Student, ClassData, TeamCharterRole } from '../utils/math';
 import { DEFAULT_TEAM_ROLES, DEFAULT_CUSTOM_ICEBREAKERS, type CustomIcebreakerTask } from '../utils/math';
 import { useClass } from '../context/ClassContext';
+import FeatureInfoButton from './FeatureInfoButton';
 
 interface TeamKickoffModalProps {
   isOpen: boolean;
@@ -602,6 +603,7 @@ export const TeamKickoffModal: React.FC<TeamKickoffModalProps> = ({
                 <span className="badge badge-primary" style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem', borderRadius: '4px' }}>
                   Customizable
                 </span>
+                <FeatureInfoButton featureId="team-kickoff" size="sm" tooltipText="Team Roles &amp; Kickoff Agreement Guide" />
                 {isUsingAutoGroups && (
                   <span 
                     className="badge badge-teal" 

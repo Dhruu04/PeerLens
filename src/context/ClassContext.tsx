@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig, TeamCharterConfig, CustomEnrollmentField } from '../utils/math';
-import { normalizeNationality, getEvaluationControls, DEFAULT_PULSE_CONFIG, generateSamplePulseRounds, DEFAULT_ENROLLMENT_FIELDS } from '../utils/math';
+import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig, TeamCharterConfig, CustomEnrollmentField, PeerAdjustmentConfig } from '../utils/math';
+import { normalizeNationality, getEvaluationControls, DEFAULT_PULSE_CONFIG, generateSamplePulseRounds, DEFAULT_ENROLLMENT_FIELDS, DEFAULT_PEER_ADJUSTMENT_CONFIG } from '../utils/math';
 import { loadFeatureToggles, DEFAULT_FEATURE_TOGGLES, type FeatureToggles } from '../utils/featurePreferences';
 import { DEFAULT_KEYBOARD_SHORTCUTS } from '../utils/keyboardShortcuts';
 import { hashCode } from '../utils/csv';
@@ -84,6 +84,7 @@ import {
     deleteClass: (id: string) => void;
     selectClass: (id: string | null) => void;
     updateGradingConfig: (classId: string, fields: GradingScaleField[], targetScale?: number | null, notify?: boolean, minTargetScale?: number | null, scaleMin?: number | null, scaleMax?: number | null, customScaleEnabled?: boolean) => void;
+    updatePeerAdjustmentConfig: (classId: string, config: Partial<PeerAdjustmentConfig>, notify?: boolean) => void;
     updateEvaluationControls: (classId: string, controls: Partial<EvaluationFormControls>) => void;
     updateTeamCharterConfig: (classId: string, config: Partial<TeamCharterConfig>) => void;
     updateEnrollmentFields: (classId: string, fields: CustomEnrollmentField[]) => void;
@@ -132,6 +133,7 @@ import {
       scaleMax: 5,
       customScaleEnabled: false,
       teamBaseGrades: {},
+      peerAdjustmentConfig: { ...DEFAULT_PEER_ADJUSTMENT_CONFIG },
       evaluationControls: {
         allowSelfReview: false,
         showGrowthSuggestions: false,
@@ -397,7 +399,8 @@ import {
                 allowProfileEditing: data.evaluationControls.allowProfileEditing === true
               } : undefined,
               enrollmentFormFields: Array.isArray(data.enrollmentFormFields) && data.enrollmentFormFields.length > 0 ? data.enrollmentFormFields : [...DEFAULT_ENROLLMENT_FIELDS],
-              teamCharterConfig: data.teamCharterConfig || undefined
+              teamCharterConfig: data.teamCharterConfig || undefined,
+              peerAdjustmentConfig: data.peerAdjustmentConfig || undefined
             });
           });
 
@@ -505,7 +508,9 @@ import {
         const mergedShortcuts = missingDefaults.length > 0 ? [...data.shortcuts, ...missingDefaults] : data.shortcuts;
 
         localStorage.setItem('peerlens_shortcuts_v3', JSON.stringify(mergedShortcuts));
-        window.dispatchEvent(new CustomEvent('peerlens_shortcuts_changed', { detail: mergedShortcuts }));
+        queueMicrotask(() => {
+          window.dispatchEvent(new CustomEvent('peerlens_shortcuts_changed', { detail: mergedShortcuts }));
+        });
       }
 
       // 4. Feature toggles
@@ -718,7 +723,8 @@ import {
                     allowProfileEditing: c.evaluationControls.allowProfileEditing === true
                   } : undefined,
                   enrollmentFormFields: Array.isArray(c.enrollmentFormFields) && c.enrollmentFormFields.length > 0 ? c.enrollmentFormFields : [...DEFAULT_ENROLLMENT_FIELDS],
-                  teamCharterConfig: c.teamCharterConfig || undefined
+                  teamCharterConfig: c.teamCharterConfig || undefined,
+                  peerAdjustmentConfig: c.peerAdjustmentConfig || undefined
                 };
               });
               
@@ -1260,6 +1266,26 @@ import {
       persistClasses(updatedClasses);
       if (notify) {
         addToast('Grading configuration successfully updated.', 'success');
+      }
+    };
+
+    const updatePeerAdjustmentConfig = (classId: string, config: Partial<PeerAdjustmentConfig>, notify: boolean = false) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentConfig = c.peerAdjustmentConfig || { ...DEFAULT_PEER_ADJUSTMENT_CONFIG };
+          return {
+            ...c,
+            peerAdjustmentConfig: {
+              ...currentConfig,
+              ...config
+            }
+          };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      if (notify) {
+        addToast('Peer score adjustment methodology updated.', 'success');
       }
     };
 
@@ -2191,6 +2217,7 @@ import {
           deleteClass,
           selectClass,
           updateGradingConfig,
+          updatePeerAdjustmentConfig,
           updateEvaluationControls,
           updateTeamCharterConfig,
           updateEnrollmentFields,

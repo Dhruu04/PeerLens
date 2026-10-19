@@ -18,6 +18,7 @@ import {
   generateStudentReportPDF 
 } from '../utils/pdfReport';
 import FeatureInfoButton from './FeatureInfoButton';
+import CustomSelect from './CustomSelect';
 
 interface StudentReportModalProps {
   isOpen: boolean;
@@ -199,24 +200,24 @@ export const StudentReportModal: React.FC<StudentReportModalProps> = ({
                 <ChevronLeft size={16} />
               </button>
 
-              <select
-                className="form-select"
+              <CustomSelect
                 value={selectedStudentId}
-                onChange={(e) => setSelectedStudentId(e.target.value)}
-                style={{ 
-                  fontSize: '0.82rem', 
-                  padding: '0.35rem 2rem 0.35rem 0.75rem', 
-                  height: '34px', 
-                  minWidth: '220px',
-                  fontWeight: 600
+                onChange={(val) => setSelectedStudentId(val)}
+                options={classData.students.map((s, idx) => ({
+                  value: s.id,
+                  label: `${idx + 1}. ${s.name} (${s.groupName || 'Unassigned'})`
+                }))}
+                triggerStyle={{
+                  height: '34px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  padding: '0 0.65rem',
+                  minWidth: '220px'
                 }}
-              >
-                {classData.students.map((s, idx) => (
-                  <option key={s.id} value={s.id}>
-                    {idx + 1}. {s.name} ({s.groupName || 'Unassigned'})
-                  </option>
-                ))}
-              </select>
+                dropdownMinWidth="250px"
+                dropdownStyle={{ zIndex: 10010 }}
+                title="Select student report"
+              />
 
               <button
                 type="button"
@@ -263,7 +264,7 @@ export const StudentReportModal: React.FC<StudentReportModalProps> = ({
               <Sparkles size={14} /> {isBatchDownloading ? 'Exporting...' : 'Export All Class'}
             </button>
 
-            <FeatureInfoButton featureId="radar-analytics" size="sm" tooltipText="Student Report & Radar Guide" />
+            <FeatureInfoButton featureId="student-report" size="sm" tooltipText="Student 360° Report Card Guide" />
 
             <button
               type="button"

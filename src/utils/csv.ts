@@ -204,7 +204,7 @@ export function generateResultsCSV(classData: ClassData, customStudents?: Studen
     const storedBase = localStorage.getItem('peer_base_grade');
     const storedFudge = localStorage.getItem('peer_fudge_weight');
     const baseMark = storedBase ? Number(storedBase) : 100;
-    const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
+    const fudgeWeight = storedFudge ? Number(storedFudge) : 1.0;
 
     const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(
       student.id,
@@ -481,7 +481,7 @@ export function exportClassroomToExcel(classData: ClassData, customStudents?: St
   const storedBase = localStorage.getItem('peer_base_grade');
   const storedFudge = localStorage.getItem('peer_fudge_weight');
   const baseMark = storedBase ? Number(storedBase) : 100;
-  const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
+  const fudgeWeight = storedFudge ? Number(storedFudge) : 1.0;
 
   // 1. SHEET 1: Classroom Summary Sheet
   const summaryHeaders = [
@@ -1106,7 +1106,7 @@ export function getStudentLmsScore(
   classData: ClassData,
   scoreType: LmsScoreType = 'calibrated',
   baseMark: number = 100,
-  fudgeWeight: number = 0.5
+  fudgeWeight: number = 1.0
 ): number {
   if (scoreType === 'scale') {
     const maxScale = getTargetScale(classData);

@@ -499,7 +499,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({
               <span style={{ backgroundColor: 'rgba(6, 182, 212, 0.12)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#0891b2', fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.65rem', borderRadius: '20px', letterSpacing: '0.05em' }}>
                 LIVE CLASSROOM MONITOR
               </span>
-              <FeatureInfoButton featureId="classroom-qr" size="sm" tooltipText="Live Projector & QR Guide" />
+              <FeatureInfoButton featureId="projector-view" size="sm" tooltipText="Auditorium Projector &amp; Live Mode Guide" />
             </div>
             <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
               Real-Time Peer Assessment Tracker • {totalStudents} Students Enrolled

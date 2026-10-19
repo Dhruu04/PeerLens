@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
-  Edit3, Check, X, BookmarkPlus, LayoutGrid, Users, Sliders, 
+  Check, X, BookmarkPlus, LayoutGrid, Users, Sliders, 
   Award, Keyboard, Sparkles, Lightbulb, GripVertical, 
   ChevronUp, ChevronDown, RotateCcw, Search, Plus, Layers, SlidersHorizontal,
-  Eye, EyeOff, Compass, Bookmark
+  Eye, EyeOff, Compass, Bookmark, Building2, Maximize2, MoreHorizontal
 } from 'lucide-react';
 import type { FeatureToggles } from '../utils/featurePreferences';
 import { MODULE_ITEMS, type ModuleCategory, getTabForModuleCategory } from '../utils/moduleRegistry';
@@ -11,16 +11,29 @@ import {
   saveCustomProfile, 
   deleteCustomProfile,
   getCustomProfiles, 
-  subscribeCustomProfiles, 
+  subscribeCustomProfiles,
+  applyFullLayoutProfile,
+  resetToDefaultLayout,
   type CustomViewProfile 
 } from '../utils/customViewProfiles';
+import { getStoredLayout } from '../utils/cardLayoutPreferences';
+import { 
+  getDisplayDensity, 
+  setDisplayDensity, 
+  subscribeDisplayDensity, 
+  DENSITY_DETAILS,
+  type DisplayDensity 
+} from '../utils/displayDensity';
 import { CustomSelect, type CustomSelectOption } from './CustomSelect';
+import FeatureInfoButton from './FeatureInfoButton';
+import { LayoutLibraryModal } from './LayoutLibraryModal';
 
 interface LayoutEditBarProps {
   isOpen: boolean;
   onClose: () => void;
   featureToggles: FeatureToggles;
   onToggleFeature?: (key: keyof FeatureToggles, value: boolean) => void;
+  onApplyCustomToggles?: (toggles: FeatureToggles) => void;
   onApplyPreset: (preset: 'minimal' | 'standard' | 'full' | 'none') => void;
   activeTab: string;
   onNavigateTab: (tab: 'hub' | 'roster' | 'grading' | 'results') => void;
@@ -30,6 +43,9 @@ interface LayoutEditBarProps {
   embedded?: boolean;
   isExpanded?: boolean;
   onExpandChange?: (expanded: boolean) => void;
+  onOpenBranding?: () => void;
+  onOpenLayoutLibrary?: () => void;
+  onResetToDefault?: () => void;
 }
 
 export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
@@ -43,9 +59,13 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
   onToggleShortcutsEnabled,
   onToast,
   onToggleFeature,
+  onApplyCustomToggles,
   embedded = false,
   isExpanded: propIsExpanded,
-  onExpandChange
+  onExpandChange,
+  onOpenBranding,
+  onOpenLayoutLibrary,
+  onResetToDefault
 }) => {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const isExpanded = propIsExpanded !== undefined ? propIsExpanded : internalExpanded;
@@ -56,17 +76,56 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
     if (onExpandChange) onExpandChange(val);
   };
 
+  // Layout Library Modal state
+  const [internalLibraryModalOpen, setInternalLibraryModalOpen] = useState(false);
+  const openLibraryModal = () => {
+    if (onOpenLayoutLibrary) {
+      onOpenLayoutLibrary();
+    } else {
+      setInternalLibraryModalOpen(true);
+    }
+  };
+
   // Save View Profile state
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileNameInput, setProfileNameInput] = useState('');
   const [customProfiles, setCustomProfiles] = useState<CustomViewProfile[]>(() => getCustomProfiles());
   const [activeProfileId, setActiveProfileId] = useState<string>('');
 
+  // More Utilities dropdown menu state
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setShowMoreMenu(false);
+      }
+    };
+    if (showMoreMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showMoreMenu]);
+
   useEffect(() => {
     return subscribeCustomProfiles((list) => {
       setCustomProfiles(list);
     });
   }, []);
+
+  // Display Density Engine State (Compact, Balanced, Spacious)
+  const [displayDensity, setLocalDensity] = useState<DisplayDensity>(() => getDisplayDensity());
+  useEffect(() => {
+    return subscribeDisplayDensity((d) => setLocalDensity(d));
+  }, []);
+
+  const handleDensityChange = (newDensity: DisplayDensity) => {
+    setDisplayDensity(newDensity);
+    setLocalDensity(newDensity);
+    const detail = DENSITY_DETAILS[newDensity];
+    onToast(`${detail.label} Density: ${detail.description}`, 'info');
+  };
 
   // Undo Stack state for layout modifications (Ctrl+Z)
   const [undoStack, setUndoStack] = useState<Array<{ key: keyof FeatureToggles; prevVal: boolean; title: string }>>([]);
@@ -117,8 +176,7 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undoStack, onToggleFeature]);
 
-  // Interactive Module Catalog Drawer
-  const [showModuleCatalog, setShowModuleCatalog] = useState(false);
+  // Interactive Module Catalog Filters
   const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
   const [catalogCategoryTab, setCatalogCategoryTab] = useState<'all' | ModuleCategory>('all');
   const [catalogStatusFilter, setCatalogStatusFilter] = useState<'all' | 'visible' | 'hidden'>('all');
@@ -162,6 +220,15 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
   const visibleCount = MODULE_ITEMS.filter(m => !!featureToggles[m.key]).length;
   const hiddenCount = totalModules - visibleCount;
   const visiblePercentage = Math.round((visibleCount / totalModules) * 100);
+
+  const activePresetKey = useMemo(() => {
+    if (visibleCount === 0) return 'none';
+    if (visiblePercentage <= 30) return 'minimal';
+    if (visiblePercentage > 75) return 'full';
+    return 'standard';
+  }, [visibleCount, visiblePercentage]);
+
+
   const parentModulesCount = useMemo(() => MODULE_ITEMS.filter(m => !m.parentKey).length, []);
   const submodulesCount = totalModules - parentModulesCount;
 
@@ -256,6 +323,20 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
     onToast('Edit bar repositioned to bottom center', 'info');
   };
 
+  const handleResetToDefault = () => {
+    if (onResetToDefault) {
+      onResetToDefault();
+    } else {
+      resetToDefaultLayout({
+        onToggleFeature,
+        onApplyCustomToggles,
+        onApplyPreset,
+        onToast
+      });
+      setActiveProfileId('builtin_balanced');
+    }
+  };
+
   const handleDeleteProfile = (profId: string) => {
     const prof = customProfiles.find(p => p.id === profId);
     deleteCustomProfile(profId);
@@ -268,16 +349,13 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
   const handleApplyProfile = (profId: string) => {
     const p = customProfiles.find((cp) => cp.id === profId);
     if (p) {
-      if (onToggleFeature) {
-        Object.entries(p.toggles).forEach(([k, v]) => {
-          onToggleFeature(k as keyof FeatureToggles, v);
-        });
-      }
-      if (p.shortcutsEnabled !== undefined) {
-        onToggleShortcutsEnabled(p.shortcutsEnabled);
-      }
+      applyFullLayoutProfile(p, {
+        onToggleFeature,
+        onApplyCustomToggles,
+        onApplyPreset,
+        onToast
+      });
       setActiveProfileId(profId);
-      onToast(`Applied view profile "${p.name}"`, 'success');
     }
   };
 
@@ -287,31 +365,99 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
       onToast('Please enter a profile name.', 'warning');
       return;
     }
-    const saved = saveCustomProfile(trimmed, featureToggles, shortcutsEnabled);
+    const saved = saveCustomProfile(trimmed, featureToggles, shortcutsEnabled, {
+      cardLayout: getStoredLayout(),
+      displayDensity
+    });
     if (saved) {
       setActiveProfileId(saved.id);
-      onToast(`Saved view profile "${trimmed}"!`, 'success');
+      onToast(`Saved layout "${trimmed}" to your library!`, 'success');
       setProfileNameInput('');
       setIsSavingProfile(false);
     }
   };
 
-  const profileOptions: CustomSelectOption[] = useMemo(() => {
-    return customProfiles.map((p) => {
-      const visCount = MODULE_ITEMS.filter((m) => !!p.toggles[m.key]).length;
-      const formattedDate = p.createdAt
-        ? new Date(p.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-        : '';
-      return {
-        value: p.id,
-        label: p.name,
-        sublabel: `${visCount}/${totalModules} modules visible${formattedDate ? ` • ${formattedDate}` : ''}`,
-        icon: <Bookmark size={13} style={{ color: activeProfileId === p.id ? 'var(--primary)' : 'var(--text-muted)' }} />,
-        badge: `${Math.round((visCount / totalModules) * 100)}%`,
-        deletable: true
-      };
-    });
-  }, [customProfiles, totalModules, activeProfileId]);
+  const currentPresetLabel = useMemo(() => {
+    if (activeProfileId) {
+      const prof = customProfiles.find(p => p.id === activeProfileId);
+      if (prof) return prof.name;
+    }
+    if (activePresetKey === 'minimal') return 'Essentials';
+    if (activePresetKey === 'full') return 'Show All';
+    if (activePresetKey === 'none') return 'Hide All';
+    return 'Recommended';
+  }, [activeProfileId, customProfiles, activePresetKey]);
+
+  const presetAndProfileOptions = useMemo<CustomSelectOption[]>(() => {
+    const list: CustomSelectOption[] = [
+      {
+        value: '__preset_standard',
+        label: 'Recommended Layout',
+        sublabel: 'Balanced default for classroom grading',
+        badge: activePresetKey === 'standard' && !activeProfileId ? 'Active' : 'Default',
+        icon: <Sparkles size={12} className="text-primary" />
+      },
+      {
+        value: '__preset_minimal',
+        label: 'Essentials Layout',
+        sublabel: 'Minimalist view (≤30% modules visible)',
+        badge: activePresetKey === 'minimal' && !activeProfileId ? 'Active' : 'Clean',
+        icon: <Eye size={12} style={{ color: 'var(--accent-amber)' }} />
+      },
+      {
+        value: '__preset_full',
+        label: 'Show All Modules',
+        sublabel: 'Turn on all 102 tools & analytics',
+        badge: activePresetKey === 'full' && !activeProfileId ? 'Active' : '100%',
+        icon: <LayoutGrid size={12} style={{ color: 'var(--accent-teal)' }} />
+      },
+      {
+        value: '__preset_none',
+        label: 'Hide All Modules',
+        sublabel: 'Clear all modules from screen',
+        badge: activePresetKey === 'none' && !activeProfileId ? 'Active' : '0%',
+        icon: <EyeOff size={12} style={{ color: 'var(--accent-rose, #ef4444)' }} />
+      }
+    ];
+
+    if (customProfiles.length > 0) {
+      customProfiles.forEach(p => {
+        const visCount = MODULE_ITEMS.filter((m) => !!p.toggles[m.key]).length;
+        list.push({
+          value: p.id,
+          label: p.name,
+          sublabel: `${visCount} modules • Saved view`,
+          badge: activeProfileId === p.id ? 'Active' : 'Saved',
+          icon: <Bookmark size={12} className="text-primary" />,
+          deletable: true
+        });
+      });
+    }
+
+    return list;
+  }, [activePresetKey, activeProfileId, customProfiles]);
+
+  const handleSelectPresetOrProfile = (val: string) => {
+    if (val === '__preset_minimal') {
+      setActiveProfileId('');
+      onApplyPreset('minimal');
+      onToast('Applied Essentials preset', 'info');
+    } else if (val === '__preset_standard') {
+      setActiveProfileId('');
+      onApplyPreset('standard');
+      onToast('Restored Recommended layout', 'info');
+    } else if (val === '__preset_full') {
+      setActiveProfileId('');
+      onApplyPreset('full');
+      onToast('Show All enabled: All modules visible', 'success');
+    } else if (val === '__preset_none') {
+      setActiveProfileId('');
+      onApplyPreset('none');
+      onToast('Cleared all modules from screen', 'info');
+    } else {
+      handleApplyProfile(val);
+    }
+  };
 
   const scrollToAndHighlightModule = (key: keyof FeatureToggles) => {
     const item = MODULE_ITEMS.find((m) => m.key === key);
@@ -440,31 +586,31 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
                 })),
         zIndex: embedded ? 10 : 99999,
         width: embedded ? '100%' : 'auto',
-        maxWidth: embedded ? '100%' : (isExpanded ? '860px' : '620px'),
-        minWidth: embedded ? 'auto' : '280px',
+        maxWidth: embedded ? '100%' : (isExpanded ? '1040px' : '580px'),
+        minWidth: embedded ? 'auto' : '260px',
         backgroundColor: embedded ? 'transparent' : 'var(--bg-surface)',
         border: embedded ? 'none' : '1px solid var(--border-color)',
-        borderRadius: embedded ? (isExpanded ? '16px' : '9999px') : (isExpanded ? '16px' : '9999px'),
+        borderRadius: embedded ? (isExpanded ? '18px' : '9999px') : (isExpanded ? '18px' : '9999px'),
         padding: embedded
-          ? (isExpanded ? '0' : '0.22rem 0.45rem')
-          : (isExpanded ? '0.65rem 0.95rem 0.55rem' : '0.3rem 0.45rem'),
+          ? (isExpanded ? '0' : '0.12rem 0.35rem')
+          : (isExpanded ? '0.65rem 0.95rem 0.6rem' : '0.25rem 0.45rem'),
         boxShadow: embedded ? 'none' : (isDragging
           ? '0 25px 50px rgba(0, 0, 0, 0.35), 0 0 20px var(--primary-glow)'
           : 'var(--shadow-premium, 0 16px 36px rgba(0, 0, 0, 0.18)), 0 0 16px var(--primary-glow, rgba(79, 70, 229, 0.15))'),
         display: 'flex',
         flexDirection: isExpanded ? 'column' : 'row',
         alignItems: isExpanded ? 'stretch' : 'center',
-        gap: isExpanded ? '0.4rem' : '0.4rem',
+        gap: isExpanded ? '0.45rem' : '0.35rem',
         color: 'var(--text-primary)',
         transition: isDragging ? 'none' : 'all 200ms cubic-bezier(0.16, 1, 0.3, 1)',
         userSelect: isDragging ? 'none' : 'auto'
       }}
     >
       {/* =========================================================================
-          A. MINIMAL PILL MODE (Compact 1-Line Bar)
+          A. MINIMAL PILL MODE (Compact, Minimal, Perfectly Grouped)
           ========================================================================= */}
       {!isExpanded ? (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', width: '100%' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', width: 'auto', flexWrap: 'nowrap' }}>
           {/* Movable Drag Grip Handle (Only in standalone detached mode) */}
           {!embedded && (
             <div
@@ -475,143 +621,148 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '0.2rem 0.25rem',
+                padding: '0.15rem 0.2rem',
                 borderRadius: '6px',
                 color: 'var(--text-muted)',
                 touchAction: 'none'
               }}
               title="Drag to move this pill anywhere on screen (Double-click to center)"
             >
-              <GripVertical size={15} />
+              <GripVertical size={14} />
             </div>
           )}
 
-          {/* Mode Badge & Module Counter */}
-          <div
-            onPointerDown={handlePointerDown}
+          {/* Mode Badge & Module Counter - click to expand studio */}
+          <button
+            type="button"
+            onClick={() => toggleExpanded(true)}
             style={{
-              cursor: isDragging ? 'grabbing' : 'grab',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '0.35rem',
+              gap: '0.3rem',
               backgroundColor: 'var(--primary)',
               color: '#ffffff',
-              padding: '0.2rem 0.55rem',
+              padding: '0.18rem 0.55rem',
               borderRadius: '9999px',
-              fontSize: '0.72rem',
+              fontSize: '0.7rem',
               fontWeight: 800,
-              letterSpacing: '0.02em',
+              letterSpacing: '0.01em',
               boxShadow: '0 2px 6px var(--primary-glow, rgba(79, 70, 229, 0.3))',
+              border: 'none',
+              cursor: 'pointer',
               flexShrink: 0
             }}
+            title="Click to open Layout Studio"
           >
-            <Edit3 size={11} />
-            <span>Edit Mode</span>
-          </div>
+            <SlidersHorizontal size={11} />
+            <span>Studio</span>
+            <span style={{ opacity: 0.9, fontWeight: 700, fontSize: '0.66rem' }}>• {visibleCount}/{totalModules}</span>
+          </button>
 
-          <span
-            onPointerDown={handlePointerDown}
+          {/* Display Density Micro-Switcher (3-segment icons with instant toggle) */}
+          <div
             style={{
-              cursor: isDragging ? 'grabbing' : 'grab',
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              color: 'var(--text-secondary)',
-              whiteSpace: 'nowrap'
+              display: 'inline-flex',
+              alignItems: 'center',
+              backgroundColor: 'var(--bg-app)',
+              padding: '2px',
+              borderRadius: '6px',
+              border: '1px solid var(--border-color)',
+              gap: '2px',
+              flexShrink: 0
             }}
-            title={`${visibleCount} of ${totalModules} modules visible`}
+            title={`Current Density: ${displayDensity.charAt(0).toUpperCase() + displayDensity.slice(1)}`}
           >
-            {visibleCount}/{totalModules} ({visiblePercentage}%)
-          </span>
-
-          <span style={{ width: '1px', height: '16px', backgroundColor: 'var(--border-color)', margin: '0 0.1rem', flexShrink: 0 }} />
-
-          {/* Quick Density Presets Segmented Buttons */}
-          <div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-app)', flexShrink: 0 }}>
             <button
               type="button"
-              onClick={() => {
-                onApplyPreset('minimal');
-                onToast('Essentials layout applied: Keeps interface clean and simple.', 'info');
-              }}
+              onClick={() => handleDensityChange('compact')}
               style={{
-                border: 'none',
-                padding: '0.2rem 0.45rem',
-                fontSize: '0.68rem',
-                fontWeight: 700,
-                background: 'transparent',
-                color: visiblePercentage <= 30 ? 'var(--accent-amber)' : 'var(--text-secondary)',
-                cursor: 'pointer'
-              }}
-              title="Essentials Only: Hides advanced analytics to keep the interface clean and simple."
-            >
-              Essentials
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onApplyPreset('standard');
-                onToast('Recommended layout restored: Balanced classroom layout.', 'info');
-              }}
-              style={{
-                border: 'none',
-                borderLeft: '1px solid var(--border-color)',
-                borderRight: '1px solid var(--border-color)',
-                padding: '0.2rem 0.45rem',
-                fontSize: '0.68rem',
-                fontWeight: 700,
-                background: 'transparent',
-                color: visiblePercentage > 30 && visiblePercentage <= 75 ? 'var(--primary)' : 'var(--text-secondary)',
-                cursor: 'pointer'
-              }}
-              title="Recommended: The balanced classroom layout with essential tools."
-            >
-              Recommended
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onApplyPreset('full');
-                onToast('Show All layout enabled: Turns on every available feature and tool.', 'success');
-              }}
-              style={{
-                border: 'none',
-                padding: '0.2rem 0.45rem',
-                fontSize: '0.68rem',
-                fontWeight: 700,
-                background: 'transparent',
-                color: visiblePercentage > 75 ? 'var(--accent-teal)' : 'var(--text-secondary)',
-                cursor: 'pointer'
-              }}
-              title="Show All Modules: Turns on every available feature and tool."
-            >
-              Show All
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onApplyPreset('none');
-              }}
-              style={{
-                border: 'none',
-                borderLeft: '1px solid var(--border-color)',
-                padding: '0.2rem 0.45rem',
-                fontSize: '0.68rem',
-                fontWeight: 700,
-                background: 'transparent',
-                color: visibleCount === 0 ? 'var(--accent-rose, #ef4444)' : 'var(--text-muted)',
-                cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '3px'
+                justifyContent: 'center',
+                width: '22px',
+                height: '20px',
+                borderRadius: '4px',
+                border: 'none',
+                backgroundColor: displayDensity === 'compact' ? 'var(--primary)' : 'transparent',
+                color: displayDensity === 'compact' ? '#ffffff' : 'var(--text-muted)',
+                cursor: 'pointer',
+                transition: 'all 120ms ease'
               }}
-              title="Hide All Modules: Workspace cleared"
+              title="Compact Density: High information density, 2.5x more students on screen"
             >
-              <EyeOff size={10} style={{ opacity: 0.8 }} />
-              <span>Hide All</span>
+              <Sliders size={11} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDensityChange('balanced')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '22px',
+                height: '20px',
+                borderRadius: '4px',
+                border: 'none',
+                backgroundColor: displayDensity === 'balanced' ? 'var(--primary)' : 'transparent',
+                color: displayDensity === 'balanced' ? '#ffffff' : 'var(--text-muted)',
+                cursor: 'pointer',
+                transition: 'all 120ms ease'
+              }}
+              title="Balanced Density: Standard desktop spacing and modern aesthetics"
+            >
+              <LayoutGrid size={11} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDensityChange('spacious')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '22px',
+                height: '20px',
+                borderRadius: '4px',
+                border: 'none',
+                backgroundColor: displayDensity === 'spacious' ? 'var(--primary)' : 'transparent',
+                color: displayDensity === 'spacious' ? '#ffffff' : 'var(--text-muted)',
+                cursor: 'pointer',
+                transition: 'all 120ms ease'
+              }}
+              title="Spacious Density: Large touch targets & presentation typography"
+            >
+              <Maximize2 size={11} />
             </button>
           </div>
 
-          {/* Quick Undo in Pill Mode */}
+          <span style={{ width: '1px', height: '14px', backgroundColor: 'var(--border-color)', margin: '0 0.05rem', flexShrink: 0 }} />
+
+          {/* Quick Presets Dropdown */}
+          <div style={{ flexShrink: 0, minWidth: '105px' }}>
+            <CustomSelect
+              value={activeProfileId || `__preset_${activePresetKey}`}
+              onChange={handleSelectPresetOrProfile}
+              options={presetAndProfileOptions}
+              triggerIcon={<Sparkles size={11} className="text-primary" />}
+              triggerLabel={<strong style={{ fontSize: '0.67rem', color: 'var(--text-primary)' }}>{currentPresetLabel}</strong>}
+              triggerStyle={{
+                height: '24px',
+                padding: '0 0.45rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-app)',
+                color: 'var(--text-primary)',
+                fontSize: '0.67rem',
+                fontWeight: 700
+              }}
+              dropdownAlign="left"
+              dropdownMinWidth="220px"
+              dropDirection="auto"
+              onDeleteOption={handleDeleteProfile}
+            />
+          </div>
+
+          {/* Quick Undo in Pill Mode (visible when undoStack > 0) */}
           {undoStack.length > 0 && (
             <button
               type="button"
@@ -619,47 +770,22 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.25rem',
+                gap: '0.2rem',
                 height: '24px',
-                padding: '0 0.5rem',
-                borderRadius: '9999px',
-                fontSize: '0.68rem',
+                padding: '0 0.45rem',
+                borderRadius: '6px',
+                fontSize: '0.67rem',
                 fontWeight: 750,
                 border: '1px solid var(--border-color)',
                 backgroundColor: 'var(--bg-app)',
-                color: 'var(--text-secondary)',
+                color: 'var(--accent-amber)',
                 cursor: 'pointer',
-                flexShrink: 0,
-                transition: 'all 120ms ease'
+                flexShrink: 0
               }}
               title={`Undo: "${undoStack[undoStack.length - 1].title}" (Ctrl+Z)`}
             >
-              <RotateCcw size={10} style={{ color: 'var(--accent-amber)' }} />
+              <RotateCcw size={10} />
               <span>Undo</span>
-            </button>
-          )}
-
-          {/* Reset position icon if custom placed */}
-          {isPositionCustom && (
-            <button
-              type="button"
-              onClick={handleResetPosition}
-              style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                border: '1px solid var(--border-color)',
-                backgroundColor: 'var(--bg-app)',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}
-              title="Reset bar position"
-            >
-              <RotateCcw size={11} />
             </button>
           )}
 
@@ -669,15 +795,16 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
             onClick={onClose}
             className="btn btn-teal btn-sm"
             style={{
-              height: '26px',
+              height: '24px',
               padding: '0 0.65rem',
               borderRadius: '9999px',
-              fontSize: '0.7rem',
+              fontSize: '0.68rem',
               fontWeight: 800,
               gap: '0.2rem',
               flexShrink: 0,
               boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
             }}
+            title="Finish layout editing (Esc)"
           >
             <Check size={11} />
             <span>Done</span>
@@ -688,9 +815,9 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
             type="button"
             onClick={() => toggleExpanded(true)}
             style={{
-              width: '26px',
-              height: '26px',
-              borderRadius: '50%',
+              width: '24px',
+              height: '24px',
+              borderRadius: '6px',
               border: '1px solid var(--border-color)',
               backgroundColor: 'var(--bg-app)',
               color: 'var(--text-secondary)',
@@ -700,139 +827,17 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
               justifyContent: 'center',
               flexShrink: 0
             }}
-            title="Expand layout controls"
+            title="Open Layout Studio (Modules Catalog & Sections)"
           >
             <ChevronUp size={13} />
           </button>
         </div>
       ) : (
         /* =========================================================================
-            B. EXPANDED CONTROL CENTER (Clean, Organized, 2 Tight Non-Wrapping Rows)
+            B. EXPANDED CONTROL CENTER (Structured Multi-Tier Layout Studio)
             ========================================================================= */
         <>
-          {/* ROW 1: Identity & Stats (Left) | Section Tabs (Center) | Done & Collapse (Right) */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.65rem', width: '100%', flexWrap: 'nowrap' }}>
-            {/* Left: Studio Identity & Counter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.3rem',
-                  color: 'var(--primary)',
-                  fontSize: '0.76rem',
-                  fontWeight: 800,
-                  letterSpacing: '-0.01em',
-                  flexShrink: 0
-                }}
-              >
-                <SlidersHorizontal size={13} />
-                <span>Layout Studio</span>
-              </div>
-              <span style={{ color: 'var(--border-color)', fontSize: '0.8rem' }}>•</span>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                <strong style={{ color: 'var(--text-primary)' }}>{visibleCount}</strong>/{totalModules} visible
-              </span>
-            </div>
-
-            {/* Center: Section Switcher Tabs */}
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                backgroundColor: 'var(--bg-app)',
-                padding: '2px',
-                borderRadius: '7px',
-                border: '1px solid var(--border-color)',
-                gap: '2px',
-                flexShrink: 0
-              }}
-            >
-              {[
-                { id: 'hub' as const, label: 'Hub', icon: LayoutGrid, count: sectionCounts.hub },
-                { id: 'roster' as const, label: 'Enrollment', icon: Users, count: sectionCounts.roster },
-                { id: 'grading' as const, label: 'Review', icon: Sliders, count: sectionCounts.rubric },
-                { id: 'results' as const, label: 'Analytics', icon: Award, count: sectionCounts.analytics }
-              ].map(tab => {
-                const isActive = activeTab === tab.id;
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => onNavigateTab(tab.id)}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.28rem',
-                      padding: '0.18rem 0.5rem',
-                      borderRadius: '5px',
-                      border: 'none',
-                      background: isActive ? 'var(--bg-surface)' : 'transparent',
-                      color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
-                      boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                      fontSize: '0.68rem',
-                      fontWeight: isActive ? 750 : 600,
-                      cursor: 'pointer',
-                      transition: 'all 120ms ease'
-                    }}
-                    title={`${tab.label} (${tab.count.visible}/${tab.count.total} visible)`}
-                  >
-                    <Icon size={11} style={{ opacity: isActive ? 1 : 0.7 }} />
-                    <span>{tab.label}</span>
-                    <span style={{ fontSize: '0.6rem', color: isActive ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 650 }}>
-                      {tab.count.visible}/{tab.count.total}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Right: Done Editing & Collapse */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-              <button
-                type="button"
-                onClick={onClose}
-                className="btn btn-teal btn-sm"
-                style={{
-                  height: '26px',
-                  padding: '0 0.75rem',
-                  borderRadius: '7px',
-                  fontSize: '0.7rem',
-                  fontWeight: 800,
-                  gap: '0.25rem',
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
-                }}
-                title="Finish editing layout (Esc)"
-              >
-                <Check size={12} />
-                <span>Done Editing</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => toggleExpanded(false)}
-                style={{
-                  width: '26px',
-                  height: '26px',
-                  borderRadius: '7px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-app)',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 120ms ease'
-                }}
-                title="Collapse to compact floating pill"
-              >
-                <ChevronDown size={13} />
-              </button>
-            </div>
-          </div>
-
-          {/* ROW 2: Presets (Left) | Module Catalog (Center) | Utilities (Right) */}
+          {/* TIER 1: STUDIO TOP COMMAND BAR */}
           <div
             style={{
               display: 'flex',
@@ -840,193 +845,222 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
               justifyContent: 'space-between',
               gap: '0.5rem',
               width: '100%',
-              borderTop: '1px solid var(--border-color)',
-              paddingTop: '0.35rem',
-              flexWrap: 'nowrap'
+              paddingBottom: '0.2rem'
             }}
           >
-            {/* Left: Density Presets Segmented Buttons */}
-            <div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-app)', height: '24px', flexShrink: 0 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  onApplyPreset('minimal');
-                  onToast('Applied Essentials preset', 'info');
-                }}
+            {/* Left: Studio Identity & Counter Badge */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+              <div
                 style={{
-                  border: 'none',
-                  padding: '0 0.5rem',
-                  fontSize: '0.67rem',
-                  fontWeight: visiblePercentage <= 30 ? 750 : 600,
-                  background: visiblePercentage <= 30 ? 'var(--bg-surface)' : 'transparent',
-                  color: visiblePercentage <= 30 ? 'var(--accent-amber)' : 'var(--text-secondary)',
-                  cursor: 'pointer'
-                }}
-                title="Essentials: Minimal layout"
-              >
-                Essentials
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onApplyPreset('standard');
-                  onToast('Restored Recommended layout', 'info');
-                }}
-                style={{
-                  border: 'none',
-                  borderLeft: '1px solid var(--border-color)',
-                  borderRight: '1px solid var(--border-color)',
-                  padding: '0 0.5rem',
-                  fontSize: '0.67rem',
-                  fontWeight: visiblePercentage > 30 && visiblePercentage <= 75 ? 750 : 600,
-                  background: visiblePercentage > 30 && visiblePercentage <= 75 ? 'var(--bg-surface)' : 'transparent',
-                  color: visiblePercentage > 30 && visiblePercentage <= 75 ? 'var(--primary)' : 'var(--text-secondary)',
-                  cursor: 'pointer'
-                }}
-                title="Recommended: Balanced classroom layout"
-              >
-                Recommended
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onApplyPreset('full');
-                  onToast('Show All enabled: All modules visible', 'success');
-                }}
-                style={{
-                  border: 'none',
-                  borderRight: '1px solid var(--border-color)',
-                  padding: '0 0.5rem',
-                  fontSize: '0.67rem',
-                  fontWeight: visiblePercentage > 75 ? 750 : 600,
-                  background: visiblePercentage > 75 ? 'var(--bg-surface)' : 'transparent',
-                  color: visiblePercentage > 75 ? 'var(--accent-teal)' : 'var(--text-secondary)',
-                  cursor: 'pointer'
-                }}
-                title="Show All: Turn on all tools"
-              >
-                Show All
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onApplyPreset('none');
-                }}
-                style={{
-                  border: 'none',
-                  padding: '0 0.45rem',
-                  fontSize: '0.67rem',
-                  fontWeight: visibleCount === 0 ? 750 : 600,
-                  background: visibleCount === 0 ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
-                  color: visibleCount === 0 ? 'var(--accent-rose, #ef4444)' : 'var(--text-muted)',
-                  cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '3px'
+                  gap: '0.3rem',
+                  color: 'var(--primary)',
+                  fontSize: '0.8rem',
+                  fontWeight: 800,
+                  letterSpacing: '-0.01em',
+                  flexShrink: 0
                 }}
-                title="Hide All: Hide all modules from the layout"
               >
-                <EyeOff size={10} style={{ opacity: 0.8 }} />
-                <span>Hide All</span>
-              </button>
+                <SlidersHorizontal size={14} />
+                <span>Layout Studio</span>
+                <FeatureInfoButton featureId="density-presets" size="sm" tooltipText="Workspace Layout Presets Guide" />
+              </div>
+
+              <span style={{ color: 'var(--border-color)', fontSize: '0.75rem' }}>•</span>
+
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.2rem',
+                  backgroundColor: 'var(--bg-app)',
+                  padding: '0.12rem 0.5rem',
+                  borderRadius: '9999px',
+                  border: '1px solid var(--border-color)',
+                  fontSize: '0.67rem',
+                  color: 'var(--text-secondary)',
+                  fontWeight: 650,
+                  whiteSpace: 'nowrap'
+                }}
+                title={`${visibleCount} visible modules out of ${totalModules} total`}
+              >
+                <strong style={{ color: 'var(--text-primary)' }}>{visibleCount}</strong>/{totalModules}
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.62rem' }}>({visiblePercentage}%)</span>
+              </div>
             </div>
 
-            {/* Center: Module Catalog Toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {/* Center: Prominent First-Class Display Density Segmented Switcher */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                backgroundColor: 'var(--bg-app)',
+                padding: '2px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                gap: '2px',
+                flexShrink: 0
+              }}
+            >
               <button
                 type="button"
-                onClick={() => setShowModuleCatalog(prev => !prev)}
+                onClick={() => handleDensityChange('compact')}
                 style={{
-                  height: '24px',
-                  padding: '0 0.6rem',
-                  borderRadius: '6px',
-                  border: showModuleCatalog ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-                  backgroundColor: showModuleCatalog ? 'var(--primary-light)' : 'var(--bg-app)',
-                  color: showModuleCatalog ? 'var(--primary)' : 'var(--text-primary)',
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '0.28rem',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: displayDensity === 'compact' ? 'var(--primary)' : 'transparent',
+                  color: displayDensity === 'compact' ? '#ffffff' : 'var(--text-secondary)',
+                  boxShadow: displayDensity === 'compact' ? '0 1px 4px var(--primary-glow, rgba(99, 102, 241, 0.35))' : 'none',
+                  fontSize: '0.68rem',
+                  fontWeight: displayDensity === 'compact' ? 800 : 600,
+                  cursor: 'pointer',
                   transition: 'all 120ms ease'
                 }}
-                title="Search and toggle modules"
+                title="Compact Density: High information density, 2.5x more students on screen"
               >
-                <Search size={11} />
-                <span>Catalog ({totalModules})</span>
-                <ChevronDown
-                  size={11}
-                  style={{
-                    transform: showModuleCatalog ? 'rotate(180deg)' : 'none',
-                    transition: 'transform 150ms ease'
-                  }}
-                />
+                <Sliders size={11} />
+                <span>Compact</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDensityChange('balanced')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.28rem',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: displayDensity === 'balanced' ? 'var(--primary)' : 'transparent',
+                  color: displayDensity === 'balanced' ? '#ffffff' : 'var(--text-secondary)',
+                  boxShadow: displayDensity === 'balanced' ? '0 1px 4px var(--primary-glow, rgba(99, 102, 241, 0.35))' : 'none',
+                  fontSize: '0.68rem',
+                  fontWeight: displayDensity === 'balanced' ? 800 : 600,
+                  cursor: 'pointer',
+                  transition: 'all 120ms ease'
+                }}
+                title="Balanced Density: Standard desktop spacing and modern aesthetics"
+              >
+                <LayoutGrid size={11} />
+                <span>Balanced</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDensityChange('spacious')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.28rem',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: displayDensity === 'spacious' ? 'var(--primary)' : 'transparent',
+                  color: displayDensity === 'spacious' ? '#ffffff' : 'var(--text-secondary)',
+                  boxShadow: displayDensity === 'spacious' ? '0 1px 4px var(--primary-glow, rgba(99, 102, 241, 0.35))' : 'none',
+                  fontSize: '0.68rem',
+                  fontWeight: displayDensity === 'spacious' ? 800 : 600,
+                  cursor: 'pointer',
+                  transition: 'all 120ms ease'
+                }}
+                title="Spacious Density: High-visibility typography and large touch targets for tablets & podiums"
+              >
+                <Maximize2 size={11} />
+                <span>Spacious</span>
               </button>
             </div>
 
-            {/* Right: Saved Views, Save, Shortcuts, Undo */}
+            {/* Right: Presets, More Menu, Done, Collapse */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-              {/* Saved Profiles Dropdown */}
+              {/* Presets & Views Dropdown */}
               <div style={{ minWidth: '135px' }}>
                 <CustomSelect
-                  value={activeProfileId}
-                  onChange={handleApplyProfile}
-                  options={profileOptions}
+                  value={activeProfileId || `__preset_${activePresetKey}`}
+                  onChange={handleSelectPresetOrProfile}
+                  options={presetAndProfileOptions}
+                  triggerIcon={<Sparkles size={11} className="text-primary" />}
                   triggerLabel={
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontWeight: 650, fontSize: '0.67rem' }}>
-                      <Bookmark size={11} style={{ color: customProfiles.length > 0 ? 'var(--primary)' : 'var(--text-muted)' }} />
-                      <span>Saved Views ({customProfiles.length})</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem', whiteSpace: 'nowrap' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 550, fontSize: '0.64rem' }}>Preset:</span>
+                      <strong style={{ color: 'var(--text-primary)', fontSize: '0.68rem' }}>{currentPresetLabel}</strong>
                     </span>
                   }
                   dropdownAlign="right"
-                  dropdownMinWidth="250px"
+                  dropdownMinWidth="260px"
                   dropDirection="auto"
                   header={
-                    <div style={{ padding: '0.25rem 0.4rem 0.3rem', fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>Saved Layout Views</span>
-                      <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: '9999px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', fontWeight: 700 }}>
-                        {customProfiles.length}
+                    <div style={{ padding: '0.25rem 0.4rem 0.3rem', fontSize: '0.62rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Layout Presets &amp; Views</span>
+                      <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '9999px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', fontWeight: 700 }}>
+                        {presetAndProfileOptions.length}
                       </span>
                     </div>
                   }
                   footer={
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsSavingProfile(true);
-                      }}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.35rem',
-                        padding: '0.3rem 0.5rem',
-                        borderRadius: '5px',
-                        border: '1px dashed var(--primary)',
-                        backgroundColor: 'var(--primary-light)',
-                        color: 'var(--primary)',
-                        fontSize: '0.68rem',
-                        fontWeight: 700,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <BookmarkPlus size={11} />
-                      <span>Save Current Layout</span>
-                    </button>
-                  }
-                  emptyMessage={
-                    <div style={{ padding: '0.5rem 0.4rem', textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                      No saved views yet. Click &quot;Save&quot; to bookmark this layout!
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', width: '100%' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSavingProfile(true);
+                        }}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.35rem',
+                          padding: '0.3rem 0.5rem',
+                          borderRadius: '5px',
+                          border: '1px dashed var(--border-color)',
+                          backgroundColor: 'var(--bg-app)',
+                          color: 'var(--text-secondary)',
+                          fontSize: '0.67rem',
+                          fontWeight: 650,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <BookmarkPlus size={11} />
+                        <span>Quick Save Current View</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openLibraryModal();
+                        }}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.35rem',
+                          padding: '0.32rem 0.5rem',
+                          borderRadius: '5px',
+                          border: '1px solid var(--primary)',
+                          backgroundColor: 'var(--primary)',
+                          color: '#ffffff',
+                          fontSize: '0.68rem',
+                          fontWeight: 750,
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 6px var(--primary-glow, rgba(99, 102, 241, 0.25))'
+                        }}
+                      >
+                        <Layers size={11} />
+                        <span>Open Layout Library &amp; Presets</span>
+                      </button>
                     </div>
                   }
                   onDeleteOption={handleDeleteProfile}
                   deleteTitle="Delete this saved view"
                   triggerStyle={{
-                    height: '24px',
-                    padding: '0 0.5rem',
+                    height: '26px',
+                    padding: '0 0.45rem',
                     fontSize: '0.67rem',
                     fontWeight: 650,
                     borderRadius: '6px',
@@ -1037,102 +1071,212 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
                 />
               </div>
 
-              {/* Save View Button */}
-              <button
-                type="button"
-                onClick={() => setIsSavingProfile(prev => !prev)}
-                style={{
-                  height: '24px',
-                  padding: '0 0.45rem',
-                  fontSize: '0.67rem',
-                  fontWeight: 650,
-                  borderRadius: '6px',
-                  border: isSavingProfile ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-                  backgroundColor: isSavingProfile ? 'var(--primary)' : 'var(--bg-app)',
-                  color: isSavingProfile ? '#ffffff' : 'var(--text-secondary)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.2rem',
-                  cursor: 'pointer',
-                  transition: 'all 120ms ease'
-                }}
-                title="Save current layout as a view profile"
-              >
-                <BookmarkPlus size={11} />
-                <span>Save</span>
-              </button>
-
-              {/* Shortcuts Status Quick Toggle */}
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !shortcutsEnabled;
-                  onToggleShortcutsEnabled(next);
-                  onToast(next ? 'Keyboard shortcuts enabled' : 'Keyboard shortcuts disabled', 'info');
-                }}
-                style={{
-                  height: '24px',
-                  padding: '0 0.45rem',
-                  fontSize: '0.67rem',
-                  fontWeight: 650,
-                  borderRadius: '6px',
-                  border: shortcutsEnabled ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border-color)',
-                  backgroundColor: shortcutsEnabled ? 'var(--accent-teal-light)' : 'var(--bg-app)',
-                  color: shortcutsEnabled ? 'var(--accent-teal)' : 'var(--text-muted)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                  cursor: 'pointer'
-                }}
-                title={shortcutsEnabled ? 'Keybindings are enabled' : 'Keybindings are disabled'}
-              >
-                <Keyboard size={11} />
-                <span>{shortcutsEnabled ? 'Keys: ON' : 'Keys: OFF'}</span>
-              </button>
-
-              {/* Undo Button if available */}
-              {undoStack.length > 0 && (
+              {/* More Utilities Popover Menu */}
+              <div ref={moreMenuRef} style={{ position: 'relative' }}>
                 <button
                   type="button"
-                  onClick={handleUndo}
+                  onClick={() => setShowMoreMenu(prev => !prev)}
                   style={{
-                    height: '24px',
-                    padding: '0 0.45rem',
-                    fontSize: '0.67rem',
-                    fontWeight: 700,
+                    width: '26px',
+                    height: '26px',
                     borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-app)',
-                    color: 'var(--text-secondary)',
+                    border: showMoreMenu ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                    backgroundColor: showMoreMenu ? 'var(--primary-light)' : 'var(--bg-app)',
+                    color: showMoreMenu ? 'var(--primary)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.25rem',
-                    cursor: 'pointer'
+                    justifyContent: 'center',
+                    transition: 'all 120ms ease'
                   }}
-                  title={`Undo: "${undoStack[undoStack.length - 1].title}" (Ctrl+Z)`}
+                  title="More workspace tools and utilities"
                 >
-                  <RotateCcw size={10} style={{ color: 'var(--accent-amber)' }} />
-                  <span>Undo</span>
+                  <MoreHorizontal size={13} />
                 </button>
-              )}
-            </div>
-          </div>
 
-          {/* ROW 3: Minimal Helper Hint Strip */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.35rem',
-              fontSize: '0.64rem',
-              color: 'var(--text-muted)',
-              userSelect: 'none',
-              paddingTop: '0.1rem'
-            }}
-          >
-            <Lightbulb size={10} style={{ color: 'var(--accent-amber)', opacity: 0.85 }} />
-            <span>Click any module to hide • Click dashed slot to restore • Press <kbd style={{ padding: '0 4px', fontSize: '0.6rem', borderRadius: '3px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>Esc</kbd> when finished</span>
+                {showMoreMenu && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 6px)',
+                      right: 0,
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '10px',
+                      boxShadow: '0 10px 30px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--border-color)',
+                      padding: '0.35rem',
+                      minWidth: '220px',
+                      zIndex: 1000,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                      animation: 'slideUp 150ms ease'
+                    }}
+                  >
+                    <div style={{ padding: '0.25rem 0.5rem 0.35rem', fontSize: '0.62rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Workspace Utilities
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        handleResetToDefault();
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.45rem',
+                        padding: '0.35rem 0.55rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: 'transparent',
+                        color: 'var(--accent-amber, #d97706)',
+                        fontSize: '0.72rem',
+                        fontWeight: 650,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        width: '100%',
+                        transition: 'all 120ms ease'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-app)'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <RotateCcw size={12} />
+                      <span>Reset Layout to Default</span>
+                    </button>
+
+                    {onOpenBranding && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          onOpenBranding();
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.35rem 0.55rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.72rem',
+                          fontWeight: 650,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          width: '100%',
+                          transition: 'all 120ms ease'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-app)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <Building2 size={12} className="text-primary" />
+                        <span>Institutional Branding</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !shortcutsEnabled;
+                        onToggleShortcutsEnabled(next);
+                        onToast(next ? 'Keyboard shortcuts enabled' : 'Keyboard shortcuts disabled', 'info');
+                        setShowMoreMenu(false);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.35rem 0.55rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: 'transparent',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.72rem',
+                        fontWeight: 650,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        width: '100%',
+                        transition: 'all 120ms ease'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-app)'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <Keyboard size={12} />
+                        <span>Keyboard Shortcuts</span>
+                      </span>
+                      <span style={{
+                        fontSize: '0.62rem',
+                        padding: '1px 5px',
+                        borderRadius: '4px',
+                        backgroundColor: shortcutsEnabled ? 'var(--accent-teal-light)' : 'var(--bg-app)',
+                        color: shortcutsEnabled ? 'var(--accent-teal)' : 'var(--text-muted)',
+                        fontWeight: 750
+                      }}>
+                        {shortcutsEnabled ? 'ON' : 'OFF'}
+                      </span>
+                    </button>
+
+                    <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '0.25rem 0' }} />
+
+                    <div style={{ padding: '0.35rem 0.55rem', fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--accent-amber)', fontWeight: 700, marginBottom: '2px' }}>
+                        <Lightbulb size={11} />
+                        <span>Tips for Edit Mode</span>
+                      </div>
+                      Click any module card to toggle • Use Jump icon to locate • Press <kbd style={{ padding: '0 3px', fontSize: '0.6rem', borderRadius: '3px', border: '1px solid var(--border-color)' }}>Esc</kbd> when finished
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Done Editing Button */}
+              <button
+                type="button"
+                onClick={onClose}
+                className="btn btn-teal btn-sm"
+                style={{
+                  height: '26px',
+                  padding: '0 0.75rem',
+                  borderRadius: '6px',
+                  fontSize: '0.69rem',
+                  fontWeight: 800,
+                  gap: '0.25rem',
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                  whiteSpace: 'nowrap'
+                }}
+                title="Finish editing layout (Esc)"
+              >
+                <Check size={12} />
+                <span>Done Editing</span>
+              </button>
+
+              {/* Collapse to Pill Chevron */}
+              <button
+                type="button"
+                onClick={() => toggleExpanded(false)}
+                style={{
+                  width: '26px',
+                  height: '26px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-app)',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 120ms ease',
+                  flexShrink: 0
+                }}
+                title="Collapse to compact floating pill"
+              >
+                <ChevronDown size={13} />
+              </button>
+            </div>
           </div>
 
           {/* Inline Save View Profile Form */}
@@ -1253,11 +1397,10 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
           )}
 
           {/* =========================================================================
-              C. INLINE MODULE CATALOG DRAWER (Minimal, Unified, Pro-Grade Layout)
+              TIER 2 & 3: INLINE MODULE CATALOG DRAWER (Multi-Tier Layout Studio)
               ========================================================================= */}
-          {showModuleCatalog && (
-            <div
-              style={{
+          <div
+            style={{
                 borderTop: '1px solid var(--border-color)',
                 paddingTop: '0.45rem',
                 display: 'flex',
@@ -1265,7 +1408,78 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
                 gap: '0.35rem'
               }}
             >
-              {/* Single Unified Compact Filter Toolbar */}
+              {/* =========================================================================
+                  TIER 2A: SECTION SEGMENTED NAVIGATION TABS (Class Hub, Roster, AutoGroup, etc.)
+                  ========================================================================= */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  overflowX: 'auto',
+                  paddingBottom: '2px',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none'
+                }}
+              >
+                {[
+                  { id: 'all' as const, label: 'All Modules', icon: Layers, countText: `${visibleCount}/${totalModules}` },
+                  { id: 'hub' as const, label: 'Class Hub', icon: LayoutGrid, countText: `${sectionCounts.hub.visible}/${sectionCounts.hub.total}` },
+                  { id: 'roster' as const, label: 'Enrollment & Roster', icon: Users, countText: `${sectionCounts.roster.visible}/${sectionCounts.roster.total}` },
+                  { id: 'autogroup' as const, label: 'AutoGroup Studio', icon: Sparkles, countText: `${sectionCounts.autogroup.visible}/${sectionCounts.autogroup.total}` },
+                  { id: 'rubric' as const, label: 'Rubric & Review', icon: Award, countText: `${sectionCounts.rubric.visible}/${sectionCounts.rubric.total}` },
+                  { id: 'analytics' as const, label: 'Grades & Analytics', icon: Sliders, countText: `${sectionCounts.analytics.visible}/${sectionCounts.analytics.total}` },
+                  { id: 'header' as const, label: 'Header & Nav', icon: Compass, countText: `${sectionCounts.header.visible}/${sectionCounts.header.total}` },
+                  { id: 'footer' as const, label: 'Footer & Badges', icon: Bookmark, countText: `${sectionCounts.footer.visible}/${sectionCounts.footer.total}` }
+                ].map((tab) => {
+                  const isActive = catalogCategoryTab === tab.id;
+                  const TabIcon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setCatalogCategoryTab(tab.id)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        padding: '0.22rem 0.55rem',
+                        borderRadius: '6px',
+                        border: isActive ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                        backgroundColor: isActive ? 'var(--primary-light)' : 'var(--bg-app)',
+                        color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
+                        fontSize: '0.67rem',
+                        fontWeight: isActive ? 750 : 550,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        transition: 'all 120ms ease',
+                        flexShrink: 0
+                      }}
+                    >
+                      <TabIcon size={11} style={{ opacity: isActive ? 1 : 0.7 }} />
+                      <span>{tab.label}</span>
+                      <span
+                        style={{
+                          fontSize: '0.6rem',
+                          fontWeight: 700,
+                          padding: '0.05rem 0.35rem',
+                          borderRadius: '9999px',
+                          backgroundColor: isActive ? 'var(--primary)' : 'var(--bg-surface)',
+                          color: isActive ? '#ffffff' : 'var(--text-muted)',
+                          border: isActive ? 'none' : '1px solid var(--border-color)',
+                          lineHeight: 1.2
+                        }}
+                      >
+                        {tab.countText}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* =========================================================================
+                  TIER 2B: SEARCH, TYPE & STATUS FILTER CONTROLS
+                  ========================================================================= */}
               <div
                 style={{
                   display: 'flex',
@@ -1276,7 +1490,7 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
                 }}
               >
                 {/* Search Bar */}
-                <div style={{ position: 'relative', flex: '1 1 180px', minWidth: '150px' }}>
+                <div style={{ position: 'relative', flex: '1 1 200px', minWidth: '160px' }}>
                   <Search
                     size={11}
                     style={{ position: 'absolute', left: '0.55rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
@@ -1285,12 +1499,12 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
                     type="text"
                     value={catalogSearchQuery}
                     onChange={(e) => setCatalogSearchQuery(e.target.value)}
-                    placeholder="Search modules..."
+                    placeholder="Search 102 modules by name or description..."
                     style={{
                       width: '100%',
                       height: '24px',
                       padding: '0 1.6rem 0 1.6rem',
-                      fontSize: '0.7rem',
+                      fontSize: '0.68rem',
                       borderRadius: '6px',
                       border: '1px solid var(--border-color)',
                       backgroundColor: 'var(--bg-app)',
@@ -1322,138 +1536,116 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
                   )}
                 </div>
 
-                {/* Section Dropdown */}
-                <select
-                  value={catalogCategoryTab}
-                  onChange={(e) => setCatalogCategoryTab(e.target.value as any)}
-                  style={{
-                    height: '24px',
-                    padding: '0 0.45rem',
-                    fontSize: '0.67rem',
-                    fontWeight: 600,
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-app)',
-                    color: 'var(--text-primary)',
-                    cursor: 'pointer',
-                    outline: 'none',
-                    flexShrink: 0
-                  }}
-                >
-                  <option value="all">All Sections ({totalModules})</option>
-                  <option value="hub">Class Hub ({sectionCounts.hub.total})</option>
-                  <option value="roster">Enrollment & Roster ({sectionCounts.roster.total})</option>
-                  <option value="autogroup">AutoGroup Studio ({sectionCounts.autogroup.total})</option>
-                  <option value="rubric">Rubric & Review ({sectionCounts.rubric.total})</option>
-                  <option value="analytics">Grades & Reports ({sectionCounts.analytics.total})</option>
-                  <option value="header">Header & Nav ({sectionCounts.header.total})</option>
-                  <option value="footer">Footer & Badges ({sectionCounts.footer.total})</option>
-                </select>
-
-                {/* Hierarchy Dropdown */}
-                <select
-                  value={catalogHierarchyFilter}
-                  onChange={(e) => setCatalogHierarchyFilter(e.target.value as any)}
-                  style={{
-                    height: '24px',
-                    padding: '0 0.45rem',
-                    fontSize: '0.67rem',
-                    fontWeight: 600,
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-app)',
-                    color: 'var(--text-primary)',
-                    cursor: 'pointer',
-                    outline: 'none',
-                    flexShrink: 0
-                  }}
-                >
-                  <option value="all">All Types</option>
-                  <option value="parents">Containers ({parentModulesCount})</option>
-                  <option value="submodules">Submodules ({submodulesCount})</option>
-                </select>
-
-                {/* Status Segmented Filter */}
-                <div style={{ display: 'inline-flex', borderRadius: '6px', border: '1px solid var(--border-color)', overflow: 'hidden', backgroundColor: 'var(--bg-app)', height: '24px', flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={() => setCatalogStatusFilter('all')}
+                {/* Right Filter Refinements */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  {/* Hierarchy Dropdown */}
+                  <select
+                    value={catalogHierarchyFilter}
+                    onChange={(e) => setCatalogHierarchyFilter(e.target.value as any)}
                     style={{
-                      padding: '0 0.45rem',
-                      fontSize: '0.65rem',
-                      fontWeight: catalogStatusFilter === 'all' ? 750 : 550,
-                      border: 'none',
-                      backgroundColor: catalogStatusFilter === 'all' ? 'var(--bg-surface)' : 'transparent',
-                      color: catalogStatusFilter === 'all' ? 'var(--text-primary)' : 'var(--text-muted)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    All ({totalModules})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCatalogStatusFilter('visible')}
-                    style={{
-                      padding: '0 0.45rem',
-                      fontSize: '0.65rem',
-                      fontWeight: catalogStatusFilter === 'visible' ? 750 : 550,
-                      border: 'none',
-                      borderLeft: '1px solid var(--border-color)',
-                      borderRight: '1px solid var(--border-color)',
-                      backgroundColor: catalogStatusFilter === 'visible' ? 'var(--accent-teal-light)' : 'transparent',
-                      color: catalogStatusFilter === 'visible' ? 'var(--accent-teal)' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px'
-                    }}
-                  >
-                    <Eye size={10} />
-                    <span>{visibleCount}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCatalogStatusFilter('hidden')}
-                    style={{
-                      padding: '0 0.45rem',
-                      fontSize: '0.65rem',
-                      fontWeight: catalogStatusFilter === 'hidden' ? 750 : 550,
-                      border: 'none',
-                      backgroundColor: catalogStatusFilter === 'hidden' ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
-                      color: catalogStatusFilter === 'hidden' ? 'var(--accent-rose, #ef4444)' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px'
-                    }}
-                  >
-                    <EyeOff size={10} />
-                    <span>{hiddenCount}</span>
-                  </button>
-                </div>
-
-                {/* Close Catalog */}
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowModuleCatalog(false)}
-                    style={{
-                      width: '24px',
                       height: '24px',
-                      borderRadius: '5px',
+                      padding: '0 0.45rem',
+                      fontSize: '0.66rem',
+                      fontWeight: 600,
+                      borderRadius: '6px',
                       border: '1px solid var(--border-color)',
                       backgroundColor: 'var(--bg-app)',
-                      color: 'var(--text-muted)',
+                      color: 'var(--text-primary)',
                       cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 120ms ease'
+                      outline: 'none',
+                      flexShrink: 0
                     }}
-                    title="Close module catalog"
                   >
-                    <X size={12} />
-                  </button>
+                    <option value="all">All Types</option>
+                    <option value="parents">Containers ({parentModulesCount})</option>
+                    <option value="submodules">Submodules ({submodulesCount})</option>
+                  </select>
+
+                  {/* Status Segmented Filter */}
+                  <div style={{ display: 'inline-flex', borderRadius: '6px', border: '1px solid var(--border-color)', overflow: 'hidden', backgroundColor: 'var(--bg-app)', height: '24px', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => setCatalogStatusFilter('all')}
+                      style={{
+                        padding: '0 0.45rem',
+                        fontSize: '0.65rem',
+                        fontWeight: catalogStatusFilter === 'all' ? 750 : 550,
+                        border: 'none',
+                        backgroundColor: catalogStatusFilter === 'all' ? 'var(--bg-surface)' : 'transparent',
+                        color: catalogStatusFilter === 'all' ? 'var(--text-primary)' : 'var(--text-muted)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      All ({totalModules})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCatalogStatusFilter('visible')}
+                      style={{
+                        padding: '0 0.45rem',
+                        fontSize: '0.65rem',
+                        fontWeight: catalogStatusFilter === 'visible' ? 750 : 550,
+                        border: 'none',
+                        borderLeft: '1px solid var(--border-color)',
+                        borderRight: '1px solid var(--border-color)',
+                        backgroundColor: catalogStatusFilter === 'visible' ? 'var(--accent-teal-light)' : 'transparent',
+                        color: catalogStatusFilter === 'visible' ? 'var(--accent-teal)' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}
+                    >
+                      <Eye size={10} />
+                      <span>{visibleCount}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCatalogStatusFilter('hidden')}
+                      style={{
+                        padding: '0 0.45rem',
+                        fontSize: '0.65rem',
+                        fontWeight: catalogStatusFilter === 'hidden' ? 750 : 550,
+                        border: 'none',
+                        backgroundColor: catalogStatusFilter === 'hidden' ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
+                        color: catalogStatusFilter === 'hidden' ? 'var(--accent-rose, #ef4444)' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}
+                    >
+                      <EyeOff size={10} />
+                      <span>{hiddenCount}</span>
+                    </button>
+                  </div>
+
+                  {/* Quick Undo in Tier 2 (Visible when undoStack > 0) */}
+                  {undoStack.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleUndo}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.2rem',
+                        height: '24px',
+                        padding: '0 0.45rem',
+                        borderRadius: '6px',
+                        fontSize: '0.65rem',
+                        fontWeight: 700,
+                        border: '1px solid var(--accent-amber)',
+                        backgroundColor: 'rgba(217, 119, 6, 0.1)',
+                        color: 'var(--accent-amber)',
+                        cursor: 'pointer',
+                        flexShrink: 0
+                      }}
+                      title={`Undo: "${undoStack[undoStack.length - 1].title}" (Ctrl+Z)`}
+                    >
+                      <RotateCcw size={10} />
+                      <span>Undo</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1651,8 +1843,22 @@ export const LayoutEditBar: React.FC<LayoutEditBarProps> = ({
                 )}
               </div>
             </div>
-          )}
         </>
+      )}
+
+      {/* Embedded Layout Library Modal */}
+      {internalLibraryModalOpen && (
+        <LayoutLibraryModal
+          isOpen={internalLibraryModalOpen}
+          onClose={() => setInternalLibraryModalOpen(false)}
+          featureToggles={featureToggles}
+          onToggleFeature={onToggleFeature}
+          onApplyCustomToggles={onApplyCustomToggles}
+          onApplyPreset={onApplyPreset}
+          shortcutsEnabled={shortcutsEnabled}
+          onToggleShortcutsEnabled={onToggleShortcutsEnabled}
+          onToast={onToast}
+        />
       )}
     </div>
   );

@@ -97,6 +97,7 @@ export interface FeatureToggles {
   showJohariMatrix: boolean;
   showQualitativeFeedback: boolean;
   showWebPACalibration: boolean;
+  showInspectCalculationsBtn: boolean;
   showAnomalyAudit: boolean;
   showMilestonesHistory: boolean;
   showLmsExport: boolean;
@@ -212,6 +213,7 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showJohariMatrix: false,
   showQualitativeFeedback: false,
   showWebPACalibration: true,
+  showInspectCalculationsBtn: false, // Hidden by default as requested!
   showAnomalyAudit: false,
   showMilestonesHistory: false,
   showLmsExport: false,
@@ -327,6 +329,7 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showJohariMatrix: false,
   showQualitativeFeedback: false,
   showWebPACalibration: false,
+  showInspectCalculationsBtn: false,
   showAnomalyAudit: false,
   showMilestonesHistory: false,
   showLmsExport: false,
@@ -438,6 +441,7 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showJohariMatrix: true,
   showQualitativeFeedback: true,
   showWebPACalibration: true,
+  showInspectCalculationsBtn: true,
   showAnomalyAudit: true,
   showMilestonesHistory: true,
   showLmsExport: true,

@@ -5,7 +5,8 @@ import {
   Sparkles, Users, CheckCircle, Download, ShieldCheck, Clock, 
   SlidersHorizontal, Activity, Award, RefreshCw, MessageSquare, 
   Key, Zap, Edit3, Plus, Type, UserCheck, Presentation,
-  Layers, Kanban, Table, Columns3, Undo2, Shuffle, Settings2, Target, RotateCcw, Check, Percent, Globe, UserX
+  Layers, Kanban, Table, Columns3, Undo2, Shuffle, Settings2, Target, RotateCcw, Check, Percent, Globe, UserX,
+  Calculator
 } from 'lucide-react';
 import type { FeatureToggles } from './featurePreferences';
 
@@ -792,6 +793,15 @@ export const MODULE_ITEMS: ModuleItem[] = [
     category: 'analytics',
     slotType: 'card',
     defaultHeight: 140
+  },
+  {
+    key: 'showInspectCalculationsBtn',
+    title: 'Inspect Calculations Action Icon',
+    desc: 'Quick icon button to open step-by-step mathematical derivation modal.',
+    icon: Calculator,
+    category: 'analytics',
+    slotType: 'button',
+    parentKey: 'showWebPACalibration'
   },
   {
     key: 'showAnomalyAudit',

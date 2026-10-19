@@ -27,6 +27,7 @@ import {
 } from '../utils/grouping';
 import { exportSingleTeamToCSV, exportSingleTeamToExcel } from '../utils/csv';
 import CustomSelect from './CustomSelect';
+import FeatureInfoButton from './FeatureInfoButton';
 import { EditableModuleSlot } from './EditableModuleSlot';
 import { 
   loadFeatureToggles, 
@@ -49,6 +50,7 @@ interface AutoGroupStudioProps {
   classId?: string;
   onStagedGroupsChange?: (stagedStudents: Student[]) => void;
   onOpenEnrollmentBuilder?: () => void;
+  cardControls?: React.ReactNode;
 }
 
 const PREFIX_OPTIONS = [
@@ -84,7 +86,8 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
   onToggleModule,
   classId,
   onStagedGroupsChange,
-  onOpenEnrollmentBuilder
+  onOpenEnrollmentBuilder,
+  cardControls
 }) => {
   const { classes, activeClass } = useClass();
   const currentClass = classes.find(c => c.id === classId) || activeClass;
@@ -914,7 +917,7 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
   };
 
   return (
-    <div className="accordion-item" style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'visible', backgroundColor: 'var(--bg-surface)', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)', marginBottom: '1.25rem' }}>
+    <div className="accordion-item autogroup-studio-container" data-quicklook-context="grouping" style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'visible', backgroundColor: 'var(--bg-surface)', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)', marginBottom: '1.25rem' }}>
       {/* Studio Header Bar */}
       <div 
         onClick={() => {
@@ -959,11 +962,13 @@ export const AutoGroupStudio: React.FC<AutoGroupStudioProps> = ({
               <span style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 Auto-Group Teams
               </span>
+              <FeatureInfoButton featureId="auto-group-studio" size="sm" tooltipText="Auto-Group Studio Guide" />
               {activeRules.length > 0 && (
                 <span className="badge badge-secondary" style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem' }}>
                   {activeRules.length} Active {activeRules.length === 1 ? 'Rule' : 'Rules'}
                 </span>
               )}
+              {cardControls}
             </div>
             <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0' }}>
               Automatically forms balanced student groups using rules (diversity, skills, size).

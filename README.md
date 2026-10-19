@@ -4,9 +4,17 @@
 
 ### *Intelligent Peer Assessment, Simplified.*
 
-**PeerLens** is an educational peer evaluation and team analytics platform designed to bring fairness, transparency, and collaborative accountability to team-based university coursework.
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-8.0-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Firebase](https://img.shields.io/badge/Firebase-Firestore-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![Netlify](https://img.shields.io/badge/Netlify-Ready-00C7B7?logo=netlify&logoColor=white)](https://www.netlify.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![WCAG](https://img.shields.io/badge/Accessibility-WCAG_AAA-brightgreen)](https://www.w3.org/WAI/standards-guidelines/wcag/)
 
-In higher education, collaborative group projects are vital for student learning, yet assessing individual contributions within a shared team deliverable remains a significant pedagogical challenge. PeerLens solves this problem by providing instructors with psychometrically validated evaluation rubrics, continuous formative **Team Health Micro-Pulses**, passwordless double-blind student portals, auditorium presentation monitors, multi-dimensional auto-grouping studios, and an automated grade-adjustment engine powered by the internationally recognized **Loughborough WebPA algorithm**.
+**PeerLens** is a high-performance educational peer evaluation and team analytics platform designed to bring fairness, transparency, and collaborative accountability to team-based university coursework.
+
+In higher education, collaborative group projects are vital for student learning, yet assessing individual contributions within a shared team deliverable remains a significant pedagogical challenge. PeerLens solves this problem by providing instructors with psychometrically validated evaluation rubrics, continuous formative **Team Health Micro-Pulses**, passwordless double-blind student portals, auditorium presentation monitors, multi-dimensional auto-grouping studios, a multi-tier **Layout Studio**, a responsive **Display Density Engine**, and an automated grade-adjustment engine powered by the internationally recognized **Loughborough WebPA algorithm**.
 
 ---
 
@@ -25,7 +33,7 @@ graph TD
         A[Create Course Workspace] --> B[Configure Evaluation Rubric / IPAF Preset]
         B --> C[Enroll Students and Form Teams]
         C1["Spreadsheet Import, Syllabus PDF, or QR Self-Enrollment"] -.->|Roster Onboarding| C
-        C --> C2["Auto-Group Diversity Studio: Simulated Annealing Optimizer"]
+        C --> C2["AutoGroup Diversity Studio: Simulated Annealing Optimizer"]
     end
     
     subgraph "Phase 2: Formative Team Health Micro-Pulses"
@@ -68,7 +76,7 @@ graph TD
 
 ## Core Capabilities and Architecture
 
-PeerLens is structured around three sequential operational sections and a powerful workflow accelerator suite:
+PeerLens is structured around three sequential operational sections, a multi-tier workspace studio, and an accelerator suite:
 
 ### Section 1: Student Enrollment and AutoGroup Studio
 * **Multi-Format Roster Ingestion**: Drag-and-drop Excel (`.xlsx`), CSV, or syllabus PDF rosters. The heuristic schema matcher auto-associates columns for Student ID, Full Name, Email, Group/Team, University, Degree, Student Mobility Status, Gender, Nationality, and CEFR English proficiency.
@@ -77,7 +85,7 @@ PeerLens is structured around three sequential operational sections and a powerf
   * *Standard Criteria Optimization*: Simultaneously balances gender parity (50/50 ratio), cross-cultural representation across 195+ countries, campus/institutional dispersion, academic degrees, and CEFR language skills.
   * *Dynamic Cohort Attribute Discovery*: Automatically inspects active student rosters and surfaces all populated attributes (majors, mobility categories, custom tags) for 1-click rule creation.
   * *Dual Optimization Modes*: Toggle between **Disperse / Mix Evenly** (distributing diverse skills/majors evenly across teams) and **Cluster Similar** (grouping similar timezones or project tracks together).
-  * *Custom Diversity Strategy & Weight Matrix*: Granular weight sliders ($0 - 50$) allowing instructors to build custom diversity models tailored to course learning outcomes.
+  * *Custom Diversity Strategy & Weight Matrix*: Granular weight sliders (0 - 50) allowing instructors to build custom diversity models tailored to course learning outcomes.
   * *Interactive Confirmation Safeguards*: Modal confirmation dialogs with before/after parameter summaries preventing accidental roster reshuffles or assignments.
   * *Dual Presentation Views*: Seamlessly switch between structured Grid Cards and interactive Drag-and-Drop Kanban boards with live diversity compliance metrics.
 * **Automated Collision Protection**: Scans incoming enrollments for duplicate IDs or emails, providing single-click options to update existing records, merge profiles, or discard duplicate rows safely.
@@ -105,7 +113,7 @@ PeerLens is structured around three sequential operational sections and a powerf
 * **Loughborough WebPA Scaling Algorithm**: Normalizes individual peer evaluations against team averages to derive performance multipliers ($R_i$), distinguishing leadership contributions from social loafing.
 * **Stabilization Fudge Weight Slider**: Configurable damping slider ($f \in [0.0, 1.0]$) balancing team deliverable marks with individual peer differentiation. A 50% setting ($f = 0.50$) provides standard balance, while 0% preserves uniform team grading and 100% yields pure peer-driven marks.
 * **Per-Team Base Project Marks**: Instructors can assign distinct baseline grades to each group deliverable; WebPA scales individual marks proportionally around each team's respective score.
-* **Johari Perception Window**: Classifies self-vs-peer score alignment into four distinct quadrants using a ±7.5% deviation threshold:
+* **Johari Perception Window**: Classifies self-vs-peer score alignment into four distinct quadrants using a +/-7.5% deviation threshold:
   * *Open Arena* (High Self, High Peer): Validated competence and mutual confidence.
   * *Blind Spot* (Low Self, High Peer): Under-recognized talent or impostor syndrome.
   * *Hidden Facade* (High Self, Low Peer): Over-confidence or unperceived team friction.
@@ -115,13 +123,48 @@ PeerLens is structured around three sequential operational sections and a powerf
 
 ---
 
+## Multi-Tier Layout Studio and Display Density Engine
+
+PeerLens features a dedicated workspace personalization suite engineered for maximum screen efficiency across laptops, external displays, auditorium podiums, and tablets:
+
+### Multi-Tier Layout Studio
+* **Minimal Collapsed Dock (~380px)**:
+  * Anchored floating pill providing instant awareness with `Studio • 39/102` visible module counter.
+  * **Density Micro-Switcher `[ = | + | # ]`**: 1-click density toggling directly from the collapsed state.
+  * **Presets Selector**: Instant switching between *Recommended*, *Essentials*, *Show All*, *Hide All*, and user-saved views.
+  * **Quick Undo**: Appears dynamically when changes are made with `Ctrl+Z` support.
+* **Structured 3-Tier Studio Architecture**:
+  * **Tier 1 (Top Command Bar)**: Studio Brand + visible ratio badge (`39/102 (38%)`), prominent center Segmented Density Switcher (`[ Compact ] [ Balanced ] [ Spacious ]`), Presets dropdown, Utilities menu (Institutional Branding, Reset Layout, Keyboard Shortcuts), and Done Editing button.
+  * **Tier 2A (Section Category Tabs)**: Segmented category pills with live `{visible}/{total}` counts: *All Modules*, *Class Hub*, *Enrollment & Roster*, *AutoGroup Studio*, *Rubric & Review*, *Grades & Analytics*, *Header & Nav*, and *Footer & Badges*.
+  * **Tier 2B (Search & Filter Controls)**: Full-text search across 102 modules, Hierarchy filter (*All Types*, *Containers*, *Submodules*), Visibility filter (*All*, *Visible*, *Hidden*), and single-click filter reset.
+  * **Tier 3 (Module Cards Grid)**: Multi-column card catalog with live status toggle badges (`On` / `Off`), submodule hierarchy indicators (`↳ Submodule`), and compass locator buttons (`⌖`) that glide directly to any module on the page.
+
+### High-Impact Display Density Engine
+* **Dynamic Root Font Scaling**:
+  * **Compact**: `13.5px` base typography.
+  * **Balanced**: `15.5px` base typography.
+  * **Spacious**: `17.5px` base typography.
+* **Deep Child Element Overrides**: Proportional overrides ensure table cells, child spans, code blocks, badge tags, and buttons scale smoothly across all density settings.
+* **High-Density Compact Mode**:
+  * Table rows compress to **30px** (down from 44px).
+  * Table typography condenses to **0.74rem** (~10px).
+  * Card padding tightens to **0.75rem 1rem** and stat gaps compress to **0.45rem**.
+  * Form inputs and action buttons compress to **29px** and **27px**.
+  * **Result**: Displays up to **2.5x more students and data rows** on screen without vertical scrolling.
+* **Spacious Touch & Presentation Mode**:
+  * Table rows expand to **56px** with student names at **1.12rem** (19.6px).
+  * Form inputs and buttons expand to **48px - 50px** touch targets meeting WCAG AAA guidelines.
+  * Stat cards expand with **2.2rem** metrics and **2.5rem** padding.
+  * **Result**: Tailored for lecture hall podiums, touchscreens, and iPads.
+
+---
+
 ## Workflow Productivity Suite
 
-* **Quick Action Center & Floating Utility Dock**: Persistent, high-accessibility dock anchored at the bottom of the interface. Expand to toggle modules across all 3 sections on the fly, jump tabs, switch classrooms, or launch administrative tools.
-* **Omni Command Palette (`Ctrl + K` / `Cmd + K` or `/`)**: Keyboard-driven workflow accelerator with natural language intent detection, direct gradebook exports, section navigation, and filter jumpers.
-* **Minimalist, Silky-Smooth Interactive Tour**: Redesigned 60–120 FPS spotlight walkthrough with zero scrolling lag, GPU-composited positioning, concise 1–2 sentence overviews, and 100% voluntary, on-demand activation.
-* **30-Second Safety Net Action Undo (`Ctrl + Z`)**: Reversible deletion safety net with animated toasts, allowing instant recovery of accidentally removed students, rubrics, or classrooms without corrupting cloud sync.
-* **Interface Density Presets**: Switch instantly between *Minimal* (distraction-free baseline), *Standard* (balanced default), and *Customized* (toggle any of the 40+ widgets individually).
+* **Omni Command Palette (`Ctrl + K` / `Cmd + K` or `/`)**: Keyboard-driven workflow accelerator with natural language intent detection, prefix filters (`@student`, `#team`, `>action`, `?help`), direct gradebook exports, and section navigation.
+* **Institutional Branding Customizer**: Personalize the course portal with institution name, department header, custom logos, and curated university color themes (Classic Academic Blue, Emerald Tech, Crimson Ivy, Violet Innovation, Midnight Gold).
+* **Minimalist Interactive Tour**: 60–120 FPS spotlight walkthrough with zero scrolling lag, GPU-composited positioning, and on-demand activation.
+* **Safety Net Action Undo (`Ctrl + Z`)**: Reversible deletion safety net with animated toasts, allowing instant recovery of accidentally removed students, rubrics, or classrooms.
 * **Live Classroom Projector Mode (`P`)**: Presentation-optimized monitor displaying live submission rings, incoming student dock with auto-assignment, and cohort diversity metrics readable from over 25 meters across lecture halls.
 * **1-Click Multi-Format Export Suite**:
   * *Canvas LMS Gradebook*: SIS User ID compliant CSV with assignment points.
@@ -138,7 +181,7 @@ PeerLens is structured around three sequential operational sections and a powerf
 
 PeerLens includes comprehensive documentation directly integrated into the software:
 
-* **Complete Institutional Operational Manual**: Accessible via the `/guide` and `/manual` routes and new-tab launcher buttons. Contains 17 in-depth chapters covering pedagogical theory, mathematical derivations, worked numerical examples, LMS integration schemas, and diagnostic FAQs.
+* **Complete Institutional Operational Manual**: Accessible via `/guide`, `/manual`, `/docs`, `/complete-guide`, and `/full-guide`. Contains 17 in-depth chapters covering pedagogical theory, mathematical derivations, worked numerical examples, LMS integration schemas, and diagnostic FAQs.
 * **Academic Guidance Center**: Modal interface featuring 6 focused spotlight tour tracks, pedagogical architecture overviews, and an indexed Feature Knowledge Base searchable via `/`.
 
 ---
@@ -202,12 +245,13 @@ PeerLens is production-ready for deployment to static hosting platforms and clou
 PeerLens includes pre-configured [`netlify.toml`](netlify.toml) and [`public/_redirects`](public/_redirects):
 * **Build Command**: `npm run build`
 * **Publish Directory**: `dist`
-* **Direct Documentation Routing**: Clean rewrites for `/guide`, `/manual`, and `/docs` serving the comprehensive manual with revalidation headers.
+* **Node Environment**: Pre-set to Node 20 with `--legacy-peer-deps` build safety.
+* **Direct Documentation Routing**: Clean rewrites for `/guide`, `/manual`, `/docs`, and `/complete-guide` serving the manual with revalidation headers.
 * **SPA Routing**: Automatic rewrite of all application paths `/*` to `/index.html` with HTTP 200 OK.
 * **PWA & Cache Headers**: Long-term immutable caching for `/assets/*` and instant revalidation for `/guide.html`, `/sw.js`, and `/manifest.webmanifest`.
 
 ### Firebase Hosting Deployment
-PeerLens includes pre-configured [`firebase.json`](firebase.json) and [`firestore.rules`](firestore.rules):
+PeerLens includes pre-configured [`firebase.json`](firebase.json), [`.firebaserc`](.firebaserc), and [`firestore.rules`](firestore.rules):
 1. Install Firebase CLI and login:
    ```bash
    npm install -g firebase-tools
@@ -217,7 +261,7 @@ PeerLens includes pre-configured [`firebase.json`](firebase.json) and [`firestor
    ```bash
    firebase deploy --only hosting,firestore
    ```
-* **Hosting**: Configured for `dist` directory with SPA fallbacks, direct manual routing, and security headers.
+* **Hosting**: Configured for `dist` directory with SPA fallbacks, direct manual routing, caching headers, and strict security headers.
 * **Firestore Security**: Scoped rules ensuring course convenors retain exclusive administrative authority while allowing authenticated students to read active rubrics and submit peer evaluations or 30-second health pulses.
 
 ---

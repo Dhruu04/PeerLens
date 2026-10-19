@@ -453,18 +453,18 @@ export const LinkDispatcherModal: React.FC<LinkDispatcherModalProps> = ({
 
             {recipientMode === 'single' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <select
-                  className="form-select"
+                <CustomSelect
                   value={selectedStudentId || classData.students[0]?.id || ''}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                  style={{ height: '34px', fontSize: '0.8rem', minWidth: '220px' }}
-                >
-                  {classData.students.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.groupName || 'Unassigned'}) - {s.email}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedStudentId(val)}
+                  options={classData.students.map(s => ({
+                    value: s.id,
+                    label: `${s.name} (${s.groupName || 'Unassigned'}) - ${s.email}`
+                  }))}
+                  triggerStyle={{ height: '34px', fontSize: '0.8rem', minWidth: '220px' }}
+                  dropdownMinWidth="260px"
+                  dropdownStyle={{ zIndex: 10020 }}
+                  title="Select individual recipient"
+                />
               </div>
             )}
 

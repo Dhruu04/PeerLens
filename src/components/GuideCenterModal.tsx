@@ -5,7 +5,7 @@ import {
   Users, Sliders, Award, CheckCircle, HelpCircle,
   ChevronDown, ChevronUp, FileText, ArrowRight,
   LayoutGrid, Layers, Activity, Calculator,
-  ExternalLink, Heart, Zap, ShieldCheck
+  ExternalLink, Heart, Zap, ShieldCheck, Building2
 } from 'lucide-react';
 import { FEATURE_INFO_REGISTRY, type FeatureInfoItem } from '../data/featureDescriptions';
 
@@ -98,16 +98,38 @@ export const FOCUSED_TOUR_TRACKS: GuidedTourTrack[] = [
     icon: <Activity size={18} style={{ color: 'var(--accent-rose)' }} />,
     stepIds: ['analytics_tab', 'perception_deck', 'anomaly_audit'],
     keyTopics: ['Skills Radar Chart', 'Self vs. Peer Comparison', 'Suspicious Ratings Alert', 'Outlier Grader Detection']
+  },
+  {
+    id: 'branding_layout_track',
+    title: 'Custom Branding & Live Layout Customization',
+    category: 'Setup & Customization',
+    stepCount: 4,
+    duration: '35 sec',
+    description: 'Customize university logos, header courses & term banners, enter live interactive layout edit mode (Alt+E) to reorder or hide cards, and switch presets.',
+    icon: <Building2 size={18} className="text-primary" />,
+    stepIds: ['class_header', 'branding_customizer', 'edit_layout_mode', 'customize_view'],
+    keyTopics: ['Institutional Logo & Header', 'Course Badge & Term Banner', 'Interactive Edit Mode (Alt+E)', 'Drag-Free Visibility & Order']
+  },
+  {
+    id: 'team_charters_pulse_track',
+    title: 'Team Charters, Health Pulse & Live Presentations',
+    category: 'Team Governance',
+    stepCount: 4,
+    duration: '40 sec',
+    description: 'Deploy student roles and mutual accountability team charters, track 30-second team health check-in surveys, and run real-time live presentation scoring.',
+    icon: <Award size={18} style={{ color: 'var(--accent-teal)' }} />,
+    stepIds: ['autogroup_studio', 'team_kickoff_card', 'team_health_pulse', 'live_presentation_scoring'],
+    keyTopics: ['Team Roles & Charters', 'Mutual Accountability Agreements', 'Team Health Pulse Radar', 'Live Presentation Scoring Cockpit']
   }
 ];
 
 export const FULL_APP_STEP_IDS = [
-  'class_header', 'workspace_switcher', 'command_palette', 'guide_center_btn', 'projector_mode', 'email_dispatcher',
-  'customize_view', 'settings_hub', 'quick_action_dock',
+  'class_header', 'branding_customizer', 'workspace_switcher', 'command_palette', 'guide_center_btn', 'projector_mode', 'email_dispatcher',
+  'customize_view', 'edit_layout_mode', 'settings_hub', 'quick_action_dock',
   'hub_enrollment', 'hub_review', 'hub_analytics',
-  'section_roster_tab', 'self_enrollment', 'quick_actions', 'import_wizard', 'autogroup_studio', 'classroom_roster',
-  'rubric_tab', 'rubric_builder', 'eval_controls', 'team_health_pulse', 'target_scale', 'eval_simulator',
-  'analytics_tab', 'perception_deck', 'webpa_calibrator', 'anomaly_audit', 'results_summary', 'gradebook_matrix'
+  'section_roster_tab', 'self_enrollment', 'quick_actions', 'import_wizard', 'autogroup_studio', 'team_kickoff_card', 'classroom_roster',
+  'rubric_tab', 'rubric_builder', 'eval_controls', 'team_health_pulse', 'live_presentation_scoring', 'target_scale', 'eval_simulator',
+  'analytics_tab', 'perception_deck', 'webpa_calibrator', 'anomaly_audit', 'lms_export_card', 'results_summary', 'gradebook_matrix'
 ];
 
 interface GuideCenterModalProps {
@@ -686,10 +708,11 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                       <strong style={{ color: 'var(--text-primary)' }}>Key Features:</strong>
                       <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, lineHeight: 1.45 }}>
                         <li>Student Join Code &amp; Link (QR and web URL)</li>
+                        <li>Custom Registration Questions Builder</li>
                         <li>Load Demo Students (100 sample students)</li>
                         <li>Import Spreadsheet (CSV / Excel)</li>
                         <li>Auto-Group Teams (balanced by rules)</li>
-                        <li>Team Roles &amp; Icebreaker</li>
+                        <li>Team Roles &amp; Mutual Accountability Charters</li>
                       </ul>
                     </div>
                   </div>
@@ -730,9 +753,10 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                         <li>Weight Total: 100% (Balanced)</li>
                         <li>Rubric Presets (IPAF Standard template)</li>
                         <li>Team Health Check-ins (30s check-ins and blocker notes)</li>
+                        <li>Real-Time Live Presentation Scoring Cockpit</li>
                         <li>Feedback Settings (Self-evaluations, praise badges, comments)</li>
-                        <li>Grade Scale</li>
-                        <li>Preview Student View</li>
+                        <li>Grade Scale &amp; Due Date</li>
+                        <li>Preview Student View Simulator</li>
                       </ul>
                     </div>
                   </div>
@@ -772,8 +796,10 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                       <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, lineHeight: 1.45 }}>
                         <li>Peer Score Adjustment + Team Base Marks</li>
                         <li>Peer Review Impact (0–100%) slider</li>
-                        <li>Skills Radar Chart</li>
+                        <li>Calculation Inspector &amp; Step-by-Step Audit</li>
+                        <li>Skills Radar Chart &amp; Johari Window</li>
                         <li>Self vs. Peer Rating Comparison</li>
+                        <li>LMS Direct Export (Canvas, Blackboard, Moodle, Brightspace D2L)</li>
                         <li>Class Gradebook Table &amp; Batch Student PDFs</li>
                       </ul>
                     </div>
@@ -932,34 +958,89 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
                   {/* WebPA Formula */}
                   <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
-                      1. Loughborough WebPA Peer Multiplier
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        1. Loughborough WebPA Algorithm (Default)
+                      </span>
+                      <span className="badge badge-teal" style={{ fontSize: '0.58rem', padding: '0.05rem 0.3rem' }}>Recommended</span>
+                    </div>
                     <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--primary)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
-                      WebPA = Received Peer Avg ÷ Team Peer Avg
+                      WebPA = Student Norm Score ÷ Team Norm Avg
                     </div>
                     <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
-                      Self-evaluations are strictly excluded. A multiplier of 1.00 equals expected contribution; &gt;1.00 indicates above-average contribution.
+                      Normalizes every reviewer&apos;s evaluations across peers to eliminate harsh/lenient rater bias. High contributors scale above 1.00x; non-contributors drop to 0.00x.
                     </p>
                   </div>
 
-                  {/* Calibrated Mark Formula with Per-Team Base Marks */}
+                  {/* Calibrated Mark Formula with Non-Submitter Rule */}
                   <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                     <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
-                      2. Calibrated Final Grade (Per-Team Base Mark)
+                      2. Calibrated Final Grade &amp; Accountability
                     </span>
                     <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--accent-teal)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
                       Grade = TeamBase × [(1 - W) + (W × WebPA)]
                     </div>
                     <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
-                      Award different base marks to different teams. W is instructor Fudge Weight (0.00 to 1.00). High contributors scale above their team mark.
+                      W is instructor sensitivity (default 100%). Deserving students receive grades above the base mark. Non-submitters suffer a -10% deduction and forfeit upward bonuses.
+                    </p>
+                  </div>
+
+                  {/* Peer Review Impact Sensitivity Weight Slider */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
+                      3. Peer Review Impact (0%–100% Sensitivity Slider)
+                    </span>
+                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: '#6366f1', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
+                      W ∈ [0.0, 1.0] (0% = Base Only, 100% = Full WebPA)
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
+                      Smoothly blends the shared deliverable mark with individual peer effort. 50%–70% provides balanced individual accountability while preventing severe grade volatility.
+                    </p>
+                  </div>
+
+                  {/* Calculation Inspector Audit Engine */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
+                      4. Peer Score Adjustment Calculation Inspector
+                    </span>
+                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: '#8b5cf6', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
+                      Raw Matrix → Grader Norm → Mean Share → Factor → Mark
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
+                      Provides complete audit transparency during grade appeals: reveals raw scores, rater leniency normalization, non-submitter penalties, and mathematical defense.
+                    </p>
+                  </div>
+
+                  {/* Anomaly & Collusion Audit */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
+                      5. Anomaly &amp; Collusion Integrity Auditing
+                    </span>
+                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: '#0284c7', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
+                      Flag: |Z-score| &gt; 2.0 OR Reciprocal A ↔ B Collusion
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
+                      Automatically identifies suspicious evaluation patterns: collusion pacts (mutual 5/5 ratings), outlier harsh or overly generous graders, and high standard deviation spread.
+                    </p>
+                  </div>
+
+                  {/* Team Health Micro-Pulse Engine */}
+                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
+                      6. Formative Team Health &amp; Blocker Warning
+                    </span>
+                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: '#059669', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
+                      Health Score = Mean(Pulse Ratings) | Blocker Detected
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
+                      30-second weekly check-ins across 5 rating scales (Likert 1-5, NPS 0-10, Performance 1-4, Traffic 1-3, Slider 1-10) with automatic blocker notification alerts.
                     </p>
                   </div>
 
                   {/* Johari Window Formula */}
                   <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                     <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
-                      3. Johari Perception Alignment (±7.5% Threshold)
+                      7. Johari Perception Alignment (±7.5% Threshold)
                     </span>
                     <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--accent-amber)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
                       Delta = (Self Score - Peer Consensus) ÷ Max
@@ -969,23 +1050,10 @@ export const GuideCenterModal: React.FC<GuideCenterModalProps> = ({
                     </p>
                   </div>
 
-                  {/* Anomaly Detection Formula */}
-                  <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
-                      4. Statistical Anomaly &amp; Collusion Audit
-                    </span>
-                    <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--accent-rose)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
-                      Flag = |Reviewer Score - Mean| &gt; 1.5 · σ
-                    </div>
-                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.38 }}>
-                      Flags ratings deviating &gt;1.5 standard deviations from peer consensus, detecting spiteful grading and reciprocal collusion rings.
-                    </p>
-                  </div>
-
                   {/* Excused Absence Formula */}
                   <div style={{ padding: '0.85rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                     <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.25rem' }}>
-                      5. Excused Absence / Medical Exemption
+                      8. Excused Absence / Medical Exemption
                     </span>
                     <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--primary)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', fontWeight: 700 }}>
                       WebPA = 1.000 → Grade = TeamBase

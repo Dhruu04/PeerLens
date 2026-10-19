@@ -10,13 +10,20 @@ import {
   ChevronsDown, ChevronsUp, CheckCircle2, ShieldCheck, Scale, Copy, Check,
   AlertTriangle,
   Edit3,
-  Presentation
+  Presentation,
+  Calculator,
+  History,
+  RotateCcw,
+  Building2
 } from 'lucide-react';
 import type { ClassData } from '../utils/math';
 import { generateStudentDisputeAudit } from '../utils/math';
 import { FEATURE_INFO_REGISTRY, type FeatureInfoItem } from '../data/featureDescriptions';
 import { useTheme } from '../context/ThemeContext';
 import { DEFAULT_FEATURE_TOGGLES, MINIMAL_FEATURE_TOGGLES, FULL_FEATURE_TOGGLES, type FeatureToggles } from '../utils/featurePreferences';
+import { getBranding, saveBranding } from '../utils/brandingPreferences';
+import { setDisplayDensity, type DisplayDensity } from '../utils/displayDensity';
+import { BUILT_IN_LAYOUT_PROFILES, applyFullLayoutProfile } from '../utils/customViewProfiles';
 
 // ── NLP SYNONYMS & INTENT DETECTION ─────────────────────────────────────────
 const SYNONYMS_SHOW   = ['show','enable','turn on','activate','visible','display','unhide','reveal','make visible'];
@@ -28,13 +35,31 @@ const SYNONYMS_THEME  = ['theme','dark','light','appearance','color'];
 const SYNONYMS_EXPORT = ['export','download','save as','csv','xlsx','excel','lms','pdf','canvas','moodle','blackboard','brightspace','pulse','pulse csv','micro-pulse'];
 const SYNONYMS_FILTER = ['filter','pending','unsubmitted','submitted','unassigned','duplicate','team','jump','cohort'];
 const SYNONYMS_CLEAR  = ['clear','delete','wipe','empty','purge','disband','remove all','reset roster','clear roster'];
+const SYNONYMS_PRESENTATION = ['presentation', 'pitch', 'live presentation', 'scoring', 'audience vote', 'qr score', 'leaderboard', 'timer', 'presentation mode', 'presentation day', 'cockpit'];
+const SYNONYMS_CHARTER = ['team charter', 'charter', 'kickoff', 'icebreaker', 'roles', 'agreements', 'team contract', 'lead', 'scribe', 'presenter', 'activity roles', 'team agreement', '5-min'];
+const SYNONYMS_ENROLLMENT_BUILDER = ['enrollment questions', 'form questions', 'custom fields', 'registration questions', 'form builder', 'survey questions', 'onboarding questions', 'custom question', 'survey fields'];
+const SYNONYMS_MATRIX = ['who rated whom', 'detailed matrix', 'cross matrix', 'ratings matrix', 'audit grid', 'who scored who', 'rating grid', 'score transmissions'];
+const SYNONYMS_PULSE = ['pulse', 'team health', 'micro-pulse', 'morale', 'blocker', 'check-in', 'roadblocks', 'sparklines', 'sprint health'];
+const SYNONYMS_HUD = ['quicklook', 'hud', 'preview student', 'peek student', 'spacebar', 'hover student', 'instant peek'];
+const SYNONYMS_BRANDING = ['branding', 'institution logo', 'custom header', 'course badge', 'term banner', 'university emblem', 'school logo', 'brand'];
+const SYNONYMS_DENSITY = ['density', 'compact', 'balanced', 'spacious', 'display density', 'table density', 'padding', 'row height'];
+const SYNONYMS_PRESETS = ['layout library', 'workspace presets', 'professor presets', 'preset', 'final grading', 'week 1', 'presentation scoring', 'team health pulse', 'accreditation audit', 'speed grader'];
 
-type IntentType = 'show_feature'|'hide_feature'|'navigate'|'help'|'mode_switch'|'theme'|'export'|'filter'|'clear_action'|'general';
+type IntentType = 'show_feature'|'hide_feature'|'navigate'|'help'|'mode_switch'|'theme'|'export'|'filter'|'clear_action'|'presentation'|'charter'|'enrollment_builder'|'matrix'|'pulse'|'hud'|'branding'|'density'|'presets'|'general';
 interface NLPIntent { type: IntentType; confidence: number; }
 
 function detectIntent(rawQ: string): NLPIntent {
   const q = rawQ.toLowerCase().trim();
   if (SYNONYMS_CLEAR.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'clear_action', confidence: 0.95 };
+  if (SYNONYMS_BRANDING.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'branding', confidence: 0.95 };
+  if (SYNONYMS_DENSITY.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'density', confidence: 0.95 };
+  if (SYNONYMS_PRESETS.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'presets', confidence: 0.95 };
+  if (SYNONYMS_PRESENTATION.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'presentation', confidence: 0.95 };
+  if (SYNONYMS_CHARTER.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'charter', confidence: 0.95 };
+  if (SYNONYMS_ENROLLMENT_BUILDER.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'enrollment_builder', confidence: 0.95 };
+  if (SYNONYMS_MATRIX.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'matrix', confidence: 0.95 };
+  if (SYNONYMS_PULSE.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'pulse', confidence: 0.95 };
+  if (SYNONYMS_HUD.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'hud', confidence: 0.95 };
   if (SYNONYMS_HIDE.some(s => q.startsWith(s) || q.includes(s + ' '))) return { type: 'hide_feature', confidence: 0.9 };
   if (SYNONYMS_SHOW.some(s => q.startsWith(s) || q.includes(s + ' ')) && !SYNONYMS_NAV.some(s => q.startsWith(s))) return { type: 'show_feature', confidence: 0.85 };
   if (SYNONYMS_EXPORT.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'export', confidence: 0.95 };
@@ -79,6 +104,15 @@ const TYPO_MAP: Record<string, string> = {
   colusion: 'collusion',
   deadlin: 'deadline',
   dedline: 'deadline',
+  persentation: 'presentation',
+  presenation: 'presentation',
+  icebraker: 'icebreaker',
+  agrement: 'agreement',
+  enrolment: 'enrollment',
+  quetions: 'questions',
+  matrx: 'matrix',
+  radr: 'radar',
+  morle: 'morale',
 };
 
 function tokenize(s: string): string[] {
@@ -162,6 +196,15 @@ function scoreItem(item: CPAction, queryTokens: string[], rawQ: string, intent: 
   if (intent.type === 'mode_switch' && item.category === 'Modes') sc += 60;
   if (intent.type === 'theme' && item.category === 'Appearance') sc += 60;
   if (intent.type === 'navigate' && item.category === 'Navigation') sc += 30;
+  if (intent.type === 'presentation' && (item.id.includes('presentation') || item.title.toLowerCase().includes('presentation') || item.keywords?.some(k => ['presentation', 'pitch', 'leaderboard', 'live scoring'].includes(k)))) sc += 110;
+  if (intent.type === 'charter' && (item.id.includes('charter') || item.title.toLowerCase().includes('charter') || item.title.toLowerCase().includes('roles') || item.keywords?.some(k => ['icebreaker', 'roles', 'agreements', 'kickoff'].includes(k)))) sc += 110;
+  if (intent.type === 'enrollment_builder' && (item.id.includes('enrollment_builder') || item.keywords?.some(k => ['form builder', 'custom questions', 'enrollment questions'].includes(k)))) sc += 110;
+  if (intent.type === 'matrix' && (item.id.includes('matrix') || item.keywords?.some(k => ['who rated whom', 'detailed matrix', 'cross matrix', 'ratings matrix'].includes(k)) || item.title.toLowerCase().includes('matrix'))) sc += 110;
+  if (intent.type === 'pulse' && (item.id.includes('pulse') || item.keywords?.some(k => ['pulse', 'team health', 'morale', 'blocker'].includes(k)) || item.title.toLowerCase().includes('pulse'))) sc += 110;
+  if (intent.type === 'hud' && (item.id.includes('hud') || item.keywords?.some(k => ['quicklook', 'hud', 'spacebar', 'inspect student'].includes(k)))) sc += 110;
+  if (intent.type === 'branding' && (item.id.includes('branding') || item.keywords?.some(k => ['branding', 'logo', 'course badge', 'term banner'].includes(k)) || item.title.toLowerCase().includes('branding'))) sc += 120;
+  if (intent.type === 'density' && (item.id.includes('density') || item.keywords?.some(k => ['density', 'compact', 'balanced', 'spacious'].includes(k)) || item.title.toLowerCase().includes('density'))) sc += 120;
+  if (intent.type === 'presets' && (item.id.includes('preset') || item.id.includes('layout') || item.keywords?.some(k => ['preset', 'layout library', 'template'].includes(k)))) sc += 120;
   if (intent.type === 'export' && (item.badge === 'Export' || item.badge === 'Excel' || item.badge === 'Pulse CSV' || item.badge === 'Canvas' || item.badge === 'Moodle' || item.badge === 'Blackboard' || item.badge === 'Brightspace' || item.badge === 'PDF' || item.badge === 'CSV' || item.keywords?.includes('export') || item.title.toLowerCase().startsWith('export'))) sc += 85;
   if (intent.type === 'filter' && (item.badge === 'Filter' || item.category === 'Teams' || item.keywords?.includes('filter') || item.title.toLowerCase().includes('filter'))) sc += 80;
   if (intent.type === 'clear_action' && (
@@ -296,6 +339,7 @@ const FL: Record<keyof FeatureToggles, { label: string; desc: string; section: s
   showJohariMatrix:         { label: 'Self vs. Peer Rating Comparison', desc: 'Shows if students rate themselves much higher or lower than teammates rated them', section: 'Section 3', icon: Grid },
   showQualitativeFeedback:  { label: 'Written Feedback Summary',  desc: 'Summarizes common themes and praise words written by teammates', section: 'Section 3', icon: FileText },
   showWebPACalibration:     { label: 'Peer Score Adjustment',     desc: 'Adjusts individual student grades up or down based on teammate reviews', section: 'Section 3', icon: Sliders },
+  showInspectCalculationsBtn: { label: 'Inspect Calculations Button', desc: 'Modal launcher to inspect step-by-step WebPA algorithm and peer score math', section: 'Section 3', icon: Calculator },
   showAnomalyAudit:         { label: 'Suspicious Ratings Alert',  desc: 'Detects students who trade high scores, grade randomly, or give uniform marks', section: 'Section 3', icon: HelpCircle },
   showMilestonesHistory:    { label: 'Past Review Rounds',        desc: 'Archives past peer evaluations (e.g., Midterm Review, Final Review)', section: 'Section 3', icon: Clock },
   showLmsExport:            { label: 'Export to Canvas / Blackboard / Moodle', desc: '1-click grade exports formatted for standard school LMS gradebooks', section: 'Section 3', icon: GraduationCap },
@@ -384,6 +428,15 @@ function detectActiveMode(ft: FeatureToggles): 'minimal' | 'standard' | 'full' |
 function getIntentFeedback(intent: NLPIntent, q: string, count: number): string | null {
   if (!q.trim() || count === 0) return null;
   switch (intent.type) {
+    case 'presentation': return `Live Presentation Cockpit & Mobile Scoring found — press Enter to launch`;
+    case 'charter':      return `Team Kickoff & Agreements Studio found — assign roles & launch 5-min icebreakers`;
+    case 'enrollment_builder': return `Custom Enrollment Questions Designer — configure self-registration fields`;
+    case 'matrix':       return `Who-Rated-Whom Cross Matrix Audit — inspect raw evaluation scores & transmissions`;
+    case 'pulse':        return `Team Health Micro-Pulse Check-in rounds & blocker analysis`;
+    case 'hud':          return `Student QuickLook HUD — hover over any student row and press Space`;
+    case 'branding':     return `Institutional Branding & Custom Header — customize logo, badges & banners`;
+    case 'density':      return `Display Density Engine — switch between Compact, Balanced, and Spacious`;
+    case 'presets':      return `Layout Library & Workspace Presets — apply professor-tailored templates`;
     case 'hide_feature': return `Hiding features matching "${q}" — press Enter or click to toggle`;
     case 'show_feature': return `Showing features matching "${q}" — press Enter or click to toggle`;
     case 'mode_switch':  return `Mode presets found — apply Minimal, Standard, or Full`;
@@ -440,6 +493,12 @@ export interface CommandPaletteModalProps {
   onOpenTeamCharter?: () => void;
   onOpenLivePresentation?: () => void;
   onOpenEnrollmentBuilder?: () => void;
+  onOpenSnapshots?: () => void;
+  onOpenLayoutLibrary?: () => void;
+  onOpenBranding?: () => void;
+  displayDensity?: DisplayDensity;
+  onSetDisplayDensity?: (density: DisplayDensity) => void;
+  onResetLayout?: () => void;
 }
 
 // ── RESULT ROW COMPONENT (MINIMAL & POLISHED) ─────────────────────────────────
@@ -599,7 +658,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenQRCode, onOpenDeadline, onResetSubmissions, onClearRoster, onDeleteStudent, onDeleteClass, onToast,
   onOpenEvaluationControls, onToggleExcused,
   onOpenEditMode, shortcutsEnabled, onToggleShortcutsEnabled,
-  onOpenTeamCharter, onOpenLivePresentation, onOpenEnrollmentBuilder
+  onOpenTeamCharter, onOpenLivePresentation, onOpenEnrollmentBuilder,
+  onOpenSnapshots,
+  onOpenLayoutLibrary, onResetLayout,
+  onOpenBranding, displayDensity: propDisplayDensity, onSetDisplayDensity
 }) => {
   const { setThemeMode, themeMode } = useTheme();
   const [query,            setQuery]            = useState('');
@@ -1086,6 +1148,189 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       { id: 'act_shortcuts',    title: 'Keyboard Shortcuts Reference',      category: 'Actions', subtitle: 'Full cheat sheet of keyboard controls',              icon: Keyboard,  badge: 'Cmd ?',  keywords: ['shortcuts','hotkeys','keyboard','cheat sheet','bindings'],      onExecute: () => { onClose(); onOpenShortcuts(); } },
       { id: 'act_customize',    title: 'Customize View (Module Toggles)',   category: 'Actions', subtitle: 'Toggle modular cards, top bar, and density presets', icon: Sliders,   badge: 'Cmd V',  keywords: ['customize','modules','interface','density','toggles','view'],   onExecute: () => { onClose(); onOpenSettings('modules'); } },
       { id: 'act_toggle_edit_mode', title: 'Toggle Dashboard Layout Edit Mode', category: 'Actions', subtitle: 'Visually highlight and click modules on-screen to hide or show them', icon: Edit3, badge: 'Alt E', keywords: ['edit mode','edit layout','layout editor','in-place editor','highlight modules','customize','visual layout'], onExecute: () => { onClose(); if (onOpenEditMode) onOpenEditMode(); } },
+      {
+        id: 'act_snapshots_manage',
+        title: 'Classroom Snapshots & Version History',
+        category: 'Actions',
+        subtitle: 'Inspect point-in-time state snapshots, restore past grades, or rollback rosters',
+        icon: History,
+        badge: 'Snapshots',
+        badgeColor: '#6366f1',
+        keywords: ['snapshots', 'history', 'rollback', 'version history', 'checkpoint', 'restore', 'undo', 'backup'],
+        onExecute: () => {
+          onClose();
+          if (onOpenSnapshots) onOpenSnapshots();
+        }
+      },
+      {
+        id: 'act_density_compact',
+        title: 'Display Density: Compact (13in Laptop Mode)',
+        category: 'Appearance',
+        subtitle: 'High information density with tight padding and compact rows for large cohorts',
+        icon: Sliders,
+        badge: propDisplayDensity === 'compact' ? 'Active' : 'Density',
+        badgeColor: '#f59e0b',
+        keywords: ['density compact', 'compact view', 'compact rows', 'tight spacing', 'density', 'high density', 'laptop mode'],
+        onExecute: () => {
+          onClose();
+          setDisplayDensity('compact');
+          if (onSetDisplayDensity) onSetDisplayDensity('compact');
+          if (onToast) onToast('Applied Compact Display Density (Dense rows)', 'success');
+        }
+      },
+      {
+        id: 'act_density_balanced',
+        title: 'Display Density: Balanced (Default Modern)',
+        category: 'Appearance',
+        subtitle: 'Standard balanced spacing with optimal touch targets and clean typography',
+        icon: Sliders,
+        badge: propDisplayDensity === 'balanced' ? 'Active' : 'Density',
+        badgeColor: '#3b82f6',
+        keywords: ['density balanced', 'balanced view', 'standard spacing', 'default density'],
+        onExecute: () => {
+          onClose();
+          setDisplayDensity('balanced');
+          if (onSetDisplayDensity) onSetDisplayDensity('balanced');
+          if (onToast) onToast('Applied Balanced Display Density (Standard)', 'info');
+        }
+      },
+      {
+        id: 'act_density_spacious',
+        title: 'Display Density: Spacious (Podium & iPad Touch Mode)',
+        category: 'Appearance',
+        subtitle: 'Relaxed reading mode with generous whitespace and larger touch targets',
+        icon: Sliders,
+        badge: propDisplayDensity === 'spacious' ? 'Active' : 'Density',
+        badgeColor: '#10b981',
+        keywords: ['density spacious', 'spacious view', 'relaxed spacing', 'large rows', 'comfortable', 'ipad mode', 'podium'],
+        onExecute: () => {
+          onClose();
+          setDisplayDensity('spacious');
+          if (onSetDisplayDensity) onSetDisplayDensity('spacious');
+          if (onToast) onToast('Applied Spacious Display Density (Large targets)', 'info');
+        }
+      },
+      {
+        id: 'act_branding_customizer',
+        title: 'Institutional Branding & Custom Header',
+        category: 'Appearance',
+        subtitle: 'Upload institution emblem/logo, customize course badge, term banner & logo shape',
+        icon: Building2,
+        badge: 'Branding',
+        badgeColor: '#6366f1',
+        keywords: ['branding', 'institution', 'university', 'college', 'logo', 'course badge', 'term banner', 'custom header', 'emblem', 'school name', 'brand', 'crest'],
+        onExecute: () => {
+          onClose();
+          if (onOpenBranding) onOpenBranding();
+        }
+      },
+      {
+        id: 'act_toggle_header_branding',
+        title: 'Toggle Header Institutional Branding',
+        category: 'Appearance',
+        subtitle: 'Show or hide course badge and term banner in top header',
+        icon: Eye,
+        badge: 'Header',
+        badgeColor: '#10b981',
+        keywords: ['header branding', 'show branding', 'hide branding', 'branding in header', 'course badge header', 'term banner header', 'toggle branding'],
+        onExecute: () => {
+          const b = getBranding(classData?.id);
+          const next = !b.showInHeader;
+          saveBranding({ showInHeader: next }, classData?.id);
+          if (onToast) onToast(next ? 'Institutional header branding visible' : 'Institutional header branding hidden', 'info');
+          onClose();
+        }
+      },
+      {
+        id: 'act_theme_accent_indigo',
+        title: 'Workspace Accent: Classic Indigo',
+        category: 'Appearance',
+        subtitle: 'Deep modern indigo brand theme with vibrant purple undertones',
+        icon: Palette,
+        badge: 'Accent',
+        badgeColor: '#6366f1',
+        keywords: ['theme indigo', 'accent indigo', 'indigo color', 'blue purple', 'default accent'],
+        onExecute: () => {
+          onClose();
+          window.dispatchEvent(new CustomEvent('peerlens_set_theme_accent', { detail: { accent: 'indigo' } }));
+          if (onToast) onToast('Workspace accent set to Classic Indigo', 'success');
+        }
+      },
+      {
+        id: 'act_theme_accent_teal',
+        title: 'Workspace Accent: Oceanic Teal',
+        category: 'Appearance',
+        subtitle: 'Calm and focused marine teal accent theme tailored for high-contrast grading',
+        icon: Palette,
+        badge: 'Accent',
+        badgeColor: '#0d9488',
+        keywords: ['theme teal', 'accent teal', 'teal color', 'cyan', 'ocean'],
+        onExecute: () => {
+          onClose();
+          window.dispatchEvent(new CustomEvent('peerlens_set_theme_accent', { detail: { accent: 'teal' } }));
+          if (onToast) onToast('Workspace accent set to Oceanic Teal', 'success');
+        }
+      },
+      {
+        id: 'act_theme_accent_purple',
+        title: 'Workspace Accent: Royal Purple',
+        category: 'Appearance',
+        subtitle: 'Rich violet aesthetic with high-saturation gradient glows',
+        icon: Palette,
+        badge: 'Accent',
+        badgeColor: '#8b5cf6',
+        keywords: ['theme purple', 'accent purple', 'purple color', 'violet'],
+        onExecute: () => {
+          onClose();
+          window.dispatchEvent(new CustomEvent('peerlens_set_theme_accent', { detail: { accent: 'purple' } }));
+          if (onToast) onToast('Workspace accent set to Royal Purple', 'success');
+        }
+      },
+      {
+        id: 'act_theme_accent_rose',
+        title: 'Workspace Accent: Velvet Rose',
+        category: 'Appearance',
+        subtitle: 'Warm and expressive crimson rose palette',
+        icon: Palette,
+        badge: 'Accent',
+        badgeColor: '#f43f5e',
+        keywords: ['theme rose', 'accent rose', 'pink color', 'red', 'crimson'],
+        onExecute: () => {
+          onClose();
+          window.dispatchEvent(new CustomEvent('peerlens_set_theme_accent', { detail: { accent: 'rose' } }));
+          if (onToast) onToast('Workspace accent set to Velvet Rose', 'success');
+        }
+      },
+      {
+        id: 'act_theme_accent_amber',
+        title: 'Workspace Accent: Warm Sunset Amber',
+        category: 'Appearance',
+        subtitle: 'High-visibility golden amber accents with warm dark mode contrasts',
+        icon: Palette,
+        badge: 'Accent',
+        badgeColor: '#f59e0b',
+        keywords: ['theme amber', 'accent amber', 'orange color', 'gold', 'yellow'],
+        onExecute: () => {
+          onClose();
+          window.dispatchEvent(new CustomEvent('peerlens_set_theme_accent', { detail: { accent: 'amber' } }));
+          if (onToast) onToast('Workspace accent set to Sunset Amber', 'success');
+        }
+      },
+      {
+        id: 'act_theme_accent_emerald',
+        title: 'Workspace Accent: Forest Emerald',
+        category: 'Appearance',
+        subtitle: 'Refreshing natural emerald green for clean data clarity',
+        icon: Palette,
+        badge: 'Accent',
+        badgeColor: '#10b981',
+        keywords: ['theme emerald', 'accent emerald', 'green color', 'forest'],
+        onExecute: () => {
+          onClose();
+          window.dispatchEvent(new CustomEvent('peerlens_set_theme_accent', { detail: { accent: 'emerald' } }));
+          if (onToast) onToast('Workspace accent set to Forest Emerald', 'success');
+        }
+      },
       { id: 'act_toggle_shortcuts', title: shortcutsEnabled ? 'Disable Keyboard Shortcuts' : 'Enable Keyboard Shortcuts', category: 'Actions', subtitle: shortcutsEnabled ? 'Currently Active — click to disable/pause keyboard hotkeys' : 'Currently Disabled — click to activate keyboard hotkeys across workspace', icon: Keyboard, badge: shortcutsEnabled ? 'Active' : 'Disabled', keywords: ['shortcuts','keyboard','hotkeys','enable shortcuts','disable shortcuts','keybindings'], onExecute: () => { onClose(); if (onToggleShortcutsEnabled) onToggleShortcutsEnabled(!shortcutsEnabled); } },
       { id: 'act_toggle_quick_pill', title: featureToggles.showQuickActionPill ? 'Hide Floating Quick Action Pill' : 'Show Floating Quick Action Pill', category: 'Actions', subtitle: 'Contractable & expandable quick dock anchored at window bottom', icon: Compass, badge: 'Dock', keywords: ['quick action pill','pill','dock','bottom pill','floating dock','quick actions'], onExecute: () => { onClose(); if (onToggleFeature) onToggleFeature('showQuickActionPill', !featureToggles.showQuickActionPill); } },
       {
@@ -1497,13 +1742,17 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'act_team_charters_roles',
-        title: 'Team Charter, Role Allocator & Icebreaker Studio',
+        title: 'Team Roles, Icebreakers & Collaboration Agreements',
         category: 'Actions',
-        subtitle: 'Select activity roles (Tech Lead, Scribe, Presenter), auto-allocate based on background, and generate tailored 5-min icebreakers',
+        subtitle: 'Assign activity roles (Tech Lead, Scribe, Presenter, Facilitator), balance by background, and launch culturally tailored 5-min kickoff agreements',
         icon: UserPlus,
         badge: 'Team Kickoff',
         badgeColor: '#10b981',
-        keywords: ['team charter', 'charter', 'role allocator', 'roles', 'icebreaker', 'team kickoff', 'multicultural icebreaker', 'tech lead', 'scribe', 'presenter', 'activity roles', 'assign roles'],
+        keywords: [
+          'team charter', 'charter', 'role allocator', 'roles', 'icebreaker', 'team kickoff',
+          'multicultural icebreaker', 'tech lead', 'scribe', 'presenter', 'activity roles',
+          'assign roles', 'agreements', 'team contract', '5-min kickoff', 'agreements studio'
+        ],
         onExecute: () => {
           onClose();
           if (onOpenTeamCharter) {
@@ -1515,13 +1764,17 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'act_live_presentation_scoring',
-        title: 'Live Presentation Scoring',
+        title: 'Live Presentation Scoring Cockpit (Mobile QR & Leaderboard)',
         category: 'Actions',
-        subtitle: 'Display live mobile scoring QR code on projector, collect audience rubric ratings, and render dynamic leaderboard',
+        subtitle: 'Display live mobile scoring QR code on projector, collect audience rubric ratings in real time, run timer, and project live leaderboard',
         icon: Presentation,
         badge: 'Live Scoring',
         badgeColor: '#0d9488',
-        keywords: ['live presentation', 'presentation scoring', 'qr scoring', 'mobile qr', 'projector scoring', 'presentation day', 'audience vote', 'presentation leaderboard', 'presentation timer'],
+        keywords: [
+          'live presentation', 'presentation scoring', 'qr scoring', 'mobile qr', 'projector scoring',
+          'presentation day', 'audience vote', 'presentation leaderboard', 'presentation timer',
+          'pitch day', 'live pitch', 'live scoring', 'cockpit', 'audience ratings'
+        ],
         onExecute: () => {
           onClose();
           if (onOpenLivePresentation) {
@@ -1529,6 +1782,130 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           } else {
             onNavigateTab('grading');
           }
+        },
+      },
+      {
+        id: 'act_who_rated_whom_matrix',
+        title: 'Who-Rated-Whom Cross Matrix Audit Grid',
+        category: 'Actions',
+        subtitle: 'Direct breakdown table showing exactly who gave what score to whom, identifying zero-variance and mutual rating clusters',
+        icon: Grid,
+        badge: 'Audit Grid',
+        badgeColor: '#8b5cf6',
+        keywords: [
+          'who rated whom', 'matrix', 'cross matrix', 'detailed matrix', 'ratings matrix',
+          'audit grid', 'who scored who', 'score transmission', 'peer scores grid', 'ratings grid'
+        ],
+        onExecute: () => {
+          onClose();
+          onNavigateTab('results');
+          if (!featureToggles.showDetailedReviewMatrix && onToggleFeature) {
+            onToggleFeature('showDetailedReviewMatrix', true);
+          }
+          setTimeout(() => {
+            const el = document.getElementById('detailed-review-matrix');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 150);
+        },
+      },
+      {
+        id: 'act_custom_lms_schema',
+        title: 'Custom LMS Column Schema Builder & Export Presets',
+        category: 'Actions',
+        subtitle: 'Configure custom LMS export columns, separator delimiters (comma, semicolon, tab), and sync directly to Canvas, Moodle, Blackboard, or Brightspace',
+        icon: GraduationCap,
+        badge: 'LMS Builder',
+        badgeColor: '#0ea5e9',
+        keywords: [
+          'custom lms', 'lms schema', 'column builder', 'canvas', 'moodle', 'blackboard',
+          'brightspace', 'd2l', 'delimiter', 'custom columns', 'sis id', 'gradebook export'
+        ],
+        onExecute: () => {
+          onClose();
+          onNavigateTab('results');
+          if (!featureToggles.showLmsExport && onToggleFeature) {
+            onToggleFeature('showLmsExport', true);
+          }
+          setTimeout(() => {
+            const el = document.getElementById('lms-export-card');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 150);
+        },
+      },
+      {
+        id: 'act_quicklook_hud',
+        title: 'Student QuickLook HUD Inspection (Spacebar Shortcut)',
+        category: 'Actions',
+        subtitle: 'Hover or focus any student row across roster or gradebook and press Space to open an instant telemetry inspection card',
+        icon: Eye,
+        badge: 'Space Key',
+        badgeColor: '#6366f1',
+        keywords: [
+          'quicklook', 'hud', 'student hud', 'spacebar', 'space', 'peek', 'inspect student',
+          'hover student', 'instant preview', 'quick inspection'
+        ],
+        onExecute: () => {
+          onClose();
+          if (onToast) onToast('QuickLook HUD: Hover over any student row and tap Spacebar for instant telemetry!', 'info');
+        },
+      },
+      {
+        id: 'act_reset_layout_default',
+        title: 'Reset to Default Workspace Views & Layout',
+        category: 'Actions',
+        subtitle: 'Restore standard card sequence across all sections, clear all pinned cards, and apply recommended module defaults',
+        icon: RotateCcw,
+        badge: 'Reset Layout',
+        badgeColor: '#f59e0b',
+        keywords: [
+          'reset layout', 'default layout', 'reset to default', 'restore layout', 'reset views',
+          'clear custom layout', 'original layout', 'clean layout', 'default view', 'workspace reset'
+        ],
+        onExecute: () => {
+          onClose();
+          if (onResetLayout) {
+            onResetLayout();
+          } else {
+            onApplyMode('standard');
+          }
+        },
+      },
+      {
+        id: 'act_open_layout_library',
+        title: 'Layout Library & Workspace Presets',
+        category: 'Actions',
+        subtitle: 'Browse curated pedagogical templates (Enrollment, Grading Day, LMS Audit) and manage your custom workspaces',
+        icon: Layers,
+        badge: 'Layout Library',
+        badgeColor: '#6366f1',
+        keywords: [
+          'layout library', 'layouts', 'workspace templates', 'saved layouts', 'library',
+          'presets', 'custom layouts', 'view profiles', 'workspace presets'
+        ],
+        onExecute: () => {
+          onClose();
+          if (onOpenLayoutLibrary) {
+            onOpenLayoutLibrary();
+          } else if (onOpenEditMode) {
+            onOpenEditMode();
+          }
+        },
+      },
+      {
+        id: 'act_student_report_general',
+        title: 'Student 360° Comprehensive Report & PDF Generator',
+        category: 'Actions',
+        subtitle: 'Open full progress report cards, Johari blind spots, radar competency distributions, and printable PDFs',
+        icon: Award,
+        badge: 'Report Card',
+        badgeColor: '#ec4899',
+        keywords: [
+          'student report', '360 report', 'pdf report', 'dossier', 'report card', 'student pdf',
+          'progress report', 'export pdf student', 'individual report'
+        ],
+        onExecute: () => {
+          onClose();
+          onOpenReportModal();
         },
       },
       {
@@ -1734,12 +2111,33 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       { id: 'theme_system', title: 'Sync Theme with System Auto', category: 'Appearance', subtitle: 'Follow your OS theme preference automatically',    icon: Sparkles, badge: themeMode === 'system' ? 'Active' : undefined, keywords: ['system theme','auto theme','os','automatic'],   onExecute: () => { setThemeMode('system'); if (onToast) onToast('Theme set to System Auto', 'info'); onClose(); } },
     );
 
-    // MODES
+    // MODES & PROFESSOR LAYOUT PRESETS
     list.push(
       { id: 'mode_minimal',  title: 'Apply Essentials Only',        category: 'Modes', subtitle: 'Hides advanced analytics to keep the interface clean and simple', icon: LayoutDashboard, badge: activeMode === 'minimal'  ? 'Active' : 'Essentials', badgeColor: activeMode === 'minimal'  ? '#10b981' : undefined, keywords: ['minimal','simple','basic','clean','essentials','essentials only','hide extras'],   onExecute: () => { onApplyMode('minimal');  if (onToast) onToast('Essentials Only mode activated', 'success'); onClose(); } },
       { id: 'mode_standard', title: 'Apply Recommended Mode',       category: 'Modes', subtitle: 'The balanced classroom layout with essential tools',              icon: Gauge,           badge: activeMode === 'standard' ? 'Active' : 'Recommended',badgeColor: activeMode === 'standard' ? '#10b981' : undefined, keywords: ['standard','default','normal','balanced','moderate','recommended'],     onExecute: () => { onApplyMode('standard'); if (onToast) onToast('Recommended mode activated', 'success'); onClose(); } },
       { id: 'mode_full',     title: 'Show All Modules',             category: 'Modes', subtitle: 'Turns on every available feature and tool',                       icon: Cpu,             badge: activeMode === 'full'     ? 'Active' : 'All Modules', badgeColor: activeMode === 'full'     ? '#10b981' : undefined, keywords: ['full','power user','advanced','all features','show all modules','everything'], onExecute: () => { onApplyMode('full');     if (onToast) onToast('Show All Modules activated', 'success'); onClose(); } },
       { id: 'mode_none',     title: 'Hide All Modules (Clean Canvas)', category: 'Modes', subtitle: 'Hides all optional modules for an uncluttered blank canvas',  icon: EyeOff,          badge: activeMode === 'none'     ? 'Active' : 'Hide All',    badgeColor: activeMode === 'none'     ? '#ef4444' : undefined, keywords: ['none','clean canvas','hide all','blank canvas','clear modules','empty workspace','clear all'], onExecute: () => { onApplyMode('none'); if (onToast) onToast('All modules hidden (Clean canvas)', 'info'); onClose(); } },
+      ...BUILT_IN_LAYOUT_PROFILES.map((profile): CPAction => ({
+        id: `preset_${profile.id}`,
+        title: `Apply Preset: ${profile.name}`,
+        category: 'Modes',
+        subtitle: profile.description || 'Pre-configured professor layout template',
+        icon: Layers,
+        badge: profile.badge || 'Preset',
+        badgeColor: '#6366f1',
+        keywords: [
+          'preset', 'layout preset', 'template', 'layout library', profile.name.toLowerCase(),
+          ...(profile.name.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean))
+        ],
+        onExecute: () => {
+          applyFullLayoutProfile(profile, {
+            onToggleFeature,
+            onToast: onToast ? (msg, type) => onToast(msg, type || 'info') : undefined
+          });
+          if (onToast) onToast(`Applied "${profile.name}" layout preset!`, 'success');
+          onClose();
+        },
+      }))
     );
 
     // FEATURE TOGGLES
@@ -2025,7 +2423,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     onClearRoster, onDeleteStudent, onDeleteClass,
     onToast, onClose, onToggleFeature, onApplyMode, setThemeMode,
     onSetFilter, onApplyRubricPreset, onSetTargetScale, onSetFudgeWeight, onExportLMS,
-    onExportResultsCSV, onExportPDFSummary,
+    onExportResultsCSV, onExportPDFSummary, onOpenEnrollmentBuilder, onOpenTeamCharter,
+    onOpenLivePresentation, onOpenEvaluationControls, onToggleExcused, onOpenEditMode,
+    shortcutsEnabled, onToggleShortcutsEnabled, onOpenSnapshots,
+    onOpenLayoutLibrary, onResetLayout,
   ]);
 
   // ── NLP FILTER & SCORE WITH PREFIX SUPPORT ──────────────────────────────────
@@ -2394,7 +2795,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               if (isExportDialogOpen) setIsExportDialogOpen(false);
               if (activeDisputeStudentId) setActiveDisputeStudentId(null);
             }}
-            placeholder="Search commands, actions, students, teams, or guides (or type @, #, >, ?)..."
+            placeholder="Search commands, students (#), teams (@), actions (>), guides (?), presentation, custom questions..."
             style={{
               border: 'none',
               background: 'transparent',
