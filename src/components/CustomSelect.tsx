@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Trash2 } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { ChevronDown, Trash2, Search, X, Check } from 'lucide-react';
 
 export interface CustomSelectOption {
   value: string;
@@ -32,6 +32,8 @@ export interface CustomSelectProps {
   deleteTitle?: string;
   disabled?: boolean;
   title?: string;
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }
 
 export const CustomSelect: React.FC<CustomSelectProps> = ({
@@ -55,11 +57,20 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   onDeleteOption,
   deleteTitle,
   disabled = false,
-  title
+  title,
+  searchable = false,
+  searchPlaceholder = 'Search...'
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isDropUp, setIsDropUp] = useState(dropDirection === 'up');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerButtonRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const selectedOption = options.find((o) => o.value === value);
 
@@ -75,6 +86,18 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   }
 
   const effectiveIcon = triggerIcon !== undefined ? triggerIcon : (triggerLabel !== undefined ? null : selectedOption?.icon);
+
+  // Filter options when searchable is active
+  const filteredOptions = useMemo(() => {
+    if (!searchable || !searchQuery.trim()) return options;
+    const q = searchQuery.toLowerCase().trim();
+    return options.filter((opt) => {
+      const matchLabel = opt.label.toLowerCase().includes(q);
+      const matchSub = opt.sublabel ? opt.sublabel.toLowerCase().includes(q) : false;
+      const matchBadge = opt.badge ? opt.badge.toLowerCase().includes(q) : false;
+      return matchLabel || matchSub || matchBadge;
+    });
+  }, [options, searchable, searchQuery]);
 
   // Calculate drop direction when opening
   useEffect(() => {
@@ -92,6 +115,45 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     }
   }, [isOpen, dropDirection]);
 
+  // Reset search and highlighted index when dropdown opens or closes
+  useEffect(() => {
+    if (isOpen) {
+      setSearchQuery('');
+      const initialIdx = options.findIndex((o) => o.value === value);
+      setHighlightedIndex(initialIdx >= 0 ? initialIdx : 0);
+
+      if (searchable) {
+        const timer = setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 40);
+        return () => clearTimeout(timer);
+      }
+    } else {
+      setHighlightedIndex(-1);
+    }
+  }, [isOpen]);
+
+  // Keep highlightedIndex in bounds when filteredOptions changes
+  useEffect(() => {
+    if (isOpen) {
+      if (filteredOptions.length === 0) {
+        setHighlightedIndex(-1);
+      } else if (highlightedIndex >= filteredOptions.length || highlightedIndex < 0) {
+        setHighlightedIndex(0);
+      }
+    }
+  }, [filteredOptions, isOpen]);
+
+  // Auto-scroll highlighted option into view
+  useEffect(() => {
+    if (isOpen && highlightedIndex >= 0 && optionRefs.current[highlightedIndex]) {
+      optionRefs.current[highlightedIndex]?.scrollIntoView({
+        block: 'nearest',
+        behavior: 'auto'
+      });
+    }
+  }, [highlightedIndex, isOpen]);
+
   // Close dropdown on click outside
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -103,17 +165,68 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  // Close on Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsOpen(false);
+  // Keyboard navigation
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return;
+
+    if (!isOpen) {
+      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) {
+        e.preventDefault();
+        setIsOpen(true);
       }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsOpen(false);
+      triggerButtonRef.current?.focus();
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        filteredOptions.length > 0 ? (prev < filteredOptions.length - 1 ? prev + 1 : 0) : -1
+      );
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        filteredOptions.length > 0 ? (prev > 0 ? prev - 1 : filteredOptions.length - 1) : -1
+      );
+      return;
+    }
+
+    if (e.key === 'Home') {
+      e.preventDefault();
+      setHighlightedIndex(0);
+      return;
+    }
+
+    if (e.key === 'End') {
+      e.preventDefault();
+      setHighlightedIndex(filteredOptions.length - 1);
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+        onChange(filteredOptions[highlightedIndex].value);
+        setIsOpen(false);
+        triggerButtonRef.current?.focus();
+      }
+      return;
+    }
+
+    if (e.key === 'Tab') {
+      setIsOpen(false);
+      return;
+    }
+  };
 
   const dropdownTop = isDropUp ? 'auto' : 'calc(100% + 5px)';
   const dropdownBottom = isDropUp ? 'calc(100% + 5px)' : 'auto';
@@ -122,14 +235,18 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     <div
       ref={containerRef}
       className={`custom-select-container ${className}`}
+      onKeyDown={handleKeyDown}
       style={{ position: 'relative', display: 'inline-block', width: '100%', zIndex: isOpen ? 99999 : 'auto', ...style }}
     >
       <button
+        ref={triggerButtonRef}
         type="button"
         className="form-select custom-select-trigger"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
         title={title}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -172,7 +289,12 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
 
       {isOpen && (
         <div
+          ref={dropdownRef}
+          role="listbox"
+          tabIndex={-1}
           className="custom-select-dropdown"
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
             top: dropdownTop,
@@ -186,10 +308,11 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md, 8px)',
             boxShadow: '0 14px 32px -4px rgba(0, 0, 0, 0.22), 0 6px 12px -2px rgba(0, 0, 0, 0.12)',
-            maxHeight: '260px',
+            maxHeight: '280px',
             overflowY: 'auto',
             overflowX: 'hidden',
             padding: '5px',
+            overscrollBehavior: 'contain',
             animation: 'slideUp 180ms cubic-bezier(0.16, 1, 0.3, 1)',
             ...dropdownStyle
           }}
@@ -200,7 +323,70 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
             </div>
           )}
 
-          {options.length === 0 ? (
+          {searchable && (
+            <div
+              style={{
+                padding: '0.2rem 0.2rem 0.4rem 0.2rem',
+                position: 'sticky',
+                top: 0,
+                zIndex: 3,
+                backgroundColor: 'var(--bg-surface)',
+                borderBottom: '1px solid var(--border-color)',
+                marginBottom: '4px'
+              }}
+            >
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Search size={12} style={{ position: 'absolute', left: '8px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={searchPlaceholder}
+                  style={{
+                    width: '100%',
+                    height: '28px',
+                    padding: '0 1.6rem 0 1.7rem',
+                    fontSize: '0.74rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-app)',
+                    color: 'var(--text-primary)',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSearchQuery('');
+                      searchInputRef.current?.focus();
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: '6px',
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title="Clear search"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {filteredOptions.length === 0 ? (
             <div
               style={{
                 padding: '0.75rem 0.5rem',
@@ -209,18 +395,29 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                 color: 'var(--text-muted)'
               }}
             >
-              {emptyMessage || 'No options available'}
+              {emptyMessage || (searchQuery ? `No matches found for "${searchQuery}"` : 'No options available')}
             </div>
           ) : (
-            options.map((option) => {
+            filteredOptions.map((option, idx) => {
               const isSelected = option.value === value;
+              const isHighlighted = idx === highlightedIndex;
+
               return (
                 <div
                   key={option.value}
-                  className={`custom-select-option ${isSelected ? 'selected' : ''}`}
+                  ref={(el) => {
+                    optionRefs.current[idx] = el;
+                  }}
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`custom-select-option ${isSelected ? 'selected' : ''} ${isHighlighted ? 'highlighted' : ''}`}
                   onClick={() => {
                     onChange(option.value);
                     setIsOpen(false);
+                    triggerButtonRef.current?.focus();
+                  }}
+                  onMouseEnter={() => {
+                    setHighlightedIndex(idx);
                   }}
                   style={{
                     display: 'flex',
@@ -233,22 +430,17 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                     fontSize: '0.78rem',
                     fontWeight: isSelected ? 700 : 500,
                     borderRadius: 'var(--radius-sm, 6px)',
-                    backgroundColor: isSelected ? 'var(--primary-light, rgba(99, 102, 241, 0.12))' : 'transparent',
+                    backgroundColor: isSelected
+                      ? 'var(--primary-light, rgba(99, 102, 241, 0.14))'
+                      : isHighlighted
+                      ? 'var(--bg-app)'
+                      : 'transparent',
+                    boxShadow: isHighlighted ? '0 0 0 1px var(--primary-light, rgba(99, 102, 241, 0.35))' : 'none',
                     color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
                     cursor: 'pointer',
                     transition: 'all var(--transition-fast, 120ms ease)',
                     lineHeight: 1.35,
                     userSelect: 'none'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.backgroundColor = 'var(--bg-app)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
@@ -279,6 +471,10 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                    {isSelected && (
+                      <Check size={13} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                    )}
+
                     {option.badge && (
                       <span
                         style={{

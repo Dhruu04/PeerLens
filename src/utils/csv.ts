@@ -2,6 +2,7 @@ import { calculateStudentMetrics, calculateStudentWebPAScore, getTargetScale, no
 import type { Student, ClassData } from './math';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
+import { playChime } from './soundFx';
 
 try {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -201,18 +202,25 @@ export function generateResultsCSV(classData: ClassData, customStudents?: Studen
       .map(([tag, count]) => `${tag} (x${count})`)
       .join(' | ') || 'None';
 
+    const defaultScale = getTargetScale(classData);
     const storedBase = localStorage.getItem('peer_base_grade');
     const storedFudge = localStorage.getItem('peer_fudge_weight');
-    const baseMark = storedBase ? Number(storedBase) : 100;
+    const baseMark = storedBase ? Number(storedBase) : defaultScale;
     const fudgeWeight = storedFudge ? Number(storedFudge) : 1.0;
 
-    const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(
+    const studentTeamBase = classData.teamBaseGrades?.[student.groupName] ?? baseMark;
+    const webpa = calculateStudentWebPAScore(
       student.id,
       student.groupName,
       classData,
-      baseMark,
+      studentTeamBase,
       fudgeWeight
     );
+    const { ratio, adjustedGrade, teamBaseGrade, isInsufficient, isCapped } = webpa;
+
+    const webpaScoreStr = metrics.reviewsReceived > 0
+      ? (isInsufficient ? `Insufficient (${adjustedGrade} / ${teamBaseGrade})` : `${adjustedGrade} / ${teamBaseGrade}${isCapped ? ' (Capped)' : ''}`)
+      : 'N/A';
 
     return [
       escapeCSVValue(student.id),
@@ -231,7 +239,7 @@ export function generateResultsCSV(classData: ClassData, customStudents?: Studen
       ...fieldAveragesList,
       ...fieldStdDevsList,
       metrics.reviewsReceived > 0 ? `${ratio.toFixed(2)}x` : 'N/A',
-      metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : 'N/A',
+      webpaScoreStr,
       metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A',
       escapeCSVValue(praiseSummary)
     ];
@@ -478,9 +486,10 @@ export function exportClassroomToExcel(classData: ClassData, customStudents?: St
   const maxScale = getTargetScale(classData);
 
   // Read fudge weighting configuration from local storage
+  const defaultScale = getTargetScale(classData);
   const storedBase = localStorage.getItem('peer_base_grade');
   const storedFudge = localStorage.getItem('peer_fudge_weight');
-  const baseMark = storedBase ? Number(storedBase) : 100;
+  const baseMark = storedBase ? Number(storedBase) : defaultScale;
   const fudgeWeight = storedFudge ? Number(storedFudge) : 1.0;
 
   // 1. SHEET 1: Classroom Summary Sheet
@@ -542,16 +551,22 @@ export function exportClassroomToExcel(classData: ClassData, customStudents?: St
       .map(([tag, count]) => `${tag} (x${count})`)
       .join(' | ') || 'None';
 
-    const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(
+    const studentTeamBase = classData.teamBaseGrades?.[student.groupName] ?? baseMark;
+    const webpa = calculateStudentWebPAScore(
       student.id,
       student.groupName,
       classData,
-      baseMark,
+      studentTeamBase,
       fudgeWeight
     );
+    const { ratio, adjustedGrade, teamBaseGrade, isInsufficient, isCapped } = webpa;
 
     const scaledScoreStr = metrics.overallPercentage !== null 
       ? `${((metrics.overallPercentage / 100) * maxScale).toFixed(1)} / ${maxScale}`
+      : 'N/A';
+
+    const webpaScoreStr = metrics.reviewsReceived > 0
+      ? (isInsufficient ? `Insufficient (${adjustedGrade} / ${teamBaseGrade})` : `${adjustedGrade} / ${teamBaseGrade}${isCapped ? ' (Capped)' : ''}`)
       : 'N/A';
 
     return [
@@ -571,7 +586,7 @@ export function exportClassroomToExcel(classData: ClassData, customStudents?: St
       ...fieldAveragesList,
       ...fieldStdDevsList,
       metrics.reviewsReceived > 0 ? `${ratio.toFixed(2)}x` : 'N/A',
-      metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : 'N/A',
+      webpaScoreStr,
       metrics.overallPercentage !== null ? `${metrics.overallPercentage}%` : 'N/A',
       scaledScoreStr,
       praiseSummary
@@ -640,6 +655,7 @@ export function exportClassroomToExcel(classData: ClassData, customStudents?: St
   // Write Excel file and trigger standard browser download stream
   const fileName = `${classData.name.replace(/\s+/g, '_')}_grades_report.xlsx`;
   XLSX.writeFile(wb, fileName);
+  playChime();
 }
 
 /**
@@ -656,6 +672,7 @@ export function downloadFileContent(content: string, fileName: string, mimeType:
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+  playChime();
 }
 
 /**
@@ -828,6 +845,7 @@ export function exportSingleTeamToExcel(
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, `${teamName.slice(0, 25)} Diversity`);
     XLSX.writeFile(wb, `${safeTeamName}_diversity_roster.xlsx`);
+    playChime();
   } else {
     // Full data scope
     const headers = [
@@ -892,6 +910,7 @@ export function exportSingleTeamToExcel(
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, `${teamName.slice(0, 25)} Full`);
     XLSX.writeFile(wb, `${safeTeamName}_full_roster.xlsx`);
+    playChime();
   }
 }
 
@@ -990,6 +1009,7 @@ export function exportRosterToExcel(classData: ClassData): void {
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   XLSX.utils.book_append_sheet(wb, ws, 'Student Roster');
   XLSX.writeFile(wb, `${safeName}_roster.xlsx`);
+  playChime();
 }
 
 /* =========================================================================
@@ -1105,7 +1125,7 @@ export function getStudentLmsScore(
   student: Student,
   classData: ClassData,
   scoreType: LmsScoreType = 'calibrated',
-  baseMark: number = 100,
+  baseMark?: number,
   fudgeWeight: number = 1.0
 ): number {
   if (scoreType === 'scale') {
@@ -1126,11 +1146,12 @@ export function getStudentLmsScore(
   }
 
   // Default: WebPA calibrated mark
+  const resolvedBase = baseMark ?? (classData.teamBaseGrades?.[student.groupName] ?? getTargetScale(classData));
   const { adjustedGrade } = calculateStudentWebPAScore(
     student.id,
     student.groupName,
     classData,
-    baseMark,
+    resolvedBase,
     fudgeWeight
   );
   return adjustedGrade;
@@ -1158,9 +1179,10 @@ export function generateCanvasLMSCSV(
   scoreType: LmsScoreType = 'calibrated',
   filters?: LmsExportFilterOptions
 ): string {
+  const defaultScale = getTargetScale(classData);
   const storedBase = localStorage.getItem('peer_base_grade');
   const storedFudge = localStorage.getItem('peer_fudge_weight');
-  const baseMark = storedBase ? Number(storedBase) : 100;
+  const baseMark = storedBase ? Number(storedBase) : defaultScale;
   const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
 
   const targetStudents = filterStudentsForLms(classData.students, filters);
@@ -1216,9 +1238,10 @@ export function generateBlackboardCSV(
   scoreType: LmsScoreType = 'calibrated',
   filters?: LmsExportFilterOptions
 ): string {
+  const defaultScale = getTargetScale(classData);
   const storedBase = localStorage.getItem('peer_base_grade');
   const storedFudge = localStorage.getItem('peer_fudge_weight');
-  const baseMark = storedBase ? Number(storedBase) : 100;
+  const baseMark = storedBase ? Number(storedBase) : defaultScale;
   const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
 
   const targetStudents = filterStudentsForLms(classData.students, filters);
@@ -1263,9 +1286,10 @@ export function generateMoodleCSV(
   scoreType: LmsScoreType = 'calibrated',
   filters?: LmsExportFilterOptions
 ): string {
+  const defaultScale = getTargetScale(classData);
   const storedBase = localStorage.getItem('peer_base_grade');
   const storedFudge = localStorage.getItem('peer_fudge_weight');
-  const baseMark = storedBase ? Number(storedBase) : 100;
+  const baseMark = storedBase ? Number(storedBase) : defaultScale;
   const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
 
   const targetStudents = filterStudentsForLms(classData.students, filters);
@@ -1304,9 +1328,10 @@ export function generateBrightspaceCSV(
   scoreType: LmsScoreType = 'calibrated',
   filters?: LmsExportFilterOptions
 ): string {
+  const defaultScale = getTargetScale(classData);
   const storedBase = localStorage.getItem('peer_base_grade');
   const storedFudge = localStorage.getItem('peer_fudge_weight');
-  const baseMark = storedBase ? Number(storedBase) : 100;
+  const baseMark = storedBase ? Number(storedBase) : defaultScale;
   const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
 
   const targetStudents = filterStudentsForLms(classData.students, filters);
@@ -1342,9 +1367,10 @@ export function generateCustomLMSCSV(
   customConfig: CustomLmsConfig = DEFAULT_CUSTOM_LMS_CONFIG,
   filters?: LmsExportFilterOptions
 ): string {
+  const defaultScale = getTargetScale(classData);
   const storedBase = localStorage.getItem('peer_base_grade');
   const storedFudge = localStorage.getItem('peer_fudge_weight');
-  const baseMark = storedBase ? Number(storedBase) : 100;
+  const baseMark = storedBase ? Number(storedBase) : defaultScale;
   const fudgeWeight = storedFudge ? Number(storedFudge) : 0.5;
 
   const targetStudents = filterStudentsForLms(classData.students, filters);

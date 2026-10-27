@@ -161,6 +161,11 @@ PeerLens features a dedicated workspace personalization suite engineered for max
 
 ## Workflow Productivity Suite
 
+* **Intelligent Spacebar QuickLook HUD Engine**: Hold Spacebar over any entity across the platform for immediate pedagogical, mathematical, and telemetry insights:
+  * *Grading Metrics & Calculations*: Step-by-step mathematical derivation breakdown (Team Base Mark, WebPA multiplier, sensitivity factor, adjusted mark), bounds alerts (Capped at Max, Insufficient passing floor), and one-click copyable calculation formula.
+  * *Rubric Criteria & Behavioral Anchors*: Real-time cohort mean score, standard deviation, review count, consensus classification (High Consensus vs Divided Opinions), and student performance anchors.
+  * *Algorithm Parameters & Sliders*: Sensitivity Fudge Factor simulation, target benchmark ceilings, and passing thresholds with accredited syllabus guidance.
+  * *Universal Attribute Architecture*: Declarative inspection engine (`data-quicklook-*`) enabling any component across the application to present structured contextual intelligence without custom modal wrappers.
 * **Omni Command Palette (`Ctrl + K` / `Cmd + K` or `/`)**: Keyboard-driven workflow accelerator with natural language intent detection, prefix filters (`@student`, `#team`, `>action`, `?help`), direct gradebook exports, and section navigation.
 * **Institutional Branding Customizer**: Personalize the course portal with institution name, department header, custom logos, and curated university color themes (Classic Academic Blue, Emerald Tech, Crimson Ivy, Violet Innovation, Midnight Gold).
 * **Minimalist Interactive Tour**: 60–120 FPS spotlight walkthrough with zero scrolling lag, GPU-composited positioning, and on-demand activation.
@@ -246,23 +251,35 @@ PeerLens includes pre-configured [`netlify.toml`](netlify.toml) and [`public/_re
 * **Build Command**: `npm run build`
 * **Publish Directory**: `dist`
 * **Node Environment**: Pre-set to Node 20 with `--legacy-peer-deps` build safety.
+* **Environment Variables**: Set optional Firebase keys in Netlify Site Configuration (`Site configuration > Environment variables`):
+  * `VITE_FIREBASE_API_KEY`
+  * `VITE_FIREBASE_AUTH_DOMAIN`
+  * `VITE_FIREBASE_PROJECT_ID`
+  * `VITE_FIREBASE_STORAGE_BUCKET`
+  * `VITE_FIREBASE_MESSAGING_SENDER_ID`
+  * `VITE_FIREBASE_APP_ID`
 * **Direct Documentation Routing**: Clean rewrites for `/guide`, `/manual`, `/docs`, and `/complete-guide` serving the manual with revalidation headers.
 * **SPA Routing**: Automatic rewrite of all application paths `/*` to `/index.html` with HTTP 200 OK.
 * **PWA & Cache Headers**: Long-term immutable caching for `/assets/*` and instant revalidation for `/guide.html`, `/sw.js`, and `/manifest.webmanifest`.
+* **Security Headers**: Production-grade `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, and `Strict-Transport-Security`.
 
-### Firebase Hosting Deployment
-PeerLens includes pre-configured [`firebase.json`](firebase.json), [`.firebaserc`](.firebaserc), and [`firestore.rules`](firestore.rules):
-1. Install Firebase CLI and login:
+### Firebase Cloud Sync & Hosting Deployment
+PeerLens supports complete offline operation via browser Web Storage, with optional real-time multi-device cloud synchronization via Firebase Firestore:
+1. Pre-configured files included in repository:
+   * [`firebase.json`](firebase.json): Multi-route hosting rules, cache headers, and firestore paths.
+   * [`.firebaserc`](.firebaserc): Default Firebase project binding (`peerlens-app`).
+   * [`firestore.rules`](firestore.rules): Scoped security rules guaranteeing course convenors exclusive write access while permitting double-blind student portal access.
+   * [`firestore.indexes.json`](firestore.indexes.json): Optimized compound query indexes.
+2. Deployment steps via Firebase CLI:
    ```bash
    npm install -g firebase-tools
    firebase login
-   ```
-2. Initialize and deploy:
-   ```bash
    firebase deploy --only hosting,firestore
    ```
-* **Hosting**: Configured for `dist` directory with SPA fallbacks, direct manual routing, caching headers, and strict security headers.
-* **Firestore Security**: Scoped rules ensuring course convenors retain exclusive administrative authority while allowing authenticated students to read active rubrics and submit peer evaluations or 30-second health pulses.
+3. Cloud Sync Architecture:
+   * **Instructor Scoped Authority**: Only the authenticated instructor account can provision, modify, or archive classroom entities.
+   * **Atomic Transactions**: Roster balance states, rubric adjustments, and WebPA calibrated grades synchronize atomically across active browser tabs.
+   * **Offline Fallback**: Automatic local storage caching ensures zero data loss during unstable campus Wi-Fi connections.
 
 ---
 

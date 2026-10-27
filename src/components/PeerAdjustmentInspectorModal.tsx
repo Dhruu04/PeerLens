@@ -11,6 +11,7 @@ import {
   PEER_ADJUSTMENT_METHODS_META, 
   getTeammates 
 } from '../utils/math';
+import { AnimatedNumber } from './AnimatedNumber';
 
 interface PeerAdjustmentInspectorModalProps {
   isOpen: boolean;
@@ -85,11 +86,12 @@ export const PeerAdjustmentInspectorModal: React.FC<PeerAdjustmentInspectorModal
 
   const adjustmentResult = useMemo(() => {
     if (!selectedStudent) return null;
+    const teamMark = activeClass?.teamBaseGrades?.[selectedStudent.groupName] ?? baseGroupGrade;
     return calculateStudentPeerAdjustment(
       selectedStudent.id,
       selectedStudent.groupName,
       activeClass,
-      baseGroupGrade,
+      teamMark,
       config
     );
   }, [selectedStudent, activeClass, baseGroupGrade, config]);
@@ -388,7 +390,7 @@ export const PeerAdjustmentInspectorModal: React.FC<PeerAdjustmentInspectorModal
                 Multiplier
               </span>
               <span style={{ fontSize: '1.4rem', fontWeight: 850, color: 'var(--primary)', display: 'block', marginTop: '0.1rem' }}>
-                {adjustmentResult.ratio.toFixed(2)}×
+                <AnimatedNumber value={adjustmentResult.ratio} decimals={2} suffix="×" />
               </span>
               <span
                 style={{
@@ -408,29 +410,60 @@ export const PeerAdjustmentInspectorModal: React.FC<PeerAdjustmentInspectorModal
               <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Final Grade
               </span>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '0.35rem', marginTop: '0.1rem' }}>
-                <span
-                  style={{
-                    fontSize: '1.5rem',
-                    fontWeight: 900,
-                    color: isPositive ? 'var(--accent-teal)' : isNegative ? 'var(--accent-rose)' : 'var(--text-primary)'
-                  }}
-                >
-                  {adjustmentResult.adjustedGrade}
-                </span>
-                <span
-                  style={{
-                    fontSize: '0.72rem',
-                    fontWeight: 800,
-                    padding: '0.1rem 0.35rem',
-                    borderRadius: '4px',
-                    backgroundColor: isPositive ? 'rgba(16, 185, 129, 0.12)' : isNegative ? 'rgba(239, 68, 68, 0.12)' : 'rgba(156, 163, 175, 0.12)',
-                    color: isPositive ? 'var(--accent-teal)' : isNegative ? 'var(--accent-rose)' : 'var(--text-muted)'
-                  }}
-                >
-                  {pointDelta >= 0 ? `+${pointDelta}` : pointDelta} pts
-                </span>
-              </div>
+              {adjustmentResult.isInsufficient ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.1rem', marginTop: '0.1rem' }}>
+                  <span
+                    style={{
+                      fontSize: '1.25rem',
+                      fontWeight: 900,
+                      color: 'var(--accent-rose, #e11d48)',
+                      cursor: 'help',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem'
+                    }}
+                    title={`Real Score: ${adjustmentResult.adjustedGrade} / ${adjustmentResult.teamBaseGrade} (Below minimum passing threshold of ${adjustmentResult.minScore} pts set by professor)`}
+                  >
+                    <AlertTriangle size={15} /> Insufficient
+                  </span>
+                  <span 
+                    style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', cursor: 'help' }}
+                    title={`Real Score: ${adjustmentResult.adjustedGrade} (Min required: ${adjustmentResult.minScore} pts)`}
+                  >
+                    Real: <AnimatedNumber value={adjustmentResult.adjustedGrade} decimals={1} /> / {adjustmentResult.teamBaseGrade}
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '0.35rem', marginTop: '0.1rem' }}>
+                  <span
+                    style={{
+                      fontSize: '1.5rem',
+                      fontWeight: 900,
+                      color: isPositive ? 'var(--accent-teal)' : isNegative ? 'var(--accent-rose)' : 'var(--text-primary)'
+                    }}
+                    title={adjustmentResult.isCapped ? `Capped at max limit of ${adjustmentResult.maxScore} pts (raw calculation: ${adjustmentResult.rawAdjustedGrade})` : undefined}
+                  >
+                    <AnimatedNumber value={adjustmentResult.adjustedGrade} decimals={1} />
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      padding: '0.1rem 0.35rem',
+                      borderRadius: '4px',
+                      backgroundColor: isPositive ? 'rgba(16, 185, 129, 0.12)' : isNegative ? 'rgba(239, 68, 68, 0.12)' : 'rgba(156, 163, 175, 0.12)',
+                      color: isPositive ? 'var(--accent-teal)' : isNegative ? 'var(--accent-rose)' : 'var(--text-muted)'
+                    }}
+                  >
+                    {pointDelta >= 0 ? '+' : ''}<AnimatedNumber value={pointDelta} decimals={1} /> pts
+                  </span>
+                  {adjustmentResult.isCapped && (
+                    <span className="badge badge-purple" style={{ fontSize: '0.6rem', padding: '0.08rem 0.3rem' }} title={`Raw score was ${adjustmentResult.rawAdjustedGrade}, capped at max ${adjustmentResult.maxScore}`}>
+                      Max Cap
+                    </span>
+                  )}
+                </div>
+              )}
               <span style={{ fontSize: '0.64rem', color: 'var(--text-secondary)' }}>
                 individual grade
               </span>
@@ -438,6 +471,50 @@ export const PeerAdjustmentInspectorModal: React.FC<PeerAdjustmentInspectorModal
           </div>
 
           {/* Contextual Status Alerts */}
+          {adjustmentResult.isInsufficient && (
+            <div
+              style={{
+                padding: '0.55rem 0.8rem',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: '8px',
+                fontSize: '0.75rem',
+                color: '#dc2626',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontWeight: 650
+              }}
+            >
+              <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+              <div>
+                <strong>Grade Status: Insufficient.</strong> Calculated mark is <strong>{adjustmentResult.adjustedGrade} pts</strong>, which is below the minimum passing threshold of <strong>{adjustmentResult.minScore} pts</strong> set beforehand by the professor.
+              </div>
+            </div>
+          )}
+
+          {adjustmentResult.isCapped && (
+            <div
+              style={{
+                padding: '0.55rem 0.8rem',
+                backgroundColor: 'rgba(147, 51, 234, 0.08)',
+                border: '1px solid rgba(147, 51, 234, 0.25)',
+                borderRadius: '8px',
+                fontSize: '0.75rem',
+                color: '#7e22ce',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontWeight: 650
+              }}
+            >
+              <ShieldCheck size={15} style={{ flexShrink: 0 }} />
+              <div>
+                <strong>Maximum Score Limit Enforced:</strong> The raw calculated score ({adjustmentResult.rawAdjustedGrade} pts) was capped at the professor's maximum score limit of <strong>{adjustmentResult.maxScore} pts</strong>.
+              </div>
+            </div>
+          )}
+
           {selectedStudent.isExcused && (
             <div
               style={{

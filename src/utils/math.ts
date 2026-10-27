@@ -87,6 +87,7 @@ export interface EvaluationFormControls {
   showRoleSelection?: boolean; // Toggle "Team Role Selection" on student dashboard
   showIcebreaker?: boolean; // Toggle "Team Kickoff Icebreaker" on student dashboard
   allowProfileEditing?: boolean; // Toggle if students can edit their profile info or not
+  unlockMainPeerReview?: boolean; // Toggle whether main peer review round is unlocked & accessible for students
 }
 
 export const DEFAULT_EVALUATION_CONTROLS: Required<EvaluationFormControls> = {
@@ -96,7 +97,8 @@ export const DEFAULT_EVALUATION_CONTROLS: Required<EvaluationFormControls> = {
   showStrengthsFeedback: false,
   showRoleSelection: false,
   showIcebreaker: false,
-  allowProfileEditing: false
+  allowProfileEditing: false,
+  unlockMainPeerReview: true
 };
 
 export function getEvaluationControls(classData?: ClassData | null): Required<EvaluationFormControls> {
@@ -108,7 +110,8 @@ export function getEvaluationControls(classData?: ClassData | null): Required<Ev
     showStrengthsFeedback: ec?.showStrengthsFeedback === true,
     showRoleSelection: ec?.showRoleSelection === true,
     showIcebreaker: ec?.showIcebreaker === true,
-    allowProfileEditing: ec?.allowProfileEditing === true
+    allowProfileEditing: ec?.allowProfileEditing === true,
+    unlockMainPeerReview: ec?.unlockMainPeerReview !== false
   };
 }
 
@@ -548,16 +551,23 @@ export interface ClassData {
   teamCharterConfig?: TeamCharterConfig;
   enrollmentFormFields?: CustomEnrollmentField[];
   peerAdjustmentConfig?: PeerAdjustmentConfig;
+  subPeerReviewRounds?: import('./subPeerReview').SubPeerReviewRound[];
+  subPeerReviewManualOverrides?: Record<string, import('./subPeerReview').StudentSubReviewFlagStatus>;
+  subPeerReviewConfig?: import('./subPeerReview').SubPeerReviewConfig;
 }
 
 /**
- * Resolves the team-specific base mark or falls back to the default base grade.
+ * Resolves the team-specific base mark or falls back to the default base grade / class target scale.
  */
-export function getTeamBaseGrade(classData: ClassData, groupName: string, defaultGrade: number = 100): number {
+export function getTeamBaseGrade(classData: ClassData, groupName: string, defaultGrade?: number): number {
   if (classData?.teamBaseGrades && typeof classData.teamBaseGrades[groupName] === 'number') {
     return classData.teamBaseGrades[groupName];
   }
-  return defaultGrade;
+  const maxScore = getTargetScale(classData);
+  if (typeof defaultGrade === 'number' && defaultGrade > 0 && (defaultGrade !== 100 || maxScore === 100)) {
+    return defaultGrade;
+  }
+  return maxScore;
 }
 
 /**
@@ -847,6 +857,11 @@ export interface PeerAdjustmentBreakdown {
 export interface PeerAdjustmentResult {
   ratio: number;
   adjustedGrade: number;
+  rawAdjustedGrade: number;
+  isCapped: boolean;
+  minScore: number;
+  maxScore: number;
+  isInsufficient: boolean;
   teamBaseGrade: number;
   isExcused?: boolean;
   rawRatio: number;
@@ -1001,7 +1016,7 @@ export function calculateStudentPeerAdjustment(
   studentId: string,
   groupName: string,
   classData: ClassData,
-  baseGroupGrade: number = 100,
+  baseGroupGrade?: number,
   configOverrides?: number | Partial<PeerAdjustmentConfig>
 ): PeerAdjustmentResult {
   const baseConfig = getPeerAdjustmentConfig(classData);
@@ -1009,22 +1024,34 @@ export function calculateStudentPeerAdjustment(
     ? { ...baseConfig, fudgeWeight: configOverrides }
     : { ...baseConfig, ...configOverrides };
 
+  const minScore = getMinTargetScale(classData);
+  const maxScore = getTargetScale(classData);
   const effectiveBaseGrade = getTeamBaseGrade(classData, groupName, baseGroupGrade);
   const targetStudent = classData.students.find((s) => s.id === studentId);
   const meta = PEER_ADJUSTMENT_METHODS_META[config.method] || PEER_ADJUSTMENT_METHODS_META.webpa;
 
   // 1. If target student is explicitly excused, award neutral multiplier 1.00 and effective base grade
   if (targetStudent?.isExcused) {
+    const rawGrade = Math.min(maxScore, effectiveBaseGrade);
+    const isCapped = effectiveBaseGrade > maxScore;
+    const isInsufficient = rawGrade < minScore;
     return {
       ratio: 1.0,
-      adjustedGrade: effectiveBaseGrade,
+      adjustedGrade: rawGrade,
+      rawAdjustedGrade: effectiveBaseGrade,
+      isCapped,
+      minScore,
+      maxScore,
+      isInsufficient,
       teamBaseGrade: effectiveBaseGrade,
       isExcused: true,
       rawRatio: 1.0,
       penaltyApplied: 0,
       method: config.method,
       methodName: 'Excused Exemption',
-      explanation: 'Excused due to approved extenuating circumstances. Awarded neutral 1.00x multiplier and base grade without penalty.',
+      explanation: isInsufficient 
+        ? `Excused due to approved extenuating circumstances. Awarded base grade ${effectiveBaseGrade} (below minimum threshold of ${minScore} pts: marked Insufficient).`
+        : 'Excused due to approved extenuating circumstances. Awarded neutral 1.00x multiplier and base grade without penalty.',
       breakdown: {
         rawPeerPercentage: 100,
         teamAveragePeerPercentage: 100,
@@ -1035,7 +1062,7 @@ export function calculateStudentPeerAdjustment(
         nonSubmitterDeduction: 0,
         isNonSubmitter: false,
         unadjustedTeamBase: effectiveBaseGrade,
-        effectiveGrade: effectiveBaseGrade,
+        effectiveGrade: rawGrade,
         reviewsCount: 0,
         teammatesCount: 0
       }
@@ -1047,16 +1074,26 @@ export function calculateStudentPeerAdjustment(
   const activeStudents = groupStudents.filter((s) => !s.isExcused);
 
   if (groupStudents.length <= 1 || activeStudents.length <= 1) {
+    const rawGrade = Math.min(maxScore, effectiveBaseGrade);
+    const isCapped = effectiveBaseGrade > maxScore;
+    const isInsufficient = rawGrade < minScore;
     return {
       ratio: 1.0,
-      adjustedGrade: effectiveBaseGrade,
+      adjustedGrade: rawGrade,
+      rawAdjustedGrade: effectiveBaseGrade,
+      isCapped,
+      minScore,
+      maxScore,
+      isInsufficient,
       teamBaseGrade: effectiveBaseGrade,
       isExcused: false,
       rawRatio: 1.0,
       penaltyApplied: 0,
       method: config.method,
       methodName: meta.name,
-      explanation: 'Solo team or single active member. Neutral 1.00x multiplier applied.',
+      explanation: isInsufficient
+        ? `Solo team or single active member. Awarded base grade ${effectiveBaseGrade} (below minimum threshold of ${minScore} pts: marked Insufficient).`
+        : 'Solo team or single active member. Neutral 1.00x multiplier applied.',
       breakdown: {
         rawPeerPercentage: 100,
         teamAveragePeerPercentage: 100,
@@ -1067,7 +1104,7 @@ export function calculateStudentPeerAdjustment(
         nonSubmitterDeduction: 0,
         isNonSubmitter: false,
         unadjustedTeamBase: effectiveBaseGrade,
-        effectiveGrade: effectiveBaseGrade,
+        effectiveGrade: rawGrade,
         reviewsCount: 0,
         teammatesCount: teammates.length
       }
@@ -1264,21 +1301,21 @@ export function calculateStudentPeerAdjustment(
   }
 
   // --- STEP 6: FINAL GRADE CALCULATION & CAP ENFORCEMENT ---
-  let rawGrade = effectiveBaseGrade * effectiveMultiplier;
+  const rawCalculatedGrade = effectiveBaseGrade * effectiveMultiplier;
+  const accurateRawGrade = Number(rawCalculatedGrade.toFixed(2));
 
-  if (config.capAtMaxGrade) {
-    const maxCap = config.maxGradeCap ?? 100;
-    rawGrade = Math.min(maxCap, Math.max(0, rawGrade));
-  } else {
-    rawGrade = Math.max(0, rawGrade);
-  }
-
-  const finalAdjustedGrade = Number(rawGrade.toFixed(1));
+  // Cap at the maximum score set by the professor (e.g. 31 max)
+  const isCapped = accurateRawGrade > maxScore;
+  const cappedGrade = Math.min(maxScore, Math.max(0, rawCalculatedGrade));
+  const finalAdjustedGrade = Number(cappedGrade.toFixed(1));
   const finalRatio = Number(effectiveMultiplier.toFixed(3));
+  const isInsufficient = finalAdjustedGrade < minScore;
 
   let explanation = '';
   if (reviewsCount === 0) {
     explanation = `No reviews received yet from teammates. Neutral 1.00x multiplier awarded.`;
+  } else if (isCapped) {
+    explanation = `High Contributor: Peer ratings calculated a score of ${accurateRawGrade} pts (multiplier ${finalRatio}x), capped at the maximum allowable score of ${maxScore} pts.`;
   } else if (finalRatio > 1.0) {
     const ptsAbove = Number((finalAdjustedGrade - effectiveBaseGrade).toFixed(1));
     explanation = `High Contributor: Earned +${ptsAbove} pts above team base mark (${effectiveBaseGrade}) based on strong peer reviews.`;
@@ -1289,6 +1326,10 @@ export function calculateStudentPeerAdjustment(
     explanation = `Expected Contribution: Matched team average consensus, receiving exactly the team base mark.`;
   }
 
+  if (isInsufficient) {
+    explanation += ` (Score of ${finalAdjustedGrade} is below the minimum threshold of ${minScore} pts: marked Insufficient).`;
+  }
+
   if (isNonSubmitter && config.penalizeNonSubmitters) {
     explanation += ` Non-submission penalty applied (-${nonSubmitterPenaltyApplied}% deduction for failing to submit reviews).`;
   }
@@ -1296,6 +1337,11 @@ export function calculateStudentPeerAdjustment(
   return {
     ratio: finalRatio,
     adjustedGrade: finalAdjustedGrade,
+    rawAdjustedGrade: accurateRawGrade,
+    isCapped,
+    minScore,
+    maxScore,
+    isInsufficient,
     teamBaseGrade: effectiveBaseGrade,
     isExcused: false,
     rawRatio: rawWebPARatio,
@@ -1328,10 +1374,47 @@ export function calculateStudentWebPAScore(
   studentId: string,
   groupName: string,
   classData: ClassData,
-  baseGroupGrade: number = 100,
+  baseGroupGrade?: number,
   fudgeWeightOrConfig: number | Partial<PeerAdjustmentConfig> = 1.0
 ): PeerAdjustmentResult {
   return calculateStudentPeerAdjustment(studentId, groupName, classData, baseGroupGrade, fudgeWeightOrConfig);
+}
+
+export interface GradeDisplayInfo {
+  isInsufficient: boolean;
+  isCapped: boolean;
+  displayText: string;
+  realScoreText: string;
+  tooltipText: string;
+  adjustedGrade: number;
+  rawAdjustedGrade: number;
+  teamBaseGrade: number;
+  minScore: number;
+  maxScore: number;
+}
+
+export function getGradeDisplayInfo(webpa: PeerAdjustmentResult): GradeDisplayInfo {
+  const { adjustedGrade, rawAdjustedGrade, teamBaseGrade, minScore, maxScore, isInsufficient, isCapped } = webpa;
+  const realScoreText = `${adjustedGrade.toFixed(1)} / ${teamBaseGrade}`;
+  const displayText = isInsufficient ? 'Insufficient' : realScoreText;
+  const tooltipText = isInsufficient
+    ? `Real Score: ${adjustedGrade.toFixed(1)} / ${teamBaseGrade} (Below minimum passing threshold of ${minScore} pts)`
+    : isCapped
+      ? `Capped at maximum allowable score of ${maxScore} pts (Calculated: ${rawAdjustedGrade} pts)`
+      : `Calibrated Score: ${adjustedGrade.toFixed(1)} / ${teamBaseGrade}`;
+
+  return {
+    isInsufficient,
+    isCapped,
+    displayText,
+    realScoreText,
+    tooltipText,
+    adjustedGrade,
+    rawAdjustedGrade,
+    teamBaseGrade,
+    minScore,
+    maxScore
+  };
 }
 
 export interface CriterionDisputeRow {
@@ -1973,5 +2056,7 @@ export function generateSamplePulseRounds(classData: ClassData): PulseRound[] {
 
   return [round1, round2, round3];
 }
+
+export * from './subPeerReview';
 
 

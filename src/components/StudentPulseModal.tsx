@@ -362,6 +362,9 @@ export const StudentPulseModal: React.FC<StudentPulseModalProps> = ({
                     <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 700 }}>10 (Peak Velocity)</span>
                   </div>
                   <input
+                    id="student-pulse-morale-range"
+                    name="student-pulse-morale-range"
+                    aria-label="Team morale rating"
                     type="range"
                     min={1}
                     max={10}
@@ -527,6 +530,9 @@ export const StudentPulseModal: React.FC<StudentPulseModalProps> = ({
 
                     {q.type === 'text' && (
                       <input
+                        id={`student-pulse-custom-q-${q.id}`}
+                        name={`custom_q_${q.id}`}
+                        aria-label={q.title}
                         type="text"
                         value={(customAnswers[q.id] as string) || ''}
                         onChange={(e) => setCustomAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
@@ -543,10 +549,12 @@ export const StudentPulseModal: React.FC<StudentPulseModalProps> = ({
             {/* Step 4: Optional 1-line Blocker Note */}
             {activeRound.config?.allowBlockerNotes !== false && (
               <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                <label htmlFor="student-pulse-blocker-note" style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
                   {activeRound.config?.notePrompt || 'Describe any blockers or dependencies (optional)'}
                 </label>
                 <input
+                  id="student-pulse-blocker-note"
+                  name="student-pulse-blocker-note"
                   type="text"
                   value={blockerNote}
                   onChange={(e) => setBlockerNote(e.target.value)}

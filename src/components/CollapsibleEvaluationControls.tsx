@@ -50,7 +50,7 @@ export const CollapsibleEvaluationControls: React.FC<CollapsibleEvaluationContro
   const controls = getEvaluationControls(activeClass);
 
   const activeCount = Object.values(controls).filter(Boolean).length;
-  const totalCount = 7;
+  const totalCount = 8;
   const isAllEnabled = activeCount >= totalCount;
   const isRatingOnly = !controls.allowSelfReview && !controls.showStrengthsFeedback && !controls.showGrowthSuggestions && !controls.showPraiseTags && !controls.showRoleSelection && !controls.showIcebreaker;
 
@@ -107,6 +107,31 @@ export const CollapsibleEvaluationControls: React.FC<CollapsibleEvaluationContro
 
               {/* Minimal Status Pills */}
               <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUpdateControls({ unlockMainPeerReview: !controls.unlockMainPeerReview });
+                }}
+                title={controls.unlockMainPeerReview ? "Click to lock main peer review round" : "Click to unlock main peer review round"}
+                style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  padding: '0.12rem 0.5rem',
+                  borderRadius: '9999px',
+                  backgroundColor: controls.unlockMainPeerReview ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.1)',
+                  color: controls.unlockMainPeerReview ? '#059669' : '#dc2626',
+                  border: '1px solid var(--border-color)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease'
+                }}
+              >
+                {controls.unlockMainPeerReview ? <Unlock size={11} /> : <Lock size={11} />}
+                {controls.unlockMainPeerReview ? 'Review Round Open' : 'Review Round Locked'}
+              </span>
+
+              <span
                 style={{
                   fontSize: '0.68rem',
                   fontWeight: 700,
@@ -121,10 +146,15 @@ export const CollapsibleEvaluationControls: React.FC<CollapsibleEvaluationContro
                 }}
               >
                 {isAllEnabled ? <CheckCircle2 size={11} className="text-emerald" /> : <Sliders size={11} />}
-                {isAllEnabled ? 'Full Experience (6/6)' : isRatingOnly ? 'Numeric Only' : `${activeCount}/6 Active`}
+                {isAllEnabled ? 'Full Experience (6/6)' : isRatingOnly ? 'Numeric Only' : `${activeCount}/8 Active`}
               </span>
 
               <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUpdateControls({ allowProfileEditing: !controls.allowProfileEditing });
+                }}
+                title={controls.allowProfileEditing ? "Click to lock student profiles" : "Click to allow student profile editing"}
                 style={{
                   fontSize: '0.68rem',
                   fontWeight: 700,
@@ -135,7 +165,9 @@ export const CollapsibleEvaluationControls: React.FC<CollapsibleEvaluationContro
                   border: '1px solid var(--border-color)',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '0.3rem'
+                  gap: '0.3rem',
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease'
                 }}
               >
                 {controls.allowProfileEditing ? <Unlock size={11} /> : <Lock size={11} />}

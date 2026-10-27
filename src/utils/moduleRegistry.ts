@@ -6,7 +6,7 @@ import {
   SlidersHorizontal, Activity, Award, RefreshCw, MessageSquare, 
   Key, Zap, Edit3, Plus, Type, UserCheck, Presentation,
   Layers, Kanban, Table, Columns3, Undo2, Shuffle, Settings2, Target, RotateCcw, Check, Percent, Globe, UserX,
-  Calculator
+  Calculator, Pin
 } from 'lucide-react';
 import type { FeatureToggles } from './featurePreferences';
 
@@ -144,6 +144,14 @@ export const MODULE_ITEMS: ModuleItem[] = [
     title: 'Floating Quick Action Pill (Bottom Center)',
     desc: 'Contractable & expandable floating dock at the bottom of the window for instant access to top bar functions, search, modules, and tools.',
     icon: Compass,
+    category: 'header',
+    slotType: 'dock'
+  },
+  {
+    key: 'showRetractableDisplay',
+    title: 'Dynamic Retractable Display (Pin Any Module)',
+    desc: 'Retractable floating workspace allowing users to pin, interact with, and monitor any module across all tabs and windows.',
+    icon: Pin,
     category: 'header',
     slotType: 'dock'
   },
@@ -801,6 +809,15 @@ export const MODULE_ITEMS: ModuleItem[] = [
     icon: Calculator,
     category: 'analytics',
     slotType: 'button',
+    parentKey: 'showWebPACalibration'
+  },
+  {
+    key: 'showPeerImpactGuide',
+    title: 'Peer Review Impact Guide',
+    desc: 'Explanation of what Peer Review Impact is, how it affects grades, and how instructors use it.',
+    icon: Sliders,
+    category: 'analytics',
+    slotType: 'card',
     parentKey: 'showWebPACalibration'
   },
   {

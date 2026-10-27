@@ -14,7 +14,7 @@ import {
   GraduationCap, Filter, ArrowUp, ArrowDown, Printer,
   ShieldAlert, History, ChevronDown, ChevronRight, ChevronUp,
   ArrowUpDown, SlidersHorizontal, HelpCircle, Layers, Calculator,
-  Code, Cpu, Atom, Briefcase, Tag
+  Code, Cpu, Atom, Briefcase, Tag, ArrowUpRight
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { useClass } from '../context/ClassContext';
@@ -100,6 +100,7 @@ import GuideCenterModal from '../components/GuideCenterModal';
 import { StudentPortalPreviewModal } from '../components/StudentPortalPreviewModal';
 import { OnboardingChecklistWidget } from '../components/OnboardingChecklistWidget';
 import { NowBarStack } from '../components/NowBarStack';
+import { DynamicRetractableDisplay } from '../components/DynamicRetractableDisplay';
 import { KeyboardShortcutsModal } from '../components/KeyboardShortcutsModal';
 import { TeamCohortsOverview } from '../components/TeamCohortsOverview';
 import { TeamHealthPulseCard } from '../components/TeamHealthPulseCard';
@@ -108,6 +109,9 @@ import { LivePresentationScoringModal } from '../components/LivePresentationScor
 import { TeamKickoffModal } from '../components/TeamKickoffModal';
 import { Smartphone, Edit3, Presentation } from 'lucide-react';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
+import { SoundToggle } from '../components/SoundToggle';
+import { AnimatedNumber } from '../components/AnimatedNumber';
+import { playSoftClick, playPop } from '../utils/soundFx';
 import { EditableModuleSlot, EditModeContext } from '../components/EditableModuleSlot';
 import { getModuleTab, getModuleByKey } from '../utils/moduleRegistry';
 import {
@@ -125,7 +129,7 @@ import {
   matchShortcut,
   DEFAULT_KEYBOARD_SHORTCUTS
 } from '../utils/keyboardShortcuts';
-import { downloadStudentReportPDF } from '../utils/pdfReport';
+import { downloadStudentReportPDF, downloadTeamDossierPDF } from '../utils/pdfReport';
 import { QuickLookHUD, type QuickLookPayload } from '../components/QuickLookHUD';
 import { calculateGroupReport } from '../utils/grouping';
 import TeamCohortsGradebookView from '../components/TeamCohortsGradebookView';
@@ -500,6 +504,13 @@ export const AdminDashboard: React.FC = () => {
     return subscribeFeatureToggles((updated) => setFeatureToggles(updated));
   }, []);
 
+  // Card layout ordering & priority pinning subscription: re-renders dashboard dynamically when cards move or pin
+  const [, setCardLayoutTick] = useState(0);
+
+  useEffect(() => {
+    return subscribeCardLayout(() => setCardLayoutTick((t) => t + 1));
+  }, []);
+
   // Admin authentication local states
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -871,6 +882,7 @@ export const AdminDashboard: React.FC = () => {
 
   // Table expansion/contraction states (contracted by default so large tables consume minimal vertical space)
   const [isRosterTableExpanded, setIsRosterTableExpanded] = useState<boolean>(false);
+  const [isAutoGroupStudioExpanded, setIsAutoGroupStudioExpanded] = useState<boolean>(true);
   const [isResultsTableExpanded, setIsResultsTableExpanded] = useState<boolean>(false);
   const [resultsViewMode, setResultsViewMode] = useState<'table' | 'teams'>('table');
   const [isAuditMatrixExpanded, setIsAuditMatrixExpanded] = useState<boolean>(false);
@@ -948,8 +960,9 @@ export const AdminDashboard: React.FC = () => {
     return peerAdjustmentConfig?.fudgeWeight ?? 1.0;
   });
   const [baseGroupGrade, setBaseGroupGrade] = useState<number>(() => {
+    if (activeClass?.targetScale) return activeClass.targetScale;
     const val = localStorage.getItem('peer_base_grade');
-    return val ? Number(val) : 100;
+    return val ? Number(val) : (activeClass ? getTargetScale(activeClass) : 31);
   });
   const [isTeamBaseGradesModalOpen, setIsTeamBaseGradesModalOpen] = useState(false);
 
@@ -958,8 +971,11 @@ export const AdminDashboard: React.FC = () => {
       const cfg = getPeerAdjustmentConfig(activeClass);
       setPeerAdjustmentConfigState(cfg);
       setFudgeWeight(cfg.fudgeWeight);
+      const classScale = getTargetScale(activeClass);
+      setBaseGroupGrade(classScale);
+      localStorage.setItem('peer_base_grade', String(classScale));
     }
-  }, [activeClass?.id, activeClass?.peerAdjustmentConfig]);
+  }, [activeClass?.id, activeClass?.peerAdjustmentConfig, activeClass?.targetScale]);
 
   const handleUpdatePeerAdjustmentConfig = (partial: Partial<PeerAdjustmentConfig>) => {
     const updated = { ...peerAdjustmentConfig, ...partial };
@@ -973,6 +989,7 @@ export const AdminDashboard: React.FC = () => {
     }
   };
   const [teamSearchQuery, setTeamSearchQuery] = useState('');
+  const [peerCardTeamSearch, setPeerCardTeamSearch] = useState('');
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [newMilestoneName, setNewMilestoneName] = useState('');
 
@@ -1008,7 +1025,9 @@ export const AdminDashboard: React.FC = () => {
   // Master Collapse/Expand All listener across all sections
   useEffect(() => {
     const handleCollapseAll = () => {
+      playSoftClick();
       setIsRosterTableExpanded(false);
+      setIsAutoGroupStudioExpanded(false);
       setIsResultsTableExpanded(false);
       setIsAuditMatrixExpanded(false);
       setIsLmsExportExpanded(false);
@@ -1019,7 +1038,9 @@ export const AdminDashboard: React.FC = () => {
       } catch (e) { }
     };
     const handleExpandAll = () => {
+      playSoftClick();
       setIsRosterTableExpanded(true);
+      setIsAutoGroupStudioExpanded(true);
       setIsResultsTableExpanded(true);
       setIsAuditMatrixExpanded(true);
       setIsLmsExportExpanded(true);
@@ -1029,11 +1050,17 @@ export const AdminDashboard: React.FC = () => {
         });
       } catch (e) { }
     };
+    const handleToggleAutoGroup = () => {
+      playSoftClick();
+      setIsAutoGroupStudioExpanded(prev => !prev);
+    };
     window.addEventListener('peerlens_collapse_all', handleCollapseAll);
     window.addEventListener('peerlens_expand_all', handleExpandAll);
+    window.addEventListener('peerlens_toggle_autogroup_expanded', handleToggleAutoGroup);
     return () => {
       window.removeEventListener('peerlens_collapse_all', handleCollapseAll);
       window.removeEventListener('peerlens_expand_all', handleExpandAll);
+      window.removeEventListener('peerlens_toggle_autogroup_expanded', handleToggleAutoGroup);
     };
   }, []);
 
@@ -1309,7 +1336,456 @@ export const AdminDashboard: React.FC = () => {
       return 'grouping';
     };
 
-    // 1. Student / Teammate Element
+    // 0. Universal Attribute-Driven QuickLook: [data-quicklook-title]
+    const customEl = el.closest('[data-quicklook-title]') as HTMLElement | null;
+    if (customEl) {
+      const title = customEl.getAttribute('data-quicklook-title') || '';
+      const subtitle = customEl.getAttribute('data-quicklook-subtitle') || customEl.getAttribute('data-quicklook-badge') || undefined;
+      const details = customEl.getAttribute('data-quicklook-desc') || customEl.getAttribute('data-quicklook-details') || undefined;
+      const tip = customEl.getAttribute('data-quicklook-tip') || undefined;
+      const customType = customEl.getAttribute('data-quicklook-type') || 'generic';
+      const impact = customEl.getAttribute('data-quicklook-impact') || undefined;
+      const shortcut = customEl.getAttribute('data-quicklook-shortcut') || undefined;
+      const val = customEl.getAttribute('data-quicklook-value') || undefined;
+      const prereq = customEl.getAttribute('data-quicklook-prereq') || customEl.getAttribute('data-quicklook-prerequisites') || undefined;
+
+      const targetKey = `custom:${title}`;
+      if (targetKey === lastInspectedTargetKeyRef.current) {
+        setQuickLookPos({ x, y });
+        return;
+      }
+      lastInspectedTargetKeyRef.current = targetKey;
+      setQuickLookPos({ x, y });
+
+      if (customType === 'action') {
+        setQuickLookPayload({
+          type: 'action',
+          label: title,
+          description: details || '',
+          shortcut,
+          impact,
+          prerequisites: prereq,
+          isDestructive: customEl.hasAttribute('data-quicklook-destructive')
+        });
+      } else if (customType === 'control') {
+        setQuickLookPayload({
+          type: 'control',
+          controlKey: title.toLowerCase().replace(/\s+/g, '_'),
+          title,
+          currentValue: val || 'Configured',
+          description: details || '',
+          impactAnalysis: impact || 'Directly configures active classroom parameters.',
+          pedagogicalRationale: customEl.getAttribute('data-quicklook-pedagogy') || undefined,
+          recommendation: tip
+        });
+      } else {
+        setQuickLookPayload({
+          type: 'generic',
+          title,
+          subtitle,
+          details,
+          tip
+        });
+      }
+      isSpaceQuickLookActiveRef.current = true;
+      return;
+    }
+
+    // 1. Specific Metric / Calculation / KPI: [data-quicklook-metric]
+    const metricEl = el.closest('[data-quicklook-metric]') as HTMLElement | null;
+    if (metricEl) {
+      const metricKey = metricEl.getAttribute('data-quicklook-metric') || '';
+      const studentEl = metricEl.closest('[data-student-id]') as HTMLElement | null;
+      const studentId = studentEl?.getAttribute('data-student-id');
+      const student = studentId ? (activeClass?.students.find(s => s.id === studentId) || stagedAutoGroups?.find(s => s.id === studentId)) : undefined;
+
+      const targetKey = `metric:${metricKey}:${studentId || 'global'}`;
+      if (targetKey === lastInspectedTargetKeyRef.current) {
+        setQuickLookPos({ x, y });
+        return;
+      }
+
+      if ((metricKey === 'calibrated_grade' || metricKey === 'webpa_ratio') && student && activeClass) {
+        lastInspectedTargetKeyRef.current = targetKey;
+        setQuickLookPos({ x, y });
+
+        const studentTeamBase = activeClass.teamBaseGrades?.[student.groupName] ?? getTargetScale(activeClass);
+        const webpa = calculateStudentWebPAScore(
+          student.id,
+          student.groupName,
+          activeClass,
+          studentTeamBase,
+          peerAdjustmentConfig
+        );
+
+        const isRatio = metricKey === 'webpa_ratio';
+        setQuickLookPayload({
+          type: 'metric',
+          metricKey,
+          label: isRatio ? 'WebPA Peer Multiplier' : 'Calibrated Final Mark',
+          value: isRatio ? `${webpa.ratio.toFixed(2)}x` : webpa.adjustedGrade,
+          student,
+          teamName: student.groupName,
+          classData: activeClass,
+          breakdown: {
+            baseGrade: webpa.teamBaseGrade,
+            webpaRatio: Number(webpa.ratio.toFixed(3)),
+            fudgeWeight: peerAdjustmentConfig.fudgeWeight,
+            rawScore: webpa.rawAdjustedGrade,
+            calibratedScore: webpa.adjustedGrade,
+            penaltyApplied: !student.submitted && !student.isExcused && peerAdjustmentConfig.penalizeNonSubmitters,
+            maxCapApplied: webpa.isCapped,
+            belowMin: webpa.isInsufficient,
+            minScore: webpa.minScore,
+            maxScore: webpa.maxScore,
+            explanation: webpa.isInsufficient
+              ? `Score fell below the minimum passing threshold of ${webpa.minScore} pts set by professor.`
+              : webpa.isCapped
+              ? `Score was capped at the syllabus maximum limit of ${webpa.maxScore} pts (raw formula yield was ${webpa.rawAdjustedGrade}).`
+              : `Grade = Base (${webpa.teamBaseGrade}) × [1 + ${peerAdjustmentConfig.fudgeWeight} × (${webpa.ratio.toFixed(3)} - 1)] = ${webpa.adjustedGrade} pts.`,
+            formula: 'Grade = TeamBase × [1 + S × (WebPA - 1)]'
+          },
+          historicalTrend: webpa.ratio >= 1.05 ? '+ Boost' : webpa.ratio <= 0.95 ? '- Penalty' : 'Balanced'
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      } else if (metricKey === 'kpi_students') {
+        lastInspectedTargetKeyRef.current = targetKey;
+        setQuickLookPos({ x, y });
+        const studentCount = activeClass?.students.length || 0;
+        const teamCount = new Set(activeClass?.students.map(s => s.groupName).filter(Boolean)).size;
+        setQuickLookPayload({
+          type: 'metric',
+          metricKey: 'kpi_students',
+          label: 'Classroom Enrollment Roster',
+          value: studentCount,
+          classData: activeClass,
+          breakdown: {
+            explanation: `${studentCount} students actively enrolled across ${teamCount} collaborative cohorts. Multi-attribute profiles track home/host universities, nationality mixing, and gender parity.`
+          },
+          historicalTrend: `${teamCount} active teams`
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      } else if (metricKey === 'kpi_criteria') {
+        lastInspectedTargetKeyRef.current = targetKey;
+        setQuickLookPos({ x, y });
+        const criteriaCount = activeClass?.fields.length || 0;
+        const scaleDesc = activeClass?.targetScale === 0 ? 'Rubric Sum' : `${activeClass?.targetScale || 20} pts`;
+        setQuickLookPayload({
+          type: 'metric',
+          metricKey: 'kpi_criteria',
+          label: 'Rubric Criteria Dimensions',
+          value: criteriaCount,
+          classData: activeClass,
+          breakdown: {
+            explanation: `${criteriaCount} behavioral evaluation dimensions configured with a benchmark target scale of ${scaleDesc}. Each dimension carries customizable relative weighting.`
+          },
+          historicalTrend: activeClass?.customScaleEnabled ? 'Custom Scale' : 'Standard 1–5'
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      } else if (metricKey === 'kpi_completion') {
+        lastInspectedTargetKeyRef.current = targetKey;
+        setQuickLookPos({ x, y });
+        const total = activeClass?.students.length || 0;
+        const completed = activeClass?.students.filter(s => s.submitted).length || 0;
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+        setQuickLookPayload({
+          type: 'metric',
+          metricKey: 'kpi_completion',
+          label: 'Peer Evaluation Submission Rate',
+          value: `${pct}%`,
+          classData: activeClass,
+          breakdown: {
+            explanation: `${completed} of ${total} students have submitted peer evaluations. Non-submitters can receive an automated damping penalty if enabled in Section 3.`
+          },
+          historicalTrend: `${completed}/${total} submitted`
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      } else if (metricKey === 'weighted_score') {
+        lastInspectedTargetKeyRef.current = targetKey;
+        setQuickLookPos({ x, y });
+        setQuickLookPayload({
+          type: 'metric',
+          metricKey: 'weighted_score',
+          label: 'Weighted Rubric Score',
+          value: 'Rubric Score',
+          classData: activeClass,
+          breakdown: {
+            explanation: 'Aggregates anonymous peer evaluations across all criteria weighted by the relative percentage weights configured in Phase 2.'
+          }
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      } else if (metricKey === 'johari_alignment') {
+        lastInspectedTargetKeyRef.current = targetKey;
+        setQuickLookPos({ x, y });
+        setQuickLookPayload({
+          type: 'metric',
+          metricKey: 'johari_alignment',
+          label: 'Johari Self-Awareness Alignment',
+          value: 'Perception Matrix',
+          classData: activeClass,
+          breakdown: {
+            explanation: 'Compares a student\'s self-evaluation ratings directly with anonymous peer consensus ratings to identify Public Strengths, Blind Spots, and Hidden Talents.'
+          }
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      }
+    }
+
+    // 2. Rubric Criterion: [data-criterion-id], [data-field-id]
+    const critEl = el.closest('[data-criterion-id], [data-field-id]') as HTMLElement | null;
+    if (critEl) {
+      const criterionId = critEl.getAttribute('data-criterion-id') || critEl.getAttribute('data-field-id');
+      if (criterionId && activeClass) {
+        const criterion = activeClass.fields.find(f => f.id === criterionId);
+        if (criterion) {
+          const targetKey = `criterion:${criterionId}`;
+          if (targetKey === lastInspectedTargetKeyRef.current) {
+            setQuickLookPos({ x, y });
+            return;
+          }
+          lastInspectedTargetKeyRef.current = targetKey;
+          setQuickLookPos({ x, y });
+
+          // Calculate live cohort statistics for this criterion
+          const scores: number[] = [];
+          (activeClass.reviews || []).forEach(r => {
+            const val = r.scores?.[criterionId];
+            if (typeof val === 'number') {
+              scores.push(val);
+            }
+          });
+          const count = scores.length;
+          const avg = count > 0 ? scores.reduce((a, b) => a + b, 0) / count : 0;
+          const variance = count > 1 ? scores.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / (count - 1) : 0;
+          const stdDev = Math.sqrt(variance);
+          const consensusLabel = count === 0
+            ? 'No Reviews Yet'
+            : stdDev <= 0.65
+            ? 'High Consensus'
+            : stdDev <= 1.15
+            ? 'Moderate Consensus'
+            : 'Divided Opinions';
+
+          setQuickLookPayload({
+            type: 'criterion',
+            criterion,
+            classData: activeClass,
+            stats: {
+              averageScore: Number(avg.toFixed(2)),
+              stdDev: Number(stdDev.toFixed(2)),
+              count,
+              consensusLabel
+            }
+          });
+          isSpaceQuickLookActiveRef.current = true;
+          return;
+        }
+      }
+    }
+
+    // 3. Algorithm Controls, Sliders & Inputs: [data-quicklook-control]
+    const controlEl = el.closest('[data-quicklook-control]') as HTMLElement | null;
+    if (controlEl) {
+      const controlKey = controlEl.getAttribute('data-quicklook-control') || '';
+      const targetKey = `control:${controlKey}`;
+      if (targetKey === lastInspectedTargetKeyRef.current) {
+        setQuickLookPos({ x, y });
+        return;
+      }
+      lastInspectedTargetKeyRef.current = targetKey;
+      setQuickLookPos({ x, y });
+
+      if (controlKey === 'fudge_weight') {
+        const currentWeight = peerAdjustmentConfig?.fudgeWeight ?? 1.0;
+        const pct = Math.round(currentWeight * 100);
+        setQuickLookPayload({
+          type: 'control',
+          controlKey: 'fudge_weight',
+          title: 'Peer Review Sensitivity (Fudge Factor)',
+          currentValue: `${pct}%`,
+          description: 'Controls the mathematical damping factor applied to peer multiplier deviations from 1.0x.',
+          impactAnalysis: currentWeight === 0
+            ? '0% sensitivity: Peer ratings have zero effect on grades. All teammates receive the exact base group mark.'
+            : currentWeight === 1
+            ? '100% sensitivity: Pure Loughborough WebPA. Peer score deviations apply with full linear impact.'
+            : `${pct}% sensitivity: A student rated 10% above peer average receives a +${(currentWeight * 10).toFixed(1)}% calibrated mark boost; a student 10% below receives a -${(currentWeight * 10).toFixed(1)}% reduction.`,
+          pedagogicalRationale: 'Higher sensitivity incentivizes active participation and discourages free-riding, while lower sensitivity protects students from peer bias in formative assignments.',
+          recommendation: 'Accredited STEM syllabi recommend 50% for introductory courses and 80–100% for capstone projects.'
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      } else if (controlKey === 'target_scale') {
+        const currentTarget = activeClass?.targetScale ?? 31;
+        setQuickLookPayload({
+          type: 'control',
+          controlKey: 'target_scale',
+          title: 'Benchmark Target Scale (Max Points)',
+          currentValue: `${currentTarget} pts`,
+          description: 'The maximum calibrated target score possible for a team performing at the top anchor of the rubric.',
+          impactAnalysis: 'All calibrated grades are scaled proportionally to this base mark ceiling.',
+          pedagogicalRationale: 'Aligns peer-evaluated coursework marks with the university course syllabus weighting.',
+          recommendation: 'Usually set to match the module credit weight (e.g. 20, 30, or 100 pts).'
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      } else if (controlKey === 'min_target_scale') {
+        const currentMin = activeClass?.minTargetScale ?? 15;
+        setQuickLookPayload({
+          type: 'control',
+          controlKey: 'min_target_scale',
+          title: 'Minimum Benchmark Threshold (Passing Floor)',
+          currentValue: `${currentMin} pts`,
+          description: 'The minimum baseline mark awarded for baseline participation.',
+          impactAnalysis: 'Prevents disproportionately catastrophic failures while maintaining grading rigor.',
+          pedagogicalRationale: 'Prevents single-outlier negative reviews from failing an otherwise participating student.',
+          recommendation: 'Typically set to 40%–50% of the maximum benchmark score.'
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      } else if (controlKey === 'scale_range') {
+        const sMin = activeClass?.scaleMin ?? 1;
+        const sMax = activeClass?.scaleMax ?? 5;
+        setQuickLookPayload({
+          type: 'control',
+          controlKey: 'scale_range',
+          title: 'Likert Rating Scale Interval',
+          currentValue: `${sMin} to ${sMax}`,
+          description: 'The numerical rating range presented to students when evaluating teammates on each rubric criterion.',
+          impactAnalysis: 'Defines the granularity of peer feedback buttons in the Student Evaluation Portal.',
+          pedagogicalRationale: 'Standard 1–5 scales provide optimal cognitive balance without choice fatigue.',
+          recommendation: 'Use 1–5 for behavioral rubrics and 1–7 or 1–10 for fine-grained technical reviews.'
+        });
+        isSpaceQuickLookActiveRef.current = true;
+        return;
+      }
+    }
+
+    // 4. Action Button / Tool with Bespoke Semantic Context
+    const btnEl = el.closest('button, a.btn, [role="button"]') as HTMLElement | null;
+    if (btnEl) {
+      const rawText = (btnEl.innerText || btnEl.getAttribute('aria-label') || btnEl.getAttribute('title') || '').trim();
+      const titleAttr = btnEl.getAttribute('title') || '';
+      const lower = (rawText + ' ' + titleAttr).toLowerCase();
+
+      let richLabel = rawText.slice(0, 45) || 'Action Tool';
+      let richDesc = '';
+      let shortcutHint = '';
+      let impactMsg = '';
+      let prereqMsg = '';
+      let isDestruct = false;
+      let tipMsg = '';
+
+      if (lower.includes('reshuffle') || lower.includes('shuffle')) {
+        richLabel = 'Reshuffle Teams (Simulated Annealing)';
+        richDesc = 'Executes combinatorial simulated annealing to balance student teams across home/host universities, nationality mixing, and gender parity.';
+        shortcutHint = 'AutoGroup';
+        impactMsg = `Will rebalance ${activeClass?.students.length || 0} students across teams`;
+        prereqMsg = 'Requires active student roster in Section 1';
+        tipMsg = 'Hold Spacebar over teams to inspect diversity harmony before and after reshuffling.';
+      } else if (lower.includes('apply') && (lower.includes('group') || lower.includes('team'))) {
+        richLabel = 'Apply & Synchronize Teams';
+        richDesc = 'Commits the current balanced team configuration into the classroom roster, locking memberships for downstream peer evaluation.';
+        shortcutHint = 'Roster Sync';
+        impactMsg = `Locks current team assignments into active class roster`;
+        prereqMsg = 'Staged groups generated in AutoGroup Studio';
+      } else if (lower.includes('charter')) {
+        richLabel = 'Export Team Charters';
+        richDesc = 'Generates structured team agreement documents establishing group norms, member roles, and communication rules.';
+        shortcutHint = 'Agreements';
+        impactMsg = `Exports formal charter documents for all teams`;
+      } else if (lower.includes('autogroup')) {
+        richLabel = 'AutoGroup Diversity Studio';
+        richDesc = 'Opens the algorithmic group formation workspace to configure target team sizes, rule weights, and layout views.';
+        shortcutHint = 'Optimizer';
+      } else if (lower.includes('export') || lower.includes('download')) {
+        richLabel = 'Export Data Spreadsheet';
+        richDesc = 'Generates accredited spreadsheet records (.xlsx / .csv) containing cohort placements, diversity ratings, or calibrated marks.';
+        shortcutHint = 'Export';
+        impactMsg = `Generates .xlsx workbook with multipliers and formulas`;
+      } else if (lower.includes('import')) {
+        richLabel = 'Ingest Class Roster';
+        richDesc = 'Parses student cohort files from Canvas, Blackboard, or Excel with automatic character encoding and header detection.';
+        shortcutHint = 'Import';
+      } else if (lower.includes('add student')) {
+        richLabel = 'Enroll Student';
+        richDesc = 'Opens manual registration dialog to add individual students to the active classroom cohort.';
+        shortcutHint = 'Roster';
+      } else if (lower.includes('demo') || lower.includes('100')) {
+        richLabel = 'Load 100 Demo Cohort';
+        richDesc = 'Populates 100 realistic international university students to test multi-attribute group balancing and WebPA analytics.';
+        shortcutHint = 'Sample Data';
+        impactMsg = `Populates 100 sample students across 35+ nationalities`;
+      } else if (lower.includes('clear') || lower.includes('purge') || lower.includes('reset class')) {
+        richLabel = 'Reset Classroom Roster';
+        richDesc = 'Purges student records and group assignments to cleanly prepare the workspace for a fresh academic semester.';
+        shortcutHint = 'Reset';
+        isDestruct = true;
+        prereqMsg = 'Cannot be undone once confirmed';
+      } else if (lower.includes('projector')) {
+        richLabel = 'Auditorium Projector Presentation';
+        richDesc = 'Expands the dashboard into a distraction-free, maximized fullscreen view optimized for classroom presentation screens.';
+        shortcutHint = 'Fullscreen';
+      } else if (lower.includes('settings')) {
+        richLabel = 'Workspace Configuration';
+        richDesc = 'Configure grading algorithms, theme appearance, cloud synchronization, and modular feature visibility.';
+        shortcutHint = 'Preferences';
+      } else if (lower.includes('customize')) {
+        richLabel = 'Modular Component Catalog';
+        richDesc = 'Toggle individual cards, buttons, charts, and metrics to customize the dashboard interface for your syllabus.';
+        shortcutHint = 'Modules';
+      } else if (lower.includes('guide') || lower.includes('tour')) {
+        richLabel = 'Pedagogical Guidance Center';
+        richDesc = 'Explore step-by-step interactive walkthroughs, Loughborough WebPA methodology, and accreditation rubrics.';
+        shortcutHint = 'Help';
+      } else if (lower.includes('send') || lower.includes('transfer')) {
+        richLabel = 'Direct Student Transfer';
+        richDesc = 'Transfers this student directly to another group. Click this icon, then click any destination team card or column.';
+        shortcutHint = '2-Click Move';
+      } else if (lower.includes('swap')) {
+        richLabel = 'Instant 2-Click Teammate Swap';
+        richDesc = 'Swaps this student with any teammate in another group. Click this button, then click the target student to trade.';
+        shortcutHint = '2-Click Swap';
+      } else if (lower.includes('lock') || lower.includes('pin')) {
+        richLabel = 'Freeze Team / Member Assignment';
+        richDesc = 'Locks this student or entire team in place so algorithmic reshuffling will not modify their membership.';
+        shortcutHint = 'Lock';
+      } else if (titleAttr) {
+        richDesc = titleAttr;
+      } else {
+        const closestSection = btnEl.closest('.accordion-item, .card, section');
+        const sectionTitle = closestSection?.querySelector('h2, h3, h4')?.textContent?.trim() || 'Classroom Console';
+        richDesc = `Controls ${richLabel} within the ${sectionTitle} workspace to adjust active cohort configurations.`;
+      }
+
+      const targetKey = `btn:${richLabel}`;
+      if (targetKey === lastInspectedTargetKeyRef.current) {
+        setQuickLookPos({ x, y });
+        return;
+      }
+      lastInspectedTargetKeyRef.current = targetKey;
+
+      setQuickLookPos({ x, y });
+      setQuickLookPayload({
+        type: 'action',
+        label: richLabel,
+        description: richDesc,
+        shortcut: shortcutHint || undefined,
+        impact: impactMsg || undefined,
+        prerequisites: prereqMsg || undefined,
+        isDestructive: isDestruct,
+        tip: tipMsg || undefined
+      });
+      isSpaceQuickLookActiveRef.current = true;
+      return;
+    }
+
+    // 5. Student / Teammate Element
     const studentEl = el.closest('[data-student-id]') as HTMLElement | null;
     if (studentEl) {
       const studentId = studentEl.getAttribute('data-student-id');
@@ -1325,12 +1801,20 @@ export const AdminDashboard: React.FC = () => {
         if (student) {
           lastInspectedTargetKeyRef.current = targetKey;
           setQuickLookPos({ x, y });
+
+          const pool = (stagedAutoGroups && stagedAutoGroups.some(s => s.groupName === student.groupName))
+            ? stagedAutoGroups
+            : (activeClass?.students || []);
+          const groupStudents = pool.filter(s => s.groupName === student.groupName);
+          const teamReport = groupStudents.length > 0 ? calculateGroupReport(student.groupName, groupStudents, 3.5) : null;
+
           setQuickLookPayload({
             type: 'student',
             student,
             context,
+            teamReport,
             classData: activeClass,
-            baseGroupGrade: activeClass?.teamBaseGrades?.[student.groupName] ?? activeClass?.targetScale ?? 100,
+            baseGroupGrade: activeClass?.teamBaseGrades?.[student.groupName] ?? (activeClass ? getTargetScale(activeClass) : 31),
             fudgeWeight: activeClass?.peerAdjustmentConfig?.fudgeWeight ?? 1.0
           });
           isSpaceQuickLookActiveRef.current = true;
@@ -1339,7 +1823,7 @@ export const AdminDashboard: React.FC = () => {
       }
     }
 
-    // 2. Team / Group Element
+    // 6. Team / Group Element
     const groupEl = el.closest('[data-group-name]') as HTMLElement | null;
     if (groupEl) {
       const groupName = groupEl.getAttribute('data-group-name');
@@ -1369,7 +1853,7 @@ export const AdminDashboard: React.FC = () => {
       }
     }
 
-    // 3. Module Slot
+    // 7. Module Slot
     let moduleEl = el.closest('[data-module-key]') as HTMLElement | null;
     let moduleKey = moduleEl?.getAttribute('data-module-key') as keyof FeatureToggles | null;
 
@@ -1435,114 +1919,6 @@ export const AdminDashboard: React.FC = () => {
         isSpaceQuickLookActiveRef.current = true;
         return;
       }
-    }
-
-    // 4. Action Button / Tool with Bespoke Semantic Context
-    const btnEl = el.closest('button, a.btn, [role="button"]') as HTMLElement | null;
-    if (btnEl) {
-      const rawText = (btnEl.innerText || btnEl.getAttribute('aria-label') || btnEl.getAttribute('title') || '').trim();
-      const titleAttr = btnEl.getAttribute('title') || '';
-      const lower = (rawText + ' ' + titleAttr).toLowerCase();
-
-      let richLabel = rawText.slice(0, 45) || 'Action Tool';
-      let richDesc = '';
-      let shortcutHint = '';
-      let impactMsg = '';
-
-      if (lower.includes('reshuffle') || lower.includes('shuffle')) {
-        richLabel = 'Reshuffle Teams (Simulated Annealing)';
-        richDesc = 'Executes combinatorial simulated annealing to balance student teams across home/host universities, nationality mixing, and gender parity.';
-        shortcutHint = 'AutoGroup';
-        impactMsg = `Will rebalance ${activeClass?.students.length || 0} students across teams`;
-      } else if (lower.includes('apply') && (lower.includes('group') || lower.includes('team'))) {
-        richLabel = 'Apply & Synchronize Teams';
-        richDesc = 'Commits the current balanced team configuration into the classroom roster, locking memberships for downstream peer evaluation.';
-        shortcutHint = 'Roster Sync';
-        impactMsg = `Locks current team assignments into active class roster`;
-      } else if (lower.includes('charter')) {
-        richLabel = 'Export Team Charters';
-        richDesc = 'Generates structured team agreement documents establishing group norms, member roles, and communication rules.';
-        shortcutHint = 'Agreements';
-        impactMsg = `Exports formal charter documents for all teams`;
-      } else if (lower.includes('autogroup')) {
-        richLabel = 'AutoGroup Diversity Studio';
-        richDesc = 'Opens the algorithmic group formation workspace to configure target team sizes, rule weights, and layout views.';
-        shortcutHint = 'Optimizer';
-      } else if (lower.includes('export') || lower.includes('download')) {
-        richLabel = 'Export Data Spreadsheet';
-        richDesc = 'Generates accredited spreadsheet records (.xlsx / .csv) containing cohort placements, diversity ratings, or calibrated marks.';
-        shortcutHint = 'Export';
-        impactMsg = `Generates .xlsx workbook with multipliers and formulas`;
-      } else if (lower.includes('import')) {
-        richLabel = 'Ingest Class Roster';
-        richDesc = 'Parses student cohort files from Canvas, Blackboard, or Excel with automatic character encoding and header detection.';
-        shortcutHint = 'Import';
-      } else if (lower.includes('add student')) {
-        richLabel = 'Enroll Student';
-        richDesc = 'Opens manual registration dialog to add individual students to the active classroom cohort.';
-        shortcutHint = 'Roster';
-      } else if (lower.includes('demo') || lower.includes('100')) {
-        richLabel = 'Load 100 Demo Cohort';
-        richDesc = 'Populates 100 realistic international university students to test multi-attribute group balancing and WebPA analytics.';
-        shortcutHint = 'Sample Data';
-        impactMsg = `Populates 100 sample students across 35+ nationalities`;
-      } else if (lower.includes('clear')) {
-        richLabel = 'Reset Classroom Roster';
-        richDesc = 'Purges student records and group assignments to cleanly prepare the workspace for a fresh academic semester.';
-        shortcutHint = 'Reset';
-      } else if (lower.includes('projector')) {
-        richLabel = 'Auditorium Projector Presentation';
-        richDesc = 'Expands the dashboard into a distraction-free, maximized fullscreen view optimized for classroom presentation screens.';
-        shortcutHint = 'Fullscreen';
-      } else if (lower.includes('settings')) {
-        richLabel = 'Workspace Configuration';
-        richDesc = 'Configure grading algorithms, theme appearance, cloud synchronization, and modular feature visibility.';
-        shortcutHint = 'Preferences';
-      } else if (lower.includes('customize')) {
-        richLabel = 'Modular Component Catalog';
-        richDesc = 'Toggle individual cards, buttons, charts, and metrics to customize the dashboard interface for your syllabus.';
-        shortcutHint = 'Modules';
-      } else if (lower.includes('guide') || lower.includes('tour')) {
-        richLabel = 'Pedagogical Guidance Center';
-        richDesc = 'Explore step-by-step interactive walkthroughs, Loughborough WebPA methodology, and accreditation rubrics.';
-        shortcutHint = 'Help';
-      } else if (lower.includes('send') || lower.includes('transfer')) {
-        richLabel = 'Direct Student Transfer';
-        richDesc = 'Transfers this student directly to another group. Click this icon, then click any destination team card or column.';
-        shortcutHint = '2-Click Move';
-      } else if (lower.includes('swap')) {
-        richLabel = 'Instant 2-Click Teammate Swap';
-        richDesc = 'Swaps this student with any teammate in another group. Click this button, then click the target student to trade.';
-        shortcutHint = '2-Click Swap';
-      } else if (lower.includes('lock') || lower.includes('pin')) {
-        richLabel = 'Freeze Team / Member Assignment';
-        richDesc = 'Locks this student or entire team in place so algorithmic reshuffling will not modify their membership.';
-        shortcutHint = 'Lock';
-      } else if (titleAttr) {
-        richDesc = titleAttr;
-      } else {
-        const closestSection = btnEl.closest('.accordion-item, .card, section');
-        const sectionTitle = closestSection?.querySelector('h2, h3, h4')?.textContent?.trim() || 'Classroom Console';
-        richDesc = `Controls ${richLabel} within the ${sectionTitle} workspace to adjust active cohort configurations.`;
-      }
-
-      const targetKey = `btn:${richLabel}`;
-      if (targetKey === lastInspectedTargetKeyRef.current) {
-        setQuickLookPos({ x, y });
-        return;
-      }
-      lastInspectedTargetKeyRef.current = targetKey;
-
-      setQuickLookPos({ x, y });
-      setQuickLookPayload({
-        type: 'action',
-        label: richLabel,
-        description: richDesc,
-        shortcut: shortcutHint || undefined,
-        impact: impactMsg || undefined
-      });
-      isSpaceQuickLookActiveRef.current = true;
-      return;
     }
 
     // 5. Intelligent Section & Card Fallback
@@ -1942,6 +2318,21 @@ export const AdminDashboard: React.FC = () => {
       return members.some(m => m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q));
     });
   }, [classTeams, teamSearchQuery, activeClass?.students]);
+
+  const filteredCardTeams = useMemo(() => {
+    if (!peerCardTeamSearch.trim()) return classTeams;
+    const q = peerCardTeamSearch.toLowerCase().trim();
+    return classTeams.filter(team => {
+      if (team.toLowerCase().includes(q)) return true;
+      const members = activeClass?.students.filter(s => s.groupName === team) || [];
+      return members.some(m => m.name.toLowerCase().includes(q));
+    });
+  }, [classTeams, peerCardTeamSearch, activeClass?.students]);
+
+  const configuredTeamsCount = useMemo(() => {
+    if (!activeClass?.teamBaseGrades) return 0;
+    return classTeams.filter(team => typeof activeClass.teamBaseGrades?.[team] === 'number').length;
+  }, [classTeams, activeClass?.teamBaseGrades]);
 
   const quickFilterCounts = useMemo(() => {
     if (!activeClass?.students) return { total: 0, pending: 0, submitted: 0, unassigned: 0, with_role: 0, erasmus: 0, duplicates: 0 };
@@ -2583,6 +2974,22 @@ export const AdminDashboard: React.FC = () => {
         return;
       }
 
+      // Alt + V to toggle Dynamic Retractable Display
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key.toLowerCase() === 'v' || e.code === 'KeyV')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const latestToggles = loadFeatureToggles();
+        if (!latestToggles.showRetractableDisplay) {
+          const updated = { ...latestToggles, showRetractableDisplay: true };
+          saveFeatureToggles(updated);
+          syncWorkspaceSettingsToCloud({ featureToggles: updated });
+          setFeatureToggles(updated);
+          addToast('Dynamic Retractable Display enabled (Alt+V)', 'info');
+        }
+        window.dispatchEvent(new CustomEvent('peerlens_toggle_retractable_display'));
+        return;
+      }
+
       // If any modal/overlay is currently active, don't fire background shortcuts
       const isAnyModalOpen = isShortcutsModalOpen || isGuideCenterOpen || !!previewingStudent || isTourOpen ||
         isCommandPaletteOpen || isSettingsModalOpen || isLinkDispatcherOpen ||
@@ -2761,6 +3168,7 @@ export const AdminDashboard: React.FC = () => {
             </button>
             <span style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-color)', margin: '0 0.15rem' }} />
             <ThemeSwitcher />
+            <SoundToggle />
           </div>
         </header>
 
@@ -3167,6 +3575,11 @@ export const AdminDashboard: React.FC = () => {
       flaggedForReview: false,
       suspiciousReason: null
     });
+
+    const originalStudent = activeClass.students.find(s => s.id === editStudentData.id);
+    if (originalStudent && originalStudent.groupName !== (editStudentData.groupName.trim() || 'Unassigned')) {
+      playPop();
+    }
 
     setIsEditStudentModalOpen(false);
     addToast('Student profile updated successfully!', 'success');
@@ -3684,6 +4097,19 @@ export const AdminDashboard: React.FC = () => {
           syncWorkspaceSettingsToCloud({ featureToggles: updated });
           setFeatureToggles(updated);
           addToast(nextVal ? 'Floating Quick Action Pill enabled (Q)' : 'Floating Quick Action Pill hidden (Q)', 'info');
+        }
+        break;
+      case 'toggle_retractable_display':
+        {
+          const latestToggles = loadFeatureToggles();
+          if (!latestToggles.showRetractableDisplay) {
+            const updated = { ...latestToggles, showRetractableDisplay: true };
+            saveFeatureToggles(updated);
+            syncWorkspaceSettingsToCloud({ featureToggles: updated });
+            setFeatureToggles(updated);
+            addToast('Dynamic Retractable Display enabled (Alt+V)', 'info');
+          }
+          window.dispatchEvent(new CustomEvent('peerlens_toggle_retractable_display'));
         }
         break;
       case 'toggle_edit_mode':
@@ -4617,7 +5043,10 @@ export const AdminDashboard: React.FC = () => {
               inline
               slotType="button"
             >
-              <ThemeSwitcher />
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                <ThemeSwitcher />
+                <SoundToggle />
+              </div>
             </EditableModuleSlot>
           )}
 
@@ -4694,7 +5123,10 @@ export const AdminDashboard: React.FC = () => {
               <button
                 type="button"
                 className="section-back-btn"
-                onClick={() => setActiveTab('hub')}
+                onClick={() => {
+                  playSoftClick();
+                  setActiveTab('hub');
+                }}
                 title="Return to Home Hub (Press Esc or H)"
               >
                 <ArrowLeft size={14} /> <span>Back to Hub</span>
@@ -4755,7 +5187,10 @@ export const AdminDashboard: React.FC = () => {
                 type="button"
                 data-tour="section-roster-btn"
                 className={`section-nav-tab-btn ${activeTab === 'roster' ? 'active' : ''}`}
-                onClick={() => setActiveTab('roster')}
+                onClick={() => {
+                  playSoftClick();
+                  setActiveTab('roster');
+                }}
                 title="Switch to Section 1: Enrollment & Teams"
               >
                 <Users size={12} /> <span>1. Enrollment</span>
@@ -4764,7 +5199,10 @@ export const AdminDashboard: React.FC = () => {
                 type="button"
                 data-tour="rubric-tab-btn"
                 className={`section-nav-tab-btn ${activeTab === 'grading' ? 'active' : ''}`}
-                onClick={() => setActiveTab('grading')}
+                onClick={() => {
+                  playSoftClick();
+                  setActiveTab('grading');
+                }}
                 title="Switch to Section 2: Review System"
               >
                 <Sliders size={12} /> <span>2. Review System</span>
@@ -4773,7 +5211,10 @@ export const AdminDashboard: React.FC = () => {
                 type="button"
                 data-tour="analytics-tab-btn"
                 className={`section-nav-tab-btn ${activeTab === 'results' ? 'active' : ''}`}
-                onClick={() => setActiveTab('results')}
+                onClick={() => {
+                  playSoftClick();
+                  setActiveTab('results');
+                }}
                 title="Switch to Section 3: Grading & Analytics"
               >
                 <Award size={12} /> <span>3. Analytics</span>
@@ -4991,29 +5432,29 @@ export const AdminDashboard: React.FC = () => {
                         slotType="bar"
                       >
                         <div className="hub-summary-stats-strip">
-                          <div className="hub-summary-stat-item" title="Enrolled students and peer teams">
+                          <div className="hub-summary-stat-item" data-quicklook-metric="kpi_students" title="Enrolled students and peer teams (Press Spacebar for QuickLook)">
                             <Users size={13} className="text-primary" />
-                            <span className="hub-summary-stat-val">{stats.totalStudents}</span>
+                            <span className="hub-summary-stat-val"><AnimatedNumber value={stats.totalStudents} /></span>
                             <span className="hub-summary-stat-lbl">Students</span>
-                            <span className="hub-summary-stat-sub">({stats.groupCount} Teams)</span>
+                            <span className="hub-summary-stat-sub">(<AnimatedNumber value={stats.groupCount} /> Teams)</span>
                           </div>
 
                           <div className="hub-summary-stat-divider" />
 
-                          <div className="hub-summary-stat-item" title="Configured evaluation criteria and scale">
+                          <div className="hub-summary-stat-item" data-quicklook-metric="kpi_criteria" title="Configured evaluation criteria and scale (Press Spacebar for QuickLook)">
                             <Sliders size={13} className="text-amber" />
-                            <span className="hub-summary-stat-val">{activeClass.fields.length}</span>
+                            <span className="hub-summary-stat-val"><AnimatedNumber value={activeClass.fields.length} /></span>
                             <span className="hub-summary-stat-lbl">Criteria</span>
                             <span className="hub-summary-stat-sub">(Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20})</span>
                           </div>
 
                           <div className="hub-summary-stat-divider" />
 
-                          <div className="hub-summary-stat-item" title="Evaluation submission progress">
+                          <div className="hub-summary-stat-item" data-quicklook-metric="kpi_completion" title="Evaluation submission progress (Press Spacebar for QuickLook)">
                             <Award size={13} className="text-teal" />
-                            <span className="hub-summary-stat-val">{stats.completionRate}%</span>
+                            <span className="hub-summary-stat-val"><AnimatedNumber value={stats.completionRate} suffix="%" /></span>
                             <span className="hub-summary-stat-lbl">Submitted</span>
-                            <span className="hub-summary-stat-sub">({stats.submittedCount}/{stats.totalStudents})</span>
+                            <span className="hub-summary-stat-sub">(<AnimatedNumber value={stats.submittedCount} />/<AnimatedNumber value={stats.totalStudents} />)</span>
                           </div>
                         </div>
                       </EditableModuleSlot>
@@ -5076,7 +5517,7 @@ export const AdminDashboard: React.FC = () => {
                               <div className="hub-card-progress-box">
                                 <div className="hub-card-progress-labels">
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    <Users size={12} className="text-primary" /> {stats.totalStudents} Students • {stats.groupCount} Teams
+                                    <Users size={12} className="text-primary" /> <AnimatedNumber value={stats.totalStudents} /> Students • <AnimatedNumber value={stats.groupCount} /> Teams
                                   </span>
                                   <span style={{ color: stats.totalStudents > 0 ? 'var(--accent-teal)' : 'var(--text-muted)', fontWeight: 600 }}>
                                     {stats.totalStudents > 0 ? 'Active' : 'Setup Needed'}
@@ -5216,7 +5657,7 @@ export const AdminDashboard: React.FC = () => {
                               <div className="hub-card-progress-box">
                                 <div className="hub-card-progress-labels">
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    <Sliders size={12} className="text-amber" /> {activeClass.fields.length} Criteria • Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20}
+                                    <Sliders size={12} className="text-amber" /> <AnimatedNumber value={activeClass.fields.length} /> Criteria • Scale {activeClass.targetScale === 0 ? 'Rubric Sum' : activeClass.targetScale || 20}
                                   </span>
                                   <span style={{ color: '#b45309', fontWeight: 600 }}>
                                     {activeClass.fields.length >= 3 ? 'Calibrated' : 'Basic Scale'}
@@ -5345,10 +5786,10 @@ export const AdminDashboard: React.FC = () => {
                               <div className="hub-card-progress-box">
                                 <div className="hub-card-progress-labels">
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    <Award size={12} className="text-teal" /> {stats.submittedCount}/{stats.totalStudents} Evaluated
+                                    <Award size={12} className="text-teal" /> <AnimatedNumber value={stats.submittedCount} />/<AnimatedNumber value={stats.totalStudents} /> Evaluated
                                   </span>
                                   <span style={{ color: 'var(--accent-teal)', fontWeight: 600 }}>
-                                    {stats.completionRate}% Submitted
+                                    <AnimatedNumber value={stats.completionRate} suffix="%" /> Submitted
                                   </span>
                                 </div>
                                 <div className="hub-card-progress-track">
@@ -5880,10 +6321,27 @@ export const AdminDashboard: React.FC = () => {
                   <AutoGroupStudio
                     students={activeClass.students}
                     defaultExpanded={true}
+                    isExpanded={isAutoGroupStudioExpanded}
+                    onToggleExpand={setIsAutoGroupStudioExpanded}
                     onApplyGroups={(updatedStudents) => {
                       importRoster(activeClass.id, updatedStudents, true);
                       const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
                       addToast(`Successfully partitioned ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
+                      setIsAutoGroupStudioExpanded(false);
+                      setIsRosterTableExpanded(true);
+                      setTimeout(() => {
+                        const rosterEl = document.querySelector('[data-tour="classroom-roster-table"]') as HTMLElement | null;
+                        if (rosterEl) {
+                          rosterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          rosterEl.style.transition = 'box-shadow 0.4s ease, border-color 0.4s ease';
+                          rosterEl.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.4), 0 10px 30px rgba(0,0,0,0.1)';
+                          rosterEl.style.borderColor = 'var(--primary)';
+                          setTimeout(() => {
+                            rosterEl.style.boxShadow = '';
+                            rosterEl.style.borderColor = '';
+                          }, 2200);
+                        }
+                      }, 120);
                     }}
                     onLoadSampleStudents={() => {
                       importRoster(activeClass.id, DIVERSE_100_STUDENTS, true);
@@ -6176,7 +6634,10 @@ export const AdminDashboard: React.FC = () => {
                   <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: isRosterTableExpanded ? '1.25rem' : 0 }}>
                     <div
                       style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}
-                      onClick={() => setIsRosterTableExpanded(!isRosterTableExpanded)}
+                      onClick={() => {
+                        playSoftClick();
+                        setIsRosterTableExpanded(!isRosterTableExpanded);
+                      }}
                       title={isRosterTableExpanded ? 'Click to collapse table' : 'Click to expand table'}
                     >
                       <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 800 }}>
@@ -6652,7 +7113,10 @@ export const AdminDashboard: React.FC = () => {
                       <button
                         type="button"
                         className={isRosterTableExpanded ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
-                        onClick={() => setIsRosterTableExpanded(!isRosterTableExpanded)}
+                        onClick={() => {
+                          playSoftClick();
+                          setIsRosterTableExpanded(!isRosterTableExpanded);
+                        }}
                         style={{
                           height: '36px',
                           borderRadius: '8px',
@@ -7508,6 +7972,7 @@ export const AdminDashboard: React.FC = () => {
                                 className="btn btn-primary btn-sm"
                                 disabled={!bulkTargetTeam}
                                 onClick={() => {
+                                  playPop();
                                   selectedStudentIds.forEach(id => updateStudent(activeClass.id, id, { groupName: bulkTargetTeam }));
                                   addToast(`Assigned ${selectedStudentIds.size} students to "${bulkTargetTeam}"!`, 'success');
                                   setSelectedStudentIds(new Set());
@@ -7713,9 +8178,6 @@ export const AdminDashboard: React.FC = () => {
                         <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                           Academic Rubric Framework (IPAF)
                         </span>
-                        <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginLeft: '0.4rem' }}>
-                          &bull; CATME, Salas &amp; AAC&amp;U research standard (6 criteria, 100% balanced)
-                        </span>
                       </div>
                     </div>
 
@@ -7778,10 +8240,6 @@ export const AdminDashboard: React.FC = () => {
                             1–5 Scale (Default)
                           </span>
                         )}
-                        <CardLayoutControls cardId="showCriterionCards" section="section2" isEditMode={isEditMode} onToast={addToast} />
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          {activeClass.customScaleEnabled ? 'Custom rating bounds' : 'Students evaluate peers on a clean 1 to 5 scale'}
-                        </span>
 
                         {/* Informative Explainer Toggle Button */}
                         <button
@@ -7893,9 +8351,10 @@ export const AdminDashboard: React.FC = () => {
                         {activeClass.customScaleEnabled && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                             <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Rating Scale:</span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div data-quicklook-control="scale_range" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                               <input
                                 type="number"
+                                data-quicklook-control="scale_range"
                                 className="form-input input-no-spin"
                                 value={activeClass.scaleMin ?? 1}
                                 min={1}
@@ -7906,11 +8365,12 @@ export const AdminDashboard: React.FC = () => {
                                   updateGradingConfig(activeClass.id, updatedFields, activeClass.targetScale ?? 31, true, activeClass.minTargetScale ?? 15, newScaleMin, activeClass.scaleMax ?? 5, true);
                                 }}
                                 style={{ width: '56px', height: '32px', padding: '0 0.4rem', fontSize: '0.88rem', textAlign: 'center', fontWeight: 800, borderRadius: '6px', backgroundColor: 'var(--bg-surface)' }}
-                                title="Minimum rating button number shown to students"
+                                title="Minimum rating button number shown to students (Press Spacebar for QuickLook)"
                               />
                               <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>to</span>
                               <input
                                 type="number"
+                                data-quicklook-control="scale_range"
                                 className="form-input input-no-spin"
                                 value={activeClass.scaleMax ?? 5}
                                 min={(activeClass.scaleMin ?? 1) + 1}
@@ -7921,7 +8381,7 @@ export const AdminDashboard: React.FC = () => {
                                   updateGradingConfig(activeClass.id, updatedFields, activeClass.targetScale ?? 31, true, activeClass.minTargetScale ?? 15, activeClass.scaleMin ?? 1, newScaleMax, true);
                                 }}
                                 style={{ width: '56px', height: '32px', padding: '0 0.4rem', fontSize: '0.88rem', textAlign: 'center', fontWeight: 800, borderRadius: '6px', backgroundColor: 'var(--bg-surface)' }}
-                                title="Maximum rating button number shown to students"
+                                title="Maximum rating button number shown to students (Press Spacebar for QuickLook)"
                               />
                             </div>
                           </div>
@@ -7932,6 +8392,7 @@ export const AdminDashboard: React.FC = () => {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', backgroundColor: 'var(--bg-app)', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                             <input
                               type="number"
+                              data-quicklook-control="min_target_scale"
                               className="form-input input-no-spin"
                               value={gradeScaleConfig.minTarget}
                               min={0}
@@ -7941,11 +8402,12 @@ export const AdminDashboard: React.FC = () => {
                                 updateGradingConfig(activeClass.id, activeClass.fields, activeClass.targetScale ?? 31, true, newMin, activeClass.scaleMin ?? 1, activeClass.scaleMax ?? 5, activeClass.customScaleEnabled ?? false);
                               }}
                               style={{ width: '64px', height: '32px', padding: '0 0.4rem', fontSize: '0.88rem', textAlign: 'center', fontWeight: 800, borderRadius: '6px', backgroundColor: 'var(--bg-surface)' }}
-                              title={`Minimum benchmark score for rating ${gradeScaleConfig.scaleMin}`}
+                              title={`Minimum benchmark score for rating ${gradeScaleConfig.scaleMin} (Press Spacebar for QuickLook)`}
                             />
                             <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>pts &rarr;</span>
                             <input
                               type="number"
+                              data-quicklook-control="target_scale"
                               className="form-input input-no-spin"
                               value={gradeScaleConfig.maxTarget}
                               min={gradeScaleConfig.minTarget + 1}
@@ -7955,7 +8417,7 @@ export const AdminDashboard: React.FC = () => {
                                 updateGradingConfig(activeClass.id, activeClass.fields, newMax, true, activeClass.minTargetScale ?? 15, activeClass.scaleMin ?? 1, activeClass.scaleMax ?? 5, activeClass.customScaleEnabled ?? false);
                               }}
                               style={{ width: '64px', height: '32px', padding: '0 0.4rem', fontSize: '0.88rem', textAlign: 'center', fontWeight: 800, borderRadius: '6px', backgroundColor: 'var(--bg-surface)' }}
-                              title={`Maximum benchmark target score for rating ${gradeScaleConfig.scaleMax}`}
+                              title={`Maximum benchmark target score for rating ${gradeScaleConfig.scaleMax} (Press Spacebar for QuickLook)`}
                             />
                             <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>pts max</span>
                           </div>
@@ -8166,6 +8628,7 @@ export const AdminDashboard: React.FC = () => {
                     {activeClass.fields.map((field, idx) => (
                       <div
                         key={field.id}
+                        data-criterion-id={field.id}
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
@@ -8932,72 +9395,143 @@ export const AdminDashboard: React.FC = () => {
                         </div>
 
                         {/* Base Marks & Controls */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                           
-                          {/* Default Project Base Mark */}
-                          <div className="form-group" style={{ margin: 0 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                              <label className="form-label" style={{ fontWeight: 700, fontSize: '0.78rem', margin: 0 }}>
-                                Default Project Base Mark
-                              </label>
-                              {classTeams.length > 0 && (
-                                <button
-                                  type="button"
-                                  className="btn btn-secondary btn-sm"
-                                  onClick={() => {
-                                    const newGrades: Record<string, number> = {};
-                                    classTeams.forEach(t => { newGrades[t] = baseGroupGrade; });
-                                    setAllTeamBaseGrades(activeClass.id, newGrades);
-                                    addToast(`Applied base mark ${baseGroupGrade} to all ${classTeams.length} teams.`, 'success');
-                                  }}
-                                  style={{ fontSize: '0.68rem', padding: '0.12rem 0.4rem', height: '22px', fontWeight: 700 }}
-                                  title="Set all teams in the class to this default base mark"
-                                >
-                                  Apply to All Teams
-                                </button>
-                              )}
-                            </div>
-                            <input
-                              type="number"
-                              className="form-input"
-                              min={0}
-                              max={1000}
-                              value={baseGroupGrade}
-                              onChange={(e) => setBaseGroupGrade(Number(e.target.value))}
-                              style={{ height: '34px', fontSize: '0.85rem', fontWeight: 700 }}
-                            />
-                          </div>
-
-                          {/* Team-Specific Project Base Marks Quick Inputs */}
-                          {classTeams.length > 0 && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                  <Users size={12} className="text-teal" /> Team Base Marks ({classTeams.length})
+                          {/* Team-Specific Project Base Marks */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                  <Users size={13} className="text-teal" /> Team Base Marks
                                 </span>
-                                <button
-                                  type="button"
-                                  className="btn btn-link btn-sm"
-                                  onClick={() => setIsTeamBaseGradesModalOpen(true)}
-                                  style={{ fontSize: '0.72rem', padding: 0, fontWeight: 700, color: 'var(--primary)', textDecoration: 'none' }}
-                                >
-                                  Manage All &rarr;
-                                </button>
+                                <span className="badge badge-subtle" style={{ fontSize: '0.68rem', padding: '0.05rem 0.35rem', fontWeight: 700 }}>
+                                  {classTeams.length} {classTeams.length === 1 ? 'team' : 'teams'}
+                                </span>
+                                {configuredTeamsCount > 0 && (
+                                  <span style={{ fontSize: '0.68rem', color: 'var(--text-teal, #0d9488)', fontWeight: 600 }}>
+                                    ({configuredTeamsCount} set)
+                                  </span>
+                                )}
                               </div>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setIsTeamBaseGradesModalOpen(true)}
+                                style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', height: '24px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                                title="Open full team gradebook table to manage base marks and preview individual grade distributions"
+                              >
+                                <span>Manage All</span>
+                                <ArrowUpRight size={12} />
+                              </button>
+                            </div>
 
-                              <div style={{ maxHeight: '95px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.35rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-                                {classTeams.map(team => {
-                                  const teamMark = activeClass?.teamBaseGrades?.[team] ?? baseGroupGrade;
+                            {/* Quick Search if more than 4 teams */}
+                            {classTeams.length > 4 && (
+                              <div style={{ position: 'relative' }}>
+                                <Search size={12} style={{ position: 'absolute', left: '0.55rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  placeholder={`Filter ${classTeams.length} teams...`}
+                                  value={peerCardTeamSearch}
+                                  onChange={(e) => setPeerCardTeamSearch(e.target.value)}
+                                  style={{
+                                    paddingLeft: '1.7rem',
+                                    paddingRight: peerCardTeamSearch ? '1.6rem' : '0.5rem',
+                                    height: '27px',
+                                    fontSize: '0.74rem',
+                                    width: '100%',
+                                    borderRadius: 'var(--radius-sm)',
+                                    backgroundColor: 'var(--bg-app)'
+                                  }}
+                                />
+                                {peerCardTeamSearch && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPeerCardTeamSearch('')}
+                                    style={{
+                                      position: 'absolute',
+                                      right: '0.35rem',
+                                      top: '50%',
+                                      transform: 'translateY(-50%)',
+                                      background: 'none',
+                                      border: 'none',
+                                      color: 'var(--text-muted)',
+                                      cursor: 'pointer',
+                                      padding: '0.15rem',
+                                      display: 'flex',
+                                      alignItems: 'center'
+                                    }}
+                                    title="Clear filter"
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Teams scrollable list */}
+                            {classTeams.length === 0 ? (
+                              <div style={{ padding: '0.85rem 0.65rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-color)', textAlign: 'center', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                                No teams formed yet in this classroom. Assign students to teams in Section 1 (Roster).
+                              </div>
+                            ) : filteredCardTeams.length === 0 ? (
+                              <div style={{ padding: '0.65rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                No teams match &ldquo;{peerCardTeamSearch}&rdquo;. <button type="button" className="btn btn-link btn-sm" onClick={() => setPeerCardTeamSearch('')} style={{ fontSize: '0.72rem', padding: 0, textDecoration: 'underline' }}>Clear filter</button>
+                              </div>
+                            ) : (
+                              <div style={{ maxHeight: '165px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.35rem', padding: '0.4rem', backgroundColor: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                                {filteredCardTeams.map(team => {
+                                  const teamMark = activeClass?.teamBaseGrades?.[team] ?? activeClass?.targetScale ?? baseGroupGrade;
                                   const isCustom = activeClass?.teamBaseGrades && typeof activeClass.teamBaseGrades[team] === 'number';
                                   const members = activeClass.students.filter(s => s.groupName === team);
                                   return (
-                                    <div key={team} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem', fontSize: '0.74rem' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 0, overflow: 'hidden' }}>
-                                        <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={team}>
+                                    <div
+                                      key={team}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: '0.5rem',
+                                        padding: '0.35rem 0.5rem',
+                                        backgroundColor: 'var(--bg-surface)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        border: '1px solid var(--border-color)'
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0, overflow: 'hidden' }}>
+                                        <span
+                                          style={{
+                                            fontWeight: 700,
+                                            fontSize: '0.78rem',
+                                            color: 'var(--text-primary)',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis'
+                                          }}
+                                          title={team}
+                                        >
                                           {team}
                                         </span>
-                                        <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>({members.length})</span>
-                                        {isCustom && <span className="badge badge-teal" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', whiteSpace: 'nowrap' }}>Custom</span>}
+                                        <span
+                                          style={{
+                                            fontSize: '0.66rem',
+                                            color: 'var(--text-muted)',
+                                            whiteSpace: 'nowrap',
+                                            padding: '0.05rem 0.3rem',
+                                            backgroundColor: 'var(--bg-app)',
+                                            borderRadius: '4px',
+                                            border: '1px solid var(--border-color)'
+                                          }}
+                                          title={`${members.length} team members`}
+                                        >
+                                          {members.length}
+                                        </span>
+                                        {isCustom && (
+                                          <span className="badge badge-teal" style={{ fontSize: '0.58rem', padding: '0.04rem 0.25rem', whiteSpace: 'nowrap' }}>
+                                            Set
+                                          </span>
+                                        )}
                                       </div>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
                                         <TeamBaseGradeInput
@@ -9010,21 +9544,47 @@ export const AdminDashboard: React.FC = () => {
                                   );
                                 })}
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
 
                           {/* Peer Review Impact (Sensitivity Slider) */}
-                          <div className="form-group" style={{ margin: 0 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                              <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem' }}>
-                                Peer Review Impact (0–100%)
-                              </label>
-                              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>
-                                {Math.round(peerAdjustmentConfig.fudgeWeight * 100)}%
+                          <div data-quicklook-control="fudge_weight" style={{ paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <label className="form-label" style={{ fontWeight: 700, margin: 0, fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                  <Sliders size={12} className="text-primary" /> Peer Review Impact
+                                </label>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => handleToggleModule('showPeerImpactGuide', !featureToggles.showPeerImpactGuide)}
+                                  style={{
+                                    padding: '0.08rem 0.35rem',
+                                    height: '20px',
+                                    fontSize: '0.67rem',
+                                    fontWeight: 700,
+                                    color: featureToggles.showPeerImpactGuide ? 'var(--primary)' : 'var(--text-muted)',
+                                    backgroundColor: featureToggles.showPeerImpactGuide ? 'var(--primary-light, rgba(99, 102, 241, 0.12))' : 'transparent',
+                                    borderRadius: '4px',
+                                    border: '1px solid',
+                                    borderColor: featureToggles.showPeerImpactGuide ? 'var(--primary)' : 'var(--border-color)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.2rem'
+                                  }}
+                                  title={featureToggles.showPeerImpactGuide ? 'Hide Impact Guide' : 'Explain what Peer Review Impact is and how it affects grades (Press Spacebar for QuickLook)'}
+                                >
+                                  <HelpCircle size={11} />
+                                  <span>{featureToggles.showPeerImpactGuide ? 'Hide Guide' : 'How Impact Works'}</span>
+                                </button>
+                              </div>
+                              <span className="badge badge-primary" style={{ fontSize: '0.76rem', fontWeight: 800, padding: '0.12rem 0.45rem', borderRadius: '10px' }}>
+                                <AnimatedNumber value={Math.round(peerAdjustmentConfig.fudgeWeight * 100)} suffix="%" duration={180} />
                               </span>
                             </div>
                             <input
                               type="range"
+                              data-quicklook-control="fudge_weight"
                               className="custom-slider"
                               min={0}
                               max={1}
@@ -9032,35 +9592,114 @@ export const AdminDashboard: React.FC = () => {
                               value={peerAdjustmentConfig.fudgeWeight}
                               onChange={(e) => handleUpdatePeerAdjustmentConfig({ fudgeWeight: Number(e.target.value) })}
                               style={{
+                                width: '100%',
                                 background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${peerAdjustmentConfig.fudgeWeight * 100}%, var(--border-color) ${peerAdjustmentConfig.fudgeWeight * 100}%, var(--border-color) 100%)`
                               }}
                             />
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem' }}>
-                              <button
-                                type="button"
-                                className="btn btn-link btn-sm"
-                                onClick={() => handleUpdatePeerAdjustmentConfig({ fudgeWeight: 0.5 })}
-                                style={{ fontSize: '0.65rem', padding: 0, color: peerAdjustmentConfig.fudgeWeight === 0.5 ? 'var(--primary)' : 'var(--text-muted)' }}
+
+                            {/* Togglable Submodule: Peer Review Impact Guide (Hidden by default) */}
+                            {(isEditMode || featureToggles.showPeerImpactGuide) && (
+                              <EditableModuleSlot
+                                moduleKey="showPeerImpactGuide"
+                                title="Peer Review Impact Guide"
+                                isVisible={featureToggles.showPeerImpactGuide}
+                                isEditMode={isEditMode}
+                                onToggle={handleToggleModule}
+                                slotType="card"
                               >
-                                50% (Gentle)
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-link btn-sm"
-                                onClick={() => handleUpdatePeerAdjustmentConfig({ fudgeWeight: 0.7 })}
-                                style={{ fontSize: '0.65rem', padding: 0, color: peerAdjustmentConfig.fudgeWeight === 0.7 ? 'var(--primary)' : 'var(--text-muted)' }}
-                              >
-                                70% (Balanced)
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-link btn-sm"
-                                onClick={() => handleUpdatePeerAdjustmentConfig({ fudgeWeight: 1.0 })}
-                                style={{ fontSize: '0.65rem', padding: 0, color: peerAdjustmentConfig.fudgeWeight === 1.0 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 800 }}
-                              >
-                                100% (Pure WebPA ★)
-                              </button>
-                            </div>
+                                <div
+                                  style={{
+                                    marginTop: '0.5rem',
+                                    padding: '0.65rem 0.75rem',
+                                    backgroundColor: 'var(--bg-app)',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: '1px solid var(--border-color)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.45rem'
+                                  }}
+                                >
+                                  {/* Header */}
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.35rem' }}>
+                                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                      <Sliders size={12} className="text-primary" /> Understanding Peer Review Impact
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-sm"
+                                      onClick={() => handleToggleModule('showPeerImpactGuide', false)}
+                                      style={{ width: '20px', height: '20px', padding: 0, color: 'var(--text-muted)' }}
+                                      title="Close guide"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+
+                                  {/* What it is */}
+                                  <p style={{ fontSize: '0.71rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                                    The <strong>Peer Review Impact</strong> dial (0–100%) controls <em>how strongly</em> teammate evaluations influence each student&rsquo;s final grade. It acts as a safety dial that protects students against harsh rater bias while holding free-riders accountable.
+                                  </p>
+
+                                  {/* How it affects grades: 4 zone cards */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.35rem', fontSize: '0.69rem' }}>
+                                    <div style={{ padding: '0.35rem 0.45rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                                      <strong style={{ color: 'var(--primary)', display: 'block', fontSize: '0.7rem', marginBottom: '0.1rem' }}>
+                                        70% (Balanced &bull; Default)
+                                      </strong>
+                                      <span style={{ color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                                        Standard academic recommendation. Softens extreme reviews so high effort is rewarded without single-review grade crashes.
+                                      </span>
+                                    </div>
+                                    <div style={{ padding: '0.35rem 0.45rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                                      <strong style={{ color: 'var(--accent-teal, #0d9488)', display: 'block', fontSize: '0.7rem', marginBottom: '0.1rem' }}>
+                                        100% (Pure WebPA)
+                                      </strong>
+                                      <span style={{ color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                                        Full variance. Grades scale strictly and proportionally to peer scores with zero dampening.
+                                      </span>
+                                    </div>
+                                    <div style={{ padding: '0.35rem 0.45rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                                      <strong style={{ color: 'var(--accent-amber, #d97706)', display: 'block', fontSize: '0.7rem', marginBottom: '0.1rem' }}>
+                                        50% (Gentle)
+                                      </strong>
+                                      <span style={{ color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                                        Soft adjustments. Great for low-stakes, formative, or first-time peer evaluations to reduce student anxiety.
+                                      </span>
+                                    </div>
+                                    <div style={{ padding: '0.35rem 0.45rem', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                                      <strong style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', marginBottom: '0.1rem' }}>
+                                        0% (Disabled)
+                                      </strong>
+                                      <span style={{ color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                                        Peer reviews have zero impact. Every teammate receives the exact team deliverable base mark.
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* How it is used / Live status */}
+                                  <div
+                                    style={{
+                                      padding: '0.35rem 0.5rem',
+                                      backgroundColor: 'var(--bg-surface)',
+                                      borderRadius: '4px',
+                                      borderLeft: '3px solid var(--primary)',
+                                      fontSize: '0.68rem',
+                                      color: 'var(--text-secondary)',
+                                      lineHeight: 1.35
+                                    }}
+                                  >
+                                    <strong>Current Setting (<AnimatedNumber value={Math.round(peerAdjustmentConfig.fudgeWeight * 100)} suffix="%" duration={180} />):</strong>{' '}
+                                    {peerAdjustmentConfig.fudgeWeight === 0 ? (
+                                      'Peer reviews are disabled; all students get 100% of their team mark.'
+                                    ) : peerAdjustmentConfig.fudgeWeight === 1 ? (
+                                      'Full peer sensitivity; a student rated +10% receives a full +10.0% grade boost.'
+                                    ) : (
+                                      `A student rated 10% above average receives a +${(peerAdjustmentConfig.fudgeWeight * 10).toFixed(1)}% boost; a student 10% below receives a -${(peerAdjustmentConfig.fudgeWeight * 10).toFixed(1)}% reduction.`
+                                    )}
+                                  </div>
+                                </div>
+                              </EditableModuleSlot>
+                            )}
                           </div>
 
                         </div>
@@ -9249,7 +9888,10 @@ export const AdminDashboard: React.FC = () => {
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      onClick={() => setIsLmsExportExpanded(!isLmsExportExpanded)}
+                      onClick={() => {
+                        playSoftClick();
+                        setIsLmsExportExpanded(!isLmsExportExpanded);
+                      }}
                       style={{ fontSize: '0.78rem', height: '34px', padding: '0 0.85rem', gap: '0.4rem', fontWeight: 700 }}
                       title={isLmsExportExpanded ? 'Collapse LMS Gradebook Integration' : 'Expand LMS Gradebook Integration'}
                     >
@@ -9451,7 +10093,7 @@ export const AdminDashboard: React.FC = () => {
                             }}
                             title="Calibrated grade using WebPA multipliers and team base mark"
                           >
-                            WebPA Calibrated ({baseGroupGrade} max)
+                            WebPA Calibrated ({activeClass?.targetScale ?? baseGroupGrade} max)
                           </button>
 
                           <button
@@ -10175,7 +10817,10 @@ export const AdminDashboard: React.FC = () => {
                   {/* Left: Icon, Title, and Evaluation Badge */}
                   <div
                     style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer', userSelect: 'none' }}
-                    onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
+                    onClick={() => {
+                      playSoftClick();
+                      setIsResultsTableExpanded(!isResultsTableExpanded);
+                    }}
                     title={isResultsTableExpanded ? 'Click to collapse gradebook' : 'Click to expand gradebook'}
                   >
                     <div style={{
@@ -10383,7 +11028,10 @@ export const AdminDashboard: React.FC = () => {
                     <button
                       type="button"
                       className={isResultsTableExpanded ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
-                      onClick={() => setIsResultsTableExpanded(!isResultsTableExpanded)}
+                      onClick={() => {
+                        playSoftClick();
+                        setIsResultsTableExpanded(!isResultsTableExpanded);
+                      }}
                       style={{
                         height: '34px',
                         borderRadius: '8px',
@@ -10669,7 +11317,7 @@ export const AdminDashboard: React.FC = () => {
 
                           {/* Rubric Criteria Columns (Hidden by default for a proper minimal view) */}
                           {gradebookColumns.criteriaScores && activeClass.fields.map(f => (
-                            <th key={f.id} style={{ minWidth: '120px' }}>
+                            <th key={f.id} data-criterion-id={f.id} style={{ minWidth: '120px' }}>
                               <div style={{ display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontSize: '0.78rem', textTransform: 'none', fontWeight: 700 }}>{f.name}</span>
                                 <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'none', fontWeight: 500 }}>Mean &amp; StdDev</span>
@@ -10683,11 +11331,12 @@ export const AdminDashboard: React.FC = () => {
 
                           {gradebookColumns.webpaMark && (
                             <th
+                              data-quicklook-metric="calibrated_grade"
                               style={{ minWidth: '120px', cursor: 'pointer', userSelect: 'none' }}
                               onClick={() => {
                                 setGradebookSortBy(prev => prev === 'webpa-desc' ? 'webpa-asc' : 'webpa-desc');
                               }}
-                              title="Click to sort by WebPA factor (High to Low or Low to High)"
+                              title="Click to sort by WebPA factor (High to Low or Low to High) • Press Spacebar for QuickLook"
                             >
                               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                                 <span>WebPA Mark</span>
@@ -10700,11 +11349,12 @@ export const AdminDashboard: React.FC = () => {
 
                           {gradebookColumns.weightedScore && (
                             <th
+                              data-quicklook-metric="weighted_score"
                               style={{ minWidth: '110px', cursor: 'pointer', userSelect: 'none' }}
                               onClick={() => {
                                 setGradebookSortBy(prev => prev === 'score-desc' ? 'score-asc' : 'score-desc');
                               }}
-                              title="Click to sort by weighted score (High to Low or Low to High)"
+                              title="Click to sort by weighted score (High to Low or Low to High) • Press Spacebar for QuickLook"
                             >
                               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                                 <span>Weighted Score</span>
@@ -10716,7 +11366,7 @@ export const AdminDashboard: React.FC = () => {
                           )}
 
                           {evalControls.allowSelfReview && gradebookColumns.johari && (
-                            <th style={{ minWidth: '130px' }}>Johari Alignment</th>
+                            <th data-quicklook-metric="johari_alignment" style={{ minWidth: '130px' }}>Johari Alignment</th>
                           )}
 
 
@@ -10744,13 +11394,14 @@ export const AdminDashboard: React.FC = () => {
                           });
                           const tagEntries = Object.entries(tagCounts);
 
-                          const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(
+                          const webpa = calculateStudentWebPAScore(
                             s.id,
                             s.groupName,
                             activeClass,
-                            baseGroupGrade,
+                            activeClass?.teamBaseGrades?.[s.groupName] ?? baseGroupGrade,
                             peerAdjustmentConfig
                           );
+                          const { ratio, adjustedGrade, teamBaseGrade, isCapped, isInsufficient, rawAdjustedGrade, minScore, maxScore } = webpa;
 
                           return (
                             <tr key={s.id} data-student-id={s.id}>
@@ -10829,7 +11480,7 @@ export const AdminDashboard: React.FC = () => {
                                 const val = metrics.fieldAverages[f.id];
                                 const std = metrics.fieldStdDevs[f.id];
                                 return (
-                                  <td key={f.id}>
+                                  <td key={f.id} data-criterion-id={f.id} title={`${f.name}: ${val !== null ? `${val} / ${f.max}` : 'No reviews'} (Press Spacebar for QuickLook)`}>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
                                       <span style={{ fontWeight: 700, fontSize: '0.84rem', color: val !== null ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                                         {val !== null ? `${val} / ${f.max}` : '—'}
@@ -10877,7 +11528,7 @@ export const AdminDashboard: React.FC = () => {
 
                               {/* WebPA Calibrated Mark */}
                               {gradebookColumns.webpaMark && (
-                                <td>
+                                <td data-quicklook-metric="calibrated_grade">
                                   <div 
                                     style={{ 
                                       display: 'flex', 
@@ -10889,39 +11540,78 @@ export const AdminDashboard: React.FC = () => {
                                       setInspectorStudentId(s.id);
                                       setIsPeerInspectorOpen(true);
                                     }}
-                                    title="Click to inspect live mathematical derivation and audit"
+                                    title="Click to inspect live mathematical derivation and audit • Press Spacebar for QuickLook"
                                   >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                      <span 
-                                        style={{ 
-                                          fontWeight: 800, 
-                                          fontSize: '0.88rem', 
-                                          color: adjustedGrade > teamBaseGrade 
-                                            ? '#059669' 
-                                            : adjustedGrade < (teamBaseGrade * 0.75) 
-                                              ? 'var(--accent-rose)' 
-                                              : adjustedGrade < teamBaseGrade 
-                                                ? '#d97706' 
-                                                : 'var(--text-primary)' 
-                                        }}
-                                      >
-                                        {adjustedGrade} / {teamBaseGrade}
-                                      </span>
-                                      {adjustedGrade > teamBaseGrade && (
-                                        <span className="badge badge-emerald" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', fontWeight: 800 }}>
-                                          +{(adjustedGrade - teamBaseGrade).toFixed(1)}
-                                        </span>
-                                      )}
-                                      {adjustedGrade < teamBaseGrade && metrics.reviewsReceived > 0 && (
-                                        <span className="badge badge-rose" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', fontWeight: 800 }}>
-                                          {(adjustedGrade - teamBaseGrade).toFixed(1)}
-                                        </span>
+                                      {isInsufficient ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                          <span 
+                                            style={{ 
+                                              fontWeight: 800, 
+                                              fontSize: '0.88rem', 
+                                              color: 'var(--accent-rose, #e11d48)',
+                                              cursor: 'help',
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '0.25rem'
+                                            }}
+                                            title={`Real Score: ${adjustedGrade} / ${teamBaseGrade} (Below minimum passing threshold of ${minScore} pts set by professor)`}
+                                          >
+                                            <AlertTriangle size={13} style={{ color: 'var(--accent-rose, #e11d48)' }} />
+                                            Insufficient
+                                          </span>
+                                          <span 
+                                            className="badge badge-rose" 
+                                            style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', fontWeight: 800, cursor: 'help' }}
+                                            title={`Real Score: ${adjustedGrade} / ${teamBaseGrade} (Minimum passing required: ${minScore} pts)`}
+                                          >
+                                            <AnimatedNumber value={adjustedGrade} decimals={1} />
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                          <span 
+                                            style={{ 
+                                              fontWeight: 800, 
+                                              fontSize: '0.88rem', 
+                                              color: adjustedGrade > teamBaseGrade 
+                                                ? '#059669' 
+                                                : adjustedGrade < minScore 
+                                                  ? 'var(--accent-rose)' 
+                                                  : adjustedGrade < teamBaseGrade 
+                                                    ? '#d97706' 
+                                                    : 'var(--text-primary)' 
+                                            }}
+                                            title={isCapped ? `Calibrated: ${adjustedGrade} / ${teamBaseGrade} (Capped at professor maximum limit of ${maxScore} pts; raw calculation was ${rawAdjustedGrade})` : undefined}
+                                          >
+                                            <AnimatedNumber value={adjustedGrade} decimals={1} /> / {teamBaseGrade}
+                                          </span>
+                                          {isCapped && (
+                                            <span 
+                                              className="badge badge-purple" 
+                                              style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', fontWeight: 800 }}
+                                              title={`Capped at professor maximum score of ${maxScore} pts (raw calculation was ${rawAdjustedGrade})`}
+                                            >
+                                              Max Cap
+                                            </span>
+                                          )}
+                                          {!isCapped && adjustedGrade > teamBaseGrade && (
+                                            <span className="badge badge-emerald" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', fontWeight: 800 }}>
+                                              +<AnimatedNumber value={adjustedGrade - teamBaseGrade} decimals={1} />
+                                            </span>
+                                          )}
+                                          {!isCapped && adjustedGrade < teamBaseGrade && metrics.reviewsReceived > 0 && (
+                                            <span className="badge badge-rose" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem', fontWeight: 800 }}>
+                                              <AnimatedNumber value={adjustedGrade - teamBaseGrade} decimals={1} />
+                                            </span>
+                                          )}
+                                        </div>
                                       )}
                                     </div>
 
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                    <div data-quicklook-metric="webpa_ratio" title={`WebPA multiplier: ${ratio.toFixed(2)}x (Press Spacebar for QuickLook)`} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
                                       <span style={{ fontSize: '0.7rem', fontWeight: 700, color: ratio > 1.02 ? '#059669' : ratio < 0.98 ? '#e11d48' : 'var(--primary)' }}>
-                                        {PEER_ADJUSTMENT_METHODS_META[peerAdjustmentConfig.method]?.shortLabel || 'WebPA'}: {ratio.toFixed(2)}x
+                                        {PEER_ADJUSTMENT_METHODS_META[peerAdjustmentConfig.method]?.shortLabel || 'WebPA'}: <AnimatedNumber value={ratio} decimals={2} suffix="x" />
                                       </span>
                                       {!s.submitted && !s.isExcused && peerAdjustmentConfig.penalizeNonSubmitters && (
                                         <span className="badge badge-amber" style={{ fontSize: '0.55rem', padding: '0.02rem 0.2rem' }} title={`Non-submitter penalty (-${peerAdjustmentConfig.nonSubmitterPenalty}%)`}>
@@ -13429,13 +14119,15 @@ export const AdminDashboard: React.FC = () => {
           });
           const tagEntries = Object.entries(tagCounts);
 
-          const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(
+          const studentTeamMark = activeClass?.teamBaseGrades?.[s.groupName] ?? baseGroupGrade;
+          const webpa = calculateStudentWebPAScore(
             s.id,
             s.groupName,
             activeClass,
-            baseGroupGrade,
+            studentTeamMark,
             fudgeWeight
           );
+          const { ratio, adjustedGrade, teamBaseGrade, isInsufficient, isCapped, rawAdjustedGrade, minScore, maxScore } = webpa;
 
           const maxScale = getTargetScale(activeClass);
           const scaledScoreVal = metrics.overallPercentage !== null
@@ -13558,7 +14250,28 @@ export const AdminDashboard: React.FC = () => {
                 </div>
                 <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '0.25rem', justifyContent: 'center' }}>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>WebPA Ratio: <b className="text-primary">{metrics.reviewsReceived > 0 ? `${ratio.toFixed(2)}x` : '—'}</b></span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Calibrated Grade: <b className="text-teal">{metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : '—'}</b></span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    Calibrated Grade:{' '}
+                    {metrics.reviewsReceived > 0 ? (
+                      isInsufficient ? (
+                        <b
+                          style={{ color: 'var(--accent-rose, #e11d48)', cursor: 'help', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+                          title={`Real Score: ${adjustedGrade} / ${teamBaseGrade} (Below minimum passing threshold of ${minScore} pts)`}
+                        >
+                          <AlertTriangle size={13} /> Insufficient
+                        </b>
+                      ) : (
+                        <b 
+                          className="text-teal" 
+                          title={isCapped ? `Capped at max ${maxScore} pts (raw: ${rawAdjustedGrade})` : undefined}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          {adjustedGrade} / {teamBaseGrade}
+                          {isCapped && <span className="badge badge-purple" style={{ fontSize: '0.6rem', padding: '0.05rem 0.25rem' }}>Max Cap</span>}
+                        </b>
+                      )
+                    ) : '—'}
+                  </span>
                 </div>
               </div>
 
@@ -13769,14 +14482,30 @@ export const AdminDashboard: React.FC = () => {
             >
               Close Analysis
             </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => window.print()}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-            >
-              <Download size={14} />
-              <span>Print Team Dossier</span>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                className="btn btn-teal"
+                onClick={() => {
+                  if (selectedTeamAnalysis) {
+                    downloadTeamDossierPDF(selectedTeamAnalysis, activeClass, { baseGrade: baseGroupGrade, fudgeWeight });
+                    addToast(`Downloaded PDF Team Dossier for ${selectedTeamAnalysis}`, 'success');
+                  }
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                title="Download high-resolution vector PDF team dossier"
+              >
+                <Download size={14} />
+                <span>Download PDF Dossier</span>
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => window.print()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                <Printer size={14} />
+                <span>Print Team Dossier</span>
+              </button>
+            </div>
           </div>
         }
       >
@@ -13911,7 +14640,8 @@ export const AdminDashboard: React.FC = () => {
                     <tbody>
                       {teamStudents.map(ts => {
                         const m = calculateStudentMetrics(ts, activeClass);
-                        const { ratio, adjustedGrade, teamBaseGrade } = calculateStudentWebPAScore(ts.id, ts.groupName, activeClass, baseGroupGrade, fudgeWeight);
+                        const webpa = calculateStudentWebPAScore(ts.id, ts.groupName, activeClass, activeClass?.teamBaseGrades?.[radarTeamFilter] ?? baseGroupGrade, fudgeWeight);
+                        const { ratio, adjustedGrade, teamBaseGrade, isInsufficient, isCapped, rawAdjustedGrade, minScore, maxScore } = webpa;
                         return (
                           <tr key={ts.id} data-student-id={ts.id}>
                             <td style={{ fontWeight: 600 }}>{ts.name}</td>
@@ -13926,8 +14656,25 @@ export const AdminDashboard: React.FC = () => {
                             <td>{m.reviewsReceived} / {m.expectedReviewsCount}</td>
                             <td style={{ fontWeight: 700 }}>{m.overallPercentage !== null ? `${m.overallPercentage}%` : 'N/A'}</td>
                             <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{m.reviewsReceived > 0 ? `${ratio.toFixed(2)}x` : '—'}</td>
-                            <td style={{ fontWeight: 800, color: adjustedGrade < (teamBaseGrade * 0.7) ? 'var(--accent-rose)' : 'hsl(142, 70%, 35%)' }}>
-                              {m.reviewsReceived > 0 ? `${adjustedGrade} / ${teamBaseGrade}` : '—'}
+                            <td style={{ fontWeight: 800 }}>
+                              {m.reviewsReceived > 0 ? (
+                                isInsufficient ? (
+                                  <span
+                                    style={{ color: 'var(--accent-rose, #e11d48)', cursor: 'help', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+                                    title={`Real Score: ${adjustedGrade} / ${teamBaseGrade} (Below minimum passing threshold of ${minScore} pts)`}
+                                  >
+                                    <AlertTriangle size={12} /> Insufficient
+                                  </span>
+                                ) : (
+                                  <span
+                                    style={{ color: adjustedGrade < (teamBaseGrade * 0.7) ? 'var(--accent-rose)' : 'hsl(142, 70%, 35%)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                                    title={isCapped ? `Capped at max ${maxScore} pts (raw: ${rawAdjustedGrade})` : undefined}
+                                  >
+                                    {adjustedGrade} / {teamBaseGrade}
+                                    {isCapped && <span className="badge badge-purple" style={{ fontSize: '0.58rem', padding: '0.02rem 0.25rem' }}>Max Cap</span>}
+                                  </span>
+                                )
+                              ) : '—'}
                             </td>
                           </tr>
                         );
@@ -14008,7 +14755,10 @@ export const AdminDashboard: React.FC = () => {
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm"
-                          onClick={() => setIsAuditMatrixExpanded(!isAuditMatrixExpanded)}
+                          onClick={() => {
+                            playSoftClick();
+                            setIsAuditMatrixExpanded(!isAuditMatrixExpanded);
+                          }}
                           style={{
                             height: '36px',
                             borderRadius: '8px',
@@ -14353,6 +15103,21 @@ export const AdminDashboard: React.FC = () => {
             importRoster(activeClass.id, updatedStudents, true);
             const uniqueTeamCount = new Set(updatedStudents.map(s => s.groupName)).size;
             addToast(`Successfully organized ${updatedStudents.length} students into ${uniqueTeamCount} balanced, diverse teams!`, 'success');
+            setIsAutoGroupStudioExpanded(false);
+            setIsRosterTableExpanded(true);
+            setTimeout(() => {
+              const rosterEl = document.querySelector('[data-tour="classroom-roster-table"]') as HTMLElement | null;
+              if (rosterEl) {
+                rosterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                rosterEl.style.transition = 'box-shadow 0.4s ease, border-color 0.4s ease';
+                rosterEl.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.4), 0 10px 30px rgba(0,0,0,0.1)';
+                rosterEl.style.borderColor = 'var(--primary)';
+                setTimeout(() => {
+                  rosterEl.style.boxShadow = '';
+                  rosterEl.style.borderColor = '';
+                }, 2200);
+              }
+            }, 120);
           }}
           onOpenTeamCharter={(staged) => handleOpenTeamKickoff('charters', false, staged)}
         />
@@ -14449,6 +15214,12 @@ export const AdminDashboard: React.FC = () => {
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         onOpenEvaluationControls={() => setIsEvaluationControlsModalOpen(true)}
+        onUpdateEvaluationControls={(controls) => {
+          if (activeClass) {
+            updateEvaluationControls(activeClass.id, controls);
+            addToast('Updated Evaluation Round settings', 'success');
+          }
+        }}
         classData={activeClass}
         featureToggles={featureToggles}
         onToggleFeature={(key, value) => {
@@ -14839,7 +15610,7 @@ export const AdminDashboard: React.FC = () => {
 
                         // Compute calibrated student scores in this team
                         const studentGrades = members.map(m => {
-                          const { adjustedGrade } = calculateStudentWebPAScore(m.id, m.groupName, activeClass, baseGroupGrade, fudgeWeight);
+                          const { adjustedGrade } = calculateStudentWebPAScore(m.id, m.groupName, activeClass, currentMark, fudgeWeight);
                           return adjustedGrade;
                         });
                         const minGrade = studentGrades.length > 0 ? Math.min(...studentGrades) : currentMark;
@@ -14888,10 +15659,10 @@ export const AdminDashboard: React.FC = () => {
               <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                 {Object.keys(activeClass?.teamBaseGrades || {}).length > 0 ? (
                   <span>
-                    <strong style={{ color: 'var(--text-teal, #0d9488)' }}>{Object.keys(activeClass.teamBaseGrades || {}).length}</strong> of {classTeams.length} teams have custom base marks
+                    <strong style={{ color: 'var(--text-teal, #0d9488)' }}>{Object.keys(activeClass.teamBaseGrades || {}).length}</strong> of {classTeams.length} teams have individual base marks
                   </span>
                 ) : (
-                  <span>All {classTeams.length} teams using default base mark ({baseGroupGrade})</span>
+                  <span>All {classTeams.length} teams using standard scale ({activeClass?.targetScale ?? baseGroupGrade} pts)</span>
                 )}
               </span>
               <button
@@ -15565,7 +16336,63 @@ export const AdminDashboard: React.FC = () => {
           },
           onOpenLayoutLibrary: () => setIsLayoutLibraryOpen(true),
           onOpenBranding: () => setIsBrandingModalOpen(true),
-          onResetLayout: handleResetLayoutToDefault
+          onResetLayout: handleResetLayoutToDefault,
+          onUpdateEvaluationControls: (controls) => {
+            if (activeClass) {
+              updateEvaluationControls(activeClass.id, controls);
+              addToast('Updated Evaluation Round settings', 'success');
+            }
+          },
+          onApplyRubricPreset: (presetId) => {
+            handleApplyPreset(presetId);
+            setActiveTab('grading');
+            addToast('Applied rubric preset', 'success');
+          },
+          onSetTargetScale: (scale) => {
+            if (activeClass) {
+              updateGradingConfig(activeClass.id, activeClass.fields, scale);
+              addToast(`Target Scale set to ${scale === 0 ? 'Raw Sum' : `Out of ${scale}`}`, 'success');
+            }
+          },
+          onSetFudgeWeight: (weight) => {
+            setFudgeWeight(weight);
+            localStorage.setItem('peer_fudge_weight', String(weight));
+            addToast(`WebPA Calibrator set to ${Math.round(weight * 100)}% fudge weight`, 'success');
+          },
+          onExportResultsCSV: () => {
+            if (activeClass) {
+              try {
+                const csv = generateResultsCSV(activeClass, sortedGradebookStudents);
+                downloadFileContent(csv, `${activeClass.name.replace(/\s+/g, '_')}_grades.csv`);
+                addToast('Results summary CSV downloaded!', 'success');
+              } catch (e) {
+                addToast('Failed to export CSV results', 'error');
+              }
+            }
+          },
+          onExportPDFSummary: () => {
+            if (activeClass && activeClass.students.length > 0) {
+              try {
+                downloadStudentReportPDF(activeClass.students[0], activeClass);
+                addToast('Downloaded evaluation report PDF successfully!', 'success');
+              } catch (e) {
+                addToast('Failed to generate PDF report', 'error');
+              }
+            } else {
+              addToast('No students enrolled to export PDF report', 'warning');
+            }
+          },
+          onLaunchStudentSimulator: (student) => {
+            setPreviewingStudent(student);
+            addToast(`Launched Student Simulator for "${student.name}"`, 'info');
+          },
+          onSelectTeamFilter: (teamName) => {
+            setGroupFilter(teamName);
+            setSearchTerm('');
+            setActiveTab('roster');
+            addToast(`Filtered roster by team "${teamName}"`, 'info');
+          },
+          onToast: (msg, type = 'info') => addToast(msg, type)
         }}
         isSandboxActive={isSandboxActive}
         sandboxProps={{
@@ -15637,6 +16464,97 @@ export const AdminDashboard: React.FC = () => {
         onTogglePin={handleToggleQuickLookPin}
         onDismiss={forceCloseQuickLook}
         onAction={handleQuickLookAction}
+      />
+
+      {/* DYNAMIC RETRACTABLE DISPLAY (PIN ANY MODULE) */}
+      <DynamicRetractableDisplay
+        activeClass={activeClass}
+        classes={classes}
+        onUpdateControls={(controls) => updateEvaluationControls(activeClass.id, controls)}
+        onUpdateStudents={(classId, updated) => importRoster(classId, updated, true)}
+        onPreviewStudent={(s) => setPreviewingStudent(s)}
+        onEditStudent={(s) => {
+          setEditStudentData({
+            id: s.id,
+            name: s.name,
+            email: s.email,
+            groupName: s.groupName,
+            gender: s.gender || 'Female',
+            isInternational: !!s.isInternational,
+            isExchange: !!s.isExchange,
+            nationality: s.nationality || '',
+            currentCountry: s.currentCountry || '',
+            englishProficiency: s.englishProficiency || 'Fluent (C1/C2)',
+            university: s.university || '',
+            degree: s.degree || '',
+            originalUniversity: s.originalUniversity || '',
+            originalCountry: s.originalCountry || '',
+            currentUniversity: s.currentUniversity || '',
+            studentType: s.studentType || 'Normal',
+            customFields: s.customFields || {}
+          });
+          setIsEditStudentModalOpen(true);
+        }}
+        onOpenReport={(studentId) => openReportModal(studentId)}
+        onAddStudent={() => setIsAddStudentModalOpen(true)}
+        onUpdateTeamBaseGrade={updateTeamBaseGrade}
+        onCreatePulseRound={(classId, roundData) => createPulseRound(classId, roundData)}
+        onUpdatePulseRound={updatePulseRound}
+        onSubmitPulseResponse={submitPulseResponse}
+        onDeletePulseRound={deletePulseRound}
+        onSeedPulseSample={(classId) => seedSamplePulseRounds(classId)}
+        onSaveDeadline={saveClassDeadline}
+        addToast={addToast}
+        onNavigateTab={(tab) => setActiveTab(tab)}
+        visible={featureToggles.showRetractableDisplay}
+        onToggleVisibility={(v) => handleToggleModule('showRetractableDisplay', v)}
+        onExportExcel={handleExportExcel}
+        onExportCSV={() => {
+          if (activeClass) {
+            exportRosterToCSV(activeClass);
+            addToast('Exported classroom roster to CSV!', 'success');
+          }
+        }}
+        onExportLMS={(platform) => {
+          if (activeClass) {
+            try {
+              exportLMSGradebook(platform, activeClass, 'calibrated');
+              addToast(`Exported ${platform.toUpperCase()} gradebook successfully!`, 'success');
+            } catch {
+              addToast('Failed to export LMS gradebook', 'error');
+            }
+          }
+        }}
+        onOpenLivePresentation={() => setIsLivePresentationModalOpen(true)}
+        onOpenTeamKickoff={(tab) => handleOpenTeamKickoff(tab || 'roles_config')}
+        onOpenBranding={() => setIsBrandingModalOpen(true)}
+        onOpenSnapshots={() => setIsSnapshotModalOpen(true)}
+        onResetReviews={() => {
+          if (activeClass) {
+            triggerConfirm(
+              'Reset All Classroom Submissions',
+              `Are you sure you want to clear all ${activeClass.reviews.length} peer evaluations submitted for "${activeClass.name}"?`,
+              () => {
+                resetClassReviews(activeClass.id);
+                addToast('Cleared all peer evaluation submissions for this classroom.', 'info');
+              },
+              'Reset Submissions',
+              'Cancel'
+            );
+          }
+        }}
+        onBackupJSON={() => {
+          if (activeClass) {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeClass, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `${activeClass.name.toLowerCase().replace(/[^a-z0-9]/gi, '_')}_backup.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            addToast(`Downloaded JSON snapshot backup for "${activeClass.name}"!`, 'success');
+          }
+        }}
       />
 
       {/* QUICKADD HOLD-KEY ACTIVE FLOATING HUD */}

@@ -3,11 +3,11 @@ import {
   ShieldCheck, Send, AlertCircle, TrendingUp, 
   ThumbsUp, Rocket, Trophy, Lightbulb, Clock, Heart, 
   Award, MessageSquare, Target, Plus, CheckCircle, CheckCircle2,
-  GraduationCap, Users, Info, BarChart2, Download, Lock, BookOpen,
+  GraduationCap, Users, Info, BarChart2, Download, Lock, Unlock, BookOpen,
   Check, Star, AlertTriangle, ChevronLeft, ChevronRight, WifiOff,
-  Layers, ListFilter, Sparkles, CheckSquare, SlidersHorizontal, Wand2, RefreshCw,
+  Sparkles, CheckSquare, SlidersHorizontal, Wand2, RefreshCw,
   ChevronDown, ChevronUp, Edit3, LayoutDashboard, ArrowRight, Globe, Mail, X,
-  Activity, Frown, Meh, Smile, Flame, Sliders, UserCheck, Shield
+  Activity, Frown, Meh, Smile, Flame, Sliders, UserCheck
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
 import { 
@@ -15,6 +15,9 @@ import {
   type Student, PULSE_SCALE_PRESETS, DEFAULT_TEAM_ROLES, type TeamCharterRole,
   DEFAULT_CUSTOM_ICEBREAKERS, type CustomIcebreakerTask, isStandardEnrollmentField 
 } from '../utils/math';
+import type { SubPeerReviewRound } from '../utils/subPeerReview';
+import { StudentSubReviewModal } from '../components/StudentSubReviewModal';
+import { StudentMilestoneGrowthCard } from '../components/StudentMilestoneGrowthCard';
 import FeatureInfoButton from '../components/FeatureInfoButton';
 
 
@@ -756,15 +759,28 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   isPreview = false,
   onForcedLogout
 }) => {
-  const { classes, submitPeerReviews, addToast, enrollStudent, submitPulseResponse, updateStudent } = useClass();
+  const { classes, submitPeerReviews, addToast, enrollStudent, submitPulseResponse, updateStudent, submitSubPeerReview, updateEvaluationControls } = useClass();
 
   // Active student view: 'dashboard' (home) | 'evaluate' (peer reviews) | 'report' (performance analytics)
   const [portalTab, setPortalTab] = useState<'dashboard' | 'evaluate' | 'report'>('dashboard');
+  const [activeSubReviewModalRound, setActiveSubReviewModalRound] = useState<SubPeerReviewRound | null>(null);
+  const [previewSampleReport, setPreviewSampleReport] = useState<boolean>(false);
+
+  // Smooth scroll helper for both real mobile browsers and simulator phone chassis
+  const scrollToScreenTop = () => {
+    const sim = document.querySelector('.smartphone-simulator-screen');
+    if (sim) {
+      sim.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   // Find class and student
   const activeClass = classes.find((c) => c.id === classId);
   const student = activeClass?.students.find((s) => s.id === studentId);
   const evalControls = getEvaluationControls(activeClass);
+
 
   // Immediate real-time deletion listener across tabs and database updates
   useEffect(() => {
@@ -1048,7 +1064,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [lastDraftSaved, setLastDraftSaved] = useState<number | null>(null);
 
   // Mobile-first Swipeable Card Flow & Network states
-  const [viewMode, setViewMode] = useState<'card' | 'continuous'>('card');
+  const [viewMode] = useState<'card' | 'continuous'>('card');
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
@@ -1062,6 +1078,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   // Self-service editing mode for previously submitted evaluations
   const [isEditingSubmitted, setIsEditingSubmitted] = useState(false);
+
+  // Automatically return to dashboard if main peer review gets locked while a non-preview student without submission is on evaluate tab
+  useEffect(() => {
+    if (!isPreview && !evalControls.unlockMainPeerReview && !student?.submitted && !isSubmitted && portalTab === 'evaluate') {
+      setPortalTab('dashboard');
+    }
+  }, [evalControls.unlockMainPeerReview, portalTab, isPreview, student?.submitted, isSubmitted]);
 
   // Active Pulse Round for Quick Team Health Check-in (appears directly on Dashboard when instructor opens a round)
   const activePulseRound = activeClass?.pulseRounds?.find(r => r.status === 'active') || activeClass?.pulseRounds?.find(r => !r.status && (r as any).status !== 'closed');
@@ -1162,6 +1185,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     setIsEditingSubmitted(true);
     setIsSubmitted(false);
     setActiveCardIndex(0);
+    setPortalTab('evaluate');
   };
 
   // Online / Offline synchronization listener
@@ -1241,7 +1265,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   }, [activeClass]);
 
   const isLocked = activeClass && activeClass.deadline && new Date(activeClass.deadline) <= new Date();
-  const showLockoutScreen = isLocked && student && !student.submitted && !isSubmitted;
+  const showLockoutScreen = !isPreview && isLocked && student && !student.submitted && !isSubmitted;
 
   // Synchronize dynamic browser document tab titles based on active student status/view
   useEffect(() => {
@@ -1310,7 +1334,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const maxRubricScore = getTargetScale(activeClass);
 
   const renderReportView = () => {
-    if (reviewsReceived === 0) {
+    if (reviewsReceived === 0 && !previewSampleReport) {
       return (
         <div className="tab-pane" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: '80vh', padding: '1.5rem', width: '100%' }}>
           <div style={{ width: '100%', maxWidth: '540px', marginBottom: '1rem' }}>
@@ -1399,6 +1423,30 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <ShieldCheck size={18} className="text-teal" style={{ flexShrink: 0 }} /> 
               <span><b>Absolute Anonymity:</b> Teammates only see computed aggregates. Individual score selections are completely hidden.</span>
             </div>
+
+            {/* Simulator: Preview Analytics Button */}
+            {isPreview && (
+              <div style={{ marginBottom: '0.85rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setPreviewSampleReport(true)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.45rem',
+                    padding: '0.65rem 1rem',
+                    fontWeight: 800,
+                    fontSize: '0.82rem',
+                    borderRadius: '10px'
+                  }}
+                >
+                  <Sparkles size={14} /> Preview Full Analytics Dashboard (Simulator)
+                </button>
+              </div>
+            )}
 
             {/* Self-Service Edit Option */}
             <button
@@ -1557,7 +1605,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       return list;
     })();
 
-    const activeTier = getTierInfo(overallPercentage ?? 0);
+    const displayPercentage = overallPercentage ?? (previewSampleReport ? 88 : null);
+    const activeTier = getTierInfo(displayPercentage ?? 0);
     const TierIcon = activeTier.icon;
 
     const getConsensusInfo = (stdDev: number | null) => {
@@ -1597,7 +1646,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       };
     };
 
-    const strokeDashoffset = 314.16 - (314.16 * (overallPercentage ?? 0)) / 100;
+    const strokeDashoffset = 314.16 - (314.16 * (displayPercentage ?? 0)) / 100;
 
     return (
       <div className="main-content tab-pane" style={{ maxWidth: '960px', padding: '2rem 1.5rem', width: '100%' }}>
@@ -1623,6 +1672,38 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             <ChevronLeft size={14} /> Back to Dashboard
           </button>
         </div>
+
+        {/* Simulator Preview Banner */}
+        {isPreview && previewSampleReport && reviewsReceived === 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem',
+              padding: '0.55rem 0.85rem',
+              borderRadius: '10px',
+              backgroundColor: 'rgba(20, 184, 166, 0.1)',
+              border: '1px solid rgba(20, 184, 166, 0.3)',
+              marginBottom: '1rem',
+              fontSize: '0.74rem',
+              color: '#0d9488'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Sparkles size={13} />
+              <span><strong>Simulator Preview:</strong> Showing sample performance report visualization.</span>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setPreviewSampleReport(false)}
+              style={{ fontSize: '0.68rem', height: '24px', padding: '0 0.5rem' }}
+            >
+              Show 0 Reviews State
+            </button>
+          </div>
+        )}
 
         {/* Profile Card / Dashboard Banner */}
         <div className="card-premium" style={{ marginBottom: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem', overflow: 'visible' }}>
@@ -1735,11 +1816,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 </svg>
                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', alignContent: 'center', justifyContent: 'center' }}>
                   <span style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
-                    {overallPercentage}%
+                    {displayPercentage ?? 0}%
                   </span>
-                  {overallPercentage !== null && (
+                  {displayPercentage !== null && (
                     <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-teal)', marginTop: '0.2rem' }}>
-                      {((overallPercentage / 100) * maxRubricScore).toFixed(1)} / {maxRubricScore}
+                      {((displayPercentage / 100) * maxRubricScore).toFixed(1)} / {maxRubricScore}
                     </span>
                   )}
                   <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '0.2rem', letterSpacing: '0.025em' }}>
@@ -3293,7 +3374,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
     return (
       <div className="student-dashboard-content" style={{ width: '100%', maxWidth: '840px', display: 'flex', flexDirection: 'column', gap: '1.25rem', animation: 'fadeIn 0.25s ease' }}>
-        
+
         {/* Sleek Minimal Profile Card */}
         <div 
           className="card" 
@@ -3415,15 +3496,111 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           </div>
         </div>
 
-        {/* Active Team Health Micro-Pulse Completed Status Banner */}
-        {activePulseRound && hasSubmittedPulse && !isEditingExistingPulse && (
-          <div
-            className="card"
-            style={{
-              padding: '0.9rem 1.25rem',
-              borderRadius: '12px',
-              border: '1px solid rgba(20, 184, 166, 0.3)',
-              backgroundColor: 'rgba(20, 184, 166, 0.05)',
+        {/* Peer Evaluation Status & Action Card (Primary Sprint Action Hub) */}
+        {evalControls.unlockMainPeerReview ? (
+          <div 
+            className="card" 
+            style={{ 
+              padding: '1.25rem 1.35rem', 
+              borderRadius: '14px', 
+              border: (student.submitted || isSubmitted) ? '1px solid rgba(20, 184, 166, 0.35)' : '1.5px solid rgba(99, 102, 241, 0.35)', 
+              backgroundColor: 'var(--bg-surface)', 
+              boxShadow: 'var(--shadow-sm)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.85rem'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div 
+                  style={{ 
+                    width: '38px', 
+                    height: '38px', 
+                    borderRadius: '10px', 
+                    backgroundColor: (student.submitted || isSubmitted) ? 'rgba(20, 184, 166, 0.12)' : 'rgba(99, 102, 241, 0.12)', 
+                    color: (student.submitted || isSubmitted) ? 'var(--accent-teal)' : 'var(--primary)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  {(student.submitted || isSubmitted) ? <CheckCircle2 size={20} /> : <Clock size={20} />}
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                    <h2 style={{ fontSize: '1.02rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                      {(student.submitted || isSubmitted) ? 'Peer Evaluations Completed & Recorded' : 'Peer Evaluation Round Open'}
+                    </h2>
+                    <span className={`badge ${(student.submitted || isSubmitted) ? 'badge-teal' : 'badge-primary'}`} style={{ fontSize: '0.64rem', fontWeight: 750 }}>
+                      {(student.submitted || isSubmitted) ? 'Submitted' : 'Action Required'}
+                    </span>
+                  </div>
+                  <p style={{ margin: '0.15rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    {(student.submitted || isSubmitted)
+                      ? 'Your feedback has been submitted. You can update and fine-tune your responses anytime before deadline.'
+                      : `Please complete evaluations for your ${teammates.length} teammates in ${student.groupName}. Ratings are 100% anonymous.`}
+                  </p>
+                </div>
+              </div>
+
+              {activeClass?.deadline && (
+                <span className="badge" style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', fontSize: '0.72rem', padding: '0.3rem 0.6rem', borderRadius: '7px', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Clock size={12} className="text-amber" /> 
+                  {timeLeft !== null && timeLeft > 0 ? (
+                    <span>Deadline: <b>{Math.floor(timeLeft / (1000 * 60 * 60 * 24))}d {Math.floor((timeLeft / (1000 * 60 * 60)) % 24)}h left</b></span>
+                  ) : (
+                    <span>Deadline passed</span>
+                  )}
+                </span>
+              )}
+            </div>
+
+            {/* Action CTAs */}
+            <div className="student-action-row" style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+              {(student.submitted || isSubmitted) ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleStartEditReview}
+                    style={{ flex: 1, minHeight: '42px', minWidth: '160px', fontWeight: 700, fontSize: '0.84rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem', borderRadius: '9px' }}
+                  >
+                    <Edit3 size={14} /> Edit My Submitted Reviews
+                  </button>
+                  {reviewsReceived > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => { triggerHaptic(10); setPortalTab('report'); }}
+                      style={{ flex: 1, minHeight: '42px', minWidth: '160px', fontWeight: 800, fontSize: '0.84rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem', borderRadius: '9px', backgroundColor: 'var(--accent-teal)', borderColor: 'var(--accent-teal)' }}
+                    >
+                      <BarChart2 size={14} /> Open Full Analytical Report
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => { triggerHaptic(15); setPortalTab('evaluate'); }}
+                  style={{ width: '100%', minHeight: '44px', fontSize: '0.92rem', fontWeight: 850, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderRadius: '9px' }}
+                >
+                  Start Peer Review <ArrowRight size={15} />
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div 
+            className="card" 
+            style={{ 
+              padding: '1rem 1.25rem', 
+              borderRadius: '14px', 
+              border: '1px solid var(--border-color)', 
+              backgroundColor: 'var(--bg-surface)', 
+              boxShadow: 'var(--shadow-sm)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -3432,11 +3609,89 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <div 
+                style={{ 
+                  width: '36px', 
+                  height: '36px', 
+                  borderRadius: '10px', 
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)', 
+                  color: 'var(--accent-rose)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <Lock size={18} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  <h3 style={{ fontSize: '0.96rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                    Peer Review Round Currently Locked
+                  </h3>
+                  <span className="badge badge-secondary" style={{ fontSize: '0.62rem', fontWeight: 750 }}>
+                    Pending Release
+                  </span>
+                </div>
+                <p style={{ margin: '0.12rem 0 0', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                  Your instructor will unlock this evaluation window when your team sprint checkpoint opens.
+                </p>
+              </div>
+            </div>
+            {isPreview && (
+              <div style={{ display: 'flex', gap: '0.45rem', width: '100%', marginTop: '0.35rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    triggerHaptic(12);
+                    setPortalTab('evaluate');
+                  }}
+                  style={{ flex: 1, fontSize: '0.74rem', fontWeight: 800, height: '32px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+                >
+                  <Sparkles size={12} />
+                  <span>Preview Evaluation Form</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    triggerHaptic(12);
+                    updateEvaluationControls(activeClass.id, { unlockMainPeerReview: true });
+                    addToast('Peer review round is now OPEN for all students', 'success');
+                  }}
+                  style={{ fontSize: '0.74rem', fontWeight: 700, height: '32px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', color: '#059669', borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                >
+                  <Unlock size={12} />
+                  <span>Unlock Round</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Active Team Health Micro-Pulse Completed Status Capsule */}
+        {activePulseRound && hasSubmittedPulse && !isEditingExistingPulse && (
+          <div
+            className="card"
+            style={{
+              padding: '0.75rem 1.15rem',
+              borderRadius: '12px',
+              border: '1px solid rgba(20, 184, 166, 0.28)',
+              backgroundColor: 'rgba(20, 184, 166, 0.04)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.65rem',
+              flexWrap: 'wrap'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
               <div
                 style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '7px',
                   backgroundColor: 'rgba(20, 184, 166, 0.15)',
                   color: 'var(--accent-teal)',
                   display: 'flex',
@@ -3445,20 +3700,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   flexShrink: 0
                 }}
               >
-                <CheckCircle2 size={18} />
+                <CheckCircle2 size={16} />
               </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    {activePulseRound.title}: Check-in Recorded
-                  </span>
-                  <span className="badge badge-teal" style={{ fontSize: '0.65rem', fontWeight: 700 }}>
-                    {existingPulseResponse?.status === 'on_track' ? 'On Track' : existingPulseResponse?.status === 'minor_roadblock' ? 'Minor Roadblock' : 'Blocked'}
-                  </span>
-                </div>
-                <p style={{ margin: '0.1rem 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                  Thank you! Your feedback helps your instructor ensure your team is thriving.
-                </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {activePulseRound.title}: Check-in Recorded
+                </span>
+                <span className="badge badge-teal" style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px' }}>
+                  {existingPulseResponse?.status === 'on_track' ? 'On Track' : existingPulseResponse?.status === 'minor_roadblock' ? 'Minor Roadblock' : 'Blocked'}
+                </span>
               </div>
             </div>
 
@@ -3466,9 +3716,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={() => setIsEditingExistingPulse(true)}
-              style={{ fontSize: '0.74rem', height: '30px', padding: '0 0.75rem', borderRadius: '6px' }}
+              style={{ fontSize: '0.72rem', height: '28px', padding: '0 0.65rem', borderRadius: '6px' }}
             >
-              Update Check-in
+              Update
             </button>
           </div>
         )}
@@ -3901,104 +4151,26 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           );
         })()}
 
-        {/* Peer Evaluation Status & Action Card */}
-        <div 
-          className="card" 
-          style={{ 
-            padding: '1.4rem', 
-            borderRadius: '16px', 
-            border: '1px solid var(--border-color)', 
-            borderLeft: (student.submitted || isSubmitted) ? '4px solid var(--accent-teal)' : '4px solid var(--primary)',
-            backgroundColor: 'var(--bg-surface)', 
-            boxShadow: 'var(--shadow-sm)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.85rem'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-              <div 
-                style={{ 
-                  width: '38px', 
-                  height: '38px', 
-                  borderRadius: '10px', 
-                  backgroundColor: (student.submitted || isSubmitted) ? 'rgba(20, 184, 166, 0.12)' : 'rgba(99, 102, 241, 0.12)', 
-                  color: (student.submitted || isSubmitted) ? 'var(--accent-teal)' : 'var(--primary)', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}
-              >
-                {(student.submitted || isSubmitted) ? <CheckCircle size={20} /> : <Clock size={20} />}
-              </div>
-              <div>
-                <h2 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                  {(student.submitted || isSubmitted) ? 'Peer Evaluations Completed & Recorded' : 'Peer Evaluation Round Open'}
-                </h2>
-                <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  {(student.submitted || isSubmitted)
-                    ? 'Your feedback has been submitted. You can update and fine-tune your responses anytime before deadline.'
-                    : `Please complete evaluations for your ${teammates.length} teammates in ${student.groupName}. Ratings are 100% anonymous.`}
-                </p>
-              </div>
-            </div>
-
-            {activeClass?.deadline && (
-              <span className="badge" style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', fontSize: '0.74rem', padding: '0.35rem 0.65rem', borderRadius: '8px', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                <Clock size={12} className="text-amber" /> 
-                {timeLeft !== null && timeLeft > 0 ? (
-                  <span>Deadline: <b>{Math.floor(timeLeft / (1000 * 60 * 60 * 24))}d {Math.floor((timeLeft / (1000 * 60 * 60)) % 24)}h left</b></span>
-                ) : (
-                  <span>Deadline passed</span>
-                )}
-              </span>
-            )}
-          </div>
-
-          {/* Action CTAs */}
-          <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
-            {(student.submitted || isSubmitted) ? (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleStartEditReview}
-                  style={{ flex: 1, minHeight: '44px', minWidth: '160px', fontWeight: 700, fontSize: '0.86rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem', borderRadius: '10px' }}
-                >
-                  <Edit3 size={15} /> Edit My Submitted Reviews
-                </button>
-                {reviewsReceived > 0 && (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => { triggerHaptic(10); setPortalTab('report'); }}
-                    style={{ flex: 1, minHeight: '44px', minWidth: '160px', fontWeight: 800, fontSize: '0.86rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem', borderRadius: '10px', backgroundColor: 'var(--accent-teal)', borderColor: 'var(--accent-teal)' }}
-                  >
-                    <BarChart2 size={15} /> Open Full Analytical Report
-                  </button>
-                )}
-              </>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => { triggerHaptic(15); setPortalTab('evaluate'); }}
-                style={{ width: '100%', minHeight: '46px', fontSize: '0.94rem', fontWeight: 850, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderRadius: '10px' }}
-              >
-                Start Peer Review <ArrowRight size={16} />
-              </button>
-            )}
-          </div>
-        </div>
+        {/* Milestone Sub-Peer Reviews & Trajectory Card (Formative check-ins for long-duration projects) */}
+        {activeClass && student && (
+          <StudentMilestoneGrowthCard
+            activeClass={activeClass}
+            student={student}
+            onOpenSubReviewModal={(round) => setActiveSubReviewModalRound(round)}
+            onToast={addToast}
+          />
+        )}
 
         {/* Teammates Section */}
         <div 
           className="card" 
           style={{ 
-            padding: '1.4rem', 
+            padding: 'clamp(0.9rem, 2.5vw, 1.35rem)', 
             borderRadius: '16px', 
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
             border: '1px solid var(--border-color)', 
             backgroundColor: 'var(--bg-surface)', 
             boxShadow: 'var(--shadow-sm)',
@@ -4250,35 +4422,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   );
                 })}
               </div>
-
-              {/* Team Norms & Agreements Quick Strip if configured */}
-              {activeClass?.teamCharterConfig?.teamNorms && activeClass.teamCharterConfig.teamNorms.length > 0 && (
-                <div style={{ marginTop: '0.35rem', padding: '0.75rem 0.95rem', borderRadius: '10px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
-                    <Shield size={13} style={{ color: 'var(--accent-teal)' }} />
-                    <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      Team Working Norms &amp; Agreements
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                    {activeClass.teamCharterConfig.teamNorms.map((norm, idx) => (
-                      <span
-                        key={idx}
-                        style={{
-                          fontSize: '0.7rem',
-                          color: 'var(--text-secondary)',
-                          backgroundColor: 'var(--bg-surface)',
-                          border: '1px solid var(--border-color)',
-                          padding: '0.15rem 0.45rem',
-                          borderRadius: '5px'
-                        }}
-                      >
-                        &bull; {norm}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -4475,8 +4618,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         <div 
           className="card" 
           style={{ 
-            padding: '1.4rem', 
+            padding: 'clamp(0.9rem, 2.5vw, 1.35rem)', 
             borderRadius: '16px', 
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
             border: '1px solid var(--border-color)', 
             backgroundColor: 'var(--bg-surface)', 
             boxShadow: 'var(--shadow-sm)',
@@ -4502,26 +4649,29 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           {reviewsReceived > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {/* Metric Quick-Tiles */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
-                <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', textAlign: 'center' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Contribution Score</span>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--primary)', marginTop: '0.25rem' }}>
+              <div className="kpi-stats-grid">
+                <div className="kpi-tile">
+                  <span className="kpi-label">Contribution Score</span>
+                  <div className="kpi-number" style={{ color: 'var(--primary)', marginTop: '0.2rem' }}>
                     {Math.round(overallPercentage ?? 0)}%
                   </div>
+                  <span className="kpi-subtext">Peer benchmark</span>
                 </div>
 
-                <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', textAlign: 'center' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Reviews Received</span>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--accent-teal)', marginTop: '0.25rem' }}>
-                    {reviewsReceived} <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>/ {expectedReviewsCount}</span>
+                <div className="kpi-tile">
+                  <span className="kpi-label">Reviews Received</span>
+                  <div className="kpi-number" style={{ color: 'var(--accent-teal)', marginTop: '0.2rem' }}>
+                    {reviewsReceived} <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>/ {expectedReviewsCount}</span>
                   </div>
+                  <span className="kpi-subtext">Teammate responses</span>
                 </div>
 
-                <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', textAlign: 'center' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Team Completion</span>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: '0.25rem' }}>
+                <div className="kpi-tile">
+                  <span className="kpi-label">Team Completion</span>
+                  <div className="kpi-number" style={{ color: 'var(--text-primary)', marginTop: '0.2rem' }}>
                     {gradeProgress}%
                   </div>
+                  <span className="kpi-subtext">Submission progress</span>
                 </div>
               </div>
 
@@ -4610,17 +4760,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     }
   };
 
-  // Progress progression timeline variables
-  const completedTeammatesCount = teammates.filter(t => {
-    return (strengthsText[t.id] || '').trim().length > 0 ||
-           (growthText[t.id] || '').trim().length > 0 ||
-           (praiseTags[t.id] || []).length > 0;
-  }).length;
-  
-  const totalCompleted = completedTeammatesCount + (evalControls.allowSelfReview ? (selfTouched ? 1 : 0) : 0);
-  const totalTarget = teammates.length + (evalControls.allowSelfReview ? 1 : 0);
-  const progressPct = totalTarget > 0 ? Math.round((totalCompleted / totalTarget) * 100) : 100;
-  
+  // Card navigation indices
   const reviewSubmitCardIndex = evalControls.allowSelfReview ? teammates.length + 1 : teammates.length;
   const totalCards = reviewSubmitCardIndex + 1;
 
@@ -4644,14 +4784,14 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         if (activeCardIndex < totalCards - 1) {
           triggerHaptic(12);
           setActiveCardIndex(prev => prev + 1);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          scrollToScreenTop();
         }
       } else {
         // Swiped Right -> Previous Card
         if (activeCardIndex > 0) {
           triggerHaptic(12);
           setActiveCardIndex(prev => prev - 1);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          scrollToScreenTop();
         }
       }
     }
@@ -4661,7 +4801,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     <div className="main-content tab-pane student-portal-wrapper" style={{ maxWidth: '800px', width: '100%', boxSizing: 'border-box', animation: 'fadeIn 0.25s ease' }}>
       
       {/* Top Header with Back to Dashboard */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.85rem' }}>
         <button
           type="button"
           className="btn btn-secondary btn-sm"
@@ -4670,10 +4810,44 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         >
           <ChevronLeft size={14} /> Back to Dashboard
         </button>
-        <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
-          Evaluating Group {student.groupName} &bull; {teammates.length} Peers
-        </span>
       </div>
+
+      {/* Simulator Mode Locked Notice */}
+      {!evalControls.unlockMainPeerReview && isPreview && (
+        <div 
+          style={{ 
+            backgroundColor: 'rgba(239, 68, 68, 0.08)', 
+            color: '#dc2626', 
+            border: '1px solid rgba(239, 68, 68, 0.25)', 
+            padding: '0.65rem 0.9rem', 
+            borderRadius: '12px', 
+            fontSize: '0.74rem', 
+            fontWeight: 600, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between', 
+            gap: '0.5rem', 
+            marginBottom: '0.85rem' 
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+            <Lock size={14} className="text-rose" style={{ flexShrink: 0 }} />
+            <span><strong>Simulator Mode:</strong> Round is locked for real students. You are testing this form in safe preview mode.</span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => {
+              triggerHaptic(10);
+              updateEvaluationControls(activeClass.id, { unlockMainPeerReview: true });
+              addToast('Peer review round is now OPEN for all students', 'success');
+            }}
+            style={{ fontSize: '0.68rem', padding: '0.2rem 0.55rem', height: '26px', flexShrink: 0, fontWeight: 700 }}
+          >
+            Unlock Round
+          </button>
+        </div>
+      )}
 
       {/* Editing Mode Active Notice */}
       {isEditingSubmitted && (
@@ -4754,22 +4928,22 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             borderRadius: '12px'
           }}
         >
-          {/* Row 1: Student Metadata, Mode Switcher & Progress */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '0.4rem', flexWrap: 'nowrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0, overflow: 'hidden' }}>
-              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--primary)', backgroundColor: 'var(--primary-light)', padding: '0.12rem 0.45rem', borderRadius: '6px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {/* Row 1: Student Metadata & Status */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '0.5rem', flexWrap: 'nowrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, overflow: 'hidden' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)', backgroundColor: 'var(--primary-light)', padding: '0.15rem 0.5rem', borderRadius: '6px', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 Group {student.groupName}
               </span>
-              <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {cleanStudentName(student.name)}
               </span>
               {lastDraftSaved && (
                 <span 
                   className="badge badge-teal" 
                   style={{ 
-                    fontSize: '0.6rem', 
-                    padding: '0.08rem 0.3rem', 
-                    gap: '0.15rem',
+                    fontSize: '0.64rem', 
+                    padding: '0.1rem 0.35rem', 
+                    gap: '0.2rem',
                     borderRadius: '4px',
                     fontWeight: 700,
                     whiteSpace: 'nowrap',
@@ -4777,97 +4951,40 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   }}
                   title="Your rating changes and text are automatically saved locally"
                 >
-                  <Check size={8} /> Saved
-                </span>
-              )}
-
-              {timeLeft !== null && (
-                <span 
-                  style={{ 
-                    fontSize: '0.6rem', 
-                    fontWeight: 700, 
-                    color: timeLeft < 3600000 ? 'var(--accent-rose)' : 'var(--accent-amber)',
-                    backgroundColor: timeLeft < 3600000 ? 'var(--accent-rose-light)' : 'var(--accent-amber-light)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.15rem',
-                    padding: '0.08rem 0.3rem',
-                    borderRadius: '4px',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0
-                  }}
-                  title="Time remaining"
-                >
-                  <Clock size={9} />
-                  {(() => {
-                    const s = Math.floor(timeLeft / 1000);
-                    const mins = Math.floor(s / 60);
-                    const hrs = Math.floor(mins / 60);
-                    const days = Math.floor(hrs / 24);
-                    if (days > 0) return `${days}d`;
-                    if (hrs > 0) return `${hrs}h ${mins % 60}m`;
-                    return `${mins}m`;
-                  })()}
+                  <Check size={9} /> Saved
                 </span>
               )}
             </div>
 
-            {/* Right: View Mode Toggle & Progress Pill */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-              {/* Card Flow / All View Mode Switch */}
-              <div style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'var(--bg-app)', padding: '2px', borderRadius: '7px', border: '1px solid var(--border-color)' }}>
-                <button
-                  type="button"
-                  onClick={() => { setViewMode('card'); triggerHaptic(10); }}
-                  style={{
-                    padding: '0.15rem 0.4rem',
-                    fontSize: '0.64rem',
-                    fontWeight: viewMode === 'card' ? 800 : 600,
-                    backgroundColor: viewMode === 'card' ? 'var(--primary)' : 'transparent',
-                    color: viewMode === 'card' ? '#fff' : 'var(--text-secondary)',
-                    border: 'none',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    transition: 'all 0.15s ease'
-                  }}
-                  title="Card by Card Swipe View"
-                >
-                  <Layers size={10} /> Card
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setViewMode('continuous'); triggerHaptic(10); }}
-                  style={{
-                    padding: '0.15rem 0.4rem',
-                    fontSize: '0.64rem',
-                    fontWeight: viewMode === 'continuous' ? 800 : 600,
-                    backgroundColor: viewMode === 'continuous' ? 'var(--primary)' : 'transparent',
-                    color: viewMode === 'continuous' ? '#fff' : 'var(--text-secondary)',
-                    border: 'none',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    transition: 'all 0.15s ease'
-                  }}
-                  title="Continuous Full Scroll View"
-                >
-                  <ListFilter size={10} /> All
-                </button>
-              </div>
-
-              {/* Progress badge */}
-              <div style={{ width: '38px', height: '5px', backgroundColor: 'var(--border-color)', borderRadius: '9999px', overflow: 'hidden' }}>
-                <div style={{ width: `${progressPct}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-teal) 0%, hsl(142, 70%, 45%) 100%)', borderRadius: '9999px', transition: 'width 0.3s ease' }} />
-              </div>
-              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent-teal)', backgroundColor: 'var(--accent-teal-light)', padding: '0.08rem 0.32rem', borderRadius: '4px', whiteSpace: 'nowrap' }}>
-                {progressPct}%
+            {timeLeft !== null && (
+              <span 
+                style={{ 
+                  fontSize: '0.64rem', 
+                  fontWeight: 700, 
+                  color: timeLeft < 3600000 ? 'var(--accent-rose)' : 'var(--accent-amber)',
+                  backgroundColor: timeLeft < 3600000 ? 'var(--accent-rose-light)' : 'var(--accent-amber-light)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.2rem',
+                  padding: '0.12rem 0.38rem',
+                  borderRadius: '4px',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
+                }}
+                title="Time remaining"
+              >
+                <Clock size={10} />
+                {(() => {
+                  const s = Math.floor(timeLeft / 1000);
+                  const mins = Math.floor(s / 60);
+                  const hrs = Math.floor(mins / 60);
+                  const days = Math.floor(hrs / 24);
+                  if (days > 0) return `${days}d`;
+                  if (hrs > 0) return `${hrs}h ${mins % 60}m`;
+                  return `${mins}m`;
+                })()}
               </span>
-            </div>
+            )}
           </div>
 
           {/* Row 2: Swipeable Horizontal Stepper List */}
@@ -4917,7 +5034,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     triggerHaptic(10);
                     if (viewMode === 'card') {
                       setActiveCardIndex(idx);
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                      scrollToScreenTop();
                     } else {
                       const el = document.getElementById(`card-peer-${t.id}`);
                       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -5027,7 +5144,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 triggerHaptic(10);
                 if (viewMode === 'card') {
                   setActiveCardIndex(reviewSubmitCardIndex);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  scrollToScreenTop();
                 } else {
                   const el = document.getElementById('card-submission-panel');
                   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -5120,21 +5237,23 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     animation: 'peerCardSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
                   }}
                 >
-                  <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: 'var(--primary)', fontSize: '0.85rem' }}>
+                  <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', flexWrap: 'nowrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0, overflow: 'hidden' }}>
+                      <div style={{ width: '34px', height: '34px', borderRadius: '50%', backgroundColor: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: 'var(--primary)', fontSize: '0.88rem', flexShrink: 0 }}>
                         {idx + 1}
                       </div>
-                      <div>
-                        <h3 style={{ fontSize: '0.98rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>{cleanStudentName(peer.name)}</h3>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Teammate ID: {peer.id} &bull; Card {idx + 1} of {teammates.length}</span>
+                      <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cleanStudentName(peer.name)}</h3>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block' }}>Card {idx + 1} of {teammates.length}</span>
                       </div>
                     </div>
-                    <FeatureInfoButton featureId="student-grading-matrix" size="sm" tooltipText="How Peer Grading Works" />
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                      <FeatureInfoButton featureId="student-grading-matrix" size="sm" tooltipText="How Peer Grading Works" />
+                    </div>
                   </div>
 
                   {/* Rubric Rating Scale */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                     {activeClass.fields.map((field) => {
                       const isCustomScale = activeClass.customScaleEnabled === true;
                       const fieldMin = isCustomScale ? (field.min ?? 1) : 1;
@@ -5158,25 +5277,32 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                       }
 
                       return (
-                        <div key={field.id} className="grading-slider-container" style={{ margin: 0 }}>
-                          <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', marginBottom: '0.65rem' }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
-                                {field.name}
-                              </span>
-                              {field.description && (
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.15rem', lineHeight: 1.3 }}>
-                                  {field.description}
-                                </span>
-                              )}
-                            </div>
-                            <span className="slider-value-bubble" style={{ backgroundColor: 'var(--primary)', fontSize: '0.82rem', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 800, flexShrink: 0, color: '#fff' }}>
-                              Rating: {currentVal} / {fieldMax}
+                        <div 
+                          key={field.id}
+                          style={{
+                            padding: '0.85rem 1rem',
+                            borderRadius: '11px',
+                            backgroundColor: 'var(--bg-app)',
+                            border: '1px solid var(--border-color)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.65rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div>
+                            <span style={{ fontSize: '0.88rem', fontWeight: 750, color: 'var(--text-primary)', display: 'block' }}>
+                              {field.name}
                             </span>
+                            {field.description && (
+                              <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.2rem', lineHeight: 1.35 }}>
+                                {field.description}
+                              </span>
+                            )}
                           </div>
 
                           {/* Rating Scale Buttons (Dynamic & Responsive for any scale length) */}
-                          <div style={{ marginTop: '0.45rem' }}>
+                          <div>
                             {(() => {
                               const scaleStyles = getScaleButtonStyles(scoreNodes.length);
                               return (
@@ -5204,7 +5330,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                         style={{
                                           height: scaleStyles.height,
                                           fontSize: scaleStyles.fontSize,
-                                          fontWeight: 800,
+                                          fontWeight: isSelected ? 900 : 700,
                                           borderRadius: '9px',
                                           border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-color)',
                                           backgroundColor: isSelected ? 'var(--primary)' : 'var(--bg-surface)',
@@ -5230,10 +5356,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 </div>
                               );
                             })()}
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
+                            </div>
                           </div>
                         </div>
                       );
@@ -5437,20 +5563,22 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   animation: 'peerCardSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
                 }}
               >
-                <div className="card-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--accent-teal-light)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
+                <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', flexWrap: 'nowrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0, overflow: 'hidden' }}>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '50%', backgroundColor: 'var(--accent-teal-light)', color: 'var(--accent-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
                       <Star size={16} />
                     </div>
-                    <div>
-                      <h3 style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Self-Evaluation Calibration</h3>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Objective self-reflection of your contributions</span>
+                    <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Self-Evaluation Calibration</h3>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block' }}>Objective self-reflection of your contributions</span>
                     </div>
                   </div>
-                  <FeatureInfoButton featureId="webpa-scoring" size="sm" tooltipText="Why Self-Calibration Matters" />
+                  <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                    <FeatureInfoButton featureId="webpa-scoring" size="sm" tooltipText="Why Self-Calibration Matters" />
+                  </div>
                 </div>
 
-                <details style={{ backgroundColor: 'var(--primary-light)', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.76rem', color: 'var(--text-primary)', marginBottom: '1rem', cursor: 'pointer' }}>
+                <details style={{ backgroundColor: 'var(--primary-light)', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.76rem', color: 'var(--text-primary)', marginBottom: '0.85rem', cursor: 'pointer' }}>
                   <summary style={{ fontWeight: 700, outline: 'none', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.3rem', userSelect: 'none' }}>
                     <Lightbulb size={13} className="text-primary" /> <span>Why evaluate myself? (Tap to expand)</span>
                   </summary>
@@ -5460,7 +5588,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 </details>
 
                 {/* Rubric Sliders for Self */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                   {activeClass.fields.map((field) => {
                     const isCustomScale = activeClass.customScaleEnabled === true;
                     const fieldMin = isCustomScale ? (field.min ?? 1) : 1;
@@ -5484,25 +5612,32 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     }
 
                     return (
-                      <div key={field.id} className="grading-slider-container" style={{ margin: 0 }}>
-                        <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', marginBottom: '0.65rem' }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
-                              Self-Rating: {field.name}
-                            </span>
-                            {field.description && (
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.15rem', lineHeight: 1.3 }}>
-                                {field.description}
-                              </span>
-                            )}
-                          </div>
-                          <span className="slider-value-bubble" style={{ backgroundColor: 'var(--accent-teal)', color: '#fff', fontSize: '0.82rem', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 800, flexShrink: 0 }}>
-                            Rating: {currentVal} / {fieldMax}
+                      <div 
+                        key={field.id}
+                        style={{
+                          padding: '0.85rem 1rem',
+                          borderRadius: '11px',
+                          backgroundColor: 'var(--bg-app)',
+                          border: '1px solid var(--border-color)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.65rem',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontSize: '0.88rem', fontWeight: 750, color: 'var(--text-primary)', display: 'block' }}>
+                            Self-Rating: {field.name}
                           </span>
+                          {field.description && (
+                            <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.2rem', lineHeight: 1.35 }}>
+                              {field.description}
+                            </span>
+                          )}
                         </div>
 
                         {/* Rating Scale Buttons (Dynamic & Responsive for any scale length) */}
-                        <div style={{ marginTop: '0.45rem' }}>
+                        <div>
                           {(() => {
                             const scaleStyles = getScaleButtonStyles(scoreNodes.length);
                             return (
@@ -5530,7 +5665,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                       style={{
                                         height: scaleStyles.height,
                                         fontSize: scaleStyles.fontSize,
-                                        fontWeight: 800,
+                                        fontWeight: isSelected ? 900 : 700,
                                         borderRadius: '9px',
                                         border: isSelected ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
                                         backgroundColor: isSelected ? 'var(--accent-teal)' : 'var(--bg-surface)',
@@ -5556,10 +5691,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                               </div>
                             );
                           })()}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
-                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
-                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', padding: '0 0.15rem' }}>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Lowest ({fieldMin})</span>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Highest ({fieldMax})</span>
+                          </div>
                         </div>
                       </div>
                     );
@@ -5896,7 +6031,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   if (activeCardIndex > 0) {
                     triggerHaptic(10);
                     setActiveCardIndex(prev => prev - 1);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    scrollToScreenTop();
                   }
                 }}
                 style={{ minWidth: '78px', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.76rem' }}
@@ -5925,7 +6060,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   onClick={() => {
                     triggerHaptic(12);
                     setActiveCardIndex(prev => prev + 1);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    scrollToScreenTop();
                   }}
                   style={{ minWidth: '78px', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.76rem' }}
                 >
@@ -6013,44 +6148,87 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               />
             )}
           </button>
+          {evalControls.unlockMainPeerReview || isPreview ? (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(8);
+                if (student.submitted || isSubmitted) {
+                  handleStartEditReview();
+                } else {
+                  setPortalTab('evaluate');
+                }
+              }}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.35rem',
+                padding: '0.45rem 0.35rem',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                fontWeight: portalTab === 'evaluate' ? 800 : 600,
+                backgroundColor: portalTab === 'evaluate' ? 'var(--primary)' : 'transparent',
+                color: portalTab === 'evaluate' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s ease'
+              }}
+              title={!evalControls.unlockMainPeerReview ? "Simulator Mode: Test Peer Review Form" : undefined}
+            >
+              {!evalControls.unlockMainPeerReview ? (
+                <Lock size={12} style={{ flexShrink: 0, color: portalTab === 'evaluate' ? '#fff' : '#ef4444' }} />
+              ) : (
+                <CheckSquare size={13} style={{ flexShrink: 0 }} />
+              )}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {student.submitted || isSubmitted
+                  ? 'Edit Reviews'
+                  : !evalControls.unlockMainPeerReview
+                  ? 'Reviews (Sim)'
+                  : 'Peer Reviews'}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(6);
+                addToast('Main peer review round is currently locked by your instructor.', 'info');
+              }}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.35rem',
+                padding: '0.45rem 0.35rem',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                backgroundColor: 'transparent',
+                color: 'var(--text-muted)',
+                opacity: 0.65,
+                border: 'none',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+              title="Peer review round is locked"
+            >
+              <Lock size={12} style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Peer Reviews
+              </span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
-              triggerHaptic(8);
-              if (student.submitted || isSubmitted) {
-                handleStartEditReview();
-              } else {
-                setPortalTab('evaluate');
-              }
-            }}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.35rem',
-              padding: '0.45rem 0.35rem',
-              borderRadius: '8px',
-              fontSize: '0.78rem',
-              fontWeight: portalTab === 'evaluate' ? 800 : 600,
-              backgroundColor: portalTab === 'evaluate' ? 'var(--primary)' : 'transparent',
-              color: portalTab === 'evaluate' ? '#fff' : 'var(--text-secondary)',
-              border: 'none',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <CheckSquare size={13} style={{ flexShrink: 0 }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {student.submitted || isSubmitted ? 'Edit Reviews' : 'Peer Reviews'}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (reviewsReceived > 0 || student.submitted || isSubmitted) {
+              if (reviewsReceived > 0 || student.submitted || isSubmitted || isPreview) {
                 triggerHaptic(8);
                 setPortalTab('report');
               } else {
@@ -6078,7 +6256,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           >
             <BarChart2 size={13} style={{ flexShrink: 0 }} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>My Report</span>
-            {reviewsReceived === 0 && !(student.submitted || isSubmitted) && (
+            {reviewsReceived === 0 && !(student.submitted || isSubmitted) && !isPreview && (
               <Lock size={10} style={{ opacity: 0.6, flexShrink: 0 }} />
             )}
           </button>
@@ -6154,6 +6332,21 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       {viewingPeer && renderPeerProfileModal()}
       {isRoleSelectorOpen && renderRoleSelectorModal()}
       {isIcebreakerBrowserOpen && renderIcebreakerBrowserModal()}
+
+      {/* Student Sub-Peer Review Evaluation Modal */}
+      {activeSubReviewModalRound && activeClass && student && (
+        <StudentSubReviewModal
+          isOpen={!!activeSubReviewModalRound}
+          onClose={() => setActiveSubReviewModalRound(null)}
+          activeClass={activeClass}
+          round={activeSubReviewModalRound}
+          student={student}
+          onSubmitSubReview={async (roundId, reviews) => {
+            submitSubPeerReview(activeClass.id, roundId, reviews);
+          }}
+          onToast={addToast}
+        />
+      )}
 
       {/* Main Dynamic View */}
       {portalTab === 'dashboard' && renderDashboard()}

@@ -45,7 +45,8 @@ export const EvaluationControlsContent: React.FC<EvaluationControlsContentProps>
       showStrengthsFeedback: val,
       showRoleSelection: val,
       showIcebreaker: val,
-      allowProfileEditing: val
+      allowProfileEditing: controls.allowProfileEditing,
+      unlockMainPeerReview: true
     });
   };
 
@@ -57,7 +58,8 @@ export const EvaluationControlsContent: React.FC<EvaluationControlsContentProps>
       showStrengthsFeedback: false,
       showRoleSelection: false,
       showIcebreaker: false,
-      allowProfileEditing: false
+      allowProfileEditing: controls.allowProfileEditing,
+      unlockMainPeerReview: true
     });
   };
 
@@ -118,6 +120,14 @@ export const EvaluationControlsContent: React.FC<EvaluationControlsContentProps>
       badge: 'Collaboration'
     },
     {
+      key: 'unlockMainPeerReview',
+      title: 'Main Peer Evaluation Round',
+      description: 'Unlock and open the main peer evaluation round and "Peer Reviews" tab on student dashboards. Keep locked until you are ready for students to evaluate.',
+      icon: controls.unlockMainPeerReview ? <Unlock size={18} className="text-emerald" /> : <Lock size={18} className="text-rose" />,
+      category: 'Student Permissions',
+      badge: controls.unlockMainPeerReview ? 'Round Unlocked' : 'Round Locked'
+    },
+    {
       key: 'allowProfileEditing',
       title: 'Student Profile Self-Editing',
       description: 'When enabled, students can update their name, role, email, and tags. Disable to freeze student identities and avoid tampering.',
@@ -170,11 +180,36 @@ export const EvaluationControlsContent: React.FC<EvaluationControlsContentProps>
           <button
             type="button"
             className="btn btn-secondary btn-xs"
-            onClick={() => onUpdateControls({ allowProfileEditing: false })}
-            title="Lock down student profiles to prevent edits"
-            style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
+            onClick={() => onUpdateControls({ unlockMainPeerReview: !controls.unlockMainPeerReview })}
+            title={controls.unlockMainPeerReview ? "Lock main peer evaluation round for students" : "Unlock main peer evaluation round for students"}
+            style={{ 
+              fontSize: '0.72rem', 
+              padding: '0.2rem 0.55rem',
+              backgroundColor: controls.unlockMainPeerReview ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+              borderColor: controls.unlockMainPeerReview ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)',
+              color: controls.unlockMainPeerReview ? '#059669' : '#dc2626',
+              fontWeight: 700
+            }}
           >
-            <Lock size={12} className="text-rose" /> Lock Roster
+            {controls.unlockMainPeerReview ? <Unlock size={12} className="text-emerald" /> : <Lock size={12} className="text-rose" />}
+            {controls.unlockMainPeerReview ? 'Lock Review Round' : 'Unlock Review Round'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-xs"
+            onClick={() => onUpdateControls({ allowProfileEditing: !controls.allowProfileEditing })}
+            title={controls.allowProfileEditing ? "Lock down student profiles to prevent edits" : "Allow students to edit their profiles"}
+            style={{ 
+              fontSize: '0.72rem', 
+              padding: '0.2rem 0.55rem',
+              backgroundColor: controls.allowProfileEditing ? 'rgba(59, 130, 246, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+              borderColor: controls.allowProfileEditing ? 'rgba(59, 130, 246, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+              color: controls.allowProfileEditing ? '#2563eb' : '#dc2626',
+              fontWeight: 700
+            }}
+          >
+            {controls.allowProfileEditing ? <Unlock size={12} className="text-blue" /> : <Lock size={12} className="text-rose" />}
+            {controls.allowProfileEditing ? 'Profile Editable' : 'Lock Roster'}
           </button>
           <button
             type="button"

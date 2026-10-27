@@ -48,28 +48,46 @@ export const Modal: React.FC<ModalProps> = ({
     <div 
       className="modal-overlay" 
       onClick={onClose} 
+      onWheel={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
       style={{ zIndex }}
     >
       <div
         className="modal-content"
-        style={maxWidth ? { maxWidth } : undefined}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: 'min(92vh, 880px)',
+          ...(maxWidth ? { maxWidth } : {})
+        }}
         onClick={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <div className="modal-header">
+        <div className="modal-header" style={{ flexShrink: 0 }}>
           <h3 className="modal-title">{title}</h3>
           <button onClick={onClose} className="modal-close" aria-label="Close modal">
             <X size={18} />
           </button>
         </div>
         
-        <div className="modal-body">
+        <div 
+          className="modal-body" 
+          style={{ 
+            flex: 1, 
+            minHeight: 0, 
+            overflowY: 'auto', 
+            overscrollBehavior: 'contain',
+            WebkitOverflowScrolling: 'touch' 
+          }}
+        >
           {children}
         </div>
 
         {footer && (
-          <div className="modal-footer">
+          <div className="modal-footer" style={{ flexShrink: 0 }}>
             {footer}
           </div>
         )}

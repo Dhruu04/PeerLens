@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Student, ClassData } from './math';
-import { calculateStudentMetrics, calculateStudentWebPAScore, getTeammates } from './math';
+import { calculateStudentMetrics, calculateStudentWebPAScore, getTeammates, getTargetScale } from './math';
 
 export interface PDFReportOptions {
   baseGrade?: number;
@@ -13,17 +13,12 @@ export interface PDFReportOptions {
 /**
  * Creates a high-fidelity jsPDF document for an individual student report card.
  */
-export function generateStudentReportPDF(
+export function renderStudentReportPage(
+  doc: jsPDF,
   student: Student,
   classData: ClassData,
   options?: PDFReportOptions
-): jsPDF {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
-
+): void {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 14;
   const contentWidth = pageWidth - margin * 2;
@@ -39,7 +34,8 @@ export function generateStudentReportPDF(
   // Retrieve base grade and fudge weight configuration
   const storedBase = localStorage.getItem('peer_base_grade');
   const storedFudge = localStorage.getItem('peer_fudge_weight');
-  const baseGrade = options?.baseGrade ?? (storedBase ? Number(storedBase) : 100);
+  const defaultScale = getTargetScale(classData);
+  const baseGrade = options?.baseGrade ?? (classData.teamBaseGrades?.[student.groupName] ?? (storedBase ? Number(storedBase) : defaultScale));
   const fudgeWeight = options?.fudgeWeight ?? (storedFudge ? Number(storedFudge) : 1.0);
 
   // Compute student metrics & WebPA scores
@@ -177,15 +173,36 @@ export function generateStudentReportPDF(
   doc.setTextColor(...secondaryColor);
   doc.text(`Calibrated Grade (Base ${webpaResult.teamBaseGrade})`, box2X + 4, currentY + 6);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.setTextColor(...primaryColor);
-  doc.text(`${webpaResult.adjustedGrade.toFixed(1)} / ${webpaResult.teamBaseGrade}`, box2X + 4, currentY + 14);
+  if (webpaResult.isInsufficient) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(225, 29, 72); // Rose/Red
+    doc.text('Insufficient', box2X + 4, currentY + 14);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
-  doc.setTextColor(...secondaryColor);
-  doc.text(`Fudge Weighting: ${fudgeWeight * 100}%`, box2X + 4, currentY + 18);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...secondaryColor);
+    doc.text(`Real: ${webpaResult.adjustedGrade.toFixed(1)} / ${webpaResult.teamBaseGrade} (Min: ${webpaResult.minScore})`, box2X + 4, currentY + 18);
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(webpaResult.isCapped ? 11 : 13);
+    doc.setTextColor(...primaryColor);
+    const scoreText = webpaResult.isCapped
+      ? `${webpaResult.adjustedGrade.toFixed(1)} / ${webpaResult.teamBaseGrade} (Capped)`
+      : `${webpaResult.adjustedGrade.toFixed(1)} / ${webpaResult.teamBaseGrade}`;
+    doc.text(scoreText, box2X + 4, currentY + 14);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...secondaryColor);
+    doc.text(
+      webpaResult.isCapped
+        ? `Raw: ${webpaResult.rawAdjustedGrade.toFixed(1)} (Max limit: ${webpaResult.maxScore})`
+        : `Fudge Weighting: ${fudgeWeight * 100}%`,
+      box2X + 4,
+      currentY + 18
+    );
+  }
 
   // Box 3: Peer Reviews Received & Participation
   const box3X = margin + (colW + 3) * 2;
@@ -410,6 +427,19 @@ export function generateStudentReportPDF(
   doc.setTextColor(...secondaryColor);
   doc.text('Authorized Signature & Stamp', pageWidth - margin - 40, currentY + 9);
 
+}
+
+export function generateStudentReportPDF(
+  student: Student,
+  classData: ClassData,
+  options?: PDFReportOptions
+): jsPDF {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+  renderStudentReportPage(doc, student, classData, options);
   return doc;
 }
 
@@ -437,4 +467,521 @@ export function getStudentReportPDFDataUri(
 ): string {
   const doc = generateStudentReportPDF(student, classData, options);
   return doc.output('datauristring');
+}
+
+/**
+ * Returns a binary Blob of the generated PDF document.
+ */
+export function getStudentReportPDFBlob(
+  student: Student,
+  classData: ClassData,
+  options?: PDFReportOptions
+): Blob {
+  const doc = generateStudentReportPDF(student, classData, options);
+  return doc.output('blob');
+}
+
+/**
+ * Returns a safe Blob URL (blob:http...) for embedding in objects, iframes, or opening in a new tab.
+ * Important: Call URL.revokeObjectURL(url) when unmounting or switching documents.
+ */
+export function getStudentReportPDFBlobUrl(
+  student: Student,
+  classData: ClassData,
+  options?: PDFReportOptions
+): string {
+  const blob = getStudentReportPDFBlob(student, classData, options);
+  return URL.createObjectURL(blob);
+}
+
+/**
+ * Draws the Master Executive Classroom Dossier Cover Page.
+ */
+export function renderClassSummaryCoverPage(
+  doc: jsPDF,
+  classData: ClassData,
+  options?: PDFReportOptions
+): void {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  const contentWidth = pageWidth - margin * 2;
+
+  const primaryColor: [number, number, number] = [37, 99, 235];
+  const darkColor: [number, number, number] = [15, 23, 42];
+  const secondaryColor: [number, number, number] = [71, 85, 105];
+  const lightBg: [number, number, number] = [248, 250, 252];
+  const borderCol: [number, number, number] = [226, 232, 240];
+  const tealColor: [number, number, number] = [13, 148, 136];
+
+  let currentY = 14;
+
+  // Header Banner
+  doc.setFillColor(...lightBg);
+  doc.roundedRect(margin, currentY, contentWidth, 26, 3, 3, 'F');
+  doc.setDrawColor(...borderCol);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, currentY, contentWidth, 26, 3, 3, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(...primaryColor);
+  doc.text('PeerLens — Master Classroom Assessment Dossier', margin + 6, currentY + 10);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...secondaryColor);
+  const subtitle = `${classData.name || 'Classroom Assessment'} | Master Academic Record | Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+  doc.text(subtitle, margin + 6, currentY + 18);
+
+  doc.setFillColor(...tealColor);
+  doc.roundedRect(pageWidth - margin - 42, currentY + 7, 36, 12, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('EXECUTIVE DOSSIER', pageWidth - margin - 24, currentY + 14.5, { align: 'center' });
+
+  currentY += 32;
+
+  // 4 Executive Stat Tiles
+  const statBoxW = (contentWidth - 9) / 4;
+  const statBoxH = 22;
+
+  const totalStudents = classData.students.length;
+  const teams = Array.from(new Set(classData.students.map(s => s.groupName).filter(Boolean)));
+  const submittedStudents = classData.students.filter(s => s.submitted).length;
+  const submissionRate = totalStudents > 0 ? Math.round((submittedStudents / totalStudents) * 100) : 0;
+
+  // Box 1: Enrolled Students
+  doc.setFillColor(...lightBg);
+  doc.roundedRect(margin, currentY, statBoxW, statBoxH, 2, 2, 'F');
+  doc.roundedRect(margin, currentY, statBoxW, statBoxH, 2, 2, 'S');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...secondaryColor);
+  doc.text('Enrolled Students', margin + 4, currentY + 6);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(...darkColor);
+  doc.text(`${totalStudents}`, margin + 4, currentY + 15);
+
+  // Box 2: Teams
+  const box2X = margin + statBoxW + 3;
+  doc.setFillColor(...lightBg);
+  doc.roundedRect(box2X, currentY, statBoxW, statBoxH, 2, 2, 'F');
+  doc.roundedRect(box2X, currentY, statBoxW, statBoxH, 2, 2, 'S');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...secondaryColor);
+  doc.text('Active Cohorts', box2X + 4, currentY + 6);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(...tealColor);
+  doc.text(`${teams.length} Teams`, box2X + 4, currentY + 15);
+
+  // Box 3: Submissions
+  const box3X = margin + (statBoxW + 3) * 2;
+  doc.setFillColor(...lightBg);
+  doc.roundedRect(box3X, currentY, statBoxW, statBoxH, 2, 2, 'F');
+  doc.roundedRect(box3X, currentY, statBoxW, statBoxH, 2, 2, 'S');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...secondaryColor);
+  doc.text('Submission Rate', box3X + 4, currentY + 6);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  const subRateColor: [number, number, number] = submissionRate >= 80 ? [13, 148, 136] : [245, 158, 11];
+  doc.setTextColor(...subRateColor);
+  doc.text(`${submissionRate}% (${submittedStudents}/${totalStudents})`, box3X + 4, currentY + 15);
+
+  // Box 4: Total Reviews
+  const box4X = margin + (statBoxW + 3) * 3;
+  doc.setFillColor(...lightBg);
+  doc.roundedRect(box4X, currentY, statBoxW, statBoxH, 2, 2, 'F');
+  doc.roundedRect(box4X, currentY, statBoxW, statBoxH, 2, 2, 'S');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...secondaryColor);
+  doc.text('Peer Evaluations', box4X + 4, currentY + 6);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(...primaryColor);
+  doc.text(`${classData.reviews.length} Logged`, box4X + 4, currentY + 15);
+
+  currentY += statBoxH + 8;
+
+  // Criteria Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...darkColor);
+  doc.text('Rubric Criteria Evaluation Summary', margin, currentY);
+  currentY += 4;
+
+  const criteriaRows = classData.fields.map(field => {
+    let sum = 0;
+    let count = 0;
+    classData.reviews.forEach(r => {
+      const val = r.scores?.[field.id];
+      if (typeof val === 'number') {
+        sum += val;
+        count++;
+      }
+    });
+    const avg = count > 0 ? (sum / count).toFixed(2) : '—';
+    return [
+      field.name,
+      `${field.max || 5} pts`,
+      `${count} evaluations`,
+      avg,
+      count > 0 ? `${Math.round(((sum / count) / (field.max || 5)) * 100)}%` : '—'
+    ];
+  });
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Rubric Criterion', 'Max Scale', 'Total Reviews Received', 'Class Mean Score', 'Class Performance %']],
+    body: criteriaRows,
+    margin: { left: margin, right: margin },
+    theme: 'grid',
+    headStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [30, 41, 59],
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'left',
+      cellPadding: 2
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      textColor: [51, 65, 85],
+      cellPadding: 2
+    }
+  });
+
+  // @ts-ignore
+  currentY = doc.lastAutoTable.finalY + 8;
+
+  // Teams Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...darkColor);
+  doc.text('Cohort Teams Summary Breakdown', margin, currentY);
+  currentY += 4;
+
+  const teamRows = teams.map(tName => {
+    const members = classData.students.filter(s => s.groupName === tName);
+    const completed = members.filter(s => s.submitted).length;
+    const baseMark = classData.teamBaseGrades?.[tName] ?? options?.baseGrade ?? 100;
+    return [
+      tName,
+      `${members.length} members`,
+      `${completed} of ${members.length} submitted`,
+      `${baseMark} pts`,
+      completed === members.length ? '100% Complete' : `${Math.round((completed / members.length) * 100)}%`
+    ];
+  });
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Team Cohort', 'Team Size', 'Submission Progress', 'Team Base Grade', 'Status']],
+    body: teamRows.length > 0 ? teamRows : [['No teams configured', '—', '—', '—', '—']],
+    margin: { left: margin, right: margin },
+    theme: 'grid',
+    headStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [30, 41, 59],
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'left',
+      cellPadding: 2
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      textColor: [51, 65, 85],
+      cellPadding: 2
+    }
+  });
+
+  // @ts-ignore
+  currentY = doc.lastAutoTable.finalY + 8;
+
+  // Signoff footer
+  doc.setDrawColor(...borderCol);
+  doc.setLineWidth(0.2);
+  doc.line(margin, currentY, pageWidth - margin, currentY);
+  currentY += 5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...secondaryColor);
+  doc.text(`Official Academic Certification: All individual student reports are compiled sequentially in this dossier.`, margin, currentY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Course Instructor Verification:', pageWidth - margin - 45, currentY);
+  doc.line(pageWidth - margin - 45, currentY + 6, pageWidth - margin, currentY + 6);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(6);
+  doc.text('Authorized Signature & Stamp', pageWidth - margin - 45, currentY + 9);
+}
+
+/**
+ * Creates a master multi-page PDF dossier containing the executive class summary
+ * followed by every student's individual official report card.
+ */
+export function generateClassDossierPDF(
+  classData: ClassData,
+  options?: PDFReportOptions
+): jsPDF {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  // Page 1: Master Classroom Cover & Summary
+  renderClassSummaryCoverPage(doc, classData, options);
+
+  // Subsequent Pages: Each Student Report Card
+  classData.students.forEach((student) => {
+    doc.addPage();
+    renderStudentReportPage(doc, student, classData, options);
+  });
+
+  return doc;
+}
+
+/**
+ * Directly downloads the Master Classroom Dossier PDF containing all student reports.
+ */
+export function downloadClassDossierPDF(
+  classData: ClassData,
+  options?: PDFReportOptions
+): void {
+  const doc = generateClassDossierPDF(classData, options);
+  const safeName = (classData.name || 'Classroom').toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `Master_Class_Dossier_${safeName}_${dateStr}.pdf`;
+  doc.save(fileName);
+}
+
+/**
+ * Renders a comprehensive Team Cohort Dossier page.
+ */
+export function renderTeamDossierPage(
+  doc: jsPDF,
+  teamName: string,
+  classData: ClassData,
+  options?: PDFReportOptions
+): void {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  const contentWidth = pageWidth - margin * 2;
+
+  const primaryColor: [number, number, number] = [37, 99, 235];
+  const darkColor: [number, number, number] = [15, 23, 42];
+  const secondaryColor: [number, number, number] = [71, 85, 105];
+  const lightBg: [number, number, number] = [248, 250, 252];
+  const borderCol: [number, number, number] = [226, 232, 240];
+  const tealColor: [number, number, number] = [13, 148, 136];
+
+  const storedBase = localStorage.getItem('peer_base_grade');
+  const storedFudge = localStorage.getItem('peer_fudge_weight');
+  const defaultScale = getTargetScale(classData);
+  const baseGrade = options?.baseGrade ?? (classData.teamBaseGrades?.[teamName] ?? (storedBase ? Number(storedBase) : defaultScale));
+  const fudgeWeight = options?.fudgeWeight ?? (storedFudge ? Number(storedFudge) : 1.0);
+
+  const teamStudents = classData.students.filter(s => s.groupName === teamName);
+  const teamBaseGrade = classData.teamBaseGrades?.[teamName] ?? baseGrade;
+
+  let currentY = 14;
+
+  // Header Banner
+  doc.setFillColor(...lightBg);
+  doc.roundedRect(margin, currentY, contentWidth, 24, 3, 3, 'F');
+  doc.setDrawColor(...borderCol);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, currentY, contentWidth, 24, 3, 3, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(...primaryColor);
+  doc.text(`PeerLens — Team Assessment Dossier: ${teamName}`, margin + 6, currentY + 9);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...secondaryColor);
+  const sub = `${classData.name || 'Classroom Assessment'} | Team Project Base Grade: ${teamBaseGrade} pts`;
+  doc.text(sub, margin + 6, currentY + 16);
+
+  doc.setFillColor(...tealColor);
+  doc.roundedRect(pageWidth - margin - 36, currentY + 6, 30, 12, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('TEAM AUDIT', pageWidth - margin - 21, currentY + 13.5, { align: 'center' });
+
+  currentY += 30;
+
+  // Team Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...darkColor);
+  doc.text('Team Member Calibration & Performance Matrix', margin, currentY);
+  currentY += 4;
+
+  const teamRows = teamStudents.map(ts => {
+    const m = calculateStudentMetrics(ts, classData);
+    const webpa = calculateStudentWebPAScore(ts.id, ts.groupName, classData, teamBaseGrade, fudgeWeight);
+    const markDisplay = webpa.isInsufficient
+      ? `Insufficient (${webpa.adjustedGrade} / ${teamBaseGrade})`
+      : webpa.isCapped
+        ? `${webpa.adjustedGrade} / ${teamBaseGrade} (Capped)`
+        : `${webpa.adjustedGrade} / ${teamBaseGrade}`;
+    return [
+      ts.name,
+      ts.id,
+      ts.submitted ? 'Completed' : 'Pending',
+      `${m.reviewsReceived} received`,
+      m.overallPercentage !== null ? `${m.overallPercentage}%` : 'N/A',
+      `${webpa.ratio.toFixed(2)}x`,
+      markDisplay
+    ];
+  });
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Student Name', 'ID', 'Status', 'Reviews Recv', 'Peer Avg %', 'WebPA Ratio', 'Calibrated Mark']],
+    body: teamRows,
+    margin: { left: margin, right: margin },
+    theme: 'grid',
+    headStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [30, 41, 59],
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'left',
+      cellPadding: 2.2
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      textColor: [51, 65, 85],
+      cellPadding: 2
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 40 },
+      1: { cellWidth: 20 },
+      2: { cellWidth: 24 },
+      3: { cellWidth: 26 },
+      4: { halign: 'center', cellWidth: 24 },
+      5: { halign: 'center', fontStyle: 'bold', textColor: [37, 99, 235], cellWidth: 24 },
+      6: { halign: 'center', fontStyle: 'bold', cellWidth: 24 }
+    }
+  });
+
+  // @ts-ignore
+  currentY = doc.lastAutoTable.finalY + 8;
+
+  // Criteria Table for Team
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...darkColor);
+  doc.text('Rubric Criteria Averages Across Team Members', margin, currentY);
+  currentY += 4;
+
+  const teamReviews = classData.reviews.filter(r => {
+    const recipient = classData.students.find(s => s.id === r.recipientId);
+    return recipient && recipient.groupName === teamName;
+  });
+
+  const criteriaTeamRows = classData.fields.map(field => {
+    let sum = 0;
+    let count = 0;
+    teamReviews.forEach(r => {
+      const val = r.scores?.[field.id];
+      if (typeof val === 'number') {
+        sum += val;
+        count++;
+      }
+    });
+    const avg = count > 0 ? (sum / count).toFixed(2) : '—';
+    return [
+      field.name,
+      `${field.max || 5} pts`,
+      `${count} evaluations`,
+      avg,
+      count > 0 ? `${Math.round(((sum / count) / (field.max || 5)) * 100)}%` : '—'
+    ];
+  });
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Rubric Criterion', 'Max Scale', 'Reviews Count', 'Team Mean', 'Achievement %']],
+    body: criteriaTeamRows,
+    margin: { left: margin, right: margin },
+    theme: 'grid',
+    headStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [30, 41, 59],
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'left',
+      cellPadding: 2
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      textColor: [51, 65, 85],
+      cellPadding: 2
+    }
+  });
+
+  // @ts-ignore
+  currentY = doc.lastAutoTable.finalY + 8;
+
+  // Signoff
+  doc.setDrawColor(...borderCol);
+  doc.setLineWidth(0.2);
+  doc.line(margin, currentY, pageWidth - margin, currentY);
+  currentY += 5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...secondaryColor);
+  doc.text('PeerLens Academic Standards • Authorized Team Dossier Record', margin, currentY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Instructor Signoff:', pageWidth - margin - 40, currentY);
+  doc.line(pageWidth - margin - 40, currentY + 6, pageWidth - margin, currentY + 6);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(6);
+  doc.text('Authorized Signature', pageWidth - margin - 40, currentY + 9);
+}
+
+/**
+ * Generates a dedicated Team Cohort Dossier PDF.
+ */
+export function generateTeamDossierPDF(
+  teamName: string,
+  classData: ClassData,
+  options?: PDFReportOptions
+): jsPDF {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+  renderTeamDossierPage(doc, teamName, classData, options);
+  return doc;
+}
+
+/**
+ * Downloads a dedicated Team Cohort Dossier PDF file.
+ */
+export function downloadTeamDossierPDF(
+  teamName: string,
+  classData: ClassData,
+  options?: PDFReportOptions
+): void {
+  const doc = generateTeamDossierPDF(teamName, classData, options);
+  const safeName = teamName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const fileName = `Team_Dossier_${safeName}.pdf`;
+  doc.save(fileName);
 }

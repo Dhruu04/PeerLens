@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig, TeamCharterConfig, CustomEnrollmentField, PeerAdjustmentConfig } from '../utils/math';
-import { normalizeNationality, getEvaluationControls, DEFAULT_PULSE_CONFIG, generateSamplePulseRounds, DEFAULT_ENROLLMENT_FIELDS, DEFAULT_PEER_ADJUSTMENT_CONFIG } from '../utils/math';
+import type { ClassData, Student, GradingScaleField, Review, Milestone, EvaluationFormControls, PulseRound, PulseResponse, PulseConfig, TeamCharterConfig, CustomEnrollmentField, PeerAdjustmentConfig, SubPeerReviewRound } from '../utils/math';
+import { normalizeNationality, getEvaluationControls, DEFAULT_EVALUATION_CONTROLS, DEFAULT_PULSE_CONFIG, generateSamplePulseRounds, generateSampleSubPeerReviews, DEFAULT_ENROLLMENT_FIELDS, DEFAULT_PEER_ADJUSTMENT_CONFIG } from '../utils/math';
 import { loadFeatureToggles, DEFAULT_FEATURE_TOGGLES, type FeatureToggles } from '../utils/featurePreferences';
 import { DEFAULT_KEYBOARD_SHORTCUTS } from '../utils/keyboardShortcuts';
 import { hashCode } from '../utils/csv';
+import { playChime } from '../utils/soundFx';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, doc, onSnapshot, collection, deleteDoc, runTransaction, setDoc } from 'firebase/firestore';
 import { 
@@ -90,6 +91,7 @@ import {
     updateEnrollmentFields: (classId: string, fields: CustomEnrollmentField[]) => void;
     updateTeamBaseGrade: (classId: string, teamName: string, grade: number) => void;
     setAllTeamBaseGrades: (classId: string, grades: Record<string, number>) => void;
+    renameTeam: (classId: string, oldTeamName: string, newTeamName: string) => void;
     importRoster: (classId: string, students: Student[], clearExisting?: boolean) => void;
     addStudent: (classId: string, student: Omit<Student, 'submitted'>) => void;
     enrollStudent: (classId: string, student: Omit<Student, 'submitted' | 'id'> & { id?: string }) => Promise<{ success: boolean; studentId: string; message?: string }>;
@@ -112,6 +114,18 @@ import {
     submitPulseResponse: (classId: string, roundId: string, response: Omit<PulseResponse, 'id' | 'submittedAt'>) => void;
     deletePulseRound: (classId: string, roundId: string) => void;
     seedSamplePulseRounds: (classId: string) => void;
+    
+    // Sub Peer Reviews & Longitudinal Milestones
+    createSubPeerReviewRound: (classId: string, roundData: { title: string; deadline?: string | null; weight?: number; customNote?: string }) => void;
+    updateSubPeerReviewRound: (classId: string, roundId: string, updates: Partial<SubPeerReviewRound>) => void;
+    submitSubPeerReview: (classId: string, roundId: string, review: Review | Review[]) => void;
+    deleteSubPeerReviewRound: (classId: string, roundId: string) => void;
+    seedSampleSubPeerReviews: (classId: string) => void;
+    deleteSubPeerReviewEvaluation: (classId: string, roundId: string, reviewerId: string, recipientId: string) => void;
+    updateSubPeerReviewEvaluation: (classId: string, roundId: string, reviewerId: string, recipientId: string, updatedReview: Partial<Review>) => void;
+    updateSubPeerReviewManualOverride: (classId: string, studentId: string, status: import('../utils/subPeerReview').StudentSubReviewFlagStatus | null) => void;
+    updateSubPeerReviewConfig: (classId: string, config: Partial<import('../utils/subPeerReview').SubPeerReviewConfig>) => void;
+    clearAllSubPeerReviews: (classId: string) => void;
     
     // Settings / UI
     restoreClassesSnapshot: (snapshot: ClassData[]) => void;
@@ -141,7 +155,8 @@ import {
         showStrengthsFeedback: false,
         showRoleSelection: false,
         showIcebreaker: false,
-        allowProfileEditing: false
+        allowProfileEditing: false,
+        unlockMainPeerReview: true
       },
       fields: [
         { id: 'f_quality', name: 'Quality of Contribution', description: 'Produces thorough, accurate deliverables on schedule with high attention to detail.', min: 1, max: 5, weight: 34 },
@@ -156,7 +171,9 @@ import {
         { id: 's_5', name: 'Pietro Bernardi', email: 'pietro.bernardi@tum.de', groupName: 'Beta Team', university: 'TU Munich', degree: 'Mechanical Engineering', studentType: 'Erasmus', isInternational: true, isExchange: true, currentCountry: 'Germany', originalCountry: 'Italy', originalUniversity: 'University of Parma', currentUniversity: 'TU Munich', gender: 'Male', nationality: 'Italy', englishProficiency: 'Fluent (C1/C2)', submitted: false },
         { id: 's_6', name: 'Valentina Moretti', email: 'valentina.moretti@polimi.it', groupName: 'Beta Team', university: 'Politecnico di Milano', degree: 'Computer Science', studentType: 'Normal', isInternational: false, isExchange: false, currentCountry: 'Italy', originalCountry: 'Italy', originalUniversity: 'Politecnico di Milano', currentUniversity: 'Politecnico di Milano', gender: 'Female', nationality: 'Italy', englishProficiency: 'Native / Bilingual', submitted: false }
       ],
-      reviews: []
+      reviews: [],
+      pulseRounds: [],
+      subPeerReviewRounds: []
     };
   };
   
@@ -389,6 +406,7 @@ import {
               })) : [],
               teamBaseGrades: data.teamBaseGrades && typeof data.teamBaseGrades === 'object' ? data.teamBaseGrades : {},
               pulseRounds: Array.isArray(data.pulseRounds) ? data.pulseRounds : [],
+              subPeerReviewRounds: Array.isArray(data.subPeerReviewRounds) ? data.subPeerReviewRounds : [],
               evaluationControls: data.evaluationControls && typeof data.evaluationControls === 'object' ? {
                 allowSelfReview: data.evaluationControls.allowSelfReview === true,
                 showGrowthSuggestions: data.evaluationControls.showGrowthSuggestions === true,
@@ -396,8 +414,9 @@ import {
                 showStrengthsFeedback: data.evaluationControls.showStrengthsFeedback === true,
                 showRoleSelection: data.evaluationControls.showRoleSelection === true,
                 showIcebreaker: data.evaluationControls.showIcebreaker === true,
-                allowProfileEditing: data.evaluationControls.allowProfileEditing === true
-              } : undefined,
+                allowProfileEditing: data.evaluationControls.allowProfileEditing === true,
+                unlockMainPeerReview: data.evaluationControls.unlockMainPeerReview !== false
+              } : { ...DEFAULT_EVALUATION_CONTROLS },
               enrollmentFormFields: Array.isArray(data.enrollmentFormFields) && data.enrollmentFormFields.length > 0 ? data.enrollmentFormFields : [...DEFAULT_ENROLLMENT_FIELDS],
               teamCharterConfig: data.teamCharterConfig || undefined,
               peerAdjustmentConfig: data.peerAdjustmentConfig || undefined
@@ -713,6 +732,7 @@ import {
                   customScaleEnabled: isCustom,
                   teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
                   pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds : [],
+                  subPeerReviewRounds: Array.isArray(c.subPeerReviewRounds) ? c.subPeerReviewRounds : [],
                   evaluationControls: c.evaluationControls && typeof c.evaluationControls === 'object' ? {
                     allowSelfReview: c.evaluationControls.allowSelfReview === true,
                     showGrowthSuggestions: c.evaluationControls.showGrowthSuggestions === true,
@@ -720,8 +740,9 @@ import {
                     showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback === true,
                     showRoleSelection: c.evaluationControls.showRoleSelection === true,
                     showIcebreaker: c.evaluationControls.showIcebreaker === true,
-                    allowProfileEditing: c.evaluationControls.allowProfileEditing === true
-                  } : undefined,
+                    allowProfileEditing: c.evaluationControls.allowProfileEditing === true,
+                    unlockMainPeerReview: c.evaluationControls.unlockMainPeerReview !== false
+                  } : { ...DEFAULT_EVALUATION_CONTROLS },
                   enrollmentFormFields: Array.isArray(c.enrollmentFormFields) && c.enrollmentFormFields.length > 0 ? c.enrollmentFormFields : [...DEFAULT_ENROLLMENT_FIELDS],
                   teamCharterConfig: c.teamCharterConfig || undefined,
                   peerAdjustmentConfig: c.peerAdjustmentConfig || undefined
@@ -813,6 +834,7 @@ import {
                   customScaleEnabled: isCustom,
                   teamBaseGrades: c.teamBaseGrades && typeof c.teamBaseGrades === 'object' ? c.teamBaseGrades : {},
                   pulseRounds: Array.isArray(c.pulseRounds) ? c.pulseRounds : [],
+                  subPeerReviewRounds: Array.isArray(c.subPeerReviewRounds) ? c.subPeerReviewRounds : [],
                   evaluationControls: c.evaluationControls && typeof c.evaluationControls === 'object' ? {
                     allowSelfReview: c.evaluationControls.allowSelfReview === true,
                     showGrowthSuggestions: c.evaluationControls.showGrowthSuggestions === true,
@@ -820,8 +842,9 @@ import {
                     showStrengthsFeedback: c.evaluationControls.showStrengthsFeedback === true,
                     showRoleSelection: c.evaluationControls.showRoleSelection === true,
                     showIcebreaker: c.evaluationControls.showIcebreaker === true,
-                    allowProfileEditing: c.evaluationControls.allowProfileEditing === true
-                  } : undefined,
+                    allowProfileEditing: c.evaluationControls.allowProfileEditing === true,
+                    unlockMainPeerReview: c.evaluationControls.unlockMainPeerReview !== false
+                  } : { ...DEFAULT_EVALUATION_CONTROLS },
                   enrollmentFormFields: Array.isArray(c.enrollmentFormFields) ? c.enrollmentFormFields : [],
                   teamCharterConfig: c.teamCharterConfig || undefined
                 };
@@ -941,6 +964,23 @@ import {
             customAnswers: resp.customAnswers && typeof resp.customAnswers === 'object' ? resp.customAnswers : {}
           })) : []
         })) : [],
+        subPeerReviewRounds: Array.isArray(c.subPeerReviewRounds) ? c.subPeerReviewRounds.map(sr => ({
+          id: sr.id,
+          title: sr.title || 'Sub Peer Review',
+          createdAt: sr.createdAt || new Date().toISOString(),
+          deadline: sr.deadline !== undefined ? sr.deadline : null,
+          status: sr.status || 'active',
+          weight: typeof sr.weight === 'number' ? sr.weight : 1,
+          customNote: sr.customNote !== undefined ? sr.customNote : null,
+          reviews: Array.isArray(sr.reviews) ? sr.reviews.map(r => ({
+            reviewerId: r.reviewerId || '',
+            recipientId: r.recipientId || '',
+            scores: r.scores || {},
+            praiseTags: Array.isArray(r.praiseTags) ? r.praiseTags : [],
+            strengthsText: r.strengthsText !== undefined ? r.strengthsText : null,
+            growthText: r.growthText !== undefined ? r.growthText : null
+          })) : []
+        })) : [],
         evaluationControls: {
           allowSelfReview: c.evaluationControls?.allowSelfReview === true,
           showGrowthSuggestions: c.evaluationControls?.showGrowthSuggestions === true,
@@ -948,7 +988,8 @@ import {
           showStrengthsFeedback: c.evaluationControls?.showStrengthsFeedback === true,
           showRoleSelection: c.evaluationControls?.showRoleSelection === true,
           showIcebreaker: c.evaluationControls?.showIcebreaker === true,
-          allowProfileEditing: c.evaluationControls?.allowProfileEditing === true
+          allowProfileEditing: c.evaluationControls?.allowProfileEditing === true,
+          unlockMainPeerReview: c.evaluationControls?.unlockMainPeerReview !== false
         },
         enrollmentFormFields: Array.isArray(c.enrollmentFormFields) && c.enrollmentFormFields.length > 0 ? c.enrollmentFormFields.map(ef => ({
           id: ef.id,
@@ -1045,11 +1086,28 @@ import {
                     };
                   });
                   
+                  // Merge sub peer reviews from student into cloud sub peer review rounds
+                  const cloudSubRounds = Array.isArray(cloudData.subPeerReviewRounds) ? cloudData.subPeerReviewRounds : [];
+                  const localSubRounds = Array.isArray(c.subPeerReviewRounds) ? c.subPeerReviewRounds : [];
+                  const mergedSubRounds = cloudSubRounds.map(cr => {
+                    const matchingLocalRound = localSubRounds.find(lr => lr.id === cr.id);
+                    if (!matchingLocalRound) return cr;
+                    const studentReviews = (matchingLocalRound.reviews || []).filter(rev => rev.reviewerId === urlStudentId);
+                    if (studentReviews.length === 0) return cr;
+                    const otherReviews = (cr.reviews || []).filter(rev => rev.reviewerId !== urlStudentId);
+                    return {
+                      ...cr,
+                      reviews: [...otherReviews, ...studentReviews]
+                    };
+                  });
+                  
                   const updatedClass = {
                     ...cloudData, // Preserve cloud-authoritative fields (deadline, milestones, configurations)
+                    evaluationControls: c.evaluationControls || cloudData.evaluationControls || { ...DEFAULT_EVALUATION_CONTROLS },
                     students: mergedStudents,
                     reviews: mergedReviews,
-                    pulseRounds: mergedPulseRounds.length > 0 ? mergedPulseRounds : (cloudData.pulseRounds || [])
+                    pulseRounds: mergedPulseRounds.length > 0 ? mergedPulseRounds : (cloudData.pulseRounds || []),
+                    subPeerReviewRounds: mergedSubRounds.length > 0 ? mergedSubRounds : (cloudData.subPeerReviewRounds || [])
                   };
                   transaction.set(classDocRef, sanitizeClassForFirestore(updatedClass));
                 } else {
@@ -1094,11 +1152,28 @@ import {
                       };
                     });
                     
+                    // Merge student sub peer reviews from cloud into admin's rounds
+                    const cloudSubRounds = Array.isArray(cloudData.subPeerReviewRounds) ? cloudData.subPeerReviewRounds : [];
+                    const localSubRounds = Array.isArray(c.subPeerReviewRounds) ? c.subPeerReviewRounds : [];
+                    const mergedSubRounds = localSubRounds.map(lr => {
+                      const matchingCloudRound = cloudSubRounds.find(cr => cr.id === lr.id);
+                      if (!matchingCloudRound) return lr;
+                      const localReviewKeys = new Set((lr.reviews || []).map(r => `${r.reviewerId}__${r.recipientId}`));
+                      const incomingReviews = (matchingCloudRound.reviews || []).filter(
+                        cr => !localReviewKeys.has(`${cr.reviewerId}__${cr.recipientId}`)
+                      );
+                      return {
+                        ...lr,
+                        reviews: [...(lr.reviews || []), ...incomingReviews]
+                      };
+                    });
+                    
                     const updatedClass = {
                       ...c,
                       students: mergedStudents,
                       reviews: mergedReviews,
-                      pulseRounds: mergedPulseRounds
+                      pulseRounds: mergedPulseRounds,
+                      subPeerReviewRounds: mergedSubRounds
                     };
                     transaction.set(classDocRef, sanitizeClassForFirestore(updatedClass));
                   }
@@ -1265,6 +1340,7 @@ import {
       });
       persistClasses(updatedClasses);
       if (notify) {
+        playChime();
         addToast('Grading configuration successfully updated.', 'success');
       }
     };
@@ -1285,26 +1361,36 @@ import {
       });
       persistClasses(updatedClasses);
       if (notify) {
+        playChime();
         addToast('Peer score adjustment methodology updated.', 'success');
       }
     };
 
     const updateEvaluationControls = (classId: string, controls: Partial<EvaluationFormControls>) => {
-      const updatedClasses = getCurrentClasses().map((c) => {
+      const current = getCurrentClasses();
+      const updatedClasses = current.map((c) => {
         if (c.id === classId) {
           const currentControls = getEvaluationControls(c);
+          const nextControls = {
+            ...currentControls,
+            ...controls
+          };
           return {
             ...c,
-            evaluationControls: {
-              ...currentControls,
-              ...controls
-            }
+            evaluationControls: nextControls
           };
         }
         return c;
       });
+      classesRef.current = updatedClasses;
+      setClasses(updatedClasses);
       persistClasses(updatedClasses);
-      addToast('Evaluation form settings updated.', 'success');
+      const isUnlocked = controls.unlockMainPeerReview;
+      if (isUnlocked !== undefined) {
+        addToast(isUnlocked ? 'Peer review round unlocked & active.' : 'Peer review round locked.', 'success');
+      } else {
+        addToast('Evaluation form settings updated.', 'success');
+      }
     };
 
     const updateTeamCharterConfig = (classId: string, config: Partial<TeamCharterConfig>) => {
@@ -1435,6 +1521,54 @@ import {
       });
       persistClasses(updatedClasses);
       addToast('Updated base grades for all teams.', 'success');
+    };
+
+    const renameTeam = (classId: string, oldTeamName: string, newTeamName: string) => {
+      const cleanOld = (oldTeamName || '').trim();
+      const cleanNew = (newTeamName || '').trim();
+      if (!cleanOld || !cleanNew || cleanOld === cleanNew) return;
+
+      const currentList = getCurrentClasses();
+      const updatedClasses = currentList.map((c) => {
+        if (c.id === classId) {
+          // Update students' groupName (trim-safe & case-insensitive)
+          const updatedStudents = (c.students || []).map(s => {
+            if ((s.groupName || '').trim().toLowerCase() === cleanOld.toLowerCase()) {
+              return { ...s, groupName: cleanNew };
+            }
+            return s;
+          });
+
+          // Update teamBaseGrades
+          const newTeamGrades = { ...(c.teamBaseGrades || {}) };
+          const matchingGradeKey = Object.keys(newTeamGrades).find(k => k.trim().toLowerCase() === cleanOld.toLowerCase());
+          if (matchingGradeKey) {
+            newTeamGrades[cleanNew] = newTeamGrades[matchingGradeKey];
+            if (matchingGradeKey !== cleanNew) {
+              delete newTeamGrades[matchingGradeKey];
+            }
+          }
+
+          // Update pulse responses
+          const updatedPulseRounds = (c.pulseRounds || []).map(pr => ({
+            ...pr,
+            responses: (pr.responses || []).map(r => (r.groupName || '').trim().toLowerCase() === cleanOld.toLowerCase() ? { ...r, groupName: cleanNew } : r)
+          }));
+
+          return {
+            ...c,
+            students: updatedStudents,
+            teamBaseGrades: newTeamGrades,
+            pulseRounds: updatedPulseRounds
+          };
+        }
+        return c;
+      });
+
+      classesRef.current = updatedClasses;
+      setClasses(updatedClasses);
+      persistClasses(updatedClasses);
+      addToast(`Renamed team "${cleanOld}" to "${cleanNew}".`, 'success');
     };
   
     const importRoster = (classId: string, newStudents: Student[], clearExisting = false) => {
@@ -2069,6 +2203,226 @@ import {
       persistClasses(updatedClasses);
       addToast(`Populated 3 multi-round sprint pulse checks with realistic team health trends!`, 'success');
     };
+
+    const createSubPeerReviewRound = (classId: string, roundData: { title: string; deadline?: string | null; weight?: number; customNote?: string }) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.subPeerReviewRounds || [];
+          const updatedRounds = currentRounds.map(r => ({ ...r, status: 'closed' as const }));
+          const newRound: SubPeerReviewRound = {
+            id: 'subrev_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+            title: roundData.title.trim() || `Milestone Sub-Review #${currentRounds.length + 1}`,
+            createdAt: new Date().toISOString(),
+            deadline: roundData.deadline || null,
+            status: 'active',
+            weight: typeof roundData.weight === 'number' && roundData.weight > 0 ? roundData.weight : 1,
+            reviews: [],
+            customNote: roundData.customNote?.trim()
+          };
+          return {
+            ...c,
+            subPeerReviewRounds: [...updatedRounds, newRound]
+          };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast(`New Formative Sub-Review "${roundData.title}" launched and active for teammate evaluations!`, 'success');
+    };
+
+    const updateSubPeerReviewRound = (classId: string, roundId: string, updates: Partial<SubPeerReviewRound>) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.subPeerReviewRounds || [];
+          const updatedRounds = currentRounds.map(r => {
+            if (r.id === roundId) {
+              return { ...r, ...updates };
+            }
+            return r;
+          });
+          return { ...c, subPeerReviewRounds: updatedRounds };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Sub peer review milestone updated.', 'info');
+    };
+
+    const submitSubPeerReview = (classId: string, roundId: string, reviewInput: Review | Review[]) => {
+      const incomingReviews = Array.isArray(reviewInput) ? reviewInput : [reviewInput];
+      let wasBlockedDueToClosed = false;
+
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.subPeerReviewRounds || [];
+          const updatedRounds = currentRounds.map(r => {
+            if (r.id === roundId) {
+              if (r.status === 'closed') {
+                wasBlockedDueToClosed = true;
+                return r;
+              }
+              const incomingPairs = new Set(incomingReviews.map(ir => `${ir.reviewerId}_${ir.recipientId}`));
+              const existingFiltered = r.reviews.filter(
+                rev => !incomingPairs.has(`${rev.reviewerId}_${rev.recipientId}`)
+              );
+              return {
+                ...r,
+                reviews: [...existingFiltered, ...incomingReviews]
+              };
+            }
+            return r;
+          });
+          return { ...c, subPeerReviewRounds: updatedRounds };
+        }
+        return c;
+      });
+
+      if (wasBlockedDueToClosed) {
+        addToast('Cannot update evaluation: this milestone checkpoint is closed and locked.', 'warning');
+        return;
+      }
+
+      persistClasses(updatedClasses);
+      addToast(
+        incomingReviews.length > 1 
+          ? `Milestone evaluations recorded for ${incomingReviews.length} teammates!` 
+          : 'Teammate milestone evaluation recorded!', 
+        'success'
+      );
+    };
+
+    const deleteSubPeerReviewRound = (classId: string, roundId: string) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.subPeerReviewRounds || [];
+          const updatedRounds = currentRounds.filter(r => r.id !== roundId);
+          return { ...c, subPeerReviewRounds: updatedRounds };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Sub peer review milestone deleted.', 'info');
+    };
+
+    const seedSampleSubPeerReviews = (classId: string) => {
+      const current = getCurrentClasses();
+      const target = current.find(c => c.id === classId);
+      if (!target || target.students.length === 0) {
+        addToast('Please enroll students in the roster before generating sample milestone data.', 'warning');
+        return;
+      }
+      const sampleRounds = generateSampleSubPeerReviews(target);
+      const updatedClasses = current.map(c => {
+        if (c.id === classId) {
+          return { ...c, subPeerReviewRounds: sampleRounds };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Populated 4 multi-sprint sub peer reviews showcasing dynamic red flags and student turnaround recoveries!', 'success');
+    };
+
+    const deleteSubPeerReviewEvaluation = (classId: string, roundId: string, reviewerId: string, recipientId: string) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.subPeerReviewRounds || [];
+          const updatedRounds = currentRounds.map(r => {
+            if (r.id === roundId) {
+              const filteredReviews = r.reviews.filter(
+                rev => !(rev.reviewerId === reviewerId && rev.recipientId === recipientId)
+              );
+              return { ...r, reviews: filteredReviews };
+            }
+            return r;
+          });
+          return { ...c, subPeerReviewRounds: updatedRounds };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Review evaluation removed from milestone.', 'info');
+    };
+
+    const updateSubPeerReviewEvaluation = (classId: string, roundId: string, reviewerId: string, recipientId: string, updatedReview: Partial<Review>) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentRounds = c.subPeerReviewRounds || [];
+          const updatedRounds = currentRounds.map(r => {
+            if (r.id === roundId) {
+              const updatedReviews = r.reviews.map(rev => {
+                if (rev.reviewerId === reviewerId && rev.recipientId === recipientId) {
+                  return { ...rev, ...updatedReview };
+                }
+                return rev;
+              });
+              return { ...r, reviews: updatedReviews };
+            }
+            return r;
+          });
+          return { ...c, subPeerReviewRounds: updatedRounds };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Milestone review scores & feedback updated.', 'success');
+    };
+
+    const updateSubPeerReviewManualOverride = (classId: string, studentId: string, status: import('../utils/subPeerReview').StudentSubReviewFlagStatus | null) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          const currentOverrides = { ...(c.subPeerReviewManualOverrides || {}) };
+          if (status === null) {
+            delete currentOverrides[studentId];
+          } else {
+            currentOverrides[studentId] = status;
+          }
+          return { ...c, subPeerReviewManualOverrides: currentOverrides };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast(
+        status === null 
+          ? 'Reset student flag to automatic peer formula.' 
+          : `Student manually flagged as "${status.toUpperCase().replace('_', ' ')}".`, 
+        'info'
+      );
+    };
+
+    const updateSubPeerReviewConfig = (classId: string, configUpdates: Partial<import('../utils/subPeerReview').SubPeerReviewConfig>) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          return {
+            ...c,
+            subPeerReviewConfig: {
+              ...(c.subPeerReviewConfig || {
+                atRiskDeltaThreshold: -10,
+                atRiskScoreCutoff: 60,
+                watchDeltaThreshold: -3.5,
+                thrivingDeltaThreshold: 6,
+                growthMinDelta: 4,
+                anonymizeFeedbackToStudents: true
+              }),
+              ...configUpdates
+            }
+          };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Sub peer review alert thresholds updated.', 'success');
+    };
+
+    const clearAllSubPeerReviews = (classId: string) => {
+      const updatedClasses = getCurrentClasses().map((c) => {
+        if (c.id === classId) {
+          return { ...c, subPeerReviewRounds: [], subPeerReviewManualOverrides: {} };
+        }
+        return c;
+      });
+      persistClasses(updatedClasses);
+      addToast('Cleared all milestone sub peer reviews and historical records.', 'warning');
+    };
  
     const resetClassReviews = (classId: string, silent: boolean = false) => {
       const currentList = classesRef.current.length > 0 ? classesRef.current : classes;
@@ -2223,6 +2577,7 @@ import {
           updateEnrollmentFields,
           updateTeamBaseGrade,
           setAllTeamBaseGrades,
+          renameTeam,
           importRoster,
           addStudent,
           enrollStudent,
@@ -2243,6 +2598,16 @@ import {
           submitPulseResponse,
           deletePulseRound,
           seedSamplePulseRounds,
+          createSubPeerReviewRound,
+          updateSubPeerReviewRound,
+          submitSubPeerReview,
+          deleteSubPeerReviewRound,
+          seedSampleSubPeerReviews,
+          deleteSubPeerReviewEvaluation,
+          updateSubPeerReviewEvaluation,
+          updateSubPeerReviewManualOverride,
+          updateSubPeerReviewConfig,
+          clearAllSubPeerReviews,
           restoreClassesSnapshot,
           saveFirebaseConfig,
           syncWorkspaceSettingsToCloud,

@@ -2,12 +2,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   Users, CheckCircle, Clock, Mail, Copy, Check, Globe,
   Download, Smartphone, FileText, Edit2, RotateCcw,
-  Filter, X, Award, TrendingUp, GraduationCap, ChevronDown, ChevronUp
+  Filter, X, Award, TrendingUp, GraduationCap, ChevronDown, ChevronUp,
+  AlertTriangle
 } from 'lucide-react';
 import type { ClassData, Student } from '../utils/math';
 import { calculateStudentWebPAScore, normalizeNationality } from '../utils/math';
 import { exportRosterToExcel, exportRosterToCSV } from '../utils/csv';
 import FeatureInfoButton from './FeatureInfoButton';
+import { useClass } from '../context/ClassContext';
 
 interface TeamCohortsOverviewProps {
   activeClass: ClassData;
@@ -16,6 +18,7 @@ interface TeamCohortsOverviewProps {
   baseGroupGrade: number;
   fudgeWeight: number;
   onUpdateTeamBaseGrade: (classId: string, groupName: string, grade: number) => void;
+  onRenameTeam?: (classId: string, oldTeamName: string, newTeamName: string) => void;
   onPreviewStudent: (student: Student) => void;
   onEditStudent: (student: Student) => void;
   onOpenReport: (studentId: string) => void;
@@ -36,6 +39,7 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
   baseGroupGrade,
   fudgeWeight,
   onUpdateTeamBaseGrade,
+  onRenameTeam,
   onPreviewStudent,
   onEditStudent,
   onOpenReport,
@@ -47,12 +51,19 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
   user,
   cardControls
 }) => {
+  const { renameTeam: contextRenameTeam } = useClass();
+  const doRenameTeam = onRenameTeam || contextRenameTeam;
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'in_progress' | 'pending'>('all');
   const [copiedEmailTeam, setCopiedEmailTeam] = useState(false);
   const [editingBaseGrade, setEditingBaseGrade] = useState<string | null>(null);
   const [tempBaseGrade, setTempBaseGrade] = useState<number>(100);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(true);
+  const [renamingTeamModal, setRenamingTeamModal] = useState<{
+    oldName: string;
+    newName: string;
+    memberCount: number;
+  } | null>(null);
 
   // Master Collapse / Expand listener
   useEffect(() => {
@@ -236,6 +247,23 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
     onUpdateTeamBaseGrade(activeClass.id, groupName, cleanVal);
     setEditingBaseGrade(null);
     addToast(`Updated project base mark for "${groupName}" to ${cleanVal}!`, 'success');
+  };
+
+  // Handle confirming rename of assigned team with protective warning
+  const handleConfirmRename = () => {
+    if (!renamingTeamModal) return;
+    const cleanOld = renamingTeamModal.oldName.trim();
+    const cleanNew = renamingTeamModal.newName.trim();
+    if (!cleanNew || cleanNew === cleanOld) {
+      setRenamingTeamModal(null);
+      return;
+    }
+    doRenameTeam(activeClass.id, cleanOld, cleanNew);
+    if (selectedGroup === cleanOld) {
+      onSelectGroup(cleanNew);
+    }
+    setRenamingTeamModal(null);
+    addToast(`Renamed team "${cleanOld}" to "${cleanNew}" across ${renamingTeamModal.memberCount} enrolled students.`, 'success');
   };
 
   return (
@@ -557,7 +585,7 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
               >
                 {/* Header: Name + Badge */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0 }}>
                     <strong
                       style={{
                         fontSize: '0.92rem',
@@ -571,6 +599,35 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
                     >
                       {t.group}
                     </strong>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRenamingTeamModal({
+                          oldName: t.group,
+                          newName: t.group,
+                          memberCount: t.members.length
+                        });
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '2px 4px',
+                        borderRadius: '4px',
+                        color: 'var(--text-muted)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                      title={`Rename assigned team "${t.group}"`}
+                      aria-label={`Rename team ${t.group}`}
+                    >
+                      <Edit2 size={12} />
+                    </button>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
@@ -796,6 +853,33 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
                   }}
                 >
                   {activeTeamData.group}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenamingTeamModal({
+                        oldName: activeTeamData.group,
+                        newName: activeTeamData.group,
+                        memberCount: activeTeamData.members.length
+                      });
+                    }}
+                    style={{
+                      background: 'var(--bg-app)',
+                      border: '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      color: 'var(--text-secondary)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      transition: 'all 0.15s ease'
+                    }}
+                    title={`Rename assigned team "${activeTeamData.group}"`}
+                  >
+                    <Edit2 size={12} className="text-teal" /> Rename Team
+                  </button>
                 </h2>
                 <span className="badge badge-teal" style={{ fontSize: '0.78rem', fontWeight: 800 }}>
                   {activeTeamData.members.length} {activeTeamData.members.length === 1 ? 'Student' : 'Students'}
@@ -1095,13 +1179,14 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
                   .toUpperCase();
 
                 // Calculate WebPA score if active
-                const { ratio, adjustedGrade } = calculateStudentWebPAScore(
+                const webpa = calculateStudentWebPAScore(
                   student.id,
                   student.groupName,
                   activeClass,
-                  baseGroupGrade,
+                  activeTeamData.teamBase,
                   fudgeWeight
                 );
+                const { ratio, adjustedGrade, isInsufficient, isCapped, rawAdjustedGrade, minScore, maxScore, teamBaseGrade } = webpa;
 
                 // Reviews submitted by this student
                 const reviewsGiven = (activeClass.reviews || []).filter(r => r.reviewerId === student.id);
@@ -1328,9 +1413,22 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
                           >
                             WebPA: {ratio.toFixed(2)}x
                           </span>
-                          <strong style={{ color: 'var(--text-primary)', fontSize: '0.8rem' }}>
-                            {adjustedGrade.toFixed(1)}
-                          </strong>
+                          {isInsufficient ? (
+                            <span
+                              style={{ color: 'var(--accent-rose, #e11d48)', fontWeight: 800, fontSize: '0.8rem', cursor: 'help' }}
+                              title={`Real Score: ${adjustedGrade.toFixed(1)} / ${teamBaseGrade} (Below minimum passing threshold of ${minScore} pts set by professor)`}
+                            >
+                              Insufficient
+                            </span>
+                          ) : (
+                            <strong 
+                              style={{ color: 'var(--text-primary)', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+                              title={isCapped ? `Capped at max ${maxScore} pts (raw: ${rawAdjustedGrade.toFixed(1)})` : undefined}
+                            >
+                              {adjustedGrade.toFixed(1)}
+                              {isCapped && <span className="badge badge-purple" style={{ fontSize: '0.55rem', padding: '0.01rem 0.2rem' }}>Cap</span>}
+                            </strong>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1566,6 +1664,146 @@ export const TeamCohortsOverview: React.FC<TeamCohortsOverviewProps> = ({
         </div>
       )}
         </>
+      )}
+      {/* ─── PROTECTIVE WARNING MODAL FOR RENAMING ASSIGNED TEAM ─── */}
+      {renamingTeamModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '1rem'
+          }}
+          onClick={() => setRenamingTeamModal(null)}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--bg-surface, #ffffff)',
+              borderRadius: '16px',
+              border: '1px solid var(--border-color)',
+              maxWidth: '480px',
+              width: '100%',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',
+              overflow: 'hidden',
+              animation: 'modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Warning Header */}
+            <div
+              style={{
+                padding: '1.25rem 1.5rem',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                borderBottom: '1px solid rgba(239, 68, 68, 0.18)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem'
+              }}
+            >
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  Rename Assigned Team?
+                </h3>
+                <span style={{ fontSize: '0.78rem', color: '#dc2626', fontWeight: 700 }}>
+                  Active Classroom Team &bull; {renamingTeamModal.memberCount} Students Enrolled
+                </span>
+              </div>
+            </div>
+
+            {/* Warning Body */}
+            <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                You are renaming <strong style={{ color: 'var(--text-primary)' }}>"{renamingTeamModal.oldName}"</strong>. Because this team is actively assigned in your classroom, editing its name will automatically update:
+              </p>
+
+              <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <li>All <strong>{renamingTeamModal.memberCount} enrolled students'</strong> team assignments</li>
+                <li>All submitted and pending <strong>peer evaluation records</strong></li>
+                <li>Team <strong>deliverable base marks</strong> and custom criteria</li>
+                <li>Live pulse surveys and cohort statistics</li>
+              </ul>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
+                  New Team Name
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={renamingTeamModal.newName}
+                  onChange={(e) => setRenamingTeamModal({ ...renamingTeamModal, newName: e.target.value })}
+                  placeholder="Enter new team name..."
+                  autoFocus
+                  style={{ width: '100%', height: '40px', fontSize: '0.92rem', fontWeight: 700, borderRadius: '8px' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleConfirmRename();
+                    } else if (e.key === 'Escape') {
+                      setRenamingTeamModal(null);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Warning Footer Actions */}
+            <div
+              style={{
+                padding: '1rem 1.5rem',
+                backgroundColor: 'var(--bg-app)',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '0.65rem'
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setRenamingTeamModal(null)}
+                style={{ height: '36px', fontSize: '0.84rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleConfirmRename}
+                disabled={!renamingTeamModal.newName.trim() || renamingTeamModal.newName.trim() === renamingTeamModal.oldName}
+                style={{
+                  height: '36px',
+                  fontSize: '0.84rem',
+                  backgroundColor: '#dc2626',
+                  borderColor: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 800
+                }}
+              >
+                Yes, Rename Team
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

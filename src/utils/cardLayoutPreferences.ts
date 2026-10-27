@@ -97,7 +97,13 @@ export function getEffectiveSectionCardOrder(section: DashboardSection): string[
   });
 
   const pinnedSet = new Set(layout.pinned || []);
-  const pinnedCards = combined.filter(id => pinnedSet.has(id));
+  // Maintain pinned cards in priority order based on layout.pinned
+  const pinnedCards: string[] = [];
+  (layout.pinned || []).forEach(id => {
+    if (combined.includes(id) && !pinnedCards.includes(id)) {
+      pinnedCards.push(id);
+    }
+  });
   const unpinnedCards = combined.filter(id => !pinnedSet.has(id));
 
   return [...pinnedCards, ...unpinnedCards];
@@ -133,9 +139,10 @@ export function togglePinCard(cardId: string): boolean {
   const layout = getStoredLayout();
   const isPinned = (layout.pinned || []).includes(cardId);
   if (isPinned) {
-    layout.pinned = layout.pinned.filter(id => id !== cardId);
+    layout.pinned = (layout.pinned || []).filter(id => id !== cardId);
   } else {
-    layout.pinned = [cardId, ...(layout.pinned || [])];
+    // Put newly pinned card at top of priority list
+    layout.pinned = [cardId, ...(layout.pinned || []).filter(id => id !== cardId)];
   }
   saveStoredLayout(layout);
   return !isPinned;

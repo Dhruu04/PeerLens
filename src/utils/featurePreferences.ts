@@ -14,6 +14,7 @@ export interface FeatureToggles {
   showCustomizeViewButton: boolean;
   showEditModeButton: boolean;
   showQuickActionPill: boolean;
+  showRetractableDisplay: boolean;
 
   // --- Sub-Header / Breadcrumb Navigation ---
   showSectionNavBreadcrumbs: boolean;
@@ -98,6 +99,7 @@ export interface FeatureToggles {
   showQualitativeFeedback: boolean;
   showWebPACalibration: boolean;
   showInspectCalculationsBtn: boolean;
+  showPeerImpactGuide: boolean;
   showAnomalyAudit: boolean;
   showMilestonesHistory: boolean;
   showLmsExport: boolean;
@@ -132,6 +134,7 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showCustomizeViewButton: false,
   showEditModeButton: false,
   showQuickActionPill: false,
+  showRetractableDisplay: false,
 
   // Home Hub & Sub-Bar Navigation
   showPresetsBanner: false,
@@ -214,6 +217,7 @@ export const DEFAULT_FEATURE_TOGGLES: FeatureToggles = {
   showQualitativeFeedback: false,
   showWebPACalibration: true,
   showInspectCalculationsBtn: false, // Hidden by default as requested!
+  showPeerImpactGuide: false, // Hidden by default as requested!
   showAnomalyAudit: false,
   showMilestonesHistory: false,
   showLmsExport: false,
@@ -248,6 +252,7 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showCustomizeViewButton: true,
   showEditModeButton: false,
   showQuickActionPill: false,
+  showRetractableDisplay: true,
 
   // Home Hub & Sub-Bar Navigation
   showPresetsBanner: true,
@@ -330,6 +335,7 @@ export const MINIMAL_FEATURE_TOGGLES: FeatureToggles = {
   showQualitativeFeedback: false,
   showWebPACalibration: false,
   showInspectCalculationsBtn: false,
+  showPeerImpactGuide: false,
   showAnomalyAudit: false,
   showMilestonesHistory: false,
   showLmsExport: false,
@@ -363,6 +369,7 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showCustomizeViewButton: true,
   showEditModeButton: true,
   showQuickActionPill: true,
+  showRetractableDisplay: true,
 
   showSectionNavBreadcrumbs: true,
   showClassIdBadge: true,
@@ -442,6 +449,7 @@ export const FULL_FEATURE_TOGGLES: FeatureToggles = {
   showQualitativeFeedback: true,
   showWebPACalibration: true,
   showInspectCalculationsBtn: true,
+  showPeerImpactGuide: true,
   showAnomalyAudit: true,
   showMilestonesHistory: true,
   showLmsExport: true,

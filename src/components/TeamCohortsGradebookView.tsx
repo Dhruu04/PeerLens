@@ -3,13 +3,14 @@ import {
   Users, CheckCircle2, Clock, Award, TrendingUp,
   Download, Mail, Copy, Check, Globe, Languages, GraduationCap,
   Smartphone, FileText, Edit2, RotateCcw,
-  Search, X, AlertCircle
+  Search, X, AlertCircle, AlertTriangle
 } from 'lucide-react';
 import type { ClassData, Student } from '../utils/math';
 import {
   calculateStudentMetrics,
   calculateStudentWebPAScore,
-  normalizeNationality
+  normalizeNationality,
+  getTargetScale
 } from '../utils/math';
 import { exportRosterToExcel } from '../utils/csv';
 import CustomSelect, { type CustomSelectOption } from './CustomSelect';
@@ -128,7 +129,7 @@ export const TeamCohortsGradebookView: React.FC<TeamCohortsGradebookViewProps> =
       // Deliverable team base grade
       const teamBase = activeClass.teamBaseGrades?.[group] !== undefined
         ? activeClass.teamBaseGrades[group]
-        : baseGroupGrade;
+        : getTargetScale(activeClass);
 
       // Intra-team review ratings exchanged
       const intraReviews = (activeClass.reviews || []).filter(
@@ -751,13 +752,14 @@ export const TeamCohortsGradebookView: React.FC<TeamCohortsGradebookViewProps> =
                   ) : (
                     team.members.map((student) => {
                       const metrics = calculateStudentMetrics(student, activeClass);
-                      const { ratio, adjustedGrade } = calculateStudentWebPAScore(
+                      const webpa = calculateStudentWebPAScore(
                         student.id,
                         student.groupName,
                         activeClass,
                         team.teamBase,
                         fudgeWeight
                       );
+                      const { ratio, adjustedGrade, isInsufficient, isCapped, rawAdjustedGrade, minScore, maxScore } = webpa;
 
                       // WebPA badge color
                       const webpaColor = ratio >= 1.05
@@ -1011,6 +1013,7 @@ export const TeamCohortsGradebookView: React.FC<TeamCohortsGradebookViewProps> =
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                               {/* WebPA Multiplier Pill */}
                               <span
+                                data-quicklook-metric="webpa_ratio"
                                 style={{
                                   fontSize: '0.72rem',
                                   fontWeight: 800,
@@ -1022,31 +1025,60 @@ export const TeamCohortsGradebookView: React.FC<TeamCohortsGradebookViewProps> =
                                   alignItems: 'center',
                                   gap: '0.2rem'
                                 }}
-                                title={`WebPA Factor Multiplier: ${ratio.toFixed(3)}x`}
+                                title={`WebPA Factor Multiplier: ${ratio.toFixed(3)}x (Press Spacebar for QuickLook)`}
                               >
                                 <TrendingUp size={11} />
                                 {metrics.reviewsReceived > 0 ? `${ratio.toFixed(2)}x` : '1.00x'}
                               </span>
 
                               {/* Calibrated Mark */}
-                              <span
-                                style={{
-                                  fontSize: '0.72rem',
-                                  fontWeight: 800,
-                                  padding: '0.12rem 0.45rem',
-                                  borderRadius: '6px',
-                                  backgroundColor: 'var(--bg-app)',
-                                  border: '1px solid var(--border-color)',
-                                  color: 'var(--text-primary)',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.2rem'
-                                }}
-                                title={`Calibrated Final Mark: ${adjustedGrade} out of ${team.teamBase}`}
-                              >
-                                <Award size={11} style={{ color: 'var(--accent-amber)' }} />
-                                {metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${team.teamBase}` : '—'}
-                              </span>
+                              {isInsufficient ? (
+                                <span
+                                  data-quicklook-metric="calibrated_grade"
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    fontWeight: 800,
+                                    padding: '0.12rem 0.45rem',
+                                    borderRadius: '6px',
+                                    backgroundColor: 'rgba(225, 29, 72, 0.08)',
+                                    border: '1px solid rgba(225, 29, 72, 0.25)',
+                                    color: 'var(--accent-rose, #e11d48)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.2rem',
+                                    cursor: 'help'
+                                  }}
+                                  title={`Real Score: ${adjustedGrade} out of ${team.teamBase} (Below minimum passing threshold of ${minScore} pts set by professor) • Press Spacebar for QuickLook`}
+                                >
+                                  <AlertTriangle size={11} style={{ color: 'var(--accent-rose, #e11d48)' }} />
+                                  Insufficient
+                                </span>
+                              ) : (
+                                <span
+                                  data-quicklook-metric="calibrated_grade"
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    fontWeight: 800,
+                                    padding: '0.12rem 0.45rem',
+                                    borderRadius: '6px',
+                                    backgroundColor: 'var(--bg-app)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-primary)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.2rem'
+                                  }}
+                                  title={isCapped ? `Calibrated Final Mark: ${adjustedGrade} out of ${team.teamBase} (Capped at professor maximum of ${maxScore} pts; raw calculation was ${rawAdjustedGrade}) • Press Spacebar for QuickLook` : `Calibrated Final Mark: ${adjustedGrade} out of ${team.teamBase} • Press Spacebar for QuickLook`}
+                                >
+                                  <Award size={11} style={{ color: 'var(--accent-amber)' }} />
+                                  {metrics.reviewsReceived > 0 ? `${adjustedGrade} / ${team.teamBase}` : '—'}
+                                  {isCapped && (
+                                    <span className="badge badge-purple" style={{ fontSize: '0.55rem', padding: '0.01rem 0.2rem', marginLeft: '0.2rem' }}>
+                                      Cap
+                                    </span>
+                                  )}
+                                </span>
+                              )}
 
                               {/* Overall score if evaluated */}
                               {metrics.overallPercentage !== null && metrics.reviewsReceived > 0 && (

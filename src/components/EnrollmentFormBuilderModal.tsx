@@ -586,7 +586,10 @@ export const EnrollmentFormBuilderModal: React.FC<EnrollmentFormBuilderModalProp
                         transition: 'all 120ms ease'
                       }}
                     >
-                      <span>{isAdded ? `✓ ${tmpl.label}` : `+ ${tmpl.label}`}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                        {isAdded ? <Check size={11} /> : <Plus size={11} />}
+                        {tmpl.label}
+                      </span>
                       <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
                         ({tmpl.type === 'boolean' ? 'Checkbox' : tmpl.type === 'number' ? 'Numeric' : tmpl.type})
                       </span>

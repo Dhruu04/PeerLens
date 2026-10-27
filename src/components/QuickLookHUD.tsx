@@ -7,14 +7,15 @@ import {
   TrendingUp, BarChart2, BookOpen,
   Calculator, Lightbulb, Check, Pin, PinOff, X,
   Copy, ExternalLink, Flag, AlertTriangle,
-  Activity, Zap, Compass, Eye, EyeOff
+  Activity, Zap, Compass, Eye, EyeOff, Code, Sliders, SlidersHorizontal, CheckCircle
 } from 'lucide-react';
-import type { Student, ClassData } from '../utils/math';
-import { calculateStudentMetrics, calculateStudentWebPAScore } from '../utils/math';
+import type { Student, ClassData, GradingScaleField } from '../utils/math';
+import { calculateStudentMetrics, calculateStudentWebPAScore, getTargetScale } from '../utils/math';
 import { calculateJohariWindowMetric } from '../utils/feedbackAnalytics';
 import type { GroupDiversityReport } from '../utils/grouping';
 import type { ModuleItem } from '../utils/moduleRegistry';
 import { FEATURE_INFO_REGISTRY } from '../data/featureDescriptions';
+import { AnimatedNumber } from './AnimatedNumber';
 
 export type QuickLookPayload = 
   | { 
@@ -33,6 +34,51 @@ export type QuickLookPayload =
       isLocked?: boolean;
       classData?: ClassData | null;
     }
+  | {
+      type: 'criterion';
+      criterion: GradingScaleField;
+      classData?: ClassData | null;
+      stats?: {
+        averageScore: number;
+        stdDev: number;
+        count: number;
+        consensusLabel: string;
+      };
+    }
+  | {
+      type: 'metric';
+      metricKey: string;
+      label: string;
+      value: string | number;
+      student?: Student;
+      teamName?: string;
+      classData?: ClassData | null;
+      breakdown?: {
+        baseGrade?: number;
+        webpaRatio?: number;
+        fudgeWeight?: number;
+        rawScore?: number;
+        calibratedScore?: number;
+        penaltyApplied?: boolean;
+        maxCapApplied?: boolean;
+        belowMin?: boolean;
+        minScore?: number;
+        maxScore?: number;
+        explanation?: string;
+        formula?: string;
+      };
+      historicalTrend?: string;
+    }
+  | {
+      type: 'control';
+      controlKey: string;
+      title: string;
+      currentValue: string | number;
+      description: string;
+      impactAnalysis: string;
+      pedagogicalRationale?: string;
+      recommendation?: string;
+    }
   | { 
       type: 'module'; 
       module: ModuleItem;
@@ -47,6 +93,9 @@ export type QuickLookPayload =
       shortcut?: string; 
       icon?: React.ReactNode;
       impact?: string;
+      prerequisites?: string;
+      isDestructive?: boolean;
+      tip?: string;
     }
   | { 
       type: 'generic'; 
@@ -54,6 +103,7 @@ export type QuickLookPayload =
       subtitle?: string; 
       details?: string;
       metrics?: Array<{ label: string; value: string | number }>;
+      tip?: string;
     };
 
 const MODULE_SPECIFIC_GUIDES: Record<string, {
@@ -832,7 +882,7 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
   };
 
   // Viewport-safe bounds computation
-  const hudWidth = payload.type === 'student' ? 390 : payload.type === 'team' ? 415 : payload.type === 'module' ? 390 : 340;
+  const hudWidth = payload.type === 'student' ? 390 : payload.type === 'team' ? 415 : payload.type === 'module' ? 390 : (payload.type === 'criterion' || payload.type === 'metric' || payload.type === 'control') ? 400 : 340;
   const margin = 16;
   const screenW = typeof window !== 'undefined' ? window.innerWidth : 1200;
   const screenH = typeof window !== 'undefined' ? window.innerHeight : 800;
@@ -855,7 +905,8 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
   const renderContent = () => {
     switch (payload.type) {
       case 'student': {
-        const { student, classData, baseGroupGrade = 100, fudgeWeight = 0.5, context = 'grouping' } = payload;
+        const defaultScale = payload.classData ? getTargetScale(payload.classData) : 31;
+        const { student, classData, baseGroupGrade = defaultScale, fudgeWeight = 0.5, context = 'grouping' } = payload;
         const isGradingContext = context === 'grading';
         const isUnassigned = !student.groupName || student.groupName === 'Unassigned' || student.groupName === 'None';
         const role = student.role || 'Role Pending';
@@ -1367,7 +1418,7 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
                       WebPA
                     </span>
                     <strong style={{ fontSize: '0.92rem', color: webpaColor, display: 'inline-flex', alignItems: 'center', gap: '2px', marginTop: '0.1rem', whiteSpace: 'nowrap' }}>
-                      <TrendingUp size={11} /> {webpa ? `${webpa.ratio.toFixed(2)}x` : '1.00x'}
+                      <TrendingUp size={11} /> {webpa ? <AnimatedNumber value={webpa.ratio} decimals={2} suffix="x" /> : '1.00x'}
                     </strong>
                   </div>
 
@@ -1381,9 +1432,33 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
                     <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', fontWeight: 700 }}>
                       Final Mark
                     </span>
-                    <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)', display: 'block', marginTop: '0.1rem', whiteSpace: 'nowrap' }}>
-                      {webpa ? `${webpa.adjustedGrade.toFixed(1)}` : '—'}
-                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}> / {webpa ? webpa.teamBaseGrade : 100}</span>
+                    <strong 
+                      style={{ 
+                        fontSize: '0.92rem', 
+                        color: webpa?.isInsufficient ? 'var(--accent-rose, #e11d48)' : 'var(--text-primary)', 
+                        display: 'block', 
+                        marginTop: '0.1rem', 
+                        whiteSpace: 'nowrap',
+                        cursor: webpa?.isInsufficient ? 'help' : 'default'
+                      }}
+                      title={
+                        webpa
+                          ? webpa.isInsufficient
+                            ? `Real Score: ${webpa.adjustedGrade.toFixed(1)} / ${webpa.teamBaseGrade} (Below minimum passing threshold of ${webpa.minScore} pts)`
+                            : webpa.isCapped
+                              ? `Capped at max ${webpa.maxScore} pts (raw: ${webpa.rawAdjustedGrade.toFixed(1)})`
+                              : undefined
+                          : undefined
+                      }
+                    >
+                      {webpa
+                        ? webpa.isInsufficient
+                          ? 'Insufficient'
+                          : <AnimatedNumber value={webpa.adjustedGrade} decimals={1} />
+                        : '—'}
+                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        {' '}/ {webpa ? webpa.teamBaseGrade : defaultScale}
+                      </span>
                     </strong>
                   </div>
 
@@ -1535,7 +1610,7 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
         const submitPct = total > 0 ? Math.round((submitted / total) * 100) : 0;
         const filledRoles = team.students.filter(s => Boolean(s.role)).length;
 
-        const baseGroupGrade = classData?.teamBaseGrades?.[team.groupName] ?? classData?.targetScale ?? 100;
+        const baseGroupGrade = classData?.teamBaseGrades?.[team.groupName] ?? (classData ? getTargetScale(classData) : 31);
         const fudgeWeight = classData?.peerAdjustmentConfig?.fudgeWeight ?? 1.0;
 
         if (!isGradingContext) {
@@ -1993,17 +2068,28 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
                         {sScore ? (
-                          <span style={{
-                            fontSize: '0.68rem',
-                            fontWeight: 750,
-                            padding: '0.1rem 0.4rem',
-                            borderRadius: '4px',
-                            backgroundColor: 'var(--bg-surface)',
-                            border: '1px solid var(--border-color)',
-                            color: ratioColor,
-                            fontVariantNumeric: 'tabular-nums'
-                          }}>
-                            {sScore.ratio.toFixed(2)}x &bull; {sScore.adjustedGrade.toFixed(1)}
+                          <span 
+                            style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 750,
+                              padding: '0.1rem 0.4rem',
+                              borderRadius: '4px',
+                              backgroundColor: 'var(--bg-surface)',
+                              border: sScore.isInsufficient ? '1px solid rgba(225, 29, 72, 0.35)' : '1px solid var(--border-color)',
+                              color: sScore.isInsufficient ? 'var(--accent-rose, #e11d48)' : ratioColor,
+                              fontVariantNumeric: 'tabular-nums',
+                              cursor: sScore.isInsufficient ? 'help' : 'default'
+                            }}
+                            title={
+                              sScore.isInsufficient
+                                ? `Real Score: ${sScore.adjustedGrade.toFixed(1)} / ${sScore.teamBaseGrade} (Below minimum passing threshold of ${sScore.minScore} pts)`
+                                : sScore.isCapped
+                                  ? `Capped at max ${sScore.maxScore} pts (raw calculation: ${sScore.rawAdjustedGrade.toFixed(1)})`
+                                  : undefined
+                            }
+                          >
+                            <AnimatedNumber value={sScore.ratio} decimals={2} suffix="x" /> &bull; {sScore.isInsufficient ? 'Insufficient' : <AnimatedNumber value={sScore.adjustedGrade} decimals={1} />}
+                            {sScore.isCapped && ' (Cap)'}
                           </span>
                         ) : (
                           <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>
@@ -2016,6 +2102,348 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
                 })}
               </div>
             </div>
+          </div>
+        );
+      }
+
+      case 'criterion': {
+        const { criterion, classData, stats } = payload;
+        const fMax = criterion.max || 5;
+        const fMin = criterion.min || 1;
+        const weight = criterion.weight ?? (classData ? Math.round(100 / Math.max(1, classData.fields.length)) : 25);
+        
+        let avgScore = stats?.averageScore ?? 0;
+        let stdDev = stats?.stdDev ?? 0;
+        let ratingCount = stats?.count ?? 0;
+        let consensusLabel = stats?.consensusLabel ?? 'Gathering Reviews';
+        
+        if (!stats && classData && classData.reviews && classData.reviews.length > 0) {
+          const scores = classData.reviews
+            .map(r => r.scores[criterion.id])
+            .filter((s): s is number => typeof s === 'number' && !isNaN(s));
+          ratingCount = scores.length;
+          if (ratingCount > 0) {
+            avgScore = Number((scores.reduce((a, b) => a + b, 0) / ratingCount).toFixed(2));
+            const variance = scores.reduce((a, b) => a + Math.pow(b - avgScore, 2), 0) / ratingCount;
+            stdDev = Number(Math.sqrt(variance).toFixed(2));
+            consensusLabel = stdDev < 0.65 ? 'High Consensus' : stdDev < 1.15 ? 'Moderate Consensus' : 'Divided Opinions';
+          }
+        }
+
+        const consensusColor = consensusLabel === 'High Consensus' ? '#10b981' : consensusLabel === 'Moderate Consensus' ? 'var(--primary)' : '#f59e0b';
+        const consensusBg = consensusLabel === 'High Consensus' ? 'rgba(16, 185, 129, 0.12)' : consensusLabel === 'Moderate Consensus' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(245, 158, 11, 0.12)';
+
+        return (
+          <div className="quicklook-card criterion-quicklook" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.2))',
+                  color: '#8b5cf6',
+                  border: '1px solid rgba(139, 92, 246, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Sliders size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.15rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 800, textTransform: 'uppercase', color: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.1)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
+                      Rubric Dimension
+                    </span>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 750, color: 'var(--text-secondary)', backgroundColor: 'var(--bg-app)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                      {weight}% Weight
+                    </span>
+                  </div>
+                  <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
+                    {criterion.name}
+                  </h4>
+                </div>
+              </div>
+            </div>
+
+            {/* Description / Behavioral Guidance */}
+            {criterion.description ? (
+              <div style={{ padding: '0.45rem 0.65rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.58rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.3px', display: 'block', marginBottom: '0.2rem' }}>
+                  Behavioral Guidance
+                </span>
+                <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                  {criterion.description}
+                </p>
+              </div>
+            ) : (
+              <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                Standard behavioral scale ranging from {fMin} ({classData?.scaleMin ?? 1} lowest) to {fMax} ({classData?.scaleMax ?? 5} highest).
+              </div>
+            )}
+
+            {/* Live Class Telemetry Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
+              <div style={{ padding: '0.35rem 0.45rem', backgroundColor: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                <span style={{ fontSize: '0.56rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', fontWeight: 800 }}>Cohort Mean</span>
+                <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)', display: 'block', marginTop: '1px' }}>
+                  {ratingCount > 0 ? <><AnimatedNumber value={avgScore} decimals={2} /> <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 500 }}>/{fMax}</span></> : '—'}
+                </strong>
+              </div>
+
+              <div style={{ padding: '0.35rem 0.45rem', backgroundColor: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                <span style={{ fontSize: '0.56rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', fontWeight: 800 }}>Reviews</span>
+                <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)', display: 'block', marginTop: '1px' }}>
+                  <AnimatedNumber value={ratingCount} />
+                </strong>
+              </div>
+
+              <div style={{ padding: '0.35rem 0.45rem', backgroundColor: consensusBg, borderRadius: '6px', border: `1px solid ${consensusColor}33`, textAlign: 'center' }}>
+                <span style={{ fontSize: '0.56rem', color: consensusColor, display: 'block', textTransform: 'uppercase', fontWeight: 800 }}>Consensus</span>
+                <strong style={{ fontSize: '0.74rem', color: consensusColor, display: 'block', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {consensusLabel}
+                </strong>
+              </div>
+            </div>
+
+            {/* Pedagogical Guidance Tip */}
+            <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'rgba(99, 102, 241, 0.08)', borderRadius: '6px', border: '1px solid rgba(99, 102, 241, 0.2)', display: 'flex', alignItems: 'flex-start', gap: '0.4rem', fontSize: '0.71rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+              <Sparkles size={13} style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '1px' }} />
+              <div>
+                <strong style={{ color: 'var(--primary)' }}>Pedagogical Tip: </strong>
+                <span>
+                  {stdDev > 1.15
+                    ? 'High polarization detected among teammate ratings. Check for communication misalignment or free-rider reports.'
+                    : 'Ratings are consistent across team cohorts. This dimension accurately differentiates student deliverables.'}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      case 'metric': {
+        const { label, value, breakdown, student } = payload;
+        const b = breakdown;
+
+        return (
+          <div className="quicklook-card metric-quicklook" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, rgba(13, 148, 136, 0.2), rgba(99, 102, 241, 0.2))',
+                  color: 'var(--accent-teal, #0d9488)',
+                  border: '1px solid rgba(13, 148, 136, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Calculator size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ fontSize: '0.58rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--accent-teal, #0d9488)', letterSpacing: '0.3px', display: 'block' }}>
+                    Performance &amp; Grade Math
+                  </span>
+                  <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
+                    {label}
+                  </h4>
+                </div>
+              </div>
+
+              {/* Big Live Value Display */}
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <span style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--primary)', letterSpacing: '-0.02em', display: 'block', lineHeight: 1 }}>
+                  {typeof value === 'number' ? <AnimatedNumber value={value} decimals={label.includes('Ratio') || label.includes('Multiplier') ? 2 : 1} suffix={label.includes('Ratio') || label.includes('Multiplier') ? 'x' : ' pts'} /> : value}
+                </span>
+                {student && (
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 650, display: 'block', marginTop: '2px' }}>
+                    {student.name} ({student.groupName})
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Step-by-Step Calculation Breakdown if present */}
+            {b && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: 'var(--bg-app)', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.58rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.3px' }}>
+                  Mathematical Calculation Trace
+                </span>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(75px, 1fr))', gap: '0.3rem' }}>
+                  {b.baseGrade !== undefined && (
+                    <div style={{ padding: '0.25rem 0.35rem', backgroundColor: 'var(--bg-surface)', borderRadius: '5px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', display: 'block' }}>Team Base</span>
+                      <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>{b.baseGrade} pt</strong>
+                    </div>
+                  )}
+                  {b.webpaRatio !== undefined && (
+                    <div style={{ padding: '0.25rem 0.35rem', backgroundColor: 'var(--bg-surface)', borderRadius: '5px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', display: 'block' }}>WebPA Ratio</span>
+                      <strong style={{ fontSize: '0.78rem', color: b.webpaRatio >= 1.0 ? '#10b981' : '#f59e0b' }}>{b.webpaRatio.toFixed(2)}x</strong>
+                    </div>
+                  )}
+                  {b.fudgeWeight !== undefined && (
+                    <div style={{ padding: '0.25rem 0.35rem', backgroundColor: 'var(--bg-surface)', borderRadius: '5px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', display: 'block' }}>Sensitivity</span>
+                      <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>{Math.round(b.fudgeWeight * 100)}%</strong>
+                    </div>
+                  )}
+                  {b.calibratedScore !== undefined && (
+                    <div style={{ padding: '0.25rem 0.35rem', backgroundColor: 'var(--bg-surface)', borderRadius: '5px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', display: 'block' }}>Adjusted Mark</span>
+                      <strong style={{ fontSize: '0.78rem', color: 'var(--primary)' }}>{b.calibratedScore.toFixed(1)} pt</strong>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bounds and Penalties Alerts */}
+                {b.maxCapApplied && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.66rem', color: '#10b981', padding: '0.2rem 0.4rem', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
+                    <CheckCircle2 size={11} style={{ flexShrink: 0 }} />
+                    <span><strong>Capped at Max:</strong> Student earned more than maximum ({b.maxScore ?? 31} pts), score held at ceiling.</span>
+                  </div>
+                )}
+                {b.belowMin && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.66rem', color: '#e11d48', padding: '0.2rem 0.4rem', borderRadius: '4px', backgroundColor: 'rgba(225, 29, 72, 0.1)' }}>
+                    <AlertTriangle size={11} style={{ flexShrink: 0 }} />
+                    <span><strong>Below Minimum:</strong> Raw score ({b.rawScore?.toFixed(1) ?? '—'}) is below min threshold ({b.minScore ?? 15} pts). Displayed as Insufficient.</span>
+                  </div>
+                )}
+                {b.penaltyApplied && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.66rem', color: '#d97706', padding: '0.2rem 0.4rem', borderRadius: '4px', backgroundColor: 'rgba(245, 158, 11, 0.1)' }}>
+                    <AlertTriangle size={11} style={{ flexShrink: 0 }} />
+                    <span><strong>Penalty Applied:</strong> Deduction applied due to missing peer evaluation submission.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Formula Box with 1-click Copy */}
+            {b?.formula && (
+              <div
+                onClick={(e) => handleCopy(b.formula!, 'formula', e)}
+                style={{
+                  padding: '0.35rem 0.55rem',
+                  backgroundColor: 'var(--bg-app)',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  cursor: 'pointer',
+                  pointerEvents: 'auto'
+                }}
+                title="Click to copy formula to clipboard"
+              >
+                <Code size={13} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.58rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                    <span>Applied Algorithm</span>
+                    <span style={{ color: copiedField === 'formula' ? '#10b981' : 'var(--text-muted)' }}>
+                      {copiedField === 'formula' ? 'Copied!' : 'Copy'}
+                    </span>
+                  </div>
+                  <code style={{ fontSize: '0.68rem', fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-primary)', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {b.formula}
+                  </code>
+                </div>
+              </div>
+            )}
+
+            {/* Explanation / Guidance */}
+            {b?.explanation && (
+              <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                {b.explanation}
+              </p>
+            )}
+          </div>
+        );
+      }
+
+      case 'control': {
+        const { title, currentValue, description, impactAnalysis, pedagogicalRationale } = payload;
+
+        return (
+          <div className="quicklook-card control-quicklook" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(99, 102, 241, 0.2))',
+                  color: '#d97706',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <SlidersHorizontal size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ fontSize: '0.58rem', fontWeight: 800, textTransform: 'uppercase', color: '#d97706', letterSpacing: '0.3px', display: 'block' }}>
+                    Algorithm Parameter Control
+                  </span>
+                  <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25 }}>
+                    {title}
+                  </h4>
+                </div>
+              </div>
+
+              {/* Current Active Setting Pill */}
+              <div style={{
+                padding: '0.25rem 0.6rem',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                color: '#d97706',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                flexShrink: 0
+              }}>
+                {currentValue}
+              </div>
+            </div>
+
+            {/* Description */}
+            {description && (
+              <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                {description}
+              </p>
+            )}
+
+            {/* Live Dynamic Impact Box */}
+            {impactAnalysis && (
+              <div style={{ padding: '0.45rem 0.65rem', backgroundColor: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <span style={{ fontSize: '0.58rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <Activity size={11} style={{ color: 'var(--primary)' }} /> Live Simulation &amp; Impact
+                </span>
+                <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-primary)', lineHeight: 1.4, fontWeight: 600 }}>
+                  {impactAnalysis}
+                </p>
+              </div>
+            )}
+
+            {/* Pedagogical Rationale */}
+            {pedagogicalRationale && (
+              <div style={{ padding: '0.4rem 0.6rem', backgroundColor: 'rgba(99, 102, 241, 0.08)', borderRadius: '6px', border: '1px solid rgba(99, 102, 241, 0.2)', display: 'flex', alignItems: 'flex-start', gap: '0.4rem', fontSize: '0.71rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                <BookOpen size={13} style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '1px' }} />
+                <div>
+                  <strong style={{ color: 'var(--primary)' }}>Accredited Standard: </strong>
+                  <span>{pedagogicalRationale}</span>
+                </div>
+              </div>
+            )}
           </div>
         );
       }
@@ -2416,6 +2844,40 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
                 <span>{payload.impact}</span>
               </div>
             )}
+
+            {payload.prerequisites && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '5px',
+                backgroundColor: 'var(--bg-app)',
+                border: '1px solid var(--border-color)',
+                fontSize: '0.66rem',
+                color: 'var(--text-muted)'
+              }}>
+                <CheckCircle size={11} style={{ color: 'var(--accent-teal, #0d9488)', flexShrink: 0 }} />
+                <span><strong>Prerequisite:</strong> {payload.prerequisites}</span>
+              </div>
+            )}
+
+            {payload.tip && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '5px',
+                backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                fontSize: '0.66rem',
+                color: '#d97706'
+              }}>
+                <Lightbulb size={11} style={{ flexShrink: 0 }} />
+                <span><strong>Pro Tip:</strong> {payload.tip}</span>
+              </div>
+            )}
           </div>
         );
       }
@@ -2465,6 +2927,27 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
                     <strong style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'block', marginTop: '1px' }}>{m.value}</strong>
                   </div>
                 ))}
+              </div>
+            )}
+            {payload.tip && (
+              <div style={{
+                padding: '0.35rem 0.55rem',
+                backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                borderRadius: '6px',
+                border: '1px solid rgba(99, 102, 241, 0.2)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.4rem',
+                fontSize: '0.7rem',
+                lineHeight: 1.35,
+                color: 'var(--text-secondary)',
+                marginTop: '0.2rem'
+              }}>
+                <Sparkles size={12} style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '1px' }} />
+                <div>
+                  <strong style={{ color: 'var(--primary)' }}>Pro Tip: </strong>
+                  <span>{payload.tip}</span>
+                </div>
               </div>
             )}
           </div>
@@ -2531,11 +3014,17 @@ export const QuickLookHUD: React.FC<QuickLookHUDProps> = ({
             }}>
               {payload.type === 'student' ? <User size={10} style={{ color: payload.context === 'grading' ? '#6366f1' : '#0d9488' }} /> :
                payload.type === 'team' ? <Users size={10} style={{ color: payload.context === 'grading' ? '#6366f1' : '#0d9488' }} /> :
+               payload.type === 'criterion' ? <Sliders size={10} style={{ color: '#8b5cf6' }} /> :
+               payload.type === 'metric' ? <Calculator size={10} style={{ color: '#0d9488' }} /> :
+               payload.type === 'control' ? <SlidersHorizontal size={10} style={{ color: '#f59e0b' }} /> :
                payload.type === 'module' ? <Layers size={10} style={{ color: '#6366f1' }} /> :
                payload.type === 'action' ? <Zap size={10} style={{ color: '#d97706' }} /> :
                <Compass size={10} style={{ color: 'var(--text-secondary)' }} />}
               {payload.type === 'student' ? (payload.context === 'grading' ? 'Student Evaluation' : 'Student Profile') :
                payload.type === 'team' ? (payload.context === 'grading' ? 'Team Gradebook' : 'Team Composition') :
+               payload.type === 'criterion' ? 'Rubric Dimension' :
+               payload.type === 'metric' ? 'Grade & Formula Trace' :
+               payload.type === 'control' ? 'Parameter Inspector' :
                payload.type === 'module' ? 'Module Assistant' :
                payload.type === 'action' ? 'Quick Action' : 'Live Inspector'}
             </span>

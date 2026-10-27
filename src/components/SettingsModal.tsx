@@ -27,7 +27,8 @@ import {
   Plus,
   AlertCircle,
   Edit3,
-  FolderPlus
+  FolderPlus,
+  Pin
 } from 'lucide-react';
 import { useClass } from '../context/ClassContext';
 import { useTheme, type ThemeMode } from '../context/ThemeContext';
@@ -921,6 +922,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   {featureToggles.showQuickActionPill ? <CheckCircle size={13} /> : null}
                   {featureToggles.showQuickActionPill ? 'Pill Visible' : 'Pill Hidden'}
+                </button>
+              </div>
+
+              {/* Dynamic Retractable Display Card */}
+              <div style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '0.9rem 1.15rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div style={{ maxWidth: '460px' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <Pin size={15} style={{ color: '#f59e0b' }} /> Dynamic Retractable Display (Pin Any Module)
+                  </h4>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Retractable floating workspace allowing you to open and pin any module (AutoGroup, Roster, Rubric, Simulator, Pulse, etc.) to view and interact with across all tabs and windows.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleFeatureToggle('showRetractableDisplay')}
+                  style={{
+                    padding: '0.35rem 0.85rem',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    border: featureToggles.showRetractableDisplay ? '1px solid #f59e0b' : '1px solid var(--border-color)',
+                    backgroundColor: featureToggles.showRetractableDisplay ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-surface)',
+                    color: featureToggles.showRetractableDisplay ? '#d97706' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  {featureToggles.showRetractableDisplay ? <CheckCircle size={13} /> : null}
+                  {featureToggles.showRetractableDisplay ? 'Display Enabled' : 'Display Hidden'}
                 </button>
               </div>
 

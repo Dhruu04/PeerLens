@@ -57,6 +57,7 @@ export interface GroupingConfig {
   weights?: GroupingWeights;
   customFields?: CustomDiversityField[];
   pinnedStudentMap?: Record<string, string>;
+  customTeamNames?: string[];
 }
 
 export interface RuleSatisfactionReport {
@@ -723,7 +724,9 @@ export function generateDiverseGroups(
 
   // Handle trivial 1-group case
   if (numGroups <= 1) {
-    const singleGroupName = `${prefix} 1`;
+    const singleGroupName = (config.customTeamNames && config.customTeamNames[0] && config.customTeamNames[0].trim())
+      ? config.customTeamNames[0].trim()
+      : `${prefix} 1`;
     const updated = students.map(s => ({ ...s, groupName: singleGroupName }));
     const rep = calculateGroupReport(singleGroupName, updated, 3.5, effectiveRules);
     return {
@@ -810,7 +813,11 @@ export function generateDiverseGroups(
   }
 
   // 1. Initial Stratified Partitioning with Pinned Student Anchoring
-  const groupNames: string[] = Array.from({ length: numGroups }, (_, i) => `${prefix} ${i + 1}`);
+  const groupNames: string[] = Array.from({ length: numGroups }, (_, i) => 
+    (config.customTeamNames && config.customTeamNames[i] && config.customTeamNames[i].trim())
+      ? config.customTeamNames[i].trim()
+      : `${prefix} ${i + 1}`
+  );
   const pinnedMap = config.pinnedStudentMap || {};
   const pinnedIds = new Set(Object.keys(pinnedMap));
 
@@ -818,8 +825,8 @@ export function generateDiverseGroups(
   const unpinnedPool: Student[] = [];
   for (const s of pool) {
     if (pinnedIds.has(s.id)) {
-      const targetGroupName = pinnedMap[s.id];
-      const gIdx = groupNames.indexOf(targetGroupName);
+      const targetGroupName = (pinnedMap[s.id] || '').trim().toLowerCase();
+      const gIdx = groupNames.findIndex(g => g.trim().toLowerCase() === targetGroupName);
       if (gIdx >= 0 && gIdx < numGroups) {
         groupBuckets[gIdx].push(s);
       } else {
@@ -1026,7 +1033,9 @@ export function generateDiverseGroups(
   const groupReports: GroupDiversityReport[] = [];
 
   groupBuckets.forEach((bucket, idx) => {
-    const groupName = `${prefix} ${idx + 1}`;
+    const groupName = (config.customTeamNames && config.customTeamNames[idx] && config.customTeamNames[idx].trim())
+      ? config.customTeamNames[idx].trim()
+      : `${prefix} ${idx + 1}`;
     const assignedMembers = bucket.map(s => ({
       ...s,
       groupName

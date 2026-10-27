@@ -6,7 +6,7 @@ import {
   RefreshCw, Clock, Moon, Sun, HelpCircle, BookOpen, ArrowLeft, Layers, Zap,
   Tag, Palette, Eye, EyeOff, LayoutDashboard, Gauge, Cpu, ToggleLeft,
   Lightbulb, BarChart2, Grid,
-  Filter, Mail, Cloud, GraduationCap, Activity, Trash2, Star,
+  Filter, Mail, Cloud, GraduationCap, Activity, Trash2, Star, Info,
   ChevronsDown, ChevronsUp, CheckCircle2, ShieldCheck, Scale, Copy, Check,
   AlertTriangle,
   Edit3,
@@ -14,9 +14,16 @@ import {
   Calculator,
   History,
   RotateCcw,
-  Building2
+  Building2,
+  Pin,
+  PinOff,
+  ExternalLink,
+  Dices,
+  Lock,
+  Unlock,
+  ArrowRight
 } from 'lucide-react';
-import type { ClassData } from '../utils/math';
+import type { ClassData, EvaluationFormControls, Student } from '../utils/math';
 import { generateStudentDisputeAudit } from '../utils/math';
 import { FEATURE_INFO_REGISTRY, type FeatureInfoItem } from '../data/featureDescriptions';
 import { useTheme } from '../context/ThemeContext';
@@ -24,6 +31,15 @@ import { DEFAULT_FEATURE_TOGGLES, MINIMAL_FEATURE_TOGGLES, FULL_FEATURE_TOGGLES,
 import { getBranding, saveBranding } from '../utils/brandingPreferences';
 import { setDisplayDensity, type DisplayDensity } from '../utils/displayDensity';
 import { BUILT_IN_LAYOUT_PROFILES, applyFullLayoutProfile } from '../utils/customViewProfiles';
+import { AVAILABLE_PINNABLE_MODULES } from './DynamicRetractableDisplay';
+import {
+  getPinnedModuleIds,
+  subscribePinnedModules,
+  togglePinModule,
+  pinModule,
+  resolveToModuleId,
+  inspectItemState
+} from '../utils/workspaceModuleManager';
 
 // ── NLP SYNONYMS & INTENT DETECTION ─────────────────────────────────────────
 const SYNONYMS_SHOW   = ['show','enable','turn on','activate','visible','display','unhide','reveal','make visible'];
@@ -45,11 +61,133 @@ const SYNONYMS_BRANDING = ['branding', 'institution logo', 'custom header', 'cou
 const SYNONYMS_DENSITY = ['density', 'compact', 'balanced', 'spacious', 'display density', 'table density', 'padding', 'row height'];
 const SYNONYMS_PRESETS = ['layout library', 'workspace presets', 'professor presets', 'preset', 'final grading', 'week 1', 'presentation scoring', 'team health pulse', 'accreditation audit', 'speed grader'];
 
-type IntentType = 'show_feature'|'hide_feature'|'navigate'|'help'|'mode_switch'|'theme'|'export'|'filter'|'clear_action'|'presentation'|'charter'|'enrollment_builder'|'matrix'|'pulse'|'hud'|'branding'|'density'|'presets'|'general';
+// Extended Universal NLP Synonym Vocabularies
+const SYNONYMS_MATH = ['calc', 'calculate', 'compute', 'math', 'percentage', 'convert scale'];
+const SYNONYMS_RANDOM = ['random', 'pick student', 'spin student', 'call student', 'cold call', 'who speaks next', 'spotlight student', 'random speaker', 'random member', 'pick someone', 'roll'];
+const SYNONYMS_EVAL_LOCK = ['unlock review', 'unlock peer review', 'open evaluation', 'open review round', 'allow submissions', 'unlock round', 'lock review', 'lock peer review', 'close round', 'freeze grades', 'freeze round', 'close submissions', 'review round'];
+const SYNONYMS_PIN_DOCK = ['pin', 'unpin', 'dock', 'float dock', 'retract dock', 'pin module', 'pinned modules', 'workspace dock'];
+const SYNONYMS_OUTLIERS = ['outliers', 'anomaly', 'anomalies', 'collusion', 'dispute', 'disputes', 'suspicious', 'retaliation', 'retaliation risk', 'unusual scores', 'flagged'];
+const SYNONYMS_UNSUBMITTED = ['who has not submitted', 'who didn\'t submit', 'who hasnt submitted', 'who did not submit', 'missing', 'unsubmitted', 'pending students', 'who to email', 'send reminder', 'nudge pending', 'remind all'];
+
+// ── KNOWLEDGE BASE & INSTANT FAQ DICTIONARY ─────────────────────────────────
+export interface FaqItem {
+  id: string;
+  question: string;
+  summary: string;
+  answer: string;
+  formula?: string;
+  actionText?: string;
+  actionTab?: 'hub' | 'roster' | 'grading' | 'results';
+  actionSpecial?: 'dispatcher' | 'autogroup' | 'eval_controls' | 'presets';
+}
+
+export const FAQ_KNOWLEDGE_BASE: FaqItem[] = [
+  {
+    id: 'faq_webpa',
+    question: 'How is WebPA calculated and what does it mean?',
+    summary: 'WebPA scales individual grades using peer ratings.',
+    formula: 'Individual Grade = Baseline Grade × (Individual Peer Score / Team Average Peer Score)',
+    answer: 'WebPA (Web Peer Assessment) algorithm compares each student\'s received rating against their group average. A factor of 1.00 indicates expected contribution, >1.00 indicates above-average contribution, and <1.00 indicates lower relative contribution. Tutors can dampen or amplify this multiplier using the WebPA Calibrator slider.',
+    actionText: 'Open Section 3 Analytics',
+    actionTab: 'results'
+  },
+  {
+    id: 'faq_excuse',
+    question: 'How do I excuse an absent or sick student?',
+    summary: 'Excused students have their multiplier locked to 1.00.',
+    answer: 'Search for the student by typing #studentName, then click "Mark Excused / Medical Exemption" in their dossier. This automatically neutralizes their peer factor so their grade defaults safely to the team base mark without penalty.',
+    actionText: 'View Classroom Roster',
+    actionTab: 'roster'
+  },
+  {
+    id: 'faq_anonymity',
+    question: 'Are peer ratings and comments anonymous to students?',
+    summary: 'PeerLens is 100% double-blind by academic design.',
+    answer: 'Students can only see aggregate team scores, anonymized feedback tags, and thematic written comments. No student can ever trace individual scores or comments back to specific classmates.',
+    actionText: 'Check Security Status',
+    actionTab: 'hub'
+  },
+  {
+    id: 'faq_unsubmitted',
+    question: 'What happens if a student does not submit their review?',
+    summary: 'Teammates still grade them, but they get no submission credit.',
+    answer: 'Students who fail to submit on time still receive peer evaluations from teammates, but are marked Pending. You can use the Link Dispatcher (Cmd+E) to send immediate 1-click email reminders before locking the round.',
+    actionText: 'Open Link Dispatcher',
+    actionSpecial: 'dispatcher'
+  },
+  {
+    id: 'faq_outliers',
+    question: 'How does anomaly detection detect collusion or free-riders?',
+    summary: 'Flags uniform scoring, score trading, and retaliation.',
+    answer: 'The algorithm inspects self-peer rating gaps (>20%), retaliation risks (student down-voting someone who down-voted them), and uniform grading (giving everyone straight 5s or 1s). Flagged students are highlighted in the Anomaly Audit with a one-click dispute dossier.',
+    actionText: 'Inspect Anomaly Audit',
+    actionTab: 'results'
+  },
+  {
+    id: 'faq_export_lms',
+    question: 'How do I export final grades into Canvas, Moodle, or Blackboard?',
+    summary: '1-click standard CSV format matched to your school LMS.',
+    answer: 'Go to Section 3 or type ">export" to download gradebooks mapped with SIS IDs, Usernames, and scaled peer score columns directly importable into Canvas, Moodle, Blackboard, or Brightspace D2L.',
+    actionText: 'Export LMS Gradebook',
+    actionTab: 'results'
+  }
+];
+
+// ── SAFE MATHEMATICAL EVALUATOR ─────────────────────────────────────────────
+export function evaluateMathExpression(expr: string): { result: number; formatted: string; isPercentage: boolean } | null {
+  const clean = expr.trim().toLowerCase().replace(/^calc\s+/i, '').replace(/^=\s*/, '');
+  if (!/^[\d\s+\-*/().%]+$/.test(clean) || !/\d/.test(clean)) return null;
+  try {
+    const isPercentage = clean.includes('%');
+    const sanitized = clean.replace(/(\d+(?:\.\d+)?)%/g, '($1 / 100)');
+    const val = Function(`'use strict'; return (${sanitized});`)();
+    if (typeof val === 'number' && !isNaN(val) && isFinite(val)) {
+      const rounded = Math.round(val * 1000) / 1000;
+      return { result: rounded, formatted: String(rounded), isPercentage };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+type IntentType = 
+  | 'show_feature'
+  | 'hide_feature'
+  | 'navigate'
+  | 'help'
+  | 'mode_switch'
+  | 'theme'
+  | 'export'
+  | 'filter'
+  | 'clear_action'
+  | 'presentation'
+  | 'charter'
+  | 'enrollment_builder'
+  | 'matrix'
+  | 'pulse'
+  | 'hud'
+  | 'branding'
+  | 'density'
+  | 'presets'
+  | 'calc_math'
+  | 'random_caller'
+  | 'eval_lock'
+  | 'pin_dock'
+  | 'outliers'
+  | 'unsubmitted'
+  | 'general';
+
 interface NLPIntent { type: IntentType; confidence: number; }
 
 function detectIntent(rawQ: string): NLPIntent {
   const q = rawQ.toLowerCase().trim();
+  if (q.startsWith('=') || SYNONYMS_MATH.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'calc_math', confidence: 0.98 };
+  if (SYNONYMS_RANDOM.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'random_caller', confidence: 0.96 };
+  if (SYNONYMS_EVAL_LOCK.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'eval_lock', confidence: 0.95 };
+  if (SYNONYMS_PIN_DOCK.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'pin_dock', confidence: 0.92 };
+  if (SYNONYMS_OUTLIERS.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'outliers', confidence: 0.95 };
+  if (SYNONYMS_UNSUBMITTED.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'unsubmitted', confidence: 0.95 };
   if (SYNONYMS_CLEAR.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'clear_action', confidence: 0.95 };
   if (SYNONYMS_BRANDING.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'branding', confidence: 0.95 };
   if (SYNONYMS_DENSITY.some(s => q === s || q.startsWith(s + ' ') || q.includes(' ' + s))) return { type: 'density', confidence: 0.95 };
@@ -127,12 +265,13 @@ function tokenize(s: string): string[] {
   return result;
 }
 
-export function parsePrefix(raw: string): { prefix: '@' | '#' | '>' | '?' | null; cleanQuery: string } {
+export function parsePrefix(raw: string): { prefix: '@' | '#' | '>' | '?' | '=' | null; cleanQuery: string } {
   const trimmed = raw.trim();
   if (trimmed.startsWith('@')) return { prefix: '@', cleanQuery: trimmed.slice(1).trim() };
   if (trimmed.startsWith('#')) return { prefix: '#', cleanQuery: trimmed.slice(1).trim() };
   if (trimmed.startsWith('>')) return { prefix: '>', cleanQuery: trimmed.slice(1).trim() };
   if (trimmed.startsWith('?')) return { prefix: '?', cleanQuery: trimmed.slice(1).trim() };
+  if (trimmed.startsWith('=')) return { prefix: '=', cleanQuery: trimmed.slice(1).trim() };
   return { prefix: null, cleanQuery: trimmed };
 }
 
@@ -190,6 +329,12 @@ function scoreItem(item: CPAction, queryTokens: string[], rawQ: string, intent: 
     });
   });
 
+  if (intent.type === 'calc_math' && (item.id.includes('math') || item.category === 'Actions')) sc += 160;
+  if (intent.type === 'random_caller' && (item.id.includes('random') || item.id.includes('roll') || item.keywords?.includes('random'))) sc += 170;
+  if (intent.type === 'eval_lock' && (item.id.includes('eval_round') || item.keywords?.includes('unlock') || item.keywords?.includes('lock'))) sc += 160;
+  if (intent.type === 'pin_dock' && (item.id.startsWith('pin_module_') || item.keywords?.includes('pin'))) sc += 145;
+  if (intent.type === 'outliers' && (item.id.includes('outlier') || item.keywords?.includes('outlier') || item.keywords?.includes('anomaly'))) sc += 140;
+  if (intent.type === 'unsubmitted' && (item.id.includes('pending') || item.keywords?.includes('unsubmitted') || item.keywords?.includes('missing'))) sc += 140;
   if (intent.type === 'help' && item.category === 'Help') sc += 50;
   if (intent.type === 'hide_feature' && item.category === 'Features' && item.intentTag === 'hide') sc += 80;
   if (intent.type === 'show_feature' && item.category === 'Features' && item.intentTag === 'show') sc += 80;
@@ -266,6 +411,7 @@ const FL: Record<keyof FeatureToggles, { label: string; desc: string; section: s
   showCustomizeViewButton:  { label: 'Show / Hide Modules',       desc: 'Choose which modules appear on screen',        section: 'Header',     icon: Sliders },
   showEditModeButton:       { label: 'Edit Page Layout',          desc: 'Customize and arrange page modules',           section: 'Header',     icon: Edit3 },
   showQuickActionPill:      { label: 'Quick Tools Button',        desc: 'Floating shortcut menu at bottom of screen',  section: 'Header',     icon: Compass },
+  showRetractableDisplay:   { label: 'Dynamic Retractable Display', desc: 'Retractable floating viewport to pin and use any module anywhere', section: 'Header', icon: Pin },
   showSectionNavBreadcrumbs:{ label: 'Step Navigation Bar',       desc: 'Jump between steps 1, 2, and 3',               section: 'Nav',        icon: LayoutDashboard },
   showClassIdBadge:         { label: 'Class ID Badge',            desc: 'Shows the current class ID code',              section: 'Nav',        icon: Tag },
   showHubOverviewBanner:    { label: 'Hub Overview Banner',       desc: 'Welcome banner at the top of the hub',         section: 'Hub',        icon: LayoutDashboard },
@@ -340,6 +486,7 @@ const FL: Record<keyof FeatureToggles, { label: string; desc: string; section: s
   showQualitativeFeedback:  { label: 'Written Feedback Summary',  desc: 'Summarizes common themes and praise words written by teammates', section: 'Section 3', icon: FileText },
   showWebPACalibration:     { label: 'Peer Score Adjustment',     desc: 'Adjusts individual student grades up or down based on teammate reviews', section: 'Section 3', icon: Sliders },
   showInspectCalculationsBtn: { label: 'Inspect Calculations Button', desc: 'Modal launcher to inspect step-by-step WebPA algorithm and peer score math', section: 'Section 3', icon: Calculator },
+  showPeerImpactGuide:      { label: 'Peer Impact Guide',         desc: 'Educational guide explaining peer adjustments and weighting factors', section: 'Section 3', icon: BookOpen },
   showAnomalyAudit:         { label: 'Suspicious Ratings Alert',  desc: 'Detects students who trade high scores, grade randomly, or give uniform marks', section: 'Section 3', icon: HelpCircle },
   showMilestonesHistory:    { label: 'Past Review Rounds',        desc: 'Archives past peer evaluations (e.g., Midterm Review, Final Review)', section: 'Section 3', icon: Clock },
   showLmsExport:            { label: 'Export to Canvas / Blackboard / Moodle', desc: '1-click grade exports formatted for standard school LMS gradebooks', section: 'Section 3', icon: GraduationCap },
@@ -403,7 +550,7 @@ export interface CPAction {
 
 export type CommandPaletteAction = CPAction;
 
-type CategoryId = 'all' | 'actions' | 'features' | 'modes' | 'students' | 'teams' | 'help' | 'appearance';
+type CategoryId = 'all' | 'actions' | 'features' | 'modes' | 'students' | 'teams' | 'calc' | 'help' | 'appearance';
 
 const CATEGORY_TABS: { id: CategoryId; label: string; icon: React.ElementType; cats: string[]; prefix?: string }[] = [
   { id: 'all',        label: 'All',        icon: Layers,      cats: [] },
@@ -412,6 +559,7 @@ const CATEGORY_TABS: { id: CategoryId; label: string; icon: React.ElementType; c
   { id: 'modes',      label: 'Modes',      icon: Cpu,         cats: ['Modes'] },
   { id: 'students',   label: 'Students',   icon: Users,       cats: ['Students'], prefix: '#' },
   { id: 'teams',      label: 'Teams',      icon: Tag,         cats: ['Teams'], prefix: '@' },
+  { id: 'calc',       label: 'Math',       icon: Calculator,  cats: ['Actions'], prefix: '=' },
   { id: 'help',       label: 'Guides',     icon: HelpCircle,  cats: ['Help'], prefix: '?' },
   { id: 'appearance', label: 'Theme',      icon: Palette,     cats: ['Appearance'] },
 ];
@@ -426,8 +574,14 @@ function detectActiveMode(ft: FeatureToggles): 'minimal' | 'standard' | 'full' |
 }
 
 function getIntentFeedback(intent: NLPIntent, q: string, count: number): string | null {
-  if (!q.trim() || count === 0) return null;
+  if (!q.trim() && intent.type === 'general') return null;
   switch (intent.type) {
+    case 'calc_math': return `Academic Score & Percentage Calculator active — press Enter to copy or apply result`;
+    case 'random_caller': return `Random Student Spotlight Generator — pick an active student for live presentations`;
+    case 'eval_lock': return `Evaluation Round Access Control — 1-click lock or unlock student review portals`;
+    case 'pin_dock': return `Dock & Module Workspace Pinning — pin any module into the floating retractable dock`;
+    case 'outliers': return `Grade Outlier & Anomaly Audit — inspect flagged students with extreme WebPA ratios`;
+    case 'unsubmitted': return `Pending Reviews & Missing Submissions Tracker — send nudges or review missing roster`;
     case 'presentation': return `Live Presentation Cockpit & Mobile Scoring found — press Enter to launch`;
     case 'charter':      return `Team Kickoff & Agreements Studio found — assign roles & launch 5-min icebreakers`;
     case 'enrollment_builder': return `Custom Enrollment Questions Designer — configure self-registration fields`;
@@ -486,6 +640,7 @@ export interface CommandPaletteModalProps {
   onDeleteClass?: () => void;
   onToast?: (msg: string, type: 'success' | 'warning' | 'error' | 'info') => void;
   onOpenEvaluationControls?: () => void;
+  onUpdateEvaluationControls?: (controls: Partial<EvaluationFormControls>) => void;
   onToggleExcused?: (studentId: string, reason?: string) => void;
   onOpenEditMode?: () => void;
   shortcutsEnabled?: boolean;
@@ -506,11 +661,12 @@ interface ResultRowProps {
   item: CPAction;
   isSelected: boolean;
   query: string;
+  isPinned?: boolean;
   onSelect: () => void;
   onExecute: () => void;
 }
 
-const ResultRow: React.FC<ResultRowProps> = ({ item, isSelected, query, onSelect, onExecute }) => {
+const ResultRow: React.FC<ResultRowProps> = ({ item, isSelected, query, isPinned, onSelect, onExecute }) => {
   const IconComp = item.icon;
   const catColor = CAT_COLOR[item.category] ?? '#6366f1';
   const isPositiveBadge = item.badge === 'Active' || item.badge?.includes('Visible') || item.badge === 'Submitted';
@@ -591,6 +747,28 @@ const ResultRow: React.FC<ResultRowProps> = ({ item, isSelected, query, onSelect
                 {item.badge}
               </span>
             )}
+
+            {isPinned && (
+              <span
+                style={{
+                  fontSize: '0.58rem',
+                  fontWeight: 800,
+                  padding: '0.06rem 0.35rem',
+                  borderRadius: '4px',
+                  flexShrink: 0,
+                  backgroundColor: 'rgba(245, 158, 11, 0.16)',
+                  color: '#f59e0b',
+                  border: '1px solid rgba(245, 158, 11, 0.45)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.2rem'
+                }}
+                title="Currently pinned to Workspace Dock"
+              >
+                <Pin size={8} style={{ transform: 'rotate(45deg)' }} />
+                <span>Pinned</span>
+              </span>
+            )}
           </div>
 
           {item.subtitle && (
@@ -647,6 +825,363 @@ const ResultRow: React.FC<ResultRowProps> = ({ item, isSelected, query, onSelect
   );
 };
 
+// ── MEANINGFUL TELEMETRY & CONTEXT BUILDER FOR PREVIEW PANE ────────────────
+interface ActionDetails {
+  purpose?: string;
+  telemetry: { label: string; value: string; color?: string }[];
+  specs: { scope: string; safety: string; trigger: string };
+  actionLabel: string;
+  section?: string;
+  capabilities?: string[];
+  moduleKey?: keyof FeatureToggles;
+  isFeatureToggle?: boolean;
+  featureIsOn?: boolean;
+}
+
+function getFeatureCapabilities(key?: keyof FeatureToggles): string[] {
+  if (!key) {
+    return [
+      'Real-time client-side DOM render without page reload',
+      'Layout state automatically saved to your profile',
+      'Accessible across all enrolled classroom sections'
+    ];
+  }
+  switch (key) {
+    case 'showCompetencyRadar':
+      return [
+        'Multi-axis radar comparing individual scores vs. team averages',
+        'Visualizes skill imbalances and identifies team leadership anchors',
+        'Accreditation-ready metric for ABET & AACSB competency rubrics'
+      ];
+    case 'showLmsExport':
+      return [
+        'FERPA-compliant CSV / JSON output for Canvas SpeedGrader',
+        'Supports Moodle, Blackboard Ultra, and Brightspace D2L schemas',
+        'Automatic WebPA penalty multiplier computation for LMS gradebooks'
+      ];
+    case 'showTeamHealthPulse':
+      return [
+        '30-second weekly sentiment check-ins for active student teams',
+        'Sparklines for team morale trends and early sprint roadblock warnings',
+        'Configurable Likert, Star rating, and Traffic Light scales'
+      ];
+    case 'showJohariMatrix':
+      return [
+        'Cross-examines self-ratings vs. peer evaluation ratings',
+        'Identifies blind spots, hidden strengths, and impostor syndrome',
+        'Flags potential collusion or retaliatory score discrepancies'
+      ];
+    case 'showAnomalyAudit':
+      return [
+        'Mathematical outlier detector (|Self - Peer| > 1.5 multiplier)',
+        'Flags uniform scoring, retaliatory marks, and reciprocal grading pacts',
+        'Provides 1-click audit dossier for academic dispute hearings'
+      ];
+    case 'showWebPACalibration':
+      return [
+        'Interactive dampening weight slider (0% neutral to 100% pure peer)',
+        'Calculates individual contribution multipliers relative to group mark',
+        'Prevents free-riders from sharing identical group grades'
+      ];
+    case 'showDetailedReviewMatrix':
+      return [
+        'Complete who-rated-whom cross tabular matrix with raw criterion scores',
+        'Audits reviewer variance and identifies harsh vs. lenient graders',
+        'Exportable raw evaluation matrix for institutional records'
+      ];
+    case 'showEvaluationFormControls':
+      return [
+        'Toggle praise chips, constructive feedback, and self-review fields',
+        'Freeze student profiles to prevent unauthorized roster alterations',
+        'Lock or unlock review submission portals with 1 click'
+      ];
+    case 'showTeamOverviewCards':
+      return [
+        'High-density cohort overview cards with student role assignments',
+        'Review submission progress bars per team with missing alerts',
+        'Instant 1-click filter dashboard to specific team'
+      ];
+    case 'showLivePresentationScoring':
+      return [
+        'Real-time projector and mobile presentation evaluation cockpit',
+        'Synchronized peer and professor rubric scoring during live talks',
+        'Instant aggregated audience feedback and timer countdown'
+      ];
+    case 'showAutoGroupStudentDemographics':
+      return [
+        'Displays gender, nationality, and programming skill balance chips',
+        'Ensures balanced student representation in project cohorts',
+        'Supports multi-objective optimization with constraint solver'
+      ];
+    default:
+      return [
+        'Real-time client-side DOM render without page reload',
+        'Layout state automatically saved to your profile',
+        'Accessible across all enrolled classroom sections'
+      ];
+  }
+}
+
+function getActionMeaningfulInfo(
+  item: CPAction,
+  classData: ClassData | null,
+  featureToggles: FeatureToggles,
+  activeMode: string
+): ActionDetails {
+  const totalStudents = classData?.students.length || 0;
+  const submittedCount = classData?.students.filter(s => s.submitted).length || 0;
+  const unsubmittedCount = totalStudents - submittedCount;
+  const pct = totalStudents > 0 ? Math.round((submittedCount / totalStudents) * 100) : 0;
+  const distinctTeams = Array.from(new Set(classData?.students.map(s => s.groupName).filter(Boolean)));
+  const reviewsCount = classData?.reviews.length || 0;
+  const isLocked = classData?.evaluationControls?.unlockMainPeerReview === false;
+  const excusedCount = classData?.students.filter(s => s.isExcused).length || 0;
+  const targetScale = classData?.targetScale || 100;
+  const idLower = item.id.toLowerCase();
+  const titleLower = item.title.toLowerCase();
+
+  // 1. Snapshots & Version History
+  if (idLower.includes('snapshot') || titleLower.includes('snapshot') || titleLower.includes('version history')) {
+    return {
+      purpose: 'Creates or inspects immutable point-in-time state images. Allows safe rollbacks of student rosters, scores, and WebPA multiplier configurations.',
+      telemetry: [
+        { label: 'Checkpoints', value: 'Persistent System', color: '#6366f1' },
+        { label: 'Class Roster', value: `${totalStudents} Enrolled (${distinctTeams.length} Teams)` },
+        { label: 'Review Records', value: `${reviewsCount} Evaluations Recorded` },
+        { label: 'Rollback Safety', value: 'Non-Destructive Stack', color: '#10b981' }
+      ],
+      specs: { scope: 'Full Classroom State', safety: 'Non-Destructive', trigger: '↵ Enter' },
+      actionLabel: 'Open Snapshot Manager (↵)',
+      section: 'Section 3: Grading & Analytics',
+      capabilities: [
+        'Creates immutable timestamped JSON state checkpoints',
+        'One-click rollback of grades, multipliers, and rosters',
+        'Non-destructive diff inspection before restoring'
+      ]
+    };
+  }
+
+  // 2. AutoGroup Solver & Team Management
+  if (idLower.includes('autogroup') || titleLower.includes('autogroup') || idLower.includes('smart group')) {
+    return {
+      purpose: 'Heuristic constraint solver that automatically partitions the classroom into balanced cohorts based on skill diversity, gender distribution, and GPA spread.',
+      telemetry: [
+        { label: 'Total Students', value: `${totalStudents} Active Students` },
+        { label: 'Current Cohorts', value: `${distinctTeams.length} Teams Established` },
+        { label: 'Target Team Size', value: `~${(totalStudents / (distinctTeams.length || 1)).toFixed(1)} Students/Team` },
+        { label: 'Constraint Engine', value: 'Balanced Heuristics', color: '#10b981' }
+      ],
+      specs: { scope: 'Classroom Teams', safety: 'Draft Preview First', trigger: '↵ Enter' },
+      actionLabel: 'Launch AutoGroup Solver (↵)',
+      section: 'Section 1: Enrollment & Teams',
+      capabilities: [
+        'Multi-objective genetic solver balancing diversity & skill',
+        'Prevents isolated minorities and balances GPA spread',
+        'Draft preview with 1-click roster commit and rollback'
+      ]
+    };
+  }
+
+  // 3. Link Dispatcher & Email Reminders
+  if (idLower.includes('dispatcher') || titleLower.includes('dispatcher') || titleLower.includes('reminder') || titleLower.includes('email')) {
+    return {
+      purpose: 'Generates secure tokenized evaluation URLs for students and dispatches automated reminder nudges with personalized submission links.',
+      telemetry: [
+        { label: 'Pending Reviews', value: `${unsubmittedCount} Students Awaiting`, color: unsubmittedCount > 0 ? '#f59e0b' : '#10b981' },
+        { label: 'Submission Rate', value: `${pct}% (${submittedCount}/${totalStudents})` },
+        { label: 'Delivery Mode', value: 'Magic Token Links' },
+        { label: 'Nudge Engine', value: '1-Click Broadcast', color: '#6366f1' }
+      ],
+      specs: { scope: 'Student Communications', safety: 'FERPA Compliant', trigger: '↵ Enter' },
+      actionLabel: 'Open Link Dispatcher (↵)',
+      section: 'Section 1: Enrollment & Teams',
+      capabilities: [
+        'Magic token evaluation links with personalized student URLs',
+        'FERPA & GDPR compliant student privacy preservation',
+        'Real-time delivery and submission status tracking'
+      ]
+    };
+  }
+
+  // 4. Export Engines (Excel, LMS, CSV, PDF)
+  if (item.category === 'Actions' && (idLower.includes('export') || titleLower.includes('export') || item.badge?.includes('Export') || item.badge?.includes('Excel') || item.badge?.includes('Canvas') || item.badge?.includes('Moodle'))) {
+    return {
+      purpose: 'Compiles normalized peer ratings, raw score matrices, individual WebPA multipliers, and grade penalty divisors formatted for institutional LMS ingestion.',
+      telemetry: [
+        { label: 'Target Cohort', value: `Entire Class (${totalStudents} Students)` },
+        { label: 'Grading Ceiling', value: `0 to ${targetScale} Maximum Pts` },
+        { label: 'Data Included', value: 'WebPA, Z-Scores & Comments' },
+        { label: 'Compatibility', value: 'Excel, Canvas, Moodle, CSV', color: '#10b981' }
+      ],
+      specs: { scope: 'Full Gradebook Export', safety: 'Read-Only Download', trigger: '↵ Enter' },
+      actionLabel: 'Execute Grade Export (↵)',
+      section: 'Section 3: Grading & Analytics',
+      capabilities: [
+        'Pre-formatted CSV, Excel, Canvas & Moodle schemas',
+        'Includes individual WebPA multipliers & student feedback',
+        'Raw evaluation scores matrix exportable for audits'
+      ]
+    };
+  }
+
+  // 5. Evaluation Round & Lock Controls
+  if (idLower.includes('eval_lock') || idLower.includes('unlock') || titleLower.includes('unlock') || titleLower.includes('round') || titleLower.includes('evaluation controls')) {
+    return {
+      purpose: 'Controls student portal submission access. Opening the round allows students to submit ratings; locking freezes all scores for instructor moderation and final grading.',
+      telemetry: [
+        { label: 'Current State', value: isLocked ? 'Locked (Frozen)' : 'Open (Accepting)', color: isLocked ? '#ef4444' : '#10b981' },
+        { label: 'Completed Reviews', value: `${submittedCount} of ${totalStudents} (${pct}%)` },
+        { label: 'Pending Students', value: `${unsubmittedCount} Students Remaining`, color: unsubmittedCount > 0 ? '#f59e0b' : '#10b981' },
+        { label: 'Workflow Phase', value: isLocked ? 'Final Moderation' : 'Active Submissions' }
+      ],
+      specs: { scope: 'Student Submission Portal', safety: 'Reversible Toggle', trigger: '↵ Enter' },
+      actionLabel: isLocked ? 'Unlock Evaluation Round (↵)' : 'Lock Evaluation Round (↵)',
+      section: 'Section 2: Review System',
+      capabilities: [
+        '1-click freeze to prevent student edits during grade review',
+        'Protects final marks during academic appeals & hearings',
+        'Instant unlock to accept late make-up evaluations'
+      ]
+    };
+  }
+
+  // 6. Outliers & Dispute Resolution
+  if (idLower.includes('outlier') || titleLower.includes('outlier') || titleLower.includes('dispute') || titleLower.includes('retaliation')) {
+    return {
+      purpose: 'Flags statistical anomalies where self-ratings deviate severely from peer ratings (|Self - Peer| > 1.5), identifying potential collusion, free-riders, or retaliation.',
+      telemetry: [
+        { label: 'Excused Exemptions', value: `${excusedCount} Medical/Approved`, color: '#6366f1' },
+        { label: 'Discrepancy Gap', value: '|Self - Peer| > 1.5 Multiplier' },
+        { label: 'Audit Dossier', value: '1-Click Student Dossier', color: '#10b981' },
+        { label: 'Bias Adjustment', value: 'Peer Penalty Neutralizer' }
+      ],
+      specs: { scope: 'Grade Quality Assurance', safety: 'Non-Destructive Audit', trigger: '↵ Enter' },
+      actionLabel: 'Inspect Outliers & Disputes (↵)',
+      section: 'Section 3: Grading & Analytics',
+      capabilities: [
+        'Flags severe divergences between self and peer marks',
+        '1-click comprehensive dispute dossier with bias audit',
+        'Peer penalty neutralizer to correct retaliatory scores'
+      ]
+    };
+  }
+
+  // 7. Projector / Presentation Mode
+  if (idLower.includes('presentation') || idLower.includes('projector') || titleLower.includes('presentation') || titleLower.includes('projector')) {
+    return {
+      purpose: 'Classroom lecture hall projector mode that anonymizes sensitive student data while displaying live submission counts and a countdown timer.',
+      telemetry: [
+        { label: 'Privacy Standard', value: 'FERPA & GDPR Safe (Masked)', color: '#10b981' },
+        { label: 'Display Profile', value: 'Big-Screen Lecture Mode' },
+        { label: 'Live Telemetry', value: 'Real-Time Progress & Timer' },
+        { label: 'Student Identifiers', value: 'Anonymized Peer Codes' }
+      ],
+      specs: { scope: 'Audience Projector Display', safety: 'Privacy-Safe Mode', trigger: '↵ Enter' },
+      actionLabel: 'Launch Presentation Mode (↵)',
+      section: 'Top Navigation Hub',
+      capabilities: [
+        'Anonymized student codes for large lecture hall projection',
+        'Real-time peer scoring and submission progress gauge',
+        'Integrated presentation timer and countdown clock'
+      ]
+    };
+  }
+
+  // 8. Feature Toggles
+  if (item.category === 'Features' || item.featureKey) {
+    const featKey = item.featureKey;
+    const isVisible = featKey ? !!featureToggles[featKey] : item.title.toLowerCase().startsWith('show') || item.intentTag === 'show';
+    const isShowAction = item.intentTag === 'show' ||
+      item.title.toLowerCase().startsWith('show') ||
+      item.title.toLowerCase().startsWith('enable') ||
+      (item.title.toLowerCase().startsWith('toggle') && !isVisible);
+
+    const targetActionStr = isShowAction ? 'Show / Enable Module' : 'Hide / Disable Module';
+    const targetActionColor = isShowAction ? '#10b981' : '#f43f5e';
+    const flInfo = featKey ? FL[featKey] : undefined;
+    const sectionName = flInfo?.section || 'Dashboard Viewports';
+    const capabilities = getFeatureCapabilities(featKey);
+
+    return {
+      purpose: flInfo?.desc || item.subtitle || 'Toggles individual analytics, grading, and visualization modules on the dashboard without reloading the page.',
+      telemetry: [
+        { label: 'Current Visibility', value: isVisible ? 'Visible on Dashboard' : 'Hidden from Dashboard', color: isVisible ? '#10b981' : '#f59e0b' },
+        { label: 'Target Action', value: targetActionStr, color: targetActionColor },
+        { label: 'Placement', value: sectionName, color: '#6366f1' },
+        { label: 'Performance Impact', value: 'Instant Client Render', color: '#10b981' }
+      ],
+      specs: { scope: sectionName, safety: 'Non-Destructive Toggle', trigger: '↵ Enter' },
+      actionLabel: `${item.title} (↵)`,
+      section: sectionName,
+      capabilities,
+      moduleKey: featKey,
+      isFeatureToggle: true,
+      featureIsOn: isVisible
+    };
+  }
+
+  // 9. Workspace Modes
+  if (item.category === 'Modes' || idLower.includes('mode_')) {
+    const isCurrent = activeMode.toLowerCase() === item.title.toLowerCase().replace(' mode', '');
+    return {
+      purpose: 'Presets the dashboard layout by batch-toggling modules tailored for grading, presentation, high-density analytics, or a clean canvas.',
+      telemetry: [
+        { label: 'Target Preset', value: item.title, color: '#6366f1' },
+        { label: 'Status', value: isCurrent ? 'Currently Active' : 'Not Active', color: isCurrent ? '#10b981' : 'var(--text-muted)' },
+        { label: 'Reconfigurable', value: 'Customizable Anytime' },
+        { label: 'Scope', value: 'Entire Dashboard Layout' }
+      ],
+      specs: { scope: 'Global Workspace Layout', safety: 'Reversible Preset', trigger: '↵ Enter' },
+      actionLabel: `Apply ${item.title} (↵)`,
+      section: 'Top Navigation Hub',
+      capabilities: [
+        'Batch-toggles dashboard modules according to workflow',
+        'Tailored presets for Grading, Lecture, Analytics, or Clean Canvas',
+        'Preserves student evaluation data while changing layout'
+      ]
+    };
+  }
+
+  // 10. Math & Scale
+  if (idLower.includes('scale') || titleLower.includes('scale') || titleLower.includes('fudge') || titleLower.includes('webpa')) {
+    return {
+      purpose: 'Configures WebPA multiplier sensitivity and sets the baseline points ceiling used to compute final student peer grades.',
+      telemetry: [
+        { label: 'Grade Ceiling', value: `0 to ${targetScale} Maximum Points`, color: '#6366f1' },
+        { label: 'WebPA Formula', value: 'Individual / Team Average' },
+        { label: 'Precision', value: '2 Decimal Places' },
+        { label: 'Scale Standard', value: 'University Accreditation Gradebook' }
+      ],
+      specs: { scope: 'Scoring Engine', safety: 'Recalculates Reactively', trigger: '↵ Enter' },
+      actionLabel: 'Apply Scoring Configuration (↵)',
+      section: 'Section 2: Review System',
+      capabilities: [
+        'Configures WebPA multiplier dampening (0% to 100%)',
+        'Sets final grade baseline ceiling (out of 20, 100, or GPA 4.0)',
+        'Recalculates peer adjustments reactively in real time'
+      ]
+    };
+  }
+
+  // 11. Generic Fallback
+  return {
+    purpose: item.subtitle || 'Executes this command within the active PeerLens classroom environment.',
+    telemetry: [
+      { label: 'Active Classroom', value: classData?.name || 'Class A', color: '#6366f1' },
+      { label: 'Enrolled Cohort', value: `${totalStudents} Students (${distinctTeams.length} Teams)` },
+      { label: 'Command Category', value: item.category },
+      { label: 'Execution Environment', value: 'Instant Client-Side', color: '#10b981' }
+    ],
+    specs: { scope: 'Classroom Workspace', safety: 'Client-Side Safe', trigger: '↵ Enter' },
+    actionLabel: 'Execute Command (↵)',
+    capabilities: [
+      'Executes instantaneously in the browser client environment',
+      'Non-destructive operation with automatic state persistence',
+      'Synchronized across all active student records'
+    ]
+  };
+}
+
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   isOpen, onClose, classData, featureToggles, onToggleFeature, onApplyMode,
@@ -656,7 +1191,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onSetFudgeWeight, onExportLMS, onExportResultsCSV, onExportPDFSummary,
   onOpenNewClass, onOpenImportWizard, onOpenAutoGroup,
   onOpenQRCode, onOpenDeadline, onResetSubmissions, onClearRoster, onDeleteStudent, onDeleteClass, onToast,
-  onOpenEvaluationControls, onToggleExcused,
+  onOpenEvaluationControls, onUpdateEvaluationControls, onToggleExcused,
   onOpenEditMode, shortcutsEnabled, onToggleShortcutsEnabled,
   onOpenTeamCharter, onOpenLivePresentation, onOpenEnrollmentBuilder,
   onOpenSnapshots,
@@ -669,33 +1204,47 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   const [selectedIndex,    setSelectedIndex]    = useState(0);
   const [activeHelpArticle,setActiveHelpArticle]= useState<FeatureInfoItem|null>(null);
   const [recentIds,        setRecentIds]        = useState<string[]>([]);
-  const [recentSearches,   setRecentSearches]   = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('peer_recent_searches_v2');
-      return saved ? JSON.parse(saved) : ['AutoGroup', 'WebPA', 'Export Excel', 'Essentials', 'Projector'];
-    } catch (e) {
-      return ['AutoGroup', 'WebPA', 'Export Excel', 'Essentials', 'Projector'];
+  const [pinnedIds,        setPinnedIds]        = useState<string[]>(() => getPinnedModuleIds());
+
+  useEffect(() => {
+    return subscribePinnedModules((updated) => {
+      setPinnedIds(updated);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      setPinnedIds(getPinnedModuleIds());
     }
-  });
+  }, [isOpen]);
 
   const saveRecentSearch = useCallback((term: string) => {
     const trimmed = term.trim();
     if (!trimmed || trimmed.length < 2) return;
-    setRecentSearches(prev => {
+    try {
+      const saved = localStorage.getItem('peer_recent_searches_v2');
+      const prev: string[] = saved ? JSON.parse(saved) : [];
       const next = [trimmed, ...prev.filter(x => x.toLowerCase() !== trimmed.toLowerCase())].slice(0, 6);
-      try {
-        localStorage.setItem('peer_recent_searches_v2', JSON.stringify(next));
-      } catch (e) {}
-      return next;
-    });
+      localStorage.setItem('peer_recent_searches_v2', JSON.stringify(next));
+    } catch (e) {}
   }, []);
-
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'csv' | 'excel' | 'canvas' | 'moodle' | 'blackboard' | 'brightspace' | 'pulse' | 'pdf'>('csv');
   const [exportCohort, setExportCohort] = useState<string>('all');
 
   const [activeDisputeStudentId, setActiveDisputeStudentId] = useState<string | null>(null);
   const [copiedDisputeDraft, setCopiedDisputeDraft] = useState(false);
+  const [spotlightStudent, setSpotlightStudent] = useState<Student | null>(null);
+
+  const { prefix, cleanQuery } = useMemo(() => parsePrefix(query), [query]);
+  const effectiveQuery = cleanQuery;
+  const intent      = useMemo(() => detectIntent(effectiveQuery), [effectiveQuery]);
+  const queryTokens = useMemo(() => tokenize(effectiveQuery), [effectiveQuery]);
+
+  const mathResult = useMemo(() => {
+    if (!effectiveQuery.trim()) return null;
+    return evaluateMathExpression(effectiveQuery);
+  }, [effectiveQuery]);
 
   const inputRef      = useRef<HTMLInputElement>(null);
   const listRef       = useRef<HTMLDivElement>(null);
@@ -714,6 +1263,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       setActiveHelpArticle(null);
       setIsExportDialogOpen(false);
       setActiveDisputeStudentId(null);
+      setSpotlightStudent(null);
       setExportCohort('all');
       setRecentIds(loadRecent());
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -944,6 +1494,93 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       { id: 'nav_grading', title: 'Section 2: Review System',               category: 'Navigation', subtitle: 'Configure rubric sliders, scale anchors, weights',icon: Sliders,        badge: 'Step 2', keywords: ['rubric','criteria','weights','scale','presets','section 2','step 2'],onExecute: () => { onNavigateTab('grading'); onClose(); } },
       { id: 'nav_results', title: 'Section 3: Grading & Analytics',         category: 'Navigation', subtitle: 'Calculation matrix, radar charts, and gradebook', icon: Award,          badge: 'Step 3', keywords: ['grades','scores','matrix','radar','webpa','export','analytics'],    onExecute: () => { onNavigateTab('results'); onClose(); } },
     );
+
+    // LIVE MATH CALCULATOR ACTION
+    if (mathResult) {
+      list.push({
+        id: 'act_live_math_calc',
+        title: `Calculate: ${effectiveQuery} = ${mathResult.formatted}${mathResult.isPercentage ? '%' : ''}`,
+        category: 'Actions',
+        subtitle: `Academic calculation result. Press Enter to copy "${mathResult.formatted}" to clipboard`,
+        icon: Calculator,
+        badge: `Result: ${mathResult.formatted}`,
+        badgeColor: '#10b981',
+        keywords: ['calc', 'math', 'calculate', 'result', effectiveQuery],
+        onExecute: () => {
+          navigator.clipboard.writeText(mathResult.formatted);
+          if (onToast) onToast(`Copied "${mathResult.formatted}" to clipboard!`, 'success');
+        }
+      });
+    }
+
+    // EVALUATION ROUND ACCESS TOGGLE ACTION
+    if (classData) {
+      const isRoundUnlocked = classData.evaluationControls?.unlockMainPeerReview !== false;
+      list.push({
+        id: 'act_eval_round_toggle',
+        title: isRoundUnlocked ? 'Lock Evaluation Round (Close Submissions)' : 'Unlock Evaluation Round (Open Submissions)',
+        category: 'Actions',
+        subtitle: isRoundUnlocked 
+          ? 'Peer review is currently OPEN. Press Enter to lock round and prevent further student submissions'
+          : 'Peer review is currently LOCKED. Press Enter to unlock round so students can submit peer evaluations',
+        icon: isRoundUnlocked ? Lock : Unlock,
+        badge: isRoundUnlocked ? 'Round Open' : 'Round Locked',
+        badgeColor: isRoundUnlocked ? '#10b981' : '#dc2626',
+        keywords: ['unlock', 'lock', 'open evaluation', 'close evaluation', 'allow submissions', 'freeze grades', 'evaluation round', 'toggle round', 'lock review', 'unlock review', 'round'],
+        onExecute: () => {
+          if (onUpdateEvaluationControls) {
+            onUpdateEvaluationControls({ unlockMainPeerReview: !isRoundUnlocked });
+          } else if (onOpenEvaluationControls) {
+            onOpenEvaluationControls();
+          }
+          if (onToast) {
+            onToast(isRoundUnlocked ? 'Evaluation round is now LOCKED for students' : 'Evaluation round is now OPEN for students', isRoundUnlocked ? 'warning' : 'success');
+          }
+        }
+      });
+    }
+
+    // RANDOM STUDENT SPOTLIGHT ACTION
+    if (classData && classData.students.length > 0) {
+      list.push({
+        id: 'act_roll_random_student',
+        title: 'Pick a Random Student (Classroom Spotlight)',
+        category: 'Actions',
+        subtitle: `Cold-calling & presentation speaker picker across all ${classData.students.length} students. Press Enter to select`,
+        icon: Dices,
+        badge: 'Spotlight',
+        badgeColor: '#f59e0b',
+        keywords: ['random', 'pick student', 'spin student', 'call student', 'cold call', 'who speaks next', 'spotlight student', 'random speaker', 'random member', 'pick someone', 'roll'],
+        onExecute: () => {
+          const pool = classData.students;
+          const picked = pool[Math.floor(Math.random() * pool.length)];
+          setSpotlightStudent(picked);
+          if (onToast) onToast(`Spotlighted: ${picked.name} (${picked.groupName || 'Unassigned'})`, 'info');
+        }
+      });
+
+      const allTeams = Array.from(new Set(classData.students.map(s => s.groupName).filter(Boolean)));
+      allTeams.forEach(tName => {
+        list.push({
+          id: `act_roll_team_${tName}`,
+          title: `Pick Random Speaker from Team: ${tName}`,
+          category: 'Actions',
+          subtitle: `Selects a random presenter from ${tName}. Press Enter to spotlight`,
+          icon: Dices,
+          badge: tName,
+          badgeColor: '#10b981',
+          keywords: ['random', 'pick student', 'speaker', tName.toLowerCase(), `random ${tName.toLowerCase()}`],
+          onExecute: () => {
+            const teamPool = classData.students.filter(s => s.groupName === tName);
+            if (teamPool.length > 0) {
+              const picked = teamPool[Math.floor(Math.random() * teamPool.length)];
+              setSpotlightStudent(picked);
+              if (onToast) onToast(`Selected from ${tName}: ${picked.name}`, 'info');
+            }
+          }
+        });
+      });
+    }
 
     // SMART NLP TELEMETRY & LIVE QUERIES
     if (classData) {
@@ -1333,6 +1970,20 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       { id: 'act_toggle_shortcuts', title: shortcutsEnabled ? 'Disable Keyboard Shortcuts' : 'Enable Keyboard Shortcuts', category: 'Actions', subtitle: shortcutsEnabled ? 'Currently Active — click to disable/pause keyboard hotkeys' : 'Currently Disabled — click to activate keyboard hotkeys across workspace', icon: Keyboard, badge: shortcutsEnabled ? 'Active' : 'Disabled', keywords: ['shortcuts','keyboard','hotkeys','enable shortcuts','disable shortcuts','keybindings'], onExecute: () => { onClose(); if (onToggleShortcutsEnabled) onToggleShortcutsEnabled(!shortcutsEnabled); } },
       { id: 'act_toggle_quick_pill', title: featureToggles.showQuickActionPill ? 'Hide Floating Quick Action Pill' : 'Show Floating Quick Action Pill', category: 'Actions', subtitle: 'Contractable & expandable quick dock anchored at window bottom', icon: Compass, badge: 'Dock', keywords: ['quick action pill','pill','dock','bottom pill','floating dock','quick actions'], onExecute: () => { onClose(); if (onToggleFeature) onToggleFeature('showQuickActionPill', !featureToggles.showQuickActionPill); } },
+      {
+        id: 'act_toggle_retractable_display',
+        title: featureToggles.showRetractableDisplay ? 'Hide Dynamic Retractable Display' : 'Show Dynamic Retractable Display',
+        category: 'Actions',
+        subtitle: 'Custom retractable floating workspace to pin and interact with any module across all tabs',
+        icon: Pin,
+        badge: 'Pin Display',
+        badgeColor: '#f59e0b',
+        keywords: ['pin', 'pinned', 'retractable', 'display', 'floating module', 'side dock', 'dock', 'pip', 'picture in picture'],
+        onExecute: () => {
+          onClose();
+          if (onToggleFeature) onToggleFeature('showRetractableDisplay', !featureToggles.showRetractableDisplay);
+        }
+      },
       {
         id: 'act_quick_action_pinned',
         title: 'Quick Action Center: Pinned & Favorite Modules',
@@ -2140,6 +2791,53 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       }))
     );
 
+    // DOCK & WORKSPACE PINNING ACTIONS FOR ALL MODULES
+    AVAILABLE_PINNABLE_MODULES.forEach(m => {
+      const IconComp = m.icon;
+      const isPinned = pinnedIds.includes(m.id);
+      list.push({
+        id: `pin_module_${m.id}`,
+        title: `${isPinned ? 'Unpin from' : 'Pin to'} Workspace Dock: ${m.title}`,
+        category: 'Actions',
+        subtitle: `${m.description} · Currently ${isPinned ? 'PINNED in Dock' : 'Not Pinned'}. Press Enter to toggle`,
+        icon: IconComp,
+        badge: isPinned ? 'Pinned' : 'Pin Dock',
+        badgeColor: isPinned ? '#f59e0b' : m.accentColor,
+        keywords: ['pin', 'unpin', 'dock', 'floating', m.title.toLowerCase(), m.shortTitle.toLowerCase(), ...(m.keywords || [])],
+        onExecute: () => {
+          const next = togglePinModule(m.id);
+          if (onToast) onToast(`${next ? 'Pinned' : 'Unpinned'} "${m.shortTitle}" ${next ? 'into' : 'from'} Workspace Dock`, next ? 'success' : 'info');
+          onClose();
+        }
+      });
+    });
+
+    // KNOWLEDGE BASE FAQ ARTICLES
+    FAQ_KNOWLEDGE_BASE.forEach(faq => {
+      list.push({
+        id: `faq_${faq.id}`,
+        title: `Q&A: ${faq.question}`,
+        category: 'Help',
+        subtitle: faq.summary,
+        icon: HelpCircle,
+        badge: 'FAQ',
+        badgeColor: '#8b5cf6',
+        keywords: ['faq', 'help', 'guide', 'explain', faq.question.toLowerCase(), ...faq.summary.toLowerCase().split(/\s+/)],
+        onExecute: () => {
+          if (faq.actionTab) {
+            onNavigateTab(faq.actionTab);
+            onClose();
+          } else if (faq.actionSpecial === 'dispatcher') {
+            onOpenDispatcher();
+            onClose();
+          } else if (faq.actionSpecial === 'autogroup') {
+            if (onOpenAutoGroup) onOpenAutoGroup();
+            onClose();
+          }
+        }
+      });
+    });
+
     // FEATURE TOGGLES
     (Object.keys(FL) as (keyof FeatureToggles)[]).forEach(key => {
       const m = FL[key];
@@ -2424,21 +3122,16 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     onToast, onClose, onToggleFeature, onApplyMode, setThemeMode,
     onSetFilter, onApplyRubricPreset, onSetTargetScale, onSetFudgeWeight, onExportLMS,
     onExportResultsCSV, onExportPDFSummary, onOpenEnrollmentBuilder, onOpenTeamCharter,
-    onOpenLivePresentation, onOpenEvaluationControls, onToggleExcused, onOpenEditMode,
+    onOpenLivePresentation, onOpenEvaluationControls, onUpdateEvaluationControls, onToggleExcused, onOpenEditMode,
     shortcutsEnabled, onToggleShortcutsEnabled, onOpenSnapshots,
-    onOpenLayoutLibrary, onResetLayout,
+    onOpenLayoutLibrary, onResetLayout, mathResult, effectiveQuery
   ]);
 
   // ── NLP FILTER & SCORE WITH PREFIX SUPPORT ──────────────────────────────────
-  const { prefix, cleanQuery } = useMemo(() => parsePrefix(query), [query]);
-  const effectiveQuery = cleanQuery;
-  const intent      = useMemo(() => detectIntent(effectiveQuery), [effectiveQuery]);
-  const queryTokens = useMemo(() => tokenize(effectiveQuery), [effectiveQuery]);
-
   const filteredItems = useMemo(() => {
     let result = allItems;
 
-    // Smart Filter Prefixes: @ (Teams), # (Students), > (Commands), ? (Guides)
+    // Smart Filter Prefixes: @ (Teams), # (Students), > (Commands), ? (Guides), = (Math)
     if (prefix === '@') {
       result = result.filter(i => i.category === 'Teams');
     } else if (prefix === '#') {
@@ -2447,6 +3140,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       result = result.filter(i => ['Actions', 'Navigation', 'Features', 'Modes'].includes(i.category));
     } else if (prefix === '?') {
       result = result.filter(i => i.category === 'Help');
+    } else if (prefix === '=') {
+      result = result.filter(i => i.category === 'Actions' && (i.id.includes('math') || i.keywords?.includes('calc')));
     } else {
       const tab = CATEGORY_TABS.find(t => t.id === selectedCategory);
       if (tab && tab.cats.length > 0) {
@@ -2465,7 +3160,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
   const categoryCounts = useMemo(() => {
     const counts: Record<CategoryId, number> = {
-      all: 0, actions: 0, features: 0, modes: 0, students: 0, teams: 0, help: 0, appearance: 0,
+      all: 0, actions: 0, features: 0, modes: 0, students: 0, teams: 0, calc: 0, help: 0, appearance: 0,
     };
     const rawQ = effectiveQuery.toLowerCase().trim();
     const base = !rawQ ? allItems : allItems.filter(i => scoreItem(i, queryTokens, rawQ, intent) > 0);
@@ -2725,65 +3420,17 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         {/* Top accent bar */}
         <div style={{ height: '2px', background: 'linear-gradient(90deg, #6366f1, #8b5cf6, #0ea5e9, #10b981)', flexShrink: 0 }} />
 
-        {/* Minimalist context strip */}
-        {classData && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.4rem 1.15rem',
-              backgroundColor: 'var(--bg-app)',
-              borderBottom: '1px solid var(--border-color)',
-              fontSize: '0.69rem',
-              fontWeight: 600,
-              color: 'var(--text-secondary)',
-              flexWrap: 'wrap',
-              gap: '0.5rem',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-primary)', fontWeight: 700 }}>
-                <LayoutDashboard size={11} style={{ color: 'var(--primary)' }} />
-                {classData.name}
-              </span>
-              <span>{totalStudents} student{totalStudents !== 1 ? 's' : ''}</span>
-              <span style={{ color: pct >= 80 ? '#10b981' : pct >= 40 ? '#f59e0b' : 'var(--text-secondary)' }}>
-                {submittedCount}/{totalStudents} submitted ({pct}%)
-              </span>
-            </div>
-
-            <span
-              style={{
-                padding: '0.1rem 0.45rem',
-                borderRadius: '6px',
-                fontSize: '0.62rem',
-                fontWeight: 700,
-                backgroundColor:
-                  activeMode === 'full'
-                    ? 'rgba(99,102,241,0.12)'
-                    : activeMode === 'minimal'
-                    ? 'rgba(20,184,166,0.12)'
-                    : activeMode === 'none'
-                    ? 'rgba(239,68,68,0.12)'
-                    : 'rgba(245,158,11,0.12)',
-                color:
-                  activeMode === 'full'
-                    ? '#6366f1'
-                    : activeMode === 'minimal'
-                    ? '#14b8a6'
-                    : activeMode === 'none'
-                    ? '#ef4444'
-                    : '#f59e0b',
-              }}
-            >
-              {activeMode === 'custom' ? 'Custom' : activeMode === 'full' ? 'Full Mode' : activeMode === 'minimal' ? 'Minimal' : activeMode === 'none' ? 'Clean Canvas' : 'Standard'}
-            </span>
-          </div>
-        )}
-
-        {/* Search input bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.85rem 1.15rem', backgroundColor: 'var(--bg-surface)' }}>
+        {/* Sleek, Minimal Search & Integrated Context Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            padding: '0.75rem 1.15rem',
+            backgroundColor: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border-color)',
+          }}
+        >
           <Search size={18} style={{ color: 'var(--primary)', flexShrink: 0 }} />
           <input
             ref={inputRef}
@@ -2795,7 +3442,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               if (isExportDialogOpen) setIsExportDialogOpen(false);
               if (activeDisputeStudentId) setActiveDisputeStudentId(null);
             }}
-            placeholder="Search commands, students (#), teams (@), actions (>), guides (?), presentation, custom questions..."
+            placeholder="Type a command or search (#students, @teams, >actions, ?guides)..."
             style={{
               border: 'none',
               background: 'transparent',
@@ -2806,6 +3453,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               outline: 'none',
               boxShadow: 'none',
               width: '100%',
+              minWidth: 0,
             }}
           />
           {query && (
@@ -2820,8 +3468,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                 background: 'var(--bg-app)',
                 border: '1px solid var(--border-color)',
                 borderRadius: '50%',
-                width: '22px',
-                height: '22px',
+                width: '20px',
+                height: '20px',
                 color: 'var(--text-muted)',
                 cursor: 'pointer',
                 padding: 0,
@@ -2832,9 +3480,51 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               }}
               title="Clear search"
             >
-              <X size={13} />
+              <X size={12} />
             </button>
           )}
+
+          {/* Integrated Minimal Class & Mode Badge */}
+          {classData && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '0.18rem 0.5rem',
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bg-app)',
+                  border: '1px solid var(--border-color)',
+                  fontSize: '0.68rem',
+                  fontWeight: 650,
+                  color: 'var(--text-secondary)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <LayoutDashboard size={11} style={{ color: 'var(--primary)' }} />
+                <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{classData.name}</span>
+                <span style={{ opacity: 0.35 }}>•</span>
+                <span style={{ color: pct >= 80 ? '#10b981' : pct >= 40 ? '#f59e0b' : 'var(--text-secondary)' }}>
+                  {submittedCount}/{totalStudents} ({pct}%)
+                </span>
+                <span
+                  style={{
+                    padding: '0.05rem 0.32rem',
+                    borderRadius: '4px',
+                    fontSize: '0.58rem',
+                    fontWeight: 700,
+                    backgroundColor: 'rgba(99,102,241,0.12)',
+                    color: 'var(--primary)',
+                    marginLeft: '0.15rem'
+                  }}
+                >
+                  {activeMode === 'custom' ? 'Custom' : activeMode === 'full' ? 'Full' : activeMode === 'minimal' ? 'Min' : activeMode === 'none' ? 'Clean' : 'Std'}
+                </span>
+              </div>
+            </div>
+          )}
+
           <span
             style={{
               fontSize: '0.62rem',
@@ -2850,6 +3540,178 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             ESC
           </span>
         </div>
+
+        {/* Live Academic Math Calculation Banner */}
+        {mathResult && (
+          <div
+            style={{
+              padding: '0.65rem 1.15rem',
+              backgroundColor: 'rgba(16, 185, 129, 0.08)',
+              borderBottom: '1px solid rgba(16, 185, 129, 0.22)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              flexWrap: 'wrap'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <div style={{ width: '28px', height: '28px', borderRadius: '7px', backgroundColor: 'rgba(16, 185, 129, 0.16)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Calculator size={15} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.66rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                  Academic Calculation
+                </div>
+                <div style={{ fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                  {effectiveQuery} = <span style={{ color: '#10b981' }}>{mathResult.formatted}{mathResult.isPercentage ? '%' : ''}</span>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.4rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(mathResult.formatted);
+                  if (onToast) onToast(`Copied "${mathResult.formatted}" to clipboard!`, 'success');
+                }}
+                style={{
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}
+              >
+                <Copy size={11} /> Copy Result
+              </button>
+              {onSetTargetScale && !isNaN(mathResult.result) && mathResult.result > 0 && mathResult.result <= 1000 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSetTargetScale(mathResult.result);
+                    if (onToast) onToast(`Set Target Grade Scale to ${mathResult.result} pts!`, 'success');
+                    onClose();
+                  }}
+                  style={{
+                    padding: '0.25rem 0.6rem',
+                    borderRadius: '6px',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    backgroundColor: '#10b981',
+                    border: 'none',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem'
+                  }}
+                >
+                  <Check size={11} /> Set as Grade Scale
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Live Classroom Spotlight Cold-Caller Banner */}
+        {spotlightStudent && (
+          <div
+            style={{
+              padding: '0.65rem 1.15rem',
+              backgroundColor: 'rgba(245, 158, 11, 0.08)',
+              borderBottom: '1px solid rgba(245, 158, 11, 0.22)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              flexWrap: 'wrap'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Dices size={16} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <span style={{ fontSize: '0.64rem', fontWeight: 800, textTransform: 'uppercase', color: '#f59e0b', letterSpacing: '0.04em' }}>Spotlighted Student</span>
+                  <span style={{ padding: '1px 5px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)' }}>
+                    {spotlightStudent.groupName || 'Unassigned'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {spotlightStudent.name}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                  {spotlightStudent.email || spotlightStudent.id} • {spotlightStudent.submitted ? 'Submitted Review' : 'Pending Review'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (classData && classData.students.length > 0) {
+                    const others = classData.students.filter(s => s.id !== spotlightStudent.id);
+                    const next = others[Math.floor(Math.random() * others.length)] || spotlightStudent;
+                    setSpotlightStudent(next);
+                  }
+                }}
+                style={{
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}
+              >
+                <RefreshCw size={11} /> Roll Next
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDisputeStudentId(spotlightStudent.id);
+                }}
+                style={{
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  backgroundColor: 'var(--primary)',
+                  border: 'none',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}
+              >
+                <Scale size={11} /> Inspect Dossier
+              </button>
+              <button
+                type="button"
+                onClick={() => setSpotlightStudent(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '3px' }}
+                title="Dismiss spotlight"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* NLP intent feedback strip */}
         {intentFeedback && effectiveQuery.trim() && (
@@ -2871,100 +3733,21 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           </div>
         )}
 
-        {/* Recent Searches Pill Strip (Shown when query is empty) */}
-        {!isExportDialogOpen && !activeHelpArticle && !cleanQuery && recentSearches.length > 0 && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              padding: '0.35rem 1.15rem',
-              backgroundColor: 'var(--bg-app)',
-              borderBottom: '1px solid var(--border-color)',
-              overflowX: 'auto',
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                fontSize: '0.62rem',
-                fontWeight: 800,
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                color: 'var(--text-muted)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '3px',
-                flexShrink: 0
-              }}
-            >
-              <Clock size={10} /> Recent:
-            </span>
-            {recentSearches.map((term, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => {
-                  setQuery(term);
-                  inputRef.current?.focus();
-                }}
-                style={{
-                  padding: '0.14rem 0.5rem',
-                  borderRadius: '9999px',
-                  fontSize: '0.66rem',
-                  fontWeight: 650,
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  transition: 'all 0.12s ease'
-                }}
-                title={`Search "${term}"`}
-              >
-                <span>{term}</span>
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => {
-                setRecentSearches([]);
-                try {
-                  localStorage.removeItem('peer_recent_searches_v2');
-                } catch (e) {}
-              }}
-              style={{
-                border: 'none',
-                background: 'none',
-                color: 'var(--text-muted)',
-                fontSize: '0.6rem',
-                cursor: 'pointer',
-                padding: '0 0.2rem',
-                marginLeft: 'auto',
-                flexShrink: 0
-              }}
-              title="Clear recent searches"
-            >
-              Clear
-            </button>
-          </div>
-        )}
-
-        {/* Unified Category & Prefix Filter Pills Bar */}
+        {/* Unified Minimal Category Filter Tabs Bar */}
         {!isExportDialogOpen && !activeHelpArticle && (
           <div
+            className="cp-no-scrollbar"
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '0.35rem',
-              padding: '0.45rem 1.15rem',
+              gap: '0.22rem',
+              padding: '0.28rem 0.85rem',
               overflowX: 'auto',
               borderBottom: '1px solid var(--border-color)',
               backgroundColor: 'var(--bg-app)',
               flexShrink: 0,
+              scrollbarWidth: 'none',
+              scrollBehavior: 'smooth',
             }}
           >
             {CATEGORY_TABS.map(tab => {
@@ -2996,37 +3779,35 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                     inputRef.current?.focus();
                   }}
                   style={{
-                    padding: '0.22rem 0.6rem',
-                    borderRadius: '7px',
-                    fontSize: '0.72rem',
+                    padding: '0.18rem 0.44rem',
+                    borderRadius: '6px',
+                    fontSize: '0.69rem',
                     fontWeight: isSel ? 750 : 550,
-                    border: isSel ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-                    backgroundColor: isSel ? 'var(--primary-light)' : 'var(--bg-surface)',
+                    border: isSel ? '1px solid var(--primary)' : '1px solid transparent',
+                    backgroundColor: isSel ? 'var(--primary-light)' : 'transparent',
                     color: isSel ? 'var(--primary)' : 'var(--text-secondary)',
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.32rem',
+                    gap: '0.24rem',
                     transition: 'all 0.1s ease',
                     flexShrink: 0,
-                    boxShadow: isSel ? '0 1px 2px rgba(99, 102, 241, 0.12)' : 'none'
                   }}
                   title={tab.prefix ? `Filter by ${tab.label} (Type "${tab.prefix}")` : `Filter by ${tab.label}`}
                 >
-                  <Icon size={12} style={{ flexShrink: 0 }} />
+                  <Icon size={12} style={{ flexShrink: 0, opacity: isSel ? 1 : 0.75 }} />
                   <span>{tab.label}</span>
                   {tab.prefix && (
                     <span
                       style={{
-                        fontSize: '0.62rem',
+                        fontSize: '0.58rem',
                         fontWeight: 750,
-                        padding: '0.02rem 0.25rem',
-                        borderRadius: '4px',
-                        backgroundColor: isSel ? 'rgba(99, 102, 241, 0.18)' : 'var(--bg-app)',
+                        padding: '0.01rem 0.2rem',
+                        borderRadius: '3px',
+                        backgroundColor: isSel ? 'rgba(99, 102, 241, 0.18)' : 'var(--border-color)',
                         color: isSel ? 'var(--primary)' : 'var(--text-muted)',
                         fontFamily: 'monospace',
-                        border: '1px solid var(--border-color)'
                       }}
                     >
                       {tab.prefix}
@@ -3035,9 +3816,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                   {cnt > 0 && (
                     <span
                       style={{
-                        padding: '0.02rem 0.32rem',
+                        padding: '0.02rem 0.28rem',
                         borderRadius: '9999px',
-                        fontSize: '0.62rem',
+                        fontSize: '0.6rem',
                         fontWeight: 750,
                         backgroundColor: isSel ? 'var(--primary)' : 'var(--border-color)',
                         color: isSel ? '#fff' : 'var(--text-secondary)',
@@ -3632,6 +4413,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                         item={item}
                         isSelected={idx === selectedIndex}
                         query={query}
+                        isPinned={(() => {
+                          const modId = resolveToModuleId(item.featureKey || item.id, item.title, item.keywords);
+                          return modId ? pinnedIds.includes(modId) : false;
+                        })()}
                         onSelect={() => {
                           if (!isKeyboardNav.current) setSelectedIndex(idx);
                         }}
@@ -3975,62 +4760,31 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                   </div>
                 )}
 
-                {/* 4. Action / Command / Mode Preview */}
-                {!activeHighlightedItem.id.startsWith('student_') &&
-                  !activeHighlightedItem.id.startsWith('del_student_') &&
-                  activeHighlightedItem.category !== 'Students' &&
-                  !activeHighlightedItem.id.startsWith('team_') &&
-                  activeHighlightedItem.category !== 'Teams' &&
-                  !activeHighlightedItem.helpItem && (
+                {/* 4. Knowledge Base FAQ Preview */}
+                {activeHighlightedItem.id.startsWith('faq_') && (() => {
+                  const fId = activeHighlightedItem.id.replace('faq_', '');
+                  const faq = FAQ_KNOWLEDGE_BASE.find(f => f.id === fId);
+                  if (!faq) return null;
+                  return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                        <div
-                          style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '10px',
-                            backgroundColor: 'var(--primary-light)',
-                            color: 'var(--primary)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
-                          }}
-                        >
-                          <activeHighlightedItem.icon size={18} />
+                      <span className="badge badge-indigo" style={{ alignSelf: 'flex-start', fontSize: '0.64rem' }}>
+                        Knowledge Base FAQ
+                      </span>
+                      <div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          {faq.question}
                         </div>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.3 }}>
-                            {activeHighlightedItem.title}
-                          </div>
-                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                            {activeHighlightedItem.category}
-                          </div>
-                        </div>
+                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                          {faq.answer}
+                        </p>
                       </div>
 
-                      {activeHighlightedItem.subtitle && (
-                        <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                          {activeHighlightedItem.subtitle}
-                        </p>
-                      )}
-
-                      {activeHighlightedItem.badge && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ fontSize: '0.64rem', fontWeight: 600, color: 'var(--text-muted)' }}>BADGE:</span>
-                          <span
-                            style={{
-                              fontSize: '0.66rem',
-                              fontWeight: 700,
-                              padding: '0.1rem 0.45rem',
-                              borderRadius: '4px',
-                              backgroundColor: 'var(--bg-surface)',
-                              border: '1px solid var(--border-color)',
-                              color: activeHighlightedItem.badgeColor || 'var(--text-primary)'
-                            }}
-                          >
-                            {activeHighlightedItem.badge}
-                          </span>
+                      {faq.formula && (
+                        <div style={{ backgroundColor: 'rgba(99, 102, 241, 0.08)', padding: '0.6rem', borderRadius: '7px', border: '1px solid rgba(99, 102, 241, 0.22)' }}>
+                          <div style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--primary)', marginBottom: '2px' }}>CORE FORMULA</div>
+                          <code style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 700, wordBreak: 'break-all' }}>
+                            {faq.formula}
+                          </code>
                         </div>
                       )}
 
@@ -4038,13 +4792,446 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                         type="button"
                         onClick={() => executeAndTrack(activeHighlightedItem)}
                         className="btn btn-primary btn-sm"
-                        style={{ fontSize: '0.74rem', fontWeight: 800, justifyContent: 'center', gap: '0.35rem', marginTop: '0.4rem' }}
+                        style={{ fontSize: '0.72rem', fontWeight: 700, justifyContent: 'center', gap: '0.3rem', marginTop: '0.2rem' }}
                       >
-                        <Zap size={13} />
-                        <span>Execute Command (↵)</span>
+                        <Zap size={12} />
+                        <span>{faq.actionText || 'Jump to Feature (↵)'}</span>
                       </button>
                     </div>
-                  )}
+                  );
+                })()}
+
+                {/* 5. Live Math Result Preview */}
+                {activeHighlightedItem.id === 'act_live_math_calc' && mathResult && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <span className="badge badge-teal" style={{ alignSelf: 'flex-start', fontSize: '0.64rem' }}>
+                      Score Calculator Result
+                    </span>
+                    <div style={{ backgroundColor: 'var(--bg-surface)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Expression</div>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#10b981', fontFamily: 'monospace', marginTop: '0.2rem' }}>
+                        {effectiveQuery} = {mathResult.formatted}{mathResult.isPercentage ? '%' : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.2rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(mathResult.formatted);
+                          if (onToast) onToast(`Copied "${mathResult.formatted}" to clipboard!`, 'success');
+                        }}
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: '0.72rem', fontWeight: 700, justifyContent: 'center', gap: '0.3rem' }}
+                      >
+                        <Copy size={12} />
+                        <span>Copy Calculation Result</span>
+                      </button>
+                      {onSetTargetScale && !isNaN(mathResult.result) && mathResult.result > 0 && mathResult.result <= 1000 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onSetTargetScale(mathResult.result);
+                            if (onToast) onToast(`Set Target Grade Scale to ${mathResult.result} pts!`, 'success');
+                            onClose();
+                          }}
+                          className="btn btn-primary btn-sm"
+                          style={{ fontSize: '0.72rem', fontWeight: 700, justifyContent: 'center', gap: '0.3rem' }}
+                        >
+                          <Check size={12} />
+                          <span>Apply as Target Scale ({mathResult.result} pts)</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 6. Action / Command / Mode Preview - Minimal, Focused & Important Info Only */}
+                {!activeHighlightedItem.id.startsWith('student_') &&
+                  !activeHighlightedItem.id.startsWith('del_student_') &&
+                  activeHighlightedItem.category !== 'Students' &&
+                  !activeHighlightedItem.id.startsWith('team_') &&
+                  activeHighlightedItem.category !== 'Teams' &&
+                  !activeHighlightedItem.id.startsWith('faq_') &&
+                  activeHighlightedItem.id !== 'act_live_math_calc' &&
+                  !activeHighlightedItem.helpItem && (() => {
+                    const info = getActionMeaningfulInfo(activeHighlightedItem, classData, featureToggles, activeMode);
+                    const ActionIcon = activeHighlightedItem.icon;
+                    const stateSummary = inspectItemState(activeHighlightedItem, classData, featureToggles, pinnedIds);
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', width: '100%', boxSizing: 'border-box' }}>
+                        {/* Compact Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', width: '100%', minWidth: 0 }}>
+                          <div
+                            style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: '8px',
+                              backgroundColor: 'var(--primary-light)',
+                              color: 'var(--primary)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0
+                            }}
+                          >
+                            <ActionIcon size={17} />
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={activeHighlightedItem.title}>
+                              {activeHighlightedItem.title}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.12rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                                {activeHighlightedItem.category}
+                              </span>
+                              {info.section && (
+                                <span
+                                  style={{
+                                    fontSize: '0.6rem',
+                                    fontWeight: 700,
+                                    padding: '0.04rem 0.32rem',
+                                    borderRadius: '4px',
+                                    backgroundColor: 'var(--bg-surface)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--primary)'
+                                  }}
+                                >
+                                  {info.section.split(':')[0]}
+                                </span>
+                              )}
+                              {activeHighlightedItem.badge && (
+                                <span
+                                  style={{
+                                    fontSize: '0.6rem',
+                                    fontWeight: 700,
+                                    padding: '0.04rem 0.32rem',
+                                    borderRadius: '4px',
+                                    backgroundColor: 'var(--bg-surface)',
+                                    border: '1px solid var(--border-color)',
+                                    color: activeHighlightedItem.badgeColor || 'var(--text-secondary)'
+                                  }}
+                                >
+                                  {activeHighlightedItem.badge}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Primary Action Button */}
+                        <button
+                          type="button"
+                          onClick={() => executeAndTrack(activeHighlightedItem)}
+                          className="btn btn-primary btn-sm"
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: 800,
+                            justifyContent: 'center',
+                            gap: '0.35rem',
+                            padding: '0.45rem 0.7rem',
+                            width: '100%',
+                            boxSizing: 'border-box'
+                          }}
+                        >
+                          <Zap size={12} />
+                          <span>{info.actionLabel}</span>
+                        </button>
+
+                        {/* Live State & Quick Toggles Cockpit */}
+                        {(stateSummary.hasFeatureToggle || stateSummary.hasEvalControl || stateSummary.resolvedModuleId) && (
+                          <div
+                            style={{
+                              backgroundColor: 'var(--bg-surface)',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-color)',
+                              padding: '0.5rem 0.65rem',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.45rem',
+                              width: '100%',
+                              boxSizing: 'border-box'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.6rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                                <Activity size={10} style={{ color: 'var(--primary)' }} />
+                                <span>Module Telemetry</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                {stateSummary.isPinned && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.58rem',
+                                      fontWeight: 800,
+                                      padding: '0.04rem 0.32rem',
+                                      borderRadius: '4px',
+                                      backgroundColor: 'rgba(245, 158, 11, 0.16)',
+                                      color: '#f59e0b',
+                                      border: '1px solid rgba(245, 158, 11, 0.45)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.2rem'
+                                    }}
+                                  >
+                                    <Pin size={8} style={{ transform: 'rotate(45deg)' }} />
+                                    In Dock
+                                  </span>
+                                )}
+                                {stateSummary.hasFeatureToggle && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.58rem',
+                                      fontWeight: 800,
+                                      padding: '0.04rem 0.32rem',
+                                      borderRadius: '4px',
+                                      backgroundColor: stateSummary.isFeatureOn ? 'rgba(16, 185, 129, 0.14)' : 'var(--bg-app)',
+                                      color: stateSummary.isFeatureOn ? '#10b981' : 'var(--text-muted)',
+                                      border: `1px solid ${stateSummary.isFeatureOn ? '#10b981' : 'var(--border-color)'}`
+                                    }}
+                                  >
+                                    {stateSummary.isFeatureOn ? 'Canvas On' : 'Canvas Off'}
+                                  </span>
+                                )}
+                                {stateSummary.hasEvalControl && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.58rem',
+                                      fontWeight: 800,
+                                      padding: '0.04rem 0.32rem',
+                                      borderRadius: '4px',
+                                      backgroundColor: stateSummary.isEvalControlOn ? 'rgba(16, 185, 129, 0.14)' : 'rgba(244, 63, 94, 0.14)',
+                                      color: stateSummary.isEvalControlOn ? '#10b981' : '#f43f5e',
+                                      border: `1px solid ${stateSummary.isEvalControlOn ? '#10b981' : '#f43f5e'}`
+                                    }}
+                                  >
+                                    {stateSummary.isEvalControlOn ? 'Unlocked' : 'Locked'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Feature Visibility Switch */}
+                            {stateSummary.hasFeatureToggle && stateSummary.featureKey && (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.5rem', backgroundColor: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                <div style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  Canvas Visibility
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const next = !stateSummary.isFeatureOn;
+                                    onToggleFeature(stateSummary.featureKey!, next);
+                                    if (onToast) onToast(`${FL[stateSummary.featureKey!]?.label || 'Feature'} is now ${next ? 'enabled' : 'disabled'}`, next ? 'success' : 'info');
+                                  }}
+                                  style={{
+                                    padding: '0.2rem 0.55rem',
+                                    borderRadius: '999px',
+                                    fontSize: '0.64rem',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    backgroundColor: stateSummary.isFeatureOn ? 'rgba(16, 185, 129, 0.16)' : 'var(--bg-surface)',
+                                    color: stateSummary.isFeatureOn ? '#10b981' : 'var(--text-muted)',
+                                    border: `1px solid ${stateSummary.isFeatureOn ? '#10b981' : 'var(--border-color)'}`,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem'
+                                  }}
+                                >
+                                  {stateSummary.isFeatureOn ? <Check size={10} /> : <Eye size={10} />}
+                                  <span>{stateSummary.isFeatureOn ? 'Visible (Hide)' : 'Hidden (Show)'}</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Evaluation Control Switch */}
+                            {stateSummary.hasEvalControl && stateSummary.evalControlKey && (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.5rem', backgroundColor: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                <div style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  Evaluation Access
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (onUpdateEvaluationControls && stateSummary.evalControlKey) {
+                                      const next = !stateSummary.isEvalControlOn;
+                                      onUpdateEvaluationControls({ [stateSummary.evalControlKey]: next });
+                                      if (onToast) onToast(`Permission ${next ? 'unlocked' : 'locked'}`, next ? 'success' : 'info');
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '0.2rem 0.55rem',
+                                    borderRadius: '999px',
+                                    fontSize: '0.64rem',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    backgroundColor: stateSummary.isEvalControlOn ? 'rgba(16, 185, 129, 0.16)' : 'rgba(244, 63, 94, 0.14)',
+                                    color: stateSummary.isEvalControlOn ? '#10b981' : '#f43f5e',
+                                    border: `1px solid ${stateSummary.isEvalControlOn ? '#10b981' : '#f43f5e'}`,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem'
+                                  }}
+                                >
+                                  {stateSummary.isEvalControlOn ? <Unlock size={10} /> : <Lock size={10} />}
+                                  <span>{stateSummary.isEvalControlOn ? 'Unlocked (Lock)' : 'Locked (Unlock)'}</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Important Info Card: Overview */}
+                        <div
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-color)',
+                            padding: '0.6rem 0.7rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.25rem',
+                            width: '100%',
+                            boxSizing: 'border-box'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.6rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                            <Info size={11} style={{ color: 'var(--primary)' }} />
+                            <span>Important Info</span>
+                          </div>
+                          <p style={{ margin: 0, fontSize: '0.71rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                            {activeHighlightedItem.subtitle || info.purpose}
+                          </p>
+                        </div>
+
+                        {/* Key Metrics: Top 2 Only */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem', width: '100%', boxSizing: 'border-box' }}>
+                          {info.telemetry.slice(0, 2).map((t, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                backgroundColor: 'var(--bg-surface)',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-color)',
+                                padding: '0.4rem 0.5rem',
+                                minWidth: 0,
+                                boxSizing: 'border-box'
+                              }}
+                            >
+                              <div style={{ fontSize: '0.56rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {t.label}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 800,
+                                  color: t.color || 'var(--text-primary)',
+                                  marginTop: '0.08rem',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis'
+                                }}
+                                title={t.value}
+                              >
+                                {t.value}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Workspace Dock Controls & Navigation Actions */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', width: '100%', marginTop: '0.1rem', boxSizing: 'border-box' }}>
+                          {stateSummary.resolvedModuleId ? (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem', width: '100%' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = togglePinModule(stateSummary.resolvedModuleId!);
+                                  if (onToast) onToast(`${next ? 'Pinned' : 'Unpinned'} "${activeHighlightedItem.title}" ${next ? 'to' : 'from'} Workspace Dock`, next ? 'success' : 'info');
+                                }}
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 800,
+                                  justifyContent: 'center',
+                                  gap: '0.3rem',
+                                  padding: '0.38rem 0.5rem',
+                                  width: '100%',
+                                  boxSizing: 'border-box',
+                                  backgroundColor: stateSummary.isPinned ? 'rgba(245, 158, 11, 0.12)' : undefined,
+                                  color: stateSummary.isPinned ? '#f59e0b' : undefined,
+                                  borderColor: stateSummary.isPinned ? 'rgba(245, 158, 11, 0.4)' : undefined
+                                }}
+                              >
+                                {stateSummary.isPinned ? <PinOff size={11} /> : <Pin size={11} />}
+                                <span>{stateSummary.isPinned ? 'Unpin Dock' : 'Pin to Dock'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  pinModule(stateSummary.resolvedModuleId!);
+                                  onClose();
+                                  if (onToast) onToast(`Opened in Workspace Dock`, 'success');
+                                }}
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700,
+                                  justifyContent: 'center',
+                                  gap: '0.3rem',
+                                  padding: '0.38rem 0.5rem',
+                                  width: '100%',
+                                  boxSizing: 'border-box'
+                                }}
+                              >
+                                <ExternalLink size={11} />
+                                <span>Open Dock</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('peerlens_toggle_retractable_display'));
+                                onClose();
+                              }}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '0.68rem', fontWeight: 700, justifyContent: 'center', gap: '0.3rem', padding: '0.35rem 0.55rem', width: '100%', boxSizing: 'border-box' }}
+                            >
+                              <Layers size={11} />
+                              <span>Toggle Workspace Dock</span>
+                            </button>
+                          )}
+
+                          {info.section && info.section.startsWith('Section') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const tab = info.section?.includes('Section 1') ? 'roster' : info.section?.includes('Section 2') ? 'grading' : 'results';
+                                onNavigateTab(tab);
+                                onClose();
+                                if (onToast) onToast(`Navigated to ${info.section}`, 'info');
+                              }}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '0.68rem', fontWeight: 700, justifyContent: 'center', gap: '0.3rem', padding: '0.35rem 0.55rem', width: '100%', boxSizing: 'border-box' }}
+                            >
+                              <ArrowRight size={11} />
+                              <span>Go to {info.section.split(':')[0]}</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Keyboard Cue */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--text-muted)', paddingTop: '0.25rem', borderTop: '1px dashed var(--border-color)', marginTop: '0.05rem' }}>
+                          <span><kbd style={{ padding: '0.06rem 0.25rem', borderRadius: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontWeight: 700 }}>↵</kbd> Select</span>
+                          <span><kbd style={{ padding: '0.06rem 0.25rem', borderRadius: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', fontWeight: 700 }}>ESC</kbd> Close</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
               </div>
             )}
           </div>

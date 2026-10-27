@@ -539,22 +539,40 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover,
   margin-bottom: 0.5rem;
 }
 
-.form-input {
+.form-input,
+.form-control {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.65rem 0.95rem;
   font-family: inherit;
-  font-size: 0.95rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
+  font-size: 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border-color);
   background-color: var(--bg-surface);
   color: var(--text-primary);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.form-input:focus {
+.form-input:focus,
+.form-control:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 4px hsla(243, 75%, 59%, 0.12), var(--shadow-sm);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+select.form-control {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%234f46e5' stroke-width='2.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+  background-size: 0.85rem;
+  padding-right: 2.25rem;
+  cursor: pointer;
+}
+
+textarea.form-control {
+  min-height: 80px;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 /* Compact number inputs without intrusive browser spin buttons */
@@ -1093,6 +1111,9 @@ body.modal-open {
   padding: 1.5rem;
   overflow-y: auto;
   flex: 1;
+  min-height: 0 !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-footer {
@@ -4868,15 +4889,44 @@ kbd {
 }
 
 .cp-dossier-pane {
-  width: 320px;
+  width: 290px;
+  max-width: 290px;
   flex-shrink: 0;
   border-left: 1px solid var(--border-color);
   background-color: var(--bg-app);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding: 1rem;
-  gap: 0.85rem;
+  overflow-x: hidden;
+  padding: 0.85rem 0.75rem;
+  gap: 0.65rem;
+  box-sizing: border-box;
+}
+
+/* Command Palette Scrollbars & Elegance */
+.cp-no-scrollbar {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.cp-no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.cp-results-pane div::-webkit-scrollbar,
+.cp-dossier-pane::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.cp-results-pane div::-webkit-scrollbar-track,
+.cp-dossier-pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cp-results-pane div::-webkit-scrollbar-thumb,
+.cp-dossier-pane::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 999px;
 }
 
 @media (max-width: 768px) {
@@ -7627,4 +7677,347 @@ html[data-density="spacious"] .toolbar,
 body.density-spacious .toolbar {
   padding: 1rem 1.4rem !important;
   gap: 0.9rem !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SUB PEER REVIEW MILESTONE STUDIO - REFINED MINIMALIST DESIGN SYSTEM
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.subpeer-kpi-card {
+  padding: 0.85rem 1.1rem;
+  background-color: var(--bg-app);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.45rem;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  user-select: none;
+}
+
+.subpeer-kpi-card:hover {
+  border-color: var(--primary);
+  background-color: var(--bg-surface);
+}
+
+.subpeer-pulse-beacon {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.subpeer-pulse-beacon.beacon-rose {
+  background-color: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  animation: subpeerPulseRose 2s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+
+.subpeer-pulse-beacon.beacon-teal {
+  background-color: #0d9488;
+  box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.7);
+  animation: subpeerPulseTeal 2s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+
+@keyframes subpeerPulseRose {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+@keyframes subpeerPulseTeal {
+  0% { box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.6); }
+  70% { box-shadow: 0 0 0 6px rgba(13, 148, 136, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(13, 148, 136, 0); }
+}
+
+/* Tabular Numerals & High-Precision Alignment */
+.subpeer-tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Score Heatmap Pill */
+.subpeer-score-pill {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 7px;
+  border-radius: 6px;
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+/* Sticky Column with Clean Border Separator */
+.subpeer-sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background-color: var(--bg-surface);
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.04);
+}
+
+html[data-theme="dark"] .subpeer-sticky-col {
+  box-shadow: 3px 0 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Interactive Sliders for Thresholds */
+.subpeer-range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--border-color);
+  outline: none;
+  cursor: pointer;
+}
+
+.subpeer-range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.subpeer-range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.subpeer-range-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STUDENT PORTAL & DASHBOARD MOBILE OPTIMIZATIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  .student-dashboard-content {
+    gap: 1rem !important;
+    padding: 0 0.25rem !important;
+  }
+
+  .student-dashboard-content .card {
+    padding: 1rem 0.9rem !important;
+    border-radius: 12px !important;
+  }
+
+  .student-dashboard-content h1 {
+    font-size: 1.15rem !important;
+  }
+
+  .student-dashboard-content h2,
+  .student-dashboard-content h3 {
+    font-size: 0.95rem !important;
+  }
+
+  /* Responsive button actions on phone */
+  .student-action-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .student-action-row button,
+  .student-action-row a,
+  .subpeer-active-banner-btn {
+    width: 100% !important;
+  }
+
+  .subreview-teammate-tabs {
+    gap: 0.35rem !important;
+  }
+
+  .subreview-teammate-tabs button {
+    padding: 0.4rem 0.65rem !important;
+    font-size: 0.76rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .student-dashboard-content .card {
+    padding: 0.85rem 0.8rem !important;
+  }
+
+  .subreview-rating-grid {
+    gap: 0.25rem !important;
+  }
+
+  .subreview-rating-grid button {
+    min-height: 38px !important;
+    font-size: 0.82rem !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   KPI STATS GRID (SMARTPHONE FIRST & ULTRA-RESPONSIVE)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.kpi-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.kpi-stats-grid .kpi-tile {
+  background-color: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.75rem 0.4rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justifyContent: center;
+  align-items: center;
+  min-width: 0 !important;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.kpi-stats-grid .kpi-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  text-align: center;
+  width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kpi-stats-grid .kpi-number {
+  font-size: clamp(1.15rem, 3.8vw, 1.45rem);
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.kpi-stats-grid .kpi-number.kpi-text-value {
+  font-size: clamp(0.92rem, 3.2vw, 1.15rem);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.kpi-stats-grid .kpi-subtext {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  width: 100%;
+  text-align: center;
+}
+
+/* Scoped specifically for student portal containers on all screen sizes */
+.student-portal-root .kpi-stats-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 0.45rem !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.student-portal-root .kpi-stats-grid .kpi-tile {
+  min-width: 0 !important;
+  width: 100% !important;
+  padding: 0.6rem 0.25rem !important;
+  border-radius: 10px !important;
+}
+
+.student-portal-root .kpi-stats-grid .kpi-label {
+  font-size: 0.6rem !important;
+  height: 20px !important;
+}
+
+.student-portal-root .kpi-stats-grid .kpi-number {
+  font-size: 1.18rem !important;
+}
+
+.student-portal-root .kpi-stats-grid .kpi-number.kpi-text-value {
+  font-size: 0.94rem !important;
+}
+
+.student-portal-root .kpi-stats-grid .kpi-subtext {
+  font-size: 0.58rem !important;
+}
+
+@media (max-width: 640px) {
+  .kpi-stats-grid {
+    gap: 0.4rem !important;
+  }
+
+  .kpi-stats-grid .kpi-tile {
+    padding: 0.6rem 0.25rem !important;
+    border-radius: 10px !important;
+  }
+
+  .kpi-stats-grid .kpi-number {
+    font-size: 1.18rem !important;
+  }
+
+  .kpi-stats-grid .kpi-number.kpi-text-value {
+    font-size: 0.94rem !important;
+  }
+
+  .kpi-stats-grid .kpi-label {
+    font-size: 0.58rem !important;
+    letter-spacing: 0.01em !important;
+  }
+
+  .kpi-stats-grid .kpi-subtext {
+    font-size: 0.56rem !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .kpi-stats-grid {
+    gap: 0.3rem !important;
+  }
+
+  .kpi-stats-grid .kpi-tile {
+    padding: 0.5rem 0.2rem !important;
+  }
+
+  .kpi-stats-grid .kpi-number {
+    font-size: 1.05rem !important;
+  }
+
+  .kpi-stats-grid .kpi-label {
+    font-size: 0.54rem !important;
+  }
 }

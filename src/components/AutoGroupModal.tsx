@@ -10,7 +10,8 @@ import {
   Table, Columns3, ArrowRightLeft,
   Pin, PinOff, Undo2, Redo2,
   Target, Zap, ArrowRight,
-  Lock, Unlock, UserX, UserCheck, Send, Percent, MoreHorizontal
+  Lock, Unlock, UserX, UserCheck, Send, Percent, MoreHorizontal,
+  AlertTriangle, Edit2, Type
 } from 'lucide-react';
 import type { Student } from '../utils/math';
 import { 
@@ -49,8 +50,9 @@ const PREFIX_OPTIONS = [
   { value: 'Squad', label: 'Squad (e.g. Squad 1, Squad 2)' },
   { value: 'Cohort', label: 'Cohort (e.g. Cohort 1, Cohort 2)' },
   { value: 'Project Group', label: 'Project Group (e.g. Project Group 1)' },
-  { value: 'custom', label: 'Custom Prefix...' }
+  { value: 'custom', label: 'Custom Team Names (Individual & Freeform)' }
 ];
+
 
 const RULE_PALETTE = [
   '#0d9488', // Teal
@@ -75,7 +77,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
   classId,
   onOpenEnrollmentBuilder
 }) => {
-  const { classes, activeClass } = useClass();
+  const { classes, activeClass, renameTeam } = useClass();
   const currentClass = classes.find(c => c.id === classId) || activeClass;
   const [targetSize, setTargetSize] = useState<number>(4);
   const [targetSizeInput, setTargetSizeInput] = useState<string>('4');
@@ -85,7 +87,25 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     setTargetSizeInput(String(targetSize));
   }, [targetSize]);
   const [prefix, setPrefix] = useState<string>('Team');
-  const [customPrefix, setCustomPrefix] = useState<string>('Pod');
+  const customPrefix = 'Team';
+  const [customIndividualNames, setCustomIndividualNames] = useState<string[]>([]);
+  const [isBulkCustomModalOpen, setIsBulkCustomModalOpen] = useState<boolean>(false);
+  const [bulkCustomInput, setBulkCustomInput] = useState<string>('');
+
+  // Protective warning modal state for renaming assigned teams
+  const [renamingAssignedTeam, setRenamingAssignedTeam] = useState<{
+    oldName: string;
+    newName: string;
+    groupIdx?: number;
+    studentCount: number;
+  } | null>(null);
+
+  // Quick rename modal for card headers
+  const [quickRenameModal, setQuickRenameModal] = useState<{
+    oldName: string;
+    newName: string;
+    groupIdx?: number;
+  } | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'table' | 'compact'>('grid');
   const [kanbanLayout, setKanbanLayout] = useState<'wrap' | 'scroll' | 'compact'>('wrap');
   const [featureToggles, setFeatureToggles] = useState<FeatureToggles>(loadFeatureToggles);
@@ -304,7 +324,8 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
       }
     });
 
-    const existingGroupNames = Object.keys(existingGroupMap);
+    const existingGroupNames = Object.keys(existingGroupMap)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
     // If there are existing teams formed in the class roster, preserve them and place unassigned in the drawer!
     if (existingGroupNames.length > 0) {
@@ -320,6 +341,12 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
         ...Object.values(existingGroupMap).flat(),
         ...unassignedList
       ];
+
+      setCustomIndividualNames(existingGroupNames);
+      const assignedStudentsCount = Object.values(existingGroupMap).reduce((acc, list) => acc + list.length, 0);
+      const avgExistingSize = Math.max(2, Math.round(assignedStudentsCount / existingGroupNames.length));
+      setTargetSize(avgExistingSize);
+      setTargetSizeInput(String(avgExistingSize));
 
       setGroupingResult({
         groups,
@@ -355,12 +382,18 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     };
   }, []);
 
-  const runOptimization = (overrideSize?: number, overridePrefix?: string) => {
+  const getAssignedCount = (teamName: string) => {
+    const clean = (teamName || '').trim().toLowerCase();
+    return (currentClass?.students || []).filter(s => (s.groupName || '').trim().toLowerCase() === clean).length;
+  };
+
+  const runOptimization = (overrideSize?: number, overridePrefix?: string, overrideCustomNames?: string[]) => {
     if (students.length === 0) return;
     setIsGenerating(true);
 
     const activeSize = overrideSize ?? targetSize;
     const activePrefix = overridePrefix ?? effectivePrefix;
+    const activeCustomNames = overrideCustomNames ?? (prefix === 'custom' && customIndividualNames.length > 0 ? customIndividualNames : undefined);
 
     // Build pinned student map (studentId -> current groupName)
     const pinnedStudentMap: Record<string, string> = {};
@@ -377,9 +410,11 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
         targetSize: activeSize,
         prefix: activePrefix,
         rules,
-        pinnedStudentMap: Object.keys(pinnedStudentMap).length > 0 ? pinnedStudentMap : undefined
+        pinnedStudentMap: Object.keys(pinnedStudentMap).length > 0 ? pinnedStudentMap : undefined,
+        customTeamNames: activeCustomNames
       });
       setGroupingResult(result);
+      setCustomIndividualNames(result.groups.map(g => g.groupName));
       setHistory([result.updatedStudents]);
       setHistoryIndex(0);
       setIsGenerating(false);
@@ -419,14 +454,180 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
     }
   };
 
+  // Execute rename across staged groups, student objects, and classroom context
+  const executeRenameTeam = (oldName: string, newName: string, groupIdx?: number) => {
+    const cleanNew = newName.trim();
+    if (!cleanNew) return;
+
+    let targetOldName = (oldName || '').trim();
+    let targetMemberIds = new Set<string>();
+
+    if (groupingResult) {
+      const targetGroup = (groupIdx !== undefined && groupingResult.groups[groupIdx])
+        ? groupingResult.groups[groupIdx]
+        : groupingResult.groups.find(g => g.groupName.trim().toLowerCase() === targetOldName.toLowerCase());
+
+      if (targetGroup) {
+        targetOldName = targetGroup.groupName;
+        targetMemberIds = new Set(targetGroup.students.map(s => s.id));
+      }
+
+      const updatedGroups = groupingResult.groups.map((g, idx) => {
+        const isTarget = groupIdx !== undefined ? idx === groupIdx : g.groupName === targetOldName;
+        if (isTarget) {
+          return {
+            ...g,
+            groupName: cleanNew,
+            students: g.students.map(s => ({ ...s, groupName: cleanNew }))
+          };
+        }
+        return g;
+      });
+
+      const updatedStudents = groupingResult.updatedStudents.map(s => {
+        if (targetMemberIds.has(s.id) || (s.groupName && s.groupName.trim().toLowerCase() === targetOldName.toLowerCase())) {
+          return { ...s, groupName: cleanNew };
+        }
+        return s;
+      });
+
+      setGroupingResult({
+        ...groupingResult,
+        groups: updatedGroups,
+        updatedStudents
+      });
+    }
+
+    setCustomIndividualNames(prev => {
+      const next = [...prev];
+      if (groupIdx !== undefined && groupIdx >= 0) {
+        next[groupIdx] = cleanNew;
+      } else if (groupingResult) {
+        const foundIdx = groupingResult.groups.findIndex(g => g.groupName === targetOldName);
+        if (foundIdx !== -1) next[foundIdx] = cleanNew;
+      }
+      return next;
+    });
+
+    if (currentClass?.id && (getAssignedCount(targetOldName) > 0 || getAssignedCount(oldName) > 0)) {
+      renameTeam(currentClass.id, targetOldName || oldName, cleanNew);
+    }
+  };
+
+  // Request rename: if team is assigned in class, show protective warning modal first
+  const handleRequestRename = (oldName: string, newName: string, groupIdx?: number) => {
+    const cleanNew = newName.trim();
+    if (!cleanNew || cleanNew === oldName) return;
+
+    const assignedCount = getAssignedCount(oldName);
+    if (assignedCount > 0) {
+      setRenamingAssignedTeam({
+        oldName,
+        newName: cleanNew,
+        groupIdx,
+        studentCount: assignedCount
+      });
+      return;
+    }
+
+    executeRenameTeam(oldName, cleanNew, groupIdx);
+  };
+
+  const confirmRenameAssignedTeam = () => {
+    if (!renamingAssignedTeam || !renamingAssignedTeam.newName.trim()) return;
+    executeRenameTeam(
+      renamingAssignedTeam.oldName,
+      renamingAssignedTeam.newName.trim(),
+      renamingAssignedTeam.groupIdx
+    );
+    setRenamingAssignedTeam(null);
+  };
+
+  const handleOpenRenameModal = (currentName: string, groupIdx?: number) => {
+    const assignedCount = getAssignedCount(currentName);
+    if (assignedCount > 0) {
+      setRenamingAssignedTeam({
+        oldName: currentName,
+        newName: currentName,
+        groupIdx,
+        studentCount: assignedCount
+      });
+    } else {
+      setQuickRenameModal({
+        oldName: currentName,
+        newName: currentName,
+        groupIdx
+      });
+    }
+  };
+
+  const applyNewNamesBatch = (newNamesList: string[]) => {
+    setCustomIndividualNames(newNamesList);
+    if (!groupingResult) {
+      runOptimization(undefined, undefined, newNamesList);
+      return;
+    }
+
+    const oldToNewMap: Record<string, string> = {};
+    const updatedGroups = groupingResult.groups.map((g, idx) => {
+      const newName = (newNamesList[idx] && newNamesList[idx].trim()) || g.groupName;
+      oldToNewMap[g.groupName] = newName;
+      return {
+        ...g,
+        groupName: newName,
+        students: g.students.map(s => ({ ...s, groupName: newName }))
+      };
+    });
+
+    const updatedStudents = groupingResult.updatedStudents.map(s => {
+      if (s.groupName && oldToNewMap[s.groupName]) {
+        return { ...s, groupName: oldToNewMap[s.groupName] };
+      }
+      return s;
+    });
+
+    setGroupingResult({
+      ...groupingResult,
+      groups: updatedGroups,
+      updatedStudents
+    });
+
+    if (currentClass?.id) {
+      Object.entries(oldToNewMap).forEach(([oldName, newName]) => {
+        if (oldName !== newName && getAssignedCount(oldName) > 0) {
+          renameTeam(currentClass.id, oldName, newName);
+        }
+      });
+    }
+  };
+
+
+  const handleApplyBulkNames = (rawText: string) => {
+    const parsedNames = rawText
+      .split(/[\n,]/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    if (parsedNames.length === 0) return;
+
+    applyNewNamesBatch(parsedNames);
+    setIsBulkCustomModalOpen(false);
+    setBulkCustomInput('');
+  };
+
   const renameGroupsWithPrefix = (newPrefixStr: string) => {
     if (!groupingResult) return;
     const cleanPrefix = newPrefixStr.trim() || 'Team';
 
     const oldToNewMap: Record<string, string> = {};
+    const newNames: string[] = [];
     groupingResult.groups.forEach((g, idx) => {
-      oldToNewMap[g.groupName] = `${cleanPrefix} ${idx + 1}`;
+      const newName = `${cleanPrefix} ${idx + 1}`;
+      oldToNewMap[g.groupName] = newName;
+      newNames.push(newName);
     });
+
+    setCustomIndividualNames(newNames);
 
     const updatedStudents = groupingResult.updatedStudents.map(s => {
       if (s.groupName && oldToNewMap[s.groupName]) {
@@ -450,21 +651,27 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
       groups: updatedGroups,
       updatedStudents
     } : null);
+
+    if (currentClass?.id) {
+      Object.entries(oldToNewMap).forEach(([oldName, newName]) => {
+        if (oldName !== newName && getAssignedCount(oldName) > 0) {
+          renameTeam(currentClass.id, oldName, newName);
+        }
+      });
+    }
   };
 
   const handlePrefixChange = (newPrefix: string) => {
     setPrefix(newPrefix);
-    const eff = newPrefix === 'custom' ? (customPrefix.trim() || 'Team') : newPrefix;
-    renameGroupsWithPrefix(eff);
-  };
-
-  const handleCustomPrefixChange = (newCustom: string) => {
-    setCustomPrefix(newCustom);
-    if (prefix === 'custom') {
-      const eff = newCustom.trim() || 'Team';
-      renameGroupsWithPrefix(eff);
+    if (newPrefix === 'custom') {
+      if (groupingResult && groupingResult.groups.length > 0) {
+        setCustomIndividualNames(groupingResult.groups.map(g => g.groupName));
+      }
+    } else {
+      renameGroupsWithPrefix(newPrefix);
     }
   };
+
 
   const handleTogglePin = (studentId: string) => {
     setPinnedStudentIds(prev => {
@@ -1140,27 +1347,155 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                   gap: '0.35rem',
                   transition: 'all 0.15s ease'
                 }}>
-                  <Sparkles size={12} /> Preview: {effectivePrefix} 1, {effectivePrefix} 2...
+                  <Sparkles size={12} /> {prefix === 'custom' ? 'Custom Freeform Names' : `Preview: ${effectivePrefix} 1, ${effectivePrefix} 2...`}
                 </span>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', height: '38px' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <CustomSelect
-                    options={PREFIX_OPTIONS}
-                    value={prefix}
-                    onChange={(val) => handlePrefixChange(val)}
-                  />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', height: '38px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <CustomSelect
+                      options={PREFIX_OPTIONS}
+                      value={prefix}
+                      onChange={(val) => handlePrefixChange(val)}
+                    />
+                  </div>
+                  {prefix === 'custom' && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setIsBulkCustomModalOpen(true)}
+                      style={{ height: '38px', fontSize: '0.78rem', gap: '0.35rem', whiteSpace: 'nowrap', fontWeight: 700 }}
+                      title="Paste or import custom names list"
+                    >
+                      <FileText size={13} /> Paste List
+                    </button>
+                  )}
                 </div>
+
                 {prefix === 'custom' && (
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. Squad, Lab, Pod..."
-                    value={customPrefix}
-                    onChange={(e) => handleCustomPrefixChange(e.target.value)}
-                    style={{ height: '38px', fontSize: '0.84rem', fontWeight: 600, width: '140px', borderRadius: '8px' }}
-                  />
+                  <div
+                    style={{
+                      backgroundColor: 'var(--bg-app)',
+                      borderRadius: '10px',
+                      border: '1px solid var(--border-color)',
+                      padding: '0.85rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.75rem'
+                    }}
+                  >
+
+
+                    {/* Individual Team Name Inputs */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <Type size={13} style={{ color: 'var(--accent-teal)' }} /> Name Each Team Separately:
+                        </span>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                          Freeform &bull; Not numbered
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
+                          gap: '0.5rem',
+                          maxHeight: '220px',
+                          overflowY: 'auto',
+                          paddingRight: '0.2rem'
+                        }}
+                      >
+                        {((groupingResult?.groups ?? Array.from({ length: Math.max(1, Math.ceil(students.length / targetSize)) }, () => null)) as (GroupDiversityReport | null)[]).map((grp, idx) => {
+                          const groupName = customIndividualNames[idx] ?? (grp ? grp.groupName : `Team ${idx + 1}`);
+                          const currentActualName = grp ? grp.groupName : (customIndividualNames[idx] || `Team ${idx + 1}`);
+                          const assignedCount = grp ? getAssignedCount(grp.groupName) : 0;
+                          const isAssigned = assignedCount > 0;
+                          return (
+                            <div
+                              key={idx}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                backgroundColor: 'var(--bg-surface)',
+                                padding: '0.3rem 0.45rem',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-color)',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 900,
+                                  color: 'var(--primary)',
+                                  backgroundColor: 'var(--primary-light)',
+                                  padding: '0.12rem 0.35rem',
+                                  borderRadius: '5px',
+                                  flexShrink: 0
+                                }}
+                              >
+                                #{idx + 1}
+                              </span>
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={groupName}
+                                placeholder={`Team ${idx + 1} name...`}
+                                onChange={(e) => {
+                                  const nextVal = e.target.value;
+                                  setCustomIndividualNames(prev => {
+                                    const next = [...prev];
+                                    next[idx] = nextVal;
+                                    return next;
+                                  });
+                                }}
+                                onBlur={(e) => {
+                                  const finalVal = e.target.value.trim();
+                                  if (finalVal && finalVal !== currentActualName) {
+                                    executeRenameTeam(currentActualName, finalVal, idx);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                style={{
+                                  height: '28px',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 700,
+                                  flex: 1,
+                                  minWidth: 0,
+                                  borderRadius: '5px',
+                                  padding: '0 0.4rem'
+                                }}
+                              />
+                              {isAssigned && (
+                                <span
+                                  title="Active in classroom roster"
+                                  style={{
+                                    fontSize: '0.6rem',
+                                    color: '#d97706',
+                                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                                    padding: '0.1rem 0.3rem',
+                                    borderRadius: '4px',
+                                    fontWeight: 800,
+                                    flexShrink: 0
+                                  }}
+                                >
+                                  Assigned
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -2280,7 +2615,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                           }
                     }
                   >
-                    {groupingResult.groups.map(group => {
+                    {groupingResult.groups.map((group, gIdx) => {
                       const filteredMembers = group.students.filter(s => 
                         !searchFilter.trim() || 
                         s.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
@@ -2374,6 +2709,29 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                 <span style={{ fontSize: kanbanLayout === 'compact' ? '0.8rem' : '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                                   {group.groupName}
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenRenameModal(group.groupName, gIdx);
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '2px',
+                                    borderRadius: '4px',
+                                    color: 'var(--text-muted)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center'
+                                  }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+                                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                                  title={`Rename ${group.groupName}`}
+                                  aria-label={`Rename ${group.groupName}`}
+                                >
+                                  <Edit2 size={11} />
+                                </button>
                               </div>
                               <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', paddingLeft: '1.4rem' }}>
                                 {group.studentCount} {group.studentCount === 1 ? 'member' : 'members'}
@@ -2652,7 +3010,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {groupingResult.groups.map(group => {
+                      {groupingResult.groups.map((group, idx) => {
                         const filteredMembers = group.students.filter(s => 
                           !searchFilter.trim() || 
                           s.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
@@ -2731,6 +3089,29 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                                 <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
                                   {group.groupName}
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenRenameModal(group.groupName, idx);
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '2px',
+                                    borderRadius: '4px',
+                                    color: 'var(--text-muted)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center'
+                                  }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+                                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                                  title={`Rename ${group.groupName}`}
+                                  aria-label={`Rename ${group.groupName}`}
+                                >
+                                  <Edit2 size={11} />
+                                </button>
                                 {pinnedInGroup > 0 && (
                                   <span 
                                     className="autogroup-pinned-indicator"
@@ -2931,7 +3312,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
               ) : viewMode === 'compact' ? (
                 /* 3. Compact Matrix View */
                 <div className="autogroup-compact-grid">
-                  {groupingResult.groups.map(group => {
+                  {groupingResult.groups.map((group, idx) => {
                     const filteredMembers = group.students.filter(s => 
                       !searchFilter.trim() || 
                       s.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
@@ -3009,6 +3390,29 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                             <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                               {group.groupName}
                             </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenRenameModal(group.groupName, idx);
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                borderRadius: '4px',
+                                color: 'var(--text-muted)',
+                                display: 'inline-flex',
+                                alignItems: 'center'
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                              title={`Rename ${group.groupName}`}
+                              aria-label={`Rename ${group.groupName}`}
+                            >
+                              <Edit2 size={10} />
+                            </button>
                             {pinnedInGroup > 0 && (
                               <span 
                                 className="autogroup-pinned-indicator"
@@ -3162,7 +3566,7 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
               ) : (
                 /* 4. Enhanced Grid View */
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: '1.15rem' }}>
-                  {groupingResult.groups.map(group => {
+                  {groupingResult.groups.map((group, idx) => {
                     const filteredMembers = group.students.filter(s => 
                       !searchFilter.trim() || 
                       s.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
@@ -3265,6 +3669,29 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
                               <span style={{ fontSize: '0.94rem', fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                                 {group.groupName}
                               </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenRenameModal(group.groupName, idx);
+                                }}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '2px 4px',
+                                  borderRadius: '4px',
+                                  color: 'var(--text-muted)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                                title={`Rename ${group.groupName}`}
+                                aria-label={`Rename ${group.groupName}`}
+                              >
+                                <Edit2 size={12} />
+                              </button>
                               {transferringStudentId && transferringStudent?.groupName !== group.groupName && (
                                 <span style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--primary)', backgroundColor: 'var(--primary-light)', padding: '0.12rem 0.4rem', borderRadius: '4px' }}>
                                   Click to move here
@@ -3799,6 +4226,247 @@ export const AutoGroupModal: React.FC<AutoGroupModalProps> = ({
         </div>
 
       </div>
+
+      {/* ── MODAL: PROTECTIVE WARNING WHEN RENAMING ASSIGNED TEAM ── */}
+      {renamingAssignedTeam && createPortal(
+        <div 
+          className="modal-overlay" 
+          onClick={() => setRenamingAssignedTeam(null)}
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            zIndex: 100080, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+            backdropFilter: 'blur(8px)',
+            padding: '1.25rem',
+            animation: 'fadeIn 120ms ease' 
+          }}
+        >
+          <div 
+            className="modal-content" 
+            onClick={e => e.stopPropagation()} 
+            style={{ maxWidth: '460px', width: '100%', padding: '0', backgroundColor: 'var(--bg-surface)', margin: 'auto', borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--border-color)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)' }}
+          >
+            <div style={{ padding: '1.2rem 1.5rem', backgroundColor: 'rgba(239, 68, 68, 0.08)', borderBottom: '1px solid rgba(239, 68, 68, 0.18)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  Rename Assigned Team?
+                </h3>
+                <span style={{ fontSize: '0.75rem', color: '#dc2626', fontWeight: 700 }}>
+                  Active Classroom Team &bull; {renamingAssignedTeam.studentCount} Students Enrolled
+                </span>
+              </div>
+            </div>
+
+            <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+              <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                You are renaming <strong style={{ color: 'var(--text-primary)' }}>"{renamingAssignedTeam.oldName}"</strong>. Because this team is actively assigned in your classroom, editing its name will automatically update:
+              </p>
+
+              <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <li>All <strong>{renamingAssignedTeam.studentCount} enrolled students'</strong> roster assignments</li>
+                <li>All submitted and pending <strong>peer evaluation records</strong></li>
+                <li>Team <strong>deliverable base marks</strong> & custom scoring rules</li>
+                <li>Live pulse surveys and team analytics</li>
+              </ul>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                  New Team Name
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={renamingAssignedTeam.newName}
+                  onChange={(e) => setRenamingAssignedTeam({ ...renamingAssignedTeam, newName: e.target.value })}
+                  placeholder="Enter new team name..."
+                  autoFocus
+                  style={{ width: '100%', height: '38px', fontSize: '0.88rem', fontWeight: 700, borderRadius: '8px' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      confirmRenameAssignedTeam();
+                    } else if (e.key === 'Escape') {
+                      setRenamingAssignedTeam(null);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ padding: '0.9rem 1.5rem', backgroundColor: 'var(--bg-app)', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setRenamingAssignedTeam(null)}
+                style={{ height: '34px', fontSize: '0.8rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={confirmRenameAssignedTeam}
+                disabled={!renamingAssignedTeam.newName.trim() || renamingAssignedTeam.newName.trim() === renamingAssignedTeam.oldName}
+                style={{
+                  height: '34px',
+                  fontSize: '0.8rem',
+                  backgroundColor: '#dc2626',
+                  borderColor: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 800
+                }}
+              >
+                Yes, Rename Team
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── MODAL: QUICK RENAME UNASSIGNED TEAM ── */}
+      {quickRenameModal && createPortal(
+        <div 
+          className="modal-overlay" 
+          onClick={() => setQuickRenameModal(null)}
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            zIndex: 100080, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+            backdropFilter: 'blur(8px)',
+            padding: '1.25rem',
+            animation: 'fadeIn 120ms ease' 
+          }}
+        >
+          <div 
+            className="modal-content" 
+            onClick={e => e.stopPropagation()} 
+            style={{ maxWidth: '400px', width: '100%', padding: '1.5rem', backgroundColor: 'var(--bg-surface)', margin: 'auto', borderRadius: '14px', border: '1px solid var(--border-color)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', color: 'var(--primary)', marginBottom: '0.75rem' }}>
+              <Type size={18} />
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>Rename Team</h3>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 1rem 0' }}>
+              Give this team any custom name you want (freeform, no forced numbering).
+            </p>
+            <div style={{ marginBottom: '1.2rem' }}>
+              <input
+                type="text"
+                className="form-input"
+                value={quickRenameModal.newName}
+                onChange={(e) => setQuickRenameModal({ ...quickRenameModal, newName: e.target.value })}
+                placeholder="e.g. Phoenix, Quantum Leap..."
+                autoFocus
+                style={{ width: '100%', height: '38px', fontSize: '0.88rem', fontWeight: 700, borderRadius: '8px' }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (quickRenameModal.newName.trim()) {
+                      handleRequestRename(quickRenameModal.oldName, quickRenameModal.newName.trim(), quickRenameModal.groupIdx);
+                      setQuickRenameModal(null);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setQuickRenameModal(null);
+                  }
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setQuickRenameModal(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  if (quickRenameModal.newName.trim()) {
+                    handleRequestRename(quickRenameModal.oldName, quickRenameModal.newName.trim(), quickRenameModal.groupIdx);
+                    setQuickRenameModal(null);
+                  }
+                }}
+                disabled={!quickRenameModal.newName.trim()}
+                style={{ fontWeight: 800 }}
+              >
+                Save Name
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── MODAL: BULK CUSTOM NAMES LIST ── */}
+      {isBulkCustomModalOpen && createPortal(
+        <div 
+          className="modal-overlay" 
+          onClick={() => setIsBulkCustomModalOpen(false)}
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            zIndex: 100080, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+            backdropFilter: 'blur(8px)',
+            padding: '1.25rem',
+            animation: 'fadeIn 120ms ease' 
+          }}
+        >
+          <div 
+            className="modal-content" 
+            onClick={e => e.stopPropagation()} 
+            style={{ maxWidth: '480px', width: '100%', padding: '1.5rem', backgroundColor: 'var(--bg-surface)', margin: 'auto', borderRadius: '16px', border: '1px solid var(--border-color)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--primary)', marginBottom: '0.5rem' }}>
+              <FileText size={18} />
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Paste Custom Team Names</h3>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 1rem 0' }}>
+              Paste or type your desired team names (one per line, or separated by commas). They will be assigned to each team in sequence:
+            </p>
+            <textarea
+              className="form-input"
+              rows={6}
+              value={bulkCustomInput}
+              onChange={(e) => setBulkCustomInput(e.target.value)}
+              placeholder={"Red Dragons\nQuantum Leap\nCyber Pioneers\nPhoenix Flight\nSolar Flare\n..."}
+              autoFocus
+              style={{ width: '100%', fontSize: '0.85rem', fontFamily: 'monospace', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {bulkCustomInput.split(/[\n,]/).filter(s => s.trim()).length} names parsed
+              </span>
+              <div style={{ display: 'flex', gap: '0.6rem' }}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsBulkCustomModalOpen(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => handleApplyBulkNames(bulkCustomInput)}
+                  disabled={!bulkCustomInput.trim()}
+                  style={{ fontWeight: 800 }}
+                >
+                  Apply Names
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Confirmation Sub-Modals */}
       {showReshuffleModal && createPortal(

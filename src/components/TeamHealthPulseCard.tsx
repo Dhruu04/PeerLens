@@ -23,6 +23,7 @@ import {
   ArrowUp,
   ArrowDown,
   Filter,
+  Layers,
   X
 } from 'lucide-react';
 import type {
@@ -37,6 +38,8 @@ import {
   calculateTeamPulseMetrics,
   PULSE_SCALE_PRESETS
 } from '../utils/math';
+import { calculateSubPeerReviewMetrics } from '../utils/subPeerReview';
+import { SubPeerReviewStudio } from './SubPeerReviewStudio';
 import { StudentPulseModal } from './StudentPulseModal';
 import Modal from './Modal';
 import FeatureInfoButton from './FeatureInfoButton';
@@ -64,6 +67,14 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
 }) => {
   const [isCardExpanded, setIsCardExpanded] = useState<boolean>(false);
   const [selectedRoundId, setSelectedRoundId] = useState<string>('');
+  
+  // Module tab switcher: 'pulse' (30s survey) vs 'sub_reviews' (formative sub peer reviews)
+  const [activeModuleTab, setActiveModuleTab] = useState<'pulse' | 'sub_reviews'>('pulse');
+
+
+  const subReviewMetrics = useMemo(() => {
+    return calculateSubPeerReviewMetrics(activeClass);
+  }, [activeClass]);
 
   // Master Collapse / Expand listener
   useEffect(() => {
@@ -463,13 +474,88 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                 <FeatureInfoButton featureId="team-health-pulse" size="sm" tooltipText="Team Health Check-ins Guide" />
               </h3>
 
-              {currentRound && (
+              {/* Segmented Mode Selector Tabs */}
+              <div 
+                style={{ 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  padding: '3px', 
+                  backgroundColor: 'var(--bg-app)', 
+                  borderRadius: '9px', 
+                  border: '1px solid var(--border-color)',
+                  marginLeft: '0.2rem',
+                  gap: '3px'
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveModuleTab('pulse');
+                    setIsCardExpanded(true);
+                  }}
+                  style={{
+                    padding: '3px 10px',
+                    fontSize: '0.74rem',
+                    fontWeight: activeModuleTab === 'pulse' ? 800 : 500,
+                    borderRadius: '6px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: activeModuleTab === 'pulse' ? 'var(--bg-surface)' : 'transparent',
+                    color: activeModuleTab === 'pulse' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    boxShadow: activeModuleTab === 'pulse' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="30-second morale, blocker & standup pulse checks"
+                >
+                  <Activity size={12} className="text-teal" />
+                  <span>30s Team Pulse</span>
+                  <span className="badge badge-secondary" style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
+                    {rounds.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveModuleTab('sub_reviews');
+                    setIsCardExpanded(true);
+                  }}
+                  style={{
+                    padding: '3px 10px',
+                    fontSize: '0.74rem',
+                    fontWeight: activeModuleTab === 'sub_reviews' ? 800 : 500,
+                    borderRadius: '6px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: activeModuleTab === 'sub_reviews' ? 'var(--bg-surface)' : 'transparent',
+                    color: activeModuleTab === 'sub_reviews' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    boxShadow: activeModuleTab === 'sub_reviews' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Formative Sub Peer Reviews for multi-month projects: dynamic red flags, recovery tracking, cumulative scores"
+                >
+                  <Layers size={12} className="text-indigo" />
+                  <span>Sub Peer Reviews</span>
+                  <span className="badge badge-secondary" style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
+                    {subReviewMetrics.totalRounds}
+                  </span>
+                </button>
+              </div>
+
+              {activeModuleTab === 'pulse' && currentRound && (
                 <span className={`badge ${currentRound.status === 'active' ? 'badge-teal' : 'badge-secondary'}`} style={{ fontSize: '0.7rem', fontWeight: 700 }}>
                   {currentRound.status === 'active' ? 'Active Collection' : 'Closed Round'}
                 </span>
               )}
 
-              {pulseMetrics.teamsBlockedCount > 0 && (
+              {activeModuleTab === 'pulse' && pulseMetrics.teamsBlockedCount > 0 && (
                 <span className="badge badge-amber" style={{ fontSize: '0.7rem', fontWeight: 700, gap: '0.25rem' }}>
                   <AlertTriangle size={11} /> {pulseMetrics.teamsBlockedCount} Blocked
                 </span>
@@ -477,110 +563,118 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
               {cardControls}
             </div>
             <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-              Quick 30-second morale and blocker check-ins during group projects.
+              {activeModuleTab === 'pulse'
+                ? 'Quick 30-second morale and blocker check-ins during group projects.'
+                : 'Periodic milestone check-ins, performance trajectories, and early intervention alerts.'}
             </p>
           </div>
         </div>
 
         {/* Action Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-          {/* Launch New Pulse Button */}
-          <button
-            type="button"
-            className="btn btn-teal btn-sm"
-            onClick={() => {
-              setNewTitle(`Milestone Health Check #${rounds.length + 1}`);
-              setIsLaunchModalOpen(true);
-            }}
-            style={{ height: '34px', fontSize: '0.78rem', fontWeight: 700, gap: '0.35rem', borderRadius: '8px' }}
-            title="Launch a new on-demand team health pulse round"
-          >
-            <Plus size={14} /> Launch Pulse Check
-          </button>
-
-          {currentRound && (
+          {activeModuleTab === 'pulse' && (
             <>
-              {/* View Individual Responses */}
+              {/* Launch New Pulse Button */}
               <button
                 type="button"
-                className="btn btn-secondary btn-sm"
+                className="btn btn-teal btn-sm"
                 onClick={() => {
-                  setFilterTeam('all');
-                  setFilterStatus('all');
-                  setSearchStudent('');
-                  setIsResponsesModalOpen(true);
+                  setNewTitle(`Milestone Health Check #${rounds.length + 1}`);
+                  setIsLaunchModalOpen(true);
                 }}
-                style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
-                title="View all individual student responses, blockers, and custom answers"
+                style={{ height: '34px', fontSize: '0.78rem', fontWeight: 700, gap: '0.35rem', borderRadius: '8px' }}
+                title="Launch a new on-demand team health pulse round"
               >
-                <Eye size={13} className="text-teal" /> View Responses ({currentRound.responses.length})
+                <Plus size={14} /> Launch Pulse Check
               </button>
 
-              {/* Export CSV Data */}
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => handleExportCSV(currentRound)}
-                style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
-                title="Export all individual pulse check-in responses to CSV spreadsheet"
-              >
-                <Download size={13} className="text-indigo" /> Export Data
-              </button>
+              {currentRound && (
+                <>
+                  {/* View Individual Responses */}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setFilterTeam('all');
+                      setFilterStatus('all');
+                      setSearchStudent('');
+                      setIsResponsesModalOpen(true);
+                    }}
+                    style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
+                    title="View all individual student responses, blockers, and custom answers"
+                  >
+                    <Eye size={13} className="text-teal" /> View Responses ({currentRound.responses.length})
+                  </button>
 
-              {/* Scale & Questions Customizer */}
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => {
-                  setEditScaleType(currentRound.config?.scaleType || 'stars_5');
-                  setEditMoralePrompt(currentRound.config?.moralePrompt || 'Team Morale & Communication');
-                  setEditProgressPrompt(currentRound.config?.progressPrompt || 'Is your team on track for this milestone?');
-                  setEditNotePrompt(currentRound.config?.notePrompt || 'Describe any blockers or dependencies (optional)');
-                  setEditCustomQuestions(currentRound.config?.customQuestions || []);
-                  setIsConfigModalOpen(true);
-                }}
-                style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
-                title="Customize scale style (Stars, Likert, Traffic Light, Icons, Slider) and add custom questions"
-              >
-                <Sliders size={13} /> Customize Scale & Questions
-              </button>
+                  {/* Export CSV Data */}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleExportCSV(currentRound)}
+                    style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
+                    title="Export all individual pulse check-in responses to CSV spreadsheet"
+                  >
+                    <Download size={13} className="text-indigo" /> Export Data
+                  </button>
 
-              {/* Share QR / Link */}
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={handleOpenShare}
-                style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
-                title="Share 30-second student survey link or QR code"
-              >
-                <QrCode size={14} /> Share QR / Link
-              </button>
+                  {/* Scale & Questions Customizer */}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setEditScaleType(currentRound.config?.scaleType || 'stars_5');
+                      setEditMoralePrompt(currentRound.config?.moralePrompt || 'Team Morale & Communication');
+                      setEditProgressPrompt(currentRound.config?.progressPrompt || 'Is your team on track for this milestone?');
+                      setEditNotePrompt(currentRound.config?.notePrompt || 'Describe any blockers or dependencies (optional)');
+                      setEditCustomQuestions(currentRound.config?.customQuestions || []);
+                      setIsConfigModalOpen(true);
+                    }}
+                    style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
+                    title="Customize scale style (Stars, Likert, Traffic Light, Icons, Slider) and add custom questions"
+                  >
+                    <Sliders size={13} /> Customize Scale & Questions
+                  </button>
 
-              {/* Student Portal Preview */}
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setIsStudentModalOpen(true)}
-                style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
-                title="Test student 30-second pulse portal form"
-              >
-                <Play size={13} className="text-teal" /> Test View
-              </button>
+                  {/* Share QR / Link */}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleOpenShare}
+                    style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
+                    title="Share 30-second student survey link or QR code"
+                  >
+                    <QrCode size={14} /> Share QR / Link
+                  </button>
+
+                  {/* Student Portal Preview */}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setIsStudentModalOpen(true)}
+                    style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
+                    title="Test student 30-second pulse portal form"
+                  >
+                    <Play size={13} className="text-teal" /> Test View
+                  </button>
+                </>
+              )}
+
+              {/* Seed Sample Sprints if empty */}
+              {rounds.length === 0 && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => onSeedSampleData(activeClass.id)}
+                  style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
+                  title="Populate 3 sample multi-round sprints with realistic team health data"
+                >
+                  <Sparkles size={13} className="text-indigo" /> Sample Data
+                </button>
+              )}
             </>
           )}
 
-          {/* Seed Sample Sprints if empty */}
-          {rounds.length === 0 && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => onSeedSampleData(activeClass.id)}
-              style={{ height: '34px', fontSize: '0.78rem', fontWeight: 600, gap: '0.35rem', borderRadius: '8px' }}
-              title="Populate 3 sample multi-round sprints with realistic team health data"
-            >
-              <Sparkles size={13} className="text-indigo" /> Sample Data
-            </button>
-          )}
+
 
           {/* Expand / Collapse Button */}
           <button
@@ -596,7 +690,7 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
               </>
             ) : (
               <>
-                <ChevronDown size={14} /> Expand ({rounds.length} rounds)
+                <ChevronDown size={14} /> Expand ({activeModuleTab === 'pulse' ? `${rounds.length} rounds` : `${subReviewMetrics.totalRounds} reviews`})
               </>
             )}
           </button>
@@ -605,7 +699,10 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
 
       {/* Body: Visible only when expanded */}
       {isCardExpanded && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        activeModuleTab === 'sub_reviews' ? (
+          <SubPeerReviewStudio activeClass={activeClass} onToast={addToast} />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           {/* Rounds Bar & Status Selector */}
           {rounds.length > 0 && (
             <div
@@ -825,6 +922,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                     }}
                   />
                   <input
+                    id="pulse-table-search-input"
+                    name="pulse-table-search-input"
+                    aria-label="Search teams or blockers"
                     type="text"
                     value={tableSearchQuery}
                     onChange={(e) => setTableSearchQuery(e.target.value)}
@@ -1250,6 +1350,7 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
             </>
           )}
         </div>
+        )
       )}
 
       {/* MODAL 1: Launch New Pulse Round */}
@@ -1257,10 +1358,12 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
         <Modal isOpen={isLaunchModalOpen} onClose={() => setIsLaunchModalOpen(false)} title="Launch New Team Health Pulse Check" maxWidth="620px">
           <form onSubmit={handleLaunchRound} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', padding: '0.5rem 0' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+              <label htmlFor="pulse-new-round-title" style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
                 Pulse Milestone / Round Title
               </label>
               <input
+                id="pulse-new-round-title"
+                name="pulse-new-round-title"
                 type="text"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
@@ -1318,10 +1421,12 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                 Customize Question Prompts
               </span>
               <div>
-                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                <label htmlFor="pulse-new-morale-prompt" style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
                   Question 1: Morale / Alignment Rating Prompt
                 </label>
                 <input
+                  id="pulse-new-morale-prompt"
+                  name="pulse-new-morale-prompt"
                   type="text"
                   value={newMoralePrompt}
                   onChange={(e) => setNewMoralePrompt(e.target.value)}
@@ -1330,10 +1435,12 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                <label htmlFor="pulse-new-progress-prompt" style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
                   Question 2: Milestone Status Prompt
                 </label>
                 <input
+                  id="pulse-new-progress-prompt"
+                  name="pulse-new-progress-prompt"
                   type="text"
                   value={newProgressPrompt}
                   onChange={(e) => setNewProgressPrompt(e.target.value)}
@@ -1343,11 +1450,13 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
               </div>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                  <label htmlFor="pulse-new-note-prompt" style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                     Question 3: Blocker / Dependency Notes Prompt
                   </label>
-                  <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                  <label htmlFor="pulse-new-allow-notes" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
                     <input
+                      id="pulse-new-allow-notes"
+                      name="pulse-new-allow-notes"
                       type="checkbox"
                       checked={newAllowNotes}
                       onChange={(e) => setNewAllowNotes(e.target.checked)}
@@ -1356,6 +1465,8 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                   </label>
                 </div>
                 <input
+                  id="pulse-new-note-prompt"
+                  name="pulse-new-note-prompt"
                   type="text"
                   value={newNotePrompt}
                   onChange={(e) => setNewNotePrompt(e.target.value)}
@@ -1401,6 +1512,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                     </button>
                   </div>
                   <input
+                    id={`pulse-new-custom-title-${q.id}`}
+                    name={`new_custom_title_${q.id}`}
+                    aria-label={`Custom question ${idx + 1} prompt`}
                     type="text"
                     value={q.title}
                     onChange={(e) => handleUpdateQuestion(false, q.id, { title: e.target.value })}
@@ -1410,6 +1524,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                   />
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                     <select
+                      id={`pulse-new-custom-type-${q.id}`}
+                      name={`new_custom_type_${q.id}`}
+                      aria-label={`Custom question ${idx + 1} type`}
                       value={q.type}
                       onChange={(e) => handleUpdateQuestion(false, q.id, { type: e.target.value as any })}
                       className="form-input"
@@ -1422,6 +1539,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
 
                     {q.type === 'choice' && (
                       <input
+                        id={`pulse-new-custom-options-${q.id}`}
+                        name={`new_custom_options_${q.id}`}
+                        aria-label={`Custom question ${idx + 1} choice options`}
                         type="text"
                         value={q.options?.join(', ') || ''}
                         onChange={(e) => handleUpdateQuestion(false, q.id, { options: e.target.value.split(',').map(s => s.trim()) })}
@@ -1431,8 +1551,10 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                       />
                     )}
 
-                    <label style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <label htmlFor={`pulse-new-custom-required-${q.id}`} style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       <input
+                        id={`pulse-new-custom-required-${q.id}`}
+                        name={`new_custom_required_${q.id}`}
                         type="checkbox"
                         checked={q.required}
                         onChange={(e) => handleUpdateQuestion(false, q.id, { required: e.target.checked })}
@@ -1481,6 +1603,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
 
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input
+                id="pulse-share-link-input"
+                name="pulse-share-link-input"
+                aria-label="Direct pulse survey URL"
                 type="text"
                 readOnly
                 value={`${window.location.origin}${window.location.pathname}?classId=${activeClass.id}&pulseId=${currentRound.id}`}
@@ -1539,10 +1664,12 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+              <label htmlFor="pulse-edit-morale-prompt" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
                 Morale & Synergy Prompt
               </label>
               <input
+                id="pulse-edit-morale-prompt"
+                name="pulse-edit-morale-prompt"
                 type="text"
                 value={editMoralePrompt}
                 onChange={(e) => setEditMoralePrompt(e.target.value)}
@@ -1552,10 +1679,12 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+              <label htmlFor="pulse-edit-progress-prompt" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
                 Milestone Delivery Status Prompt
               </label>
               <input
+                id="pulse-edit-progress-prompt"
+                name="pulse-edit-progress-prompt"
                 type="text"
                 value={editProgressPrompt}
                 onChange={(e) => setEditProgressPrompt(e.target.value)}
@@ -1599,6 +1728,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                     </button>
                   </div>
                   <input
+                    id={`pulse-edit-custom-title-${q.id}`}
+                    name={`edit_custom_title_${q.id}`}
+                    aria-label={`Custom question ${idx + 1} prompt`}
                     type="text"
                     value={q.title}
                     onChange={(e) => handleUpdateQuestion(true, q.id, { title: e.target.value })}
@@ -1608,6 +1740,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                   />
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                     <select
+                      id={`pulse-edit-custom-type-${q.id}`}
+                      name={`edit_custom_type_${q.id}`}
+                      aria-label={`Custom question ${idx + 1} type`}
                       value={q.type}
                       onChange={(e) => handleUpdateQuestion(true, q.id, { type: e.target.value as any })}
                       className="form-input"
@@ -1620,6 +1755,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
 
                     {q.type === 'choice' && (
                       <input
+                        id={`pulse-edit-custom-options-${q.id}`}
+                        name={`edit_custom_options_${q.id}`}
+                        aria-label={`Custom question ${idx + 1} choice options`}
                         type="text"
                         value={q.options?.join(', ') || ''}
                         onChange={(e) => handleUpdateQuestion(true, q.id, { options: e.target.value.split(',').map(s => s.trim()) })}
@@ -1629,8 +1767,10 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                       />
                     )}
 
-                    <label style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <label htmlFor={`pulse-edit-custom-required-${q.id}`} style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       <input
+                        id={`pulse-edit-custom-required-${q.id}`}
+                        name={`edit_custom_required_${q.id}`}
                         type="checkbox"
                         checked={q.required}
                         onChange={(e) => handleUpdateQuestion(true, q.id, { required: e.target.checked })}
@@ -1678,6 +1818,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
                 {/* Team Filter */}
                 <select
+                  id="pulse-responses-team-filter"
+                  name="pulse-responses-team-filter"
+                  aria-label="Filter responses by team"
                   value={filterTeam}
                   onChange={(e) => setFilterTeam(e.target.value)}
                   className="form-input"
@@ -1691,6 +1834,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
 
                 {/* Status Filter */}
                 <select
+                  id="pulse-responses-status-filter"
+                  name="pulse-responses-status-filter"
+                  aria-label="Filter responses by status"
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
                   className="form-input"
@@ -1706,6 +1852,9 @@ export const TeamHealthPulseCard: React.FC<TeamHealthPulseCardProps> = ({
                 <div style={{ position: 'relative', flex: 1, minWidth: '150px' }}>
                   <Search size={13} style={{ position: 'absolute', left: '8px', top: '10px', color: 'var(--text-muted)' }} />
                   <input
+                    id="pulse-responses-search-student"
+                    name="pulse-responses-search-student"
+                    aria-label="Search student or note"
                     type="text"
                     value={searchStudent}
                     onChange={(e) => setSearchStudent(e.target.value)}

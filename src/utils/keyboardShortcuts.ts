@@ -183,6 +183,14 @@ export const AVAILABLE_SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     suggestedKey: 'q'
   },
   {
+    id: 'toggle_retractable_display',
+    label: 'Toggle Pinned Modules Retractable Display',
+    category: 'Tools & Modals',
+    description: 'Toggle the dynamic retractable display to access pinned interactive modules across all tabs (Alt+V).',
+    suggestedKey: 'v',
+    suggestedModifiers: { alt: true }
+  },
+  {
     id: 'open_live_presentation',
     label: 'Live Presentation Scoring Cockpit',
     category: 'Tools & Modals',
@@ -781,6 +789,15 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     category: 'Tools & Modals',
     key: 'q',
     description: 'Toggle the floating all-in-one Quick Action Pill at the bottom of the window (Q).'
+  },
+  {
+    id: 'toggle_retractable_display',
+    actionId: 'toggle_retractable_display',
+    label: 'Toggle Pinned Modules Retractable Display',
+    category: 'Tools & Modals',
+    key: 'v',
+    modifiers: { alt: true },
+    description: 'Toggle the dynamic retractable display to access pinned interactive modules across all tabs (Alt+V).'
   },
   {
     id: 'toggle_edit_mode',
